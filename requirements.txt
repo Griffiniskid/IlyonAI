@@ -1,0 +1,132 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# TELEGRAM BOT FRAMEWORK
+# ═══════════════════════════════════════════════════════════════════════════
+aiogram>=3.0.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# AI PROVIDERS & API CLIENTS
+# ═══════════════════════════════════════════════════════════════════════════
+
+# OpenAI (GPT-4, GPT-4o)
+openai>=1.0.0
+
+# Google Gemini (new package)
+google-genai>=1.0.0
+
+# OpenRouter (multi-model gateway)
+# Uses openai library for API calls
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BLOCKCHAIN & WEB3
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Solana RPC client
+solana>=0.30.0
+
+# Solana types and serialization
+solders>=0.18.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# HTTP & NETWORKING
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Async HTTP client (primary)
+aiohttp>=3.8.0
+
+# Sync HTTP client (fallback/compatibility)
+requests>=2.31.0
+
+# Modern async HTTP client (optional)
+httpx>=0.25.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# WEB SCRAPING & PARSING
+# ═══════════════════════════════════════════════════════════════════════════
+
+# HTML/XML parsing
+beautifulsoup4>=4.12.0
+
+# Browser automation (for JavaScript-rendered sites)
+playwright>=1.40.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# IMAGE PROCESSING & GENERATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Image manipulation (report cards, charts)
+Pillow>=10.0.0
+
+# QR code generation
+qrcode>=7.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CONFIGURATION & ENVIRONMENT
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Type-safe configuration
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CACHING & STORAGE
+# ═══════════════════════════════════════════════════════════════════════════
+
+# In-memory TTL cache
+cachetools>=5.0.0
+
+# Redis client (optional - for distributed caching)
+redis>=5.0.0
+hiredis>=2.2.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DATABASE
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ORM and database toolkit
+sqlalchemy>=2.0.0
+
+# Async SQLite driver (development fallback)
+aiosqlite>=0.19.0
+
+# Async PostgreSQL driver (production - Supabase)
+asyncpg>=0.29.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LOGGING & MONITORING
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Structured logging (optional - upgrade from stdlib logging)
+# structlog>=23.0.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DATA PROCESSING & ANALYSIS (OPTIONAL)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Data manipulation (if needed for analytics)
+# pandas>=2.0.0
+# python-dateutil>=2.8.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SOCIAL MEDIA APIS (OPTIONAL)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Twitter/X API client
+# tweepy>=4.14.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DEVELOPMENT & TESTING (OPTIONAL)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Testing framework
+# pytest>=7.4.0
+# pytest-asyncio>=0.21.0
+
+# Code formatting
+# black>=23.0.0
+# ruff>=0.1.0
+
+# Type checking
+# mypy>=1.5.0
