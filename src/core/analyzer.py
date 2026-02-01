@@ -692,40 +692,40 @@ class TokenAnalyzer:
         # Check if this is an SPA/JS site with little content
         # This can happen when scraper can't execute JavaScript
         is_spa_with_low_content = (
-            content_len < 200 and
+            content_len < 500 and
             (website_data.get('uses_modern_framework', False) or
              website_data.get('is_spa', False) or
-             content_len < 50)  # Very low content likely means JS rendering issue
+             content_len < 100)  # Very low content likely means JS rendering issue
         )
 
         # Content length scoring (0-15 points)
         if is_spa_with_low_content:
-            # SPA detected - give base score as scraper can't read JS content
-            score += 8
-        elif content_len >= 3000:
+            # SPA detected - give higher base score as scraper likely missed content
             score += 15
         elif content_len >= 2000:
-            score += 12
+            score += 15
         elif content_len >= 1000:
-            score += 9
+            score += 12
         elif content_len >= 500:
-            score += 6
+            score += 9
         elif content_len >= 200:
+            score += 6
+        elif content_len >= 100:
             score += 3
 
         # Meaningful title (0-3 points)
         title = website_data.get('title', '')
-        if title and len(title) > 10 and title.lower() != "untitled":
+        if title and len(title) > 5 and title.lower() != "untitled":
             score += 3
-        elif title and len(title) > 5:
-            score += 1
+        elif title:
+            score += 2
 
         # Meta description (0-3 points)
         description = website_data.get('description', '')
-        if description and len(description) > 50:
+        if description and len(description) > 20:
             score += 3
-        elif description and len(description) > 20:
-            score += 1
+        elif description:
+            score += 2
 
         # Structured sections (0-4 points)
         if website_data.get('has_tokenomics'):
@@ -861,28 +861,29 @@ class TokenAnalyzer:
         if is_spa_with_low_content:
             red_flags = [f for f in red_flags if 'little content' not in f.lower()]
 
-        # Graduated penalty based on flag count (reduced from previous harsh penalties)
+        # Graduated penalty based on flag count (significantly relaxed)
         flag_count = len(red_flags)
         if flag_count >= 5:
-            score -= 20  # Was -30
+            score -= 15  # Was -20
         elif flag_count >= 4:
-            score -= 15  # Was -22
-        elif flag_count >= 3:
             score -= 10  # Was -15
-        elif flag_count >= 2:
+        elif flag_count >= 3:
             score -= 6   # Was -10
+        elif flag_count >= 2:
+            score -= 3   # Was -6
         elif flag_count == 1:
-            score -= 3   # Was -5
+            score -= 1   # Was -3
 
         # Specific severe flag penalties (in addition to count)
         for flag in red_flags:
             flag_lower = flag.lower() if isinstance(flag, str) else ''
+            # Relax penalties for generic flags
             if 'lorem ipsum' in flag_lower:
-                score -= 10
-                break
-            if 'scam' in flag_lower or 'honeypot' in flag_lower:
+                score -= 5  # Was -10
+            elif 'scam' in flag_lower or 'honeypot' in flag_lower:
                 score -= 15
-                break
+            elif 'broken link' in flag_lower:
+                score -= 2
 
         # Ensure bounds
         return max(0, min(100, score))
@@ -913,7 +914,7 @@ class TokenAnalyzer:
             token.ai_trading = content.get('ai_trading', '')
             token.ai_narrative = content.get('ai_narrative', '')
             # Map AI narrative to website type for display
-            token.ai_website_type = token.ai_narrative if token.ai_narrative else "unknown"
+            token.ai_website_type = content.get('ai_token_type') or token.ai_narrative or "unknown"
 
             # Apply AI website assessment
             token.website_ai_quality = content.get('ai_website_quality', '')
@@ -927,6 +928,50 @@ class TokenAnalyzer:
         else:
             token.ai_available = False
             logger.warning(f"⚠️ AI analysis not available for {token.symbol}")
+
+        # Apply Grok results (Narrative Override)
+        if ai_results.grok and ai_results.grok.success:
+            grok_content = ai_results.grok.content
+            
+            # Store raw data (if model supports it, otherwise just use what we used)
+            # Note: We added grok_analysis to TokenInfo in models.py
+            if hasattr(token, 'grok_analysis'):
+                token.grok_analysis = grok_content
+            
+            # Extract key metrics
+            narrative_score = grok_content.get('narrative_score', 50)
+            sentiment = grok_content.get('sentiment', 'NEUTRAL')
+            summary = grok_content.get('narrative_summary', '')
+            trending = grok_content.get('trending_status', 'NORMAL')
+            category = grok_content.get('narrative_category', 'Uncategorized')
+            vibe = grok_content.get('community_vibe', 'UNKNOWN')
+            organic = grok_content.get('organic_score', 0)
+            
+            # Emoji selection based on score
+            score_emoji = "🔥" if narrative_score >= 80 else "😐" if narrative_score >= 50 else "💀"
+            
+            # Format advanced narrative block for Telegram
+            narrative_block = f"""
+🐦 <b>GROK NARRATIVE REPORT</b>
+• <b>Score:</b> {score_emoji} {narrative_score}/100 ({trending})
+• <b>Meta:</b> {category}
+• <b>Vibe:</b> {vibe}
+• <b>Organic:</b> {organic}/100
+
+📝 <b>The Word on X:</b>
+{summary}
+
+🗣 <b>Influencer Activity:</b>
+{grok_content.get('influencer_activity', 'No major activity detected.')}
+
+⚠️ <b>FUD Warnings:</b>
+{', '.join(grok_content.get('fud_warnings', ['None']))}
+"""
+            # Override ai_narrative with the full block
+            token.ai_narrative = narrative_block
+            token.ai_sentiment = f"🐦 {sentiment} | Organic: {organic}%"
+            
+            logger.info(f"🐦 Grok narrative applied: Score={narrative_score}, Sentiment={sentiment}")
 
     async def close(self):
         """Cleanup all resources"""

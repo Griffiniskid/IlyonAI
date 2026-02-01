@@ -135,8 +135,10 @@ def get_rate_limiter() -> RateLimiter:
 async def rate_limit_middleware(request: web.Request, handler):
     """
     Rate limiting middleware.
-
+    
     Returns 429 Too Many Requests if limit exceeded.
+    Tracks by IP for anonymous users, by wallet for authenticated users.
+    Authenticated users get higher limits.
     """
     # Skip rate limiting for OPTIONS requests
     if request.method == "OPTIONS":
@@ -151,14 +153,31 @@ async def rate_limit_middleware(request: web.Request, handler):
     if "," in ip:
         ip = ip.split(",")[0].strip()
 
-    # Check rate limit
+    # Check for authenticated user (added by auth middleware)
+    user_wallet = request.get('user_wallet')
+    
+    # Use wallet address as rate limit key if authenticated
+    # Authenticated users get 2x the rate limits
     limiter = get_rate_limiter()
-    allowed, reason = limiter.check_rate_limit(ip)
+    
+    if user_wallet:
+        # For authenticated users, use wallet address and higher limits
+        # Create a separate limiter with higher limits
+        auth_limiter = RateLimiter(
+            requests_per_minute=settings.blinks_rate_limit_per_minute * 2,
+            requests_per_hour=settings.blinks_rate_limit_per_hour * 2,
+        )
+        allowed, reason = auth_limiter.check_rate_limit(user_wallet)
+        request["rate_limit_key"] = f"wallet:{user_wallet[:8]}"
+    else:
+        # For anonymous users, use IP
+        allowed, reason = limiter.check_rate_limit(ip)
+        request["rate_limit_key"] = f"ip:{limiter.get_ip_hash(ip)}"
 
     if not allowed:
-        logger.warning(f"Rate limit exceeded for {limiter.get_ip_hash(ip)}: {reason}")
+        logger.warning(f"Rate limit exceeded for {request.get('rate_limit_key', 'unknown')}: {reason}")
         return web.json_response(
-            {"error": reason},
+            {"error": reason, "code": "RATE_LIMIT_EXCEEDED"},
             status=429,
             headers={
                 "Access-Control-Allow-Origin": "*",

@@ -169,6 +169,7 @@ class TokenInfo:
     ai_whale_risk: str = ""
     ai_sentiment: str = ""
     ai_trading: str = ""
+    grok_analysis: Optional[Dict[str, Any]] = field(default_factory=dict)  # Raw Grok analysis result
 
     # ═══════════════════════════════════════════════════════════════════════════
     # WEBSITE ANALYSIS
@@ -318,3 +319,4 @@ class AnalysisResult:
     # ═══════════════════════════════════════════════════════════════════════════
 
     ai_analysis: str = ""  # Primary AI analysis (OpenAI/OpenRouter)
+    grok_analysis: Optional[Dict[str, Any]] = field(default_factory=dict)  # Raw Grok analysis result

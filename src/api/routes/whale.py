@@ -2,12 +2,13 @@
 Whale tracker API routes.
 
 Provides endpoints for tracking large transactions and whale wallet activity.
+Uses Helius API for real transaction data when available.
 """
 
 import logging
 from aiohttp import web
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import asyncio
 
 from src.data.solana import SolanaClient
@@ -21,39 +22,24 @@ from src.config import settings
 logger = logging.getLogger(__name__)
 
 # Cache for whale transactions
-_whale_cache: Dict[str, any] = {}
+_whale_cache: Dict[str, Any] = {}
 _cache_ttl = 60  # seconds
 
 # Known whale labels
 KNOWN_WHALES = {
     "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9": "Alameda",
     "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM": "Jump Trading",
+    "HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH": "Wintermute",
+    "2AQdpHJ2JpcEgPiATUXjQxA8QmafFegfQwSLWSprPicm": "Circle",
     # Add more known whales as needed
 }
-
-
-async def get_recent_whale_txs(
-    min_amount_usd: float = 10000,
-    token_address: Optional[str] = None,
-    limit: int = 50
-) -> List[Dict]:
-    """Fetch recent whale transactions from Helius/Solana"""
-    # This would use Helius or another indexer in production
-    # For now, return simulated data structure
-
-    # In production, you would:
-    # 1. Use Helius getSignaturesForAddress with amount filter
-    # 2. Parse transaction details
-    # 3. Get token prices from DexScreener
-
-    return []
 
 
 async def get_whale_activity(request: web.Request) -> web.Response:
     """
     GET /api/v1/whales
 
-    Get recent whale transactions on Solana.
+    Get recent whale transactions on Solana using real on-chain data.
 
     Query params:
         - min_amount_usd: Minimum transaction value (default 10000)
@@ -77,47 +63,70 @@ async def get_whale_activity(request: web.Request) -> web.Response:
             return web.json_response(cached['data'])
 
     try:
-        # Fetch from DexScreener for recent large trades
-        async with DexScreenerClient() as client:
+        # Initialize Solana client with Helius for whale tracking
+        solana = SolanaClient(
+            rpc_url=settings.solana_rpc_url,
+            helius_api_key=settings.helius_api_key
+        )
+        
+        try:
             if token_filter:
-                # Get trades for specific token
-                pair_data = await client.get_token(token_filter)
-                trades = []
-
-                if pair_data and pair_data.get('main'):
-                    # Extract recent trades from pair data
-                    # DexScreener doesn't provide individual trades via API
-                    # Would need Helius or Birdeye for this
-                    pass
+                # Get whale transactions for specific token
+                raw_transactions = await solana.get_token_whale_transactions(
+                    token_address=token_filter,
+                    min_amount_usd=min_amount,
+                    limit=limit
+                )
             else:
-                # Get trending tokens and simulate whale activity
-                trending = await client.get_trending_tokens(limit=20)
-                trades = []
-
-                # For demo: Create whale transactions from trending data
-                for t in trending[:limit]:
-                    base = t.get('baseToken', {})
-                    vol = t.get('volume', {}).get('h1', 0)
-
-                    if vol and float(vol) > min_amount:
-                        trades.append(WhaleTransactionResponse(
-                            signature="demo_" + base.get('address', '')[:16],
-                            wallet_address="whale_wallet_demo",
-                            wallet_label="Unknown Whale",
-                            token_address=base.get('address', ''),
-                            token_symbol=base.get('symbol', '???'),
-                            token_name=base.get('name', 'Unknown'),
-                            type="buy",
-                            amount_tokens=float(vol) / max(float(t.get('priceUsd', 1)), 0.0001),
-                            amount_usd=float(vol),
-                            price_usd=float(t.get('priceUsd', 0)),
-                            timestamp=datetime.utcnow() - timedelta(minutes=5),
-                            dex_name=t.get('dexId', 'raydium').title()
-                        ))
+                # Get general whale activity
+                raw_transactions = await solana.get_recent_large_transactions(
+                    min_amount_usd=min_amount,
+                    limit=limit
+                )
+        finally:
+            await solana.close()
+        
+        # Convert to response format
+        trades = []
+        for tx in raw_transactions:
+            try:
+                # Check known whale labels
+                wallet_addr = tx.get('wallet_address', '')
+                wallet_label = tx.get('wallet_label') or KNOWN_WHALES.get(wallet_addr)
+                
+                # Parse timestamp
+                ts = tx.get('timestamp')
+                if isinstance(ts, str):
+                    try:
+                        timestamp = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                    except:
+                        timestamp = datetime.utcnow()
+                elif isinstance(ts, datetime):
+                    timestamp = ts
+                else:
+                    timestamp = datetime.utcnow()
+                
+                trades.append(WhaleTransactionResponse(
+                    signature=tx.get('signature', ''),
+                    wallet_address=wallet_addr,
+                    wallet_label=wallet_label,
+                    token_address=tx.get('token_address', ''),
+                    token_symbol=tx.get('token_symbol', '???'),
+                    token_name=tx.get('token_name', 'Unknown'),
+                    type=tx.get('type', 'buy'),
+                    amount_tokens=float(tx.get('amount_tokens', 0)),
+                    amount_usd=float(tx.get('amount_usd', 0)),
+                    price_usd=float(tx.get('price_usd', 0)),
+                    timestamp=timestamp,
+                    dex_name=tx.get('dex_name', 'Unknown')
+                ))
+            except Exception as e:
+                logger.debug(f"Error converting whale tx: {e}")
+                continue
 
         # Filter by type if specified
         if type_filter:
-            trades = [t for t in trades if t['type'] == type_filter]
+            trades = [t for t in trades if t.type == type_filter]
 
         response = WhaleActivityResponse(
             transactions=trades[:limit],
@@ -150,7 +159,7 @@ async def get_whale_activity_for_token(request: web.Request) -> web.Response:
     """
     GET /api/v1/whales/token/{address}
 
-    Get whale activity for a specific token.
+    Get whale activity for a specific token using real on-chain data.
     """
     token_address = request.match_info.get('address')
 
@@ -164,34 +173,76 @@ async def get_whale_activity_for_token(request: web.Request) -> web.Response:
     limit = min(int(request.query.get('limit', 50)), 200)
 
     try:
-        async with DexScreenerClient() as client:
-            pair_data = await client.get_token(token_address)
+        # Step 1: Get token metadata first so we don't have "???" symbols
+        symbol = "???"
+        name = "Unknown"
+        
+        try:
+            async with DexScreenerClient() as client:
+                token_data = await client.get_token(token_address)
+                if token_data and token_data.get('main'):
+                    base = token_data['main'].get('baseToken', {})
+                    symbol = base.get('symbol', symbol)
+                    name = base.get('name', name)
+        except Exception as e:
+            logger.warning(f"Failed to fetch metadata for whale check: {e}")
 
+        # Step 2: Initialize Solana client with Helius
+        solana = SolanaClient(
+            rpc_url=settings.solana_rpc_url,
+            helius_api_key=settings.helius_api_key
+        )
+        
+        try:
+            raw_transactions = await solana.get_token_whale_transactions(
+                token_address=token_address,
+                min_amount_usd=min_amount,
+                limit=limit,
+                token_symbol=symbol,
+                token_name=name
+            )
+        finally:
+            await solana.close()
+        
+        # Convert to response format
         trades = []
-
-        if pair_data and pair_data.get('main'):
-            p = pair_data['main']
-            base = p.get('baseToken', {})
-
-            # Simulate recent whale trades based on volume
-            vol_1h = float(p.get('volume', {}).get('h1', 0) or 0)
-
-            if vol_1h > min_amount:
-                # Create demo whale transactions
+        for tx in raw_transactions:
+            try:
+                wallet_addr = tx.get('wallet_address', '')
+                wallet_label = tx.get('wallet_label') or KNOWN_WHALES.get(wallet_addr)
+                
+                # Parse timestamp
+                ts = tx.get('timestamp')
+                if isinstance(ts, str):
+                    try:
+                        timestamp = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                    except:
+                        timestamp = datetime.utcnow()
+                elif isinstance(ts, datetime):
+                    timestamp = ts
+                else:
+                    timestamp = datetime.utcnow()
+                
                 trades.append(WhaleTransactionResponse(
-                    signature="demo_" + token_address[:16],
-                    wallet_address="whale_wallet",
-                    wallet_label=None,
-                    token_address=token_address,
-                    token_symbol=base.get('symbol', '???'),
-                    token_name=base.get('name', 'Unknown'),
-                    type="buy",
-                    amount_tokens=vol_1h / max(float(p.get('priceUsd', 1)), 0.0001),
-                    amount_usd=vol_1h,
-                    price_usd=float(p.get('priceUsd', 0)),
-                    timestamp=datetime.utcnow() - timedelta(minutes=10),
-                    dex_name=p.get('dexId', 'raydium').title()
+                    signature=tx.get('signature', ''),
+                    wallet_address=wallet_addr,
+                    wallet_label=wallet_label,
+                    token_address=tx.get('token_address', token_address),
+                    token_symbol=tx.get('token_symbol', symbol),
+                    token_name=tx.get('token_name', name),
+                    type=tx.get('type', 'buy'),
+                    amount_tokens=float(tx.get('amount_tokens', 0)),
+                    amount_usd=float(tx.get('amount_usd', 0)),
+                    price_usd=float(tx.get('price_usd', 0)),
+                    timestamp=timestamp,
+                    dex_name=tx.get('dex_name', 'Unknown')
                 ))
+            except Exception as e:
+                logger.debug(f"Error converting whale tx: {e}")
+                continue
+
+        # If no transactions from Helius, fallback to volume-based estimation is REMOVED
+        # We only want real data now.
 
         response = WhaleActivityResponse(
             transactions=trades,
@@ -230,7 +281,6 @@ async def get_whale_profile(request: web.Request) -> web.Response:
 
         # In production, would fetch from Helius/indexer
         # For now, return basic profile
-
         profile = WhaleProfileResponse(
             address=wallet_address,
             label=label,

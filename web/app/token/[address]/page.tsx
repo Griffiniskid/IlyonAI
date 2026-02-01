@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { ScoreCard } from "@/components/token/score-card";
 import { SecurityChecks } from "@/components/token/security-checks";
 import { MarketData } from "@/components/token/market-data";
+import { WebsiteAnalysis } from "@/components/token/website-analysis";
 import { AIAnalysis } from "@/components/token/ai-analysis";
 import {
   ArrowLeft,
@@ -159,7 +160,7 @@ export default function TokenAnalysisPage() {
 
   if (!analysis) return null;
 
-  const { token, scores, market, security, holders, ai, socials, deployer } = analysis;
+  const { token, scores, market, security, holders, ai, socials, deployer, website } = analysis;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -323,54 +324,47 @@ export default function TokenAnalysisPage() {
           </div>
         </GlassCard>
 
-        {/* Socials */}
-        <GlassCard>
-          <div className="flex items-center gap-2 mb-4">
-            <Globe className="h-5 w-5 text-emerald-500" />
-            <h3 className="font-semibold">Social Presence</h3>
-          </div>
-          <div className="space-y-3">
-            {socials.website_url && (
-              <a
-                href={socials.website_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 text-sm hover:text-emerald-400 transition"
-              >
-                <Globe className="h-4 w-4" />
-                Website
-                <ExternalLink className="h-3 w-3 ml-auto" />
-              </a>
-            )}
-            {socials.twitter_url && (
-              <a
-                href={socials.twitter_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 text-sm hover:text-emerald-400 transition"
-              >
-                <Twitter className="h-4 w-4" />
-                Twitter
-                <ExternalLink className="h-3 w-3 ml-auto" />
-              </a>
-            )}
-            {socials.telegram_url && (
-              <a
-                href={socials.telegram_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 text-sm hover:text-emerald-400 transition"
-              >
-                <MessageCircle className="h-4 w-4" />
-                Telegram
-                <ExternalLink className="h-3 w-3 ml-auto" />
-              </a>
-            )}
-            {!socials.has_twitter && !socials.has_website && !socials.has_telegram && (
-              <p className="text-muted-foreground text-sm">No socials found</p>
-            )}
-          </div>
-        </GlassCard>
+        {/* Website Analysis (New Feature) */}
+        {socials.has_website ? (
+          <WebsiteAnalysis website={website} url={socials.website_url} />
+        ) : (
+          /* Fallback for no website - show basic socials */
+          <GlassCard>
+            <div className="flex items-center gap-2 mb-4">
+              <Globe className="h-5 w-5 text-emerald-500" />
+              <h3 className="font-semibold">Social Presence</h3>
+            </div>
+            <div className="space-y-3">
+              {socials.twitter_url && (
+                <a
+                  href={socials.twitter_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm hover:text-emerald-400 transition"
+                >
+                  <Twitter className="h-4 w-4" />
+                  Twitter
+                  <ExternalLink className="h-3 w-3 ml-auto" />
+                </a>
+              )}
+              {socials.telegram_url && (
+                <a
+                  href={socials.telegram_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm hover:text-emerald-400 transition"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  Telegram
+                  <ExternalLink className="h-3 w-3 ml-auto" />
+                </a>
+              )}
+              {!socials.has_twitter && !socials.has_website && !socials.has_telegram && (
+                <p className="text-muted-foreground text-sm">No socials found</p>
+              )}
+            </div>
+          </GlassCard>
+        )}
 
         {/* Deployer */}
         {deployer.available && (

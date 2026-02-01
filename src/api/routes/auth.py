@@ -2,15 +2,21 @@
 Wallet authentication API routes.
 
 Implements Sign-In With Solana (SIWS) for wallet-based authentication.
+Uses proper Ed25519 signature verification with pynacl.
 """
 
 import logging
 from aiohttp import web
 from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing import Dict, Optional, Callable
 import secrets
-import hashlib
 import base64
+import functools
+
+# Cryptography for signature verification
+import base58
+from nacl.signing import VerifyKey
+from nacl.exceptions import BadSignatureError
 
 from src.api.schemas.responses import (
     AuthChallengeResponse, AuthVerifyResponse, UserProfileResponse, ErrorResponse
@@ -20,27 +26,19 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-# In-memory storage (use Redis/DB in production)
-_challenges: Dict[str, Dict] = {}  # challenge -> {wallet, expires, nonce}
-_sessions: Dict[str, Dict] = {}    # session_token -> {wallet, expires}
-_users: Dict[str, Dict] = {}       # wallet -> user data
+# In-memory challenge storage (challenges are short-lived, Redis not needed)
+_challenges: Dict[str, Dict] = {}
 
 CHALLENGE_TTL = 300  # 5 minutes
-SESSION_TTL = 86400  # 24 hours
 
 
 def generate_challenge() -> str:
-    """Generate a random challenge string"""
+    """Generate a random challenge string."""
     return secrets.token_hex(32)
 
 
-def generate_session_token() -> str:
-    """Generate a session token"""
-    return secrets.token_urlsafe(48)
-
-
 def create_sign_message(wallet: str, nonce: str) -> str:
-    """Create the message to be signed by the wallet"""
+    """Create the message to be signed by the wallet."""
     return f"""AI Sentinel Authentication
 
 Wallet: {wallet}
@@ -51,64 +49,120 @@ Sign this message to authenticate with AI Sentinel.
 This request will not trigger a blockchain transaction or cost any gas fees."""
 
 
-def verify_solana_signature(message: str, signature: str, wallet: str) -> bool:
+def verify_solana_signature(message: str, signature_base64: str, wallet_address: str) -> bool:
     """
-    Verify a Solana signature.
-
-    In production, use nacl or solana-py for proper Ed25519 verification.
-    For now, we'll accept the signature as valid (demo mode).
+    Verify a Solana wallet signature using Ed25519.
+    
+    Args:
+        message: The original message that was signed
+        signature_base64: Base64-encoded signature from wallet
+        wallet_address: Solana wallet public key (base58)
+        
+    Returns:
+        True if signature is valid, False otherwise
     """
-    # TODO: Implement proper Ed25519 signature verification
-    # from nacl.signing import VerifyKey
-    # from nacl.exceptions import BadSignatureError
-    #
-    # try:
-    #     verify_key = VerifyKey(base58.b58decode(wallet))
-    #     verify_key.verify(message.encode(), base58.b58decode(signature))
-    #     return True
-    # except BadSignatureError:
-    #     return False
+    try:
+        # Decode wallet public key from base58
+        public_key_bytes = base58.b58decode(wallet_address)
+        
+        # Validate public key length (32 bytes for Ed25519)
+        if len(public_key_bytes) != 32:
+            logger.warning(f"Invalid public key length: {len(public_key_bytes)}")
+            return False
+        
+        # Create verify key from public key bytes
+        verify_key = VerifyKey(public_key_bytes)
+        
+        # Decode signature from base64
+        signature_bytes = base64.b64decode(signature_base64)
+        
+        # Validate signature length (64 bytes for Ed25519)
+        if len(signature_bytes) != 64:
+            logger.warning(f"Invalid signature length: {len(signature_bytes)}")
+            return False
+        
+        # Encode message to bytes
+        message_bytes = message.encode('utf-8')
+        
+        # Verify signature (raises BadSignatureError if invalid)
+        verify_key.verify(message_bytes, signature_bytes)
+        
+        logger.info(f"Signature verified for wallet {wallet_address[:8]}...")
+        return True
+        
+    except BadSignatureError:
+        logger.warning(f"Invalid signature for wallet {wallet_address[:8]}...")
+        return False
+    except Exception as e:
+        logger.error(f"Signature verification error: {e}")
+        return False
 
-    # For demo: Accept if signature is at least 64 chars
-    return len(signature) >= 64
 
-
-def cleanup_expired():
-    """Clean up expired challenges and sessions"""
+def cleanup_expired_challenges():
+    """Clean up expired challenges."""
     now = datetime.utcnow()
-
-    # Clean challenges
-    expired_challenges = [
-        k for k, v in _challenges.items()
-        if v['expires'] < now
-    ]
-    for k in expired_challenges:
+    expired = [k for k, v in _challenges.items() if v['expires'] < now]
+    for k in expired:
         del _challenges[k]
 
-    # Clean sessions
-    expired_sessions = [
-        k for k, v in _sessions.items()
-        if v['expires'] < now
-    ]
-    for k in expired_sessions:
-        del _sessions[k]
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# PROTECTED ROUTE DECORATOR
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def require_auth(handler: Callable) -> Callable:
+    """
+    Decorator to require authentication for a route.
+    
+    Sets request['user_wallet'] to the authenticated wallet address.
+    Returns 401 if not authenticated.
+    """
+    @functools.wraps(handler)
+    async def wrapper(request: web.Request) -> web.Response:
+        # Check if user was authenticated by middleware
+        if 'user_wallet' not in request:
+            return web.json_response(
+                ErrorResponse(
+                    error="Authentication required",
+                    code="AUTH_REQUIRED"
+                ).model_dump(mode='json'),
+                status=401
+            )
+        return await handler(request)
+    return wrapper
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AUTH ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
 
 async def get_challenge(request: web.Request) -> web.Response:
     """
     POST /api/v1/auth/challenge
-
+    
     Get a challenge for wallet authentication.
     The wallet must sign this challenge to prove ownership.
     """
-    cleanup_expired()
+    cleanup_expired_challenges()
 
     try:
         data = await request.json()
         req = AuthChallengeRequest(**data)
     except Exception as e:
+        logger.warning(f"Invalid challenge request: {e}")
         return web.json_response(
             ErrorResponse(error="Invalid request", code="INVALID_REQUEST").model_dump(mode='json'),
+            status=400
+        )
+
+    # Validate wallet address format
+    try:
+        decoded = base58.b58decode(req.wallet_address)
+        if len(decoded) != 32:
+            raise ValueError("Invalid length")
+    except Exception:
+        return web.json_response(
+            ErrorResponse(error="Invalid wallet address", code="INVALID_WALLET").model_dump(mode='json'),
             status=400
         )
 
@@ -138,15 +192,16 @@ async def get_challenge(request: web.Request) -> web.Response:
 async def verify_challenge(request: web.Request) -> web.Response:
     """
     POST /api/v1/auth/verify
-
+    
     Verify a signed challenge and create a session.
     """
-    cleanup_expired()
+    cleanup_expired_challenges()
 
     try:
         data = await request.json()
         req = AuthVerifyRequest(**data)
     except Exception as e:
+        logger.warning(f"Invalid verify request: {e}")
         return web.json_response(
             ErrorResponse(error="Invalid request", code="INVALID_REQUEST").model_dump(mode='json'),
             status=400
@@ -176,7 +231,7 @@ async def verify_challenge(request: web.Request) -> web.Response:
             status=400
         )
 
-    # Verify signature
+    # Verify signature using Ed25519
     if not verify_solana_signature(
         challenge_data['message'],
         req.signature,
@@ -190,25 +245,25 @@ async def verify_challenge(request: web.Request) -> web.Response:
     # Delete used challenge
     del _challenges[req.challenge]
 
-    # Create session
-    session_token = generate_session_token()
-    expires = datetime.utcnow() + timedelta(seconds=SESSION_TTL)
+    # Create session using session store
+    try:
+        from src.storage.sessions import get_session_store
+        session_store = await get_session_store()
+        session_token = await session_store.create_session(req.wallet_address)
+        expires = datetime.utcnow() + timedelta(hours=settings.session_ttl_hours)
+    except Exception as e:
+        logger.error(f"Session creation failed: {e}")
+        # Fallback: generate token but it won't be persisted
+        session_token = secrets.token_urlsafe(48)
+        expires = datetime.utcnow() + timedelta(hours=24)
 
-    _sessions[session_token] = {
-        'wallet': req.wallet_address,
-        'expires': expires,
-        'created': datetime.utcnow()
-    }
-
-    # Create/update user
-    if req.wallet_address not in _users:
-        _users[req.wallet_address] = {
-            'wallet': req.wallet_address,
-            'created_at': datetime.utcnow(),
-            'analyses_count': 0,
-            'tracked_wallets': 0,
-            'alerts_count': 0
-        }
+    # Create/update user in database
+    try:
+        from src.storage.database import get_database
+        db = await get_database()
+        await db.get_or_create_web_user(req.wallet_address)
+    except Exception as e:
+        logger.warning(f"User creation failed (non-critical): {e}")
 
     response = AuthVerifyResponse(
         success=True,
@@ -225,16 +280,20 @@ async def verify_challenge(request: web.Request) -> web.Response:
 async def logout(request: web.Request) -> web.Response:
     """
     POST /api/v1/auth/logout
-
+    
     Invalidate the current session.
     """
     auth_header = request.headers.get('Authorization', '')
 
     if auth_header.startswith('Bearer '):
         token = auth_header[7:]
-        if token in _sessions:
-            del _sessions[token]
+        try:
+            from src.storage.sessions import get_session_store
+            session_store = await get_session_store()
+            await session_store.delete_session(token)
             logger.info("Session invalidated")
+        except Exception as e:
+            logger.warning(f"Session deletion failed: {e}")
 
     return web.Response(status=204)
 
@@ -242,7 +301,7 @@ async def logout(request: web.Request) -> web.Response:
 async def get_me(request: web.Request) -> web.Response:
     """
     GET /api/v1/auth/me
-
+    
     Get current user profile.
     """
     auth_header = request.headers.get('Authorization', '')
@@ -254,7 +313,15 @@ async def get_me(request: web.Request) -> web.Response:
         )
 
     token = auth_header[7:]
-    session = _sessions.get(token)
+    
+    # Get session
+    try:
+        from src.storage.sessions import get_session_store
+        session_store = await get_session_store()
+        session = await session_store.get_session(token)
+    except Exception as e:
+        logger.error(f"Session lookup failed: {e}")
+        session = None
 
     if not session:
         return web.json_response(
@@ -262,54 +329,123 @@ async def get_me(request: web.Request) -> web.Response:
             status=401
         )
 
-    if session['expires'] < datetime.utcnow():
-        del _sessions[token]
-        return web.json_response(
-            ErrorResponse(error="Session expired", code="SESSION_EXPIRED").model_dump(mode='json'),
-            status=401
-        )
-
     wallet = session['wallet']
-    user = _users.get(wallet, {})
+
+    # Get user data from database
+    user_data = {
+        'wallet_address': wallet,
+        'created_at': datetime.utcnow(),
+        'analyses_count': 0,
+        'tracked_wallets': 0,
+        'alerts_count': 0,
+        'premium_until': None
+    }
+
+    try:
+        from src.storage.database import get_database
+        db = await get_database()
+        user = await db.get_web_user(wallet)
+        if user:
+            user_data = {
+                'wallet_address': user.wallet_address,
+                'created_at': user.created_at,
+                'analyses_count': user.analyses_count or 0,
+                'tracked_wallets': user.tracked_wallets_count or 0,
+                'alerts_count': user.alerts_count or 0,
+                'premium_until': user.premium_until
+            }
+    except Exception as e:
+        logger.warning(f"User lookup failed (using defaults): {e}")
 
     response = UserProfileResponse(
-        wallet_address=wallet,
-        created_at=user.get('created_at', datetime.utcnow()),
-        analyses_count=user.get('analyses_count', 0),
-        tracked_wallets=user.get('tracked_wallets', 0),
-        alerts_count=user.get('alerts_count', 0),
-        premium_until=user.get('premium_until')
+        wallet_address=user_data['wallet_address'],
+        created_at=user_data['created_at'],
+        analyses_count=user_data['analyses_count'],
+        tracked_wallets=user_data['tracked_wallets'],
+        alerts_count=user_data['alerts_count'],
+        premium_until=user_data['premium_until']
     ).model_dump(mode='json')
 
     return web.json_response(response)
 
 
+async def refresh_session(request: web.Request) -> web.Response:
+    """
+    POST /api/v1/auth/refresh
+    
+    Refresh/extend the current session.
+    """
+    auth_header = request.headers.get('Authorization', '')
+
+    if not auth_header.startswith('Bearer '):
+        return web.json_response(
+            ErrorResponse(error="Authentication required", code="AUTH_REQUIRED").model_dump(mode='json'),
+            status=401
+        )
+
+    token = auth_header[7:]
+    
+    try:
+        from src.storage.sessions import get_session_store
+        session_store = await get_session_store()
+        success = await session_store.extend_session(token)
+        
+        if success:
+            session = await session_store.get_session(token)
+            if session:
+                return web.json_response({
+                    "success": True,
+                    "expires_at": session.get('expires_at')
+                })
+    except Exception as e:
+        logger.error(f"Session refresh failed: {e}")
+
+    return web.json_response(
+        ErrorResponse(error="Session refresh failed", code="REFRESH_FAILED").model_dump(mode='json'),
+        status=400
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AUTH MIDDLEWARE
+# ═══════════════════════════════════════════════════════════════════════════════
+
 @web.middleware
 async def auth_middleware(request: web.Request, handler):
     """
     Middleware to extract user from session token.
-    Sets request['user_id'] if authenticated.
+    Sets request['user_wallet'] if authenticated.
     """
     auth_header = request.headers.get('Authorization', '')
 
     if auth_header.startswith('Bearer '):
         token = auth_header[7:]
-        session = _sessions.get(token)
-
-        if session and session['expires'] >= datetime.utcnow():
-            request['user_id'] = session['wallet']
+        try:
+            from src.storage.sessions import get_session_store
+            session_store = await get_session_store()
+            session = await session_store.get_session(token)
+            
+            if session:
+                request['user_wallet'] = session['wallet']
+        except Exception as e:
+            logger.debug(f"Auth middleware error: {e}")
 
     return await handler(request)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# ROUTE SETUP
+# ═══════════════════════════════════════════════════════════════════════════════
+
 def setup_auth_routes(app: web.Application):
-    """Setup authentication API routes"""
+    """Setup authentication API routes."""
     app.router.add_post('/api/v1/auth/challenge', get_challenge)
     app.router.add_post('/api/v1/auth/verify', verify_challenge)
     app.router.add_post('/api/v1/auth/logout', logout)
+    app.router.add_post('/api/v1/auth/refresh', refresh_session)
     app.router.add_get('/api/v1/auth/me', get_me)
 
     # Add auth middleware
     app.middlewares.append(auth_middleware)
 
-    logger.info("Auth routes registered")
+    logger.info("Auth routes registered with Ed25519 signature verification")

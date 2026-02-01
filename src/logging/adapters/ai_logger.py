@@ -57,6 +57,7 @@ class AILogger:
         # xAI Grok
         "grok-2-latest": {"input": 2.00, "output": 10.00},
         "grok-beta": {"input": 5.00, "output": 15.00},
+        "grok-4.1-fast": {"input": 0.50, "output": 2.00},
     }
 
     def __init__(self, logger_name: str):

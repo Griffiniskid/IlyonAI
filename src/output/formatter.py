@@ -135,7 +135,10 @@ def format_analysis_message(result: AnalysisResult) -> str:
             msg += f"• {good_clean}\n"
 
     # AI analysis summary
-    if result.ai_analysis:
+    if result.token.ai_narrative:
+        # If we have a dedicated narrative block (from Grok), show it
+        msg += f"\n{result.token.ai_narrative}\n"
+    elif result.ai_analysis:
         ai_text = html.escape(result.ai_analysis[:500])
         msg += f"\n🤖 <b>AI Analysis:</b>\n{ai_text}\n"
 

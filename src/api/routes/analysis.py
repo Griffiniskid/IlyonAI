@@ -19,6 +19,7 @@ from src.api.schemas.responses import (
 )
 from src.api.schemas.requests import AnalyzeTokenRequest, AnalysisModeType
 from src.storage.cache import CacheLayer
+from src.storage.database import get_database
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +121,8 @@ def convert_result_to_response(result: AnalysisResult, mode: str, cached: bool =
             whale_risk=token.ai_whale_risk,
             sentiment=token.ai_sentiment,
             trading=token.ai_trading,
-            narrative=token.ai_narrative
+            narrative=token.ai_narrative,
+            grok=token.grok_analysis
         ),
         socials=SocialsResponse(
             has_twitter=token.has_twitter,
@@ -244,6 +246,21 @@ async def analyze_token(request: web.Request) -> web.Response:
 
         # Convert to response
         response = convert_result_to_response(result, mode)
+
+        # Track analysis in database for accurate stats
+        try:
+            db = await get_database()
+            if db._initialized:
+                await db.track_web_analysis(
+                    token_address=req.address,
+                    token_symbol=result.token.symbol,
+                    token_name=result.token.name,
+                    overall_score=result.overall_score,
+                    grade=result.grade,
+                    source="api"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to track analysis in DB: {e}")
 
         logger.info(f"Web API: Analysis complete for {result.token.symbol} - Score: {result.overall_score}")
 

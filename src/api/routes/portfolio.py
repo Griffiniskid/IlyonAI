@@ -2,48 +2,44 @@
 Portfolio tracking API routes.
 
 Provides endpoints for tracking wallet holdings and portfolio analytics.
+Uses proper authentication and database storage.
 """
 
 import logging
 from aiohttp import web
 from datetime import datetime
 from typing import Dict, List, Optional
-import uuid
 
 from src.data.solana import SolanaClient
-from src.data.dexscreener import DexScreenerClient
 from src.api.schemas.responses import (
     PortfolioResponse, PortfolioTokenResponse,
     TrackedWalletsResponse, TrackedWalletResponse,
     ErrorResponse
 )
 from src.api.schemas.requests import TrackWalletRequest
+from src.api.routes.auth import require_auth
 from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-# In-memory storage for demo (replace with database in production)
-_tracked_wallets: Dict[str, Dict[str, any]] = {}  # user_id -> {wallets: [...]}
 
-
-def get_user_id(request: web.Request) -> Optional[str]:
-    """Extract user ID from session/auth"""
-    # Get from auth middleware
-    return request.get('user_id') or request.headers.get('X-User-Id')
+def get_user_wallet(request: web.Request) -> Optional[str]:
+    """Extract authenticated user wallet from request."""
+    return request.get('user_wallet')
 
 
 async def get_wallet_tokens(wallet_address: str) -> List[Dict]:
-    """Fetch token holdings for a wallet"""
+    """Fetch token holdings for a wallet using Helius."""
     try:
         solana = SolanaClient(
             settings.solana_rpc_url,
             helius_api_key=settings.helius_api_key
         )
-
-        # Get token accounts
-        tokens = await solana.get_wallet_tokens(wallet_address)
+        
+        # Use Helius DAS API for comprehensive token data
+        tokens = await solana.get_wallet_assets(wallet_address)
         await solana.close()
-
+        
         return tokens
     except Exception as e:
         logger.error(f"Error fetching wallet tokens: {e}")
@@ -53,21 +49,27 @@ async def get_wallet_tokens(wallet_address: str) -> List[Dict]:
 async def get_portfolio(request: web.Request) -> web.Response:
     """
     GET /api/v1/portfolio
-
+    
     Get aggregated portfolio for all tracked wallets.
     Requires authentication.
     """
-    user_id = get_user_id(request)
+    user_wallet = get_user_wallet(request)
 
-    if not user_id:
+    if not user_wallet:
         return web.json_response(
             ErrorResponse(error="Authentication required", code="AUTH_REQUIRED").model_dump(mode='json'),
             status=401
         )
 
-    # Get tracked wallets for user
-    user_data = _tracked_wallets.get(user_id, {'wallets': []})
-    wallets = user_data.get('wallets', [])
+    # Get tracked wallets from database
+    wallets = []
+    try:
+        from src.storage.database import get_database
+        db = await get_database()
+        tracked = await db.get_tracked_wallets(user_wallet)
+        wallets = [{'address': t.tracked_address, 'label': t.label} for t in tracked]
+    except Exception as e:
+        logger.warning(f"Failed to get tracked wallets: {e}")
 
     if not wallets:
         return web.json_response(
@@ -90,28 +92,32 @@ async def get_portfolio(request: web.Request) -> web.Response:
         tokens = await get_wallet_tokens(wallet['address'])
 
         for token in tokens:
-            # Add to aggregated list
+            value_usd = token.get('value_usd', 0)
             all_tokens.append(PortfolioTokenResponse(
                 address=token.get('mint', ''),
                 name=token.get('name', 'Unknown'),
                 symbol=token.get('symbol', '???'),
                 logo_url=token.get('logo'),
                 balance=token.get('amount', 0),
-                balance_usd=token.get('value_usd', 0),
+                balance_usd=value_usd,
                 price_usd=token.get('price_usd', 0),
                 price_change_24h=token.get('price_change_24h', 0),
-                safety_score=None,  # Would need to run analysis
+                safety_score=None,
                 risk_level="UNKNOWN"
             ))
-            total_value += token.get('value_usd', 0)
+            total_value += value_usd
 
-    # Calculate health score based on token risk (placeholder)
-    health_score = 70  # Default moderate score
+    # Calculate health score based on portfolio diversity
+    health_score = 70  # Default score
+    if len(all_tokens) > 5:
+        health_score = 75
+    if len(all_tokens) > 10:
+        health_score = 80
 
     response = PortfolioResponse(
         wallet_address="aggregate",
         total_value_usd=total_value,
-        total_pnl_usd=0,  # Would need historical data
+        total_pnl_usd=0,
         total_pnl_percent=0,
         tokens=all_tokens,
         health_score=health_score,
@@ -124,8 +130,9 @@ async def get_portfolio(request: web.Request) -> web.Response:
 async def get_wallet_portfolio(request: web.Request) -> web.Response:
     """
     GET /api/v1/portfolio/{wallet}
-
+    
     Get portfolio for a specific wallet.
+    Does not require authentication (public wallet data).
     """
     wallet_address = request.match_info.get('wallet')
 
@@ -148,7 +155,7 @@ async def get_wallet_portfolio(request: web.Request) -> web.Response:
     except Exception:
         pass
 
-    # Fetch tokens
+    # Fetch tokens using Helius
     tokens_raw = await get_wallet_tokens(wallet_address)
 
     tokens = []
@@ -170,13 +177,20 @@ async def get_wallet_portfolio(request: web.Request) -> web.Response:
         ))
         total_value += value
 
+    # Calculate health score
+    health_score = 70
+    if len(tokens) > 5:
+        health_score = 75
+    if len(tokens) > 10:
+        health_score = 80
+
     response = PortfolioResponse(
         wallet_address=wallet_address,
         total_value_usd=total_value,
         total_pnl_usd=0,
         total_pnl_percent=0,
         tokens=tokens,
-        health_score=70,
+        health_score=health_score,
         last_updated=datetime.utcnow()
     ).model_dump(mode='json')
 
@@ -186,48 +200,54 @@ async def get_wallet_portfolio(request: web.Request) -> web.Response:
 async def get_tracked_wallets(request: web.Request) -> web.Response:
     """
     GET /api/v1/portfolio/wallets
-
+    
     Get list of tracked wallets for the user.
     Requires authentication.
     """
-    user_id = get_user_id(request)
+    user_wallet = get_user_wallet(request)
 
-    if not user_id:
+    if not user_wallet:
         return web.json_response(
             ErrorResponse(error="Authentication required", code="AUTH_REQUIRED").model_dump(mode='json'),
             status=401
         )
 
-    user_data = _tracked_wallets.get(user_id, {'wallets': []})
-    wallets = user_data.get('wallets', [])
-
-    tracked = [
-        TrackedWalletResponse(
-            address=w['address'],
-            label=w.get('label'),
-            added_at=w['added_at'],
-            last_synced=w.get('last_synced'),
-            token_count=w.get('token_count', 0),
-            total_value_usd=w.get('total_value_usd', 0)
-        )
-        for w in wallets
-    ]
+    # Get tracked wallets from database
+    tracked_list = []
+    try:
+        from src.storage.database import get_database
+        db = await get_database()
+        tracked = await db.get_tracked_wallets(user_wallet)
+        
+        tracked_list = [
+            TrackedWalletResponse(
+                address=w.tracked_address,
+                label=w.label,
+                added_at=w.added_at,
+                last_synced=w.last_synced,
+                token_count=w.token_count or 0,
+                total_value_usd=w.total_value_usd or 0
+            )
+            for w in tracked
+        ]
+    except Exception as e:
+        logger.warning(f"Failed to get tracked wallets: {e}")
 
     return web.json_response(
-        TrackedWalletsResponse(wallets=tracked).model_dump(mode='json')
+        TrackedWalletsResponse(wallets=tracked_list).model_dump(mode='json')
     )
 
 
 async def track_wallet(request: web.Request) -> web.Response:
     """
     POST /api/v1/portfolio/wallets
-
+    
     Add a wallet to tracking.
     Requires authentication.
     """
-    user_id = get_user_id(request)
+    user_wallet = get_user_wallet(request)
 
-    if not user_id:
+    if not user_wallet:
         return web.json_response(
             ErrorResponse(error="Authentication required", code="AUTH_REQUIRED").model_dump(mode='json'),
             status=401
@@ -242,86 +262,162 @@ async def track_wallet(request: web.Request) -> web.Response:
             status=400
         )
 
-    # Initialize user data if needed
-    if user_id not in _tracked_wallets:
-        _tracked_wallets[user_id] = {'wallets': []}
+    # Validate wallet address
+    try:
+        solana = SolanaClient(settings.solana_rpc_url)
+        if not solana.is_valid_address(req.address):
+            await solana.close()
+            return web.json_response(
+                ErrorResponse(error="Invalid wallet address", code="INVALID_ADDRESS").model_dump(mode='json'),
+                status=400
+            )
+        await solana.close()
+    except Exception:
+        pass
 
-    # Check if already tracking
-    existing = [w for w in _tracked_wallets[user_id]['wallets'] if w['address'] == req.address]
-    if existing:
-        return web.json_response(
-            ErrorResponse(error="Wallet already tracked", code="ALREADY_TRACKED").model_dump(mode='json'),
-            status=409
+    # Add to database
+    try:
+        from src.storage.database import get_database
+        db = await get_database()
+        
+        # Check limit
+        existing = await db.get_tracked_wallets(user_wallet)
+        if len(existing) >= 10:
+            return web.json_response(
+                ErrorResponse(error="Maximum 10 wallets allowed", code="LIMIT_REACHED").model_dump(mode='json'),
+                status=400
+            )
+        
+        tracked = await db.add_tracked_wallet(
+            owner_wallet=user_wallet,
+            tracked_address=req.address,
+            label=req.label
         )
-
-    # Check limit
-    if len(_tracked_wallets[user_id]['wallets']) >= 10:
+        
+        if tracked:
+            return web.json_response(
+                TrackedWalletResponse(
+                    address=tracked.tracked_address,
+                    label=tracked.label,
+                    added_at=tracked.added_at,
+                    last_synced=tracked.last_synced,
+                    token_count=tracked.token_count or 0,
+                    total_value_usd=tracked.total_value_usd or 0
+                ).model_dump(mode='json'),
+                status=201
+            )
+    except Exception as e:
+        logger.error(f"Failed to track wallet: {e}")
         return web.json_response(
-            ErrorResponse(error="Maximum 10 wallets allowed", code="LIMIT_REACHED").model_dump(mode='json'),
-            status=400
+            ErrorResponse(error="Failed to track wallet", code="DATABASE_ERROR").model_dump(mode='json'),
+            status=500
         )
-
-    # Add wallet
-    wallet_data = {
-        'address': req.address,
-        'label': req.label,
-        'added_at': datetime.utcnow(),
-        'last_synced': None,
-        'token_count': 0,
-        'total_value_usd': 0
-    }
-
-    _tracked_wallets[user_id]['wallets'].append(wallet_data)
 
     return web.json_response(
-        TrackedWalletResponse(**wallet_data).model_dump(mode='json'),
-        status=201
+        ErrorResponse(error="Failed to track wallet", code="UNKNOWN_ERROR").model_dump(mode='json'),
+        status=500
     )
 
 
 async def untrack_wallet(request: web.Request) -> web.Response:
     """
     DELETE /api/v1/portfolio/wallets/{address}
-
+    
     Remove a wallet from tracking.
     Requires authentication.
     """
-    user_id = get_user_id(request)
+    user_wallet = get_user_wallet(request)
     wallet_address = request.match_info.get('address')
 
-    if not user_id:
+    if not user_wallet:
         return web.json_response(
             ErrorResponse(error="Authentication required", code="AUTH_REQUIRED").model_dump(mode='json'),
             status=401
         )
 
-    if user_id not in _tracked_wallets:
+    if not wallet_address:
         return web.json_response(
-            ErrorResponse(error="Wallet not found", code="NOT_FOUND").model_dump(mode='json'),
-            status=404
+            ErrorResponse(error="Wallet address required", code="MISSING_WALLET").model_dump(mode='json'),
+            status=400
         )
 
-    # Remove wallet
-    wallets = _tracked_wallets[user_id]['wallets']
-    _tracked_wallets[user_id]['wallets'] = [
-        w for w in wallets if w['address'] != wallet_address
-    ]
-
-    if len(_tracked_wallets[user_id]['wallets']) == len(wallets):
+    # Remove from database
+    try:
+        from src.storage.database import get_database
+        db = await get_database()
+        success = await db.remove_tracked_wallet(user_wallet, wallet_address)
+        
+        if not success:
+            return web.json_response(
+                ErrorResponse(error="Wallet not found", code="NOT_FOUND").model_dump(mode='json'),
+                status=404
+            )
+    except Exception as e:
+        logger.error(f"Failed to untrack wallet: {e}")
         return web.json_response(
-            ErrorResponse(error="Wallet not found", code="NOT_FOUND").model_dump(mode='json'),
-            status=404
+            ErrorResponse(error="Failed to untrack wallet", code="DATABASE_ERROR").model_dump(mode='json'),
+            status=500
         )
 
     return web.Response(status=204)
 
 
+async def sync_wallet(request: web.Request) -> web.Response:
+    """
+    POST /api/v1/portfolio/wallets/{address}/sync
+    
+    Manually sync/refresh a tracked wallet's data.
+    Requires authentication.
+    """
+    user_wallet = get_user_wallet(request)
+    wallet_address = request.match_info.get('address')
+
+    if not user_wallet:
+        return web.json_response(
+            ErrorResponse(error="Authentication required", code="AUTH_REQUIRED").model_dump(mode='json'),
+            status=401
+        )
+
+    if not wallet_address:
+        return web.json_response(
+            ErrorResponse(error="Wallet address required", code="MISSING_WALLET").model_dump(mode='json'),
+            status=400
+        )
+
+    # Fetch current tokens
+    tokens = await get_wallet_tokens(wallet_address)
+    total_value = sum(t.get('value_usd', 0) for t in tokens)
+    token_count = len(tokens)
+
+    # Update database
+    try:
+        from src.storage.database import get_database
+        db = await get_database()
+        await db.update_tracked_wallet_stats(
+            owner_wallet=user_wallet,
+            tracked_address=wallet_address,
+            token_count=token_count,
+            total_value_usd=total_value
+        )
+    except Exception as e:
+        logger.warning(f"Failed to update wallet stats: {e}")
+
+    return web.json_response({
+        "success": True,
+        "wallet": wallet_address,
+        "token_count": token_count,
+        "total_value_usd": total_value,
+        "synced_at": datetime.utcnow().isoformat()
+    })
+
+
 def setup_portfolio_routes(app: web.Application):
-    """Setup portfolio API routes"""
+    """Setup portfolio API routes."""
     app.router.add_get('/api/v1/portfolio', get_portfolio)
     app.router.add_get('/api/v1/portfolio/wallets', get_tracked_wallets)
     app.router.add_post('/api/v1/portfolio/wallets', track_wallet)
     app.router.add_delete('/api/v1/portfolio/wallets/{address}', untrack_wallet)
+    app.router.add_post('/api/v1/portfolio/wallets/{address}/sync', sync_wallet)
     app.router.add_get('/api/v1/portfolio/{wallet}', get_wallet_portfolio)
 
-    logger.info("Portfolio routes registered")
+    logger.info("Portfolio routes registered with Helius integration")

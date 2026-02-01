@@ -87,6 +87,19 @@ export interface AIAnalysisResponse {
   sentiment: string;
   trading: string;
   narrative: string;
+  grok?: {
+    narrative_score: number;
+    sentiment: string;
+    narrative_category: string;
+    trending_status: string;
+    narrative_summary: string;
+    influencer_activity: string;
+    influencer_tier?: string;
+    community_vibe?: string;
+    organic_score: number;
+    key_themes?: string[];
+    fud_warnings?: string[];
+  };
 }
 
 export interface SocialsResponse {
@@ -295,4 +308,51 @@ export type AnalysisMode = "quick" | "standard" | "deep";
 export interface AnalyzeRequest {
   address: string;
   mode: AnalysisMode;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DASHBOARD STATS TYPES
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface VolumeDataPoint {
+  time: string;
+  volume: number;
+}
+
+export interface RiskDistributionItem {
+  name: string;
+  count: number;
+  color: string;
+}
+
+export interface MarketDistributionItem {
+  name: string;
+  value: number;
+  color: string;
+}
+
+export interface TopTokenVolume {
+  symbol: string;
+  volume: number;
+  address: string;
+}
+
+export interface DashboardStatsResponse {
+  total_volume_24h: number;
+  volume_change_24h: number;
+  active_tokens: number;
+  active_tokens_change: number;
+  safe_tokens_percent: number;
+  safe_tokens_change: number;
+  scams_detected: number;
+  scams_change: number;
+  volume_chart: VolumeDataPoint[];
+  risk_distribution: RiskDistributionItem[];
+  market_distribution: MarketDistributionItem[];
+  top_tokens_by_volume: TopTokenVolume[];
+  tokens_analyzed_today: number;
+  total_tokens_analyzed: number;
+  avg_liquidity: number;
+  total_liquidity: number;
+  updated_at: string;
 }

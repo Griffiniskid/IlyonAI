@@ -17,6 +17,7 @@ from src.api.routes.trending import setup_trending_routes
 from src.api.routes.portfolio import setup_portfolio_routes
 from src.api.routes.whale import setup_whale_routes
 from src.api.routes.auth import setup_auth_routes
+from src.api.routes.stats import setup_stats_routes
 from src.config import settings
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,7 @@ def create_api_app() -> web.Application:
     setup_portfolio_routes(app)
     setup_whale_routes(app)
     setup_auth_routes(app)
+    setup_stats_routes(app)
 
     logger.info("AI Sentinel Web API application created with all routes")
     return app
@@ -132,5 +134,6 @@ def setup_api_routes(app: web.Application):
     setup_portfolio_routes(app)
     setup_whale_routes(app)
     setup_auth_routes(app)
+    setup_stats_routes(app)
 
     logger.info("All API routes added to existing application")

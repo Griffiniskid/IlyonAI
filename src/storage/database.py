@@ -12,7 +12,7 @@ Uses asyncpg for async operations with SQLAlchemy for ORM.
 
 import logging
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -137,6 +137,46 @@ class BotStats(Base):
     quick_buys = Column(Integer, default=0)
     referrals = Column(Integer, default=0)
     shares = Column(Integer, default=0)
+
+
+class StatsSnapshot(Base):
+    """
+    Periodic stats snapshots for calculating change metrics.
+
+    Stores dashboard statistics at regular intervals to enable
+    calculation of daily changes (e.g., +10% volume change).
+    """
+    __tablename__ = "stats_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime, index=True, default=datetime.utcnow)
+
+    # Dashboard metrics at snapshot time
+    total_volume_24h = Column(Float, default=0.0)
+    active_tokens = Column(Integer, default=0)
+    safe_tokens = Column(Integer, default=0)
+    scams_detected = Column(Integer, default=0)
+    tokens_analyzed = Column(Integer, default=0)
+    total_liquidity = Column(Float, default=0.0)
+
+
+class WebAnalysis(Base):
+    """
+    Web-based token analysis tracking.
+
+    Tracks analyses performed via the web dashboard (not just Telegram).
+    Used for accurate tokens_analyzed_today counts.
+    """
+    __tablename__ = "web_analyses"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token_address = Column(String(64), index=True, nullable=False)
+    token_symbol = Column(String(32), nullable=True)
+    token_name = Column(String(128), nullable=True)
+    overall_score = Column(Integer, nullable=True)
+    grade = Column(String(2), nullable=True)
+    source = Column(String(32), default="web")  # web, api, telegram
+    analyzed_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -279,6 +319,72 @@ class BlinkAnalytics(Base):
     referrer = Column(Text)
 
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WEB AUTHENTICATION MODELS (Wallet-based auth for web frontend)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class WebUser(Base):
+    """
+    Web user authenticated via wallet signature.
+    
+    Separate from Telegram users - these are wallet-based web dashboard users.
+    """
+    __tablename__ = "web_users"
+
+    wallet_address = Column(String(44), primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login = Column(DateTime, default=datetime.utcnow)
+    
+    # Activity metrics
+    analyses_count = Column(Integer, default=0)
+    tracked_wallets_count = Column(Integer, default=0)
+    alerts_count = Column(Integer, default=0)
+    
+    # Premium (future feature)
+    premium_until = Column(DateTime, nullable=True)
+
+
+class UserSession(Base):
+    """
+    Session storage for web authentication.
+    
+    Used as fallback when Redis is unavailable.
+    """
+    __tablename__ = "user_sessions"
+
+    token = Column(String(64), primary_key=True)
+    wallet_address = Column(String(44), ForeignKey("web_users.wallet_address"), nullable=False, index=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    last_used = Column(DateTime, default=datetime.utcnow)
+
+
+class TrackedWallet(Base):
+    """
+    Wallets tracked by authenticated users.
+    
+    Allows users to save and monitor multiple wallet addresses.
+    """
+    __tablename__ = "tracked_wallets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_wallet = Column(String(44), ForeignKey("web_users.wallet_address"), nullable=False, index=True)
+    tracked_address = Column(String(44), nullable=False)
+    label = Column(String(100), nullable=True)
+    
+    added_at = Column(DateTime, default=datetime.utcnow)
+    last_synced = Column(DateTime, nullable=True)
+    token_count = Column(Integer, default=0)
+    total_value_usd = Column(Float, default=0.0)
+
+    # Unique constraint: one user can't track the same wallet twice
+    __table_args__ = (
+        # Using a unique constraint instead of Index for composite uniqueness
+        {'sqlite_autoincrement': True},
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -653,6 +759,174 @@ class Database:
                 "referrals_total": total_referrals,
                 "database": "connected"
             }
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # WEB ANALYSIS TRACKING (for dashboard stats)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def track_web_analysis(
+        self,
+        token_address: str,
+        token_symbol: Optional[str] = None,
+        token_name: Optional[str] = None,
+        overall_score: Optional[int] = None,
+        grade: Optional[str] = None,
+        source: str = "web"
+    ) -> bool:
+        """
+        Record a web-based token analysis.
+
+        Args:
+            token_address: Token address analyzed
+            token_symbol: Token symbol
+            token_name: Token name
+            overall_score: Analysis score
+            grade: Letter grade
+            source: Source of analysis (web, api, telegram)
+
+        Returns:
+            True if successful
+        """
+        if not self._initialized:
+            return False
+
+        try:
+            async with self.async_session() as session:
+                analysis = WebAnalysis(
+                    token_address=token_address,
+                    token_symbol=token_symbol,
+                    token_name=token_name,
+                    overall_score=overall_score,
+                    grade=grade,
+                    source=source
+                )
+                session.add(analysis)
+                await session.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to track web analysis: {e}")
+            return False
+
+    async def count_analyses_today(self) -> int:
+        """Count total analyses performed today (all sources)."""
+        if not self._initialized:
+            return 0
+
+        try:
+            async with self.async_session() as session:
+                today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+                
+                # Count from both Analysis (Telegram) and WebAnalysis tables
+                telegram_result = await session.execute(
+                    select(func.count(Analysis.id))
+                    .where(Analysis.created_at >= today_start)
+                )
+                telegram_count = telegram_result.scalar() or 0
+
+                web_result = await session.execute(
+                    select(func.count(WebAnalysis.id))
+                    .where(WebAnalysis.analyzed_at >= today_start)
+                )
+                web_count = web_result.scalar() or 0
+
+                return telegram_count + web_count
+        except Exception as e:
+            logger.error(f"Failed to count analyses: {e}")
+            return 0
+
+    async def count_total_analyses(self) -> int:
+        """Count total analyses performed all time."""
+        if not self._initialized:
+            return 0
+
+        try:
+            async with self.async_session() as session:
+                telegram_result = await session.execute(select(func.count(Analysis.id)))
+                telegram_count = telegram_result.scalar() or 0
+
+                web_result = await session.execute(select(func.count(WebAnalysis.id)))
+                web_count = web_result.scalar() or 0
+
+                return telegram_count + web_count
+        except Exception as e:
+            logger.error(f"Failed to count total analyses: {e}")
+            return 0
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # STATS SNAPSHOTS (for change metrics)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def save_stats_snapshot(
+        self,
+        total_volume_24h: float = 0.0,
+        active_tokens: int = 0,
+        safe_tokens: int = 0,
+        scams_detected: int = 0,
+        tokens_analyzed: int = 0,
+        total_liquidity: float = 0.0
+    ) -> bool:
+        """
+        Save a stats snapshot for historical tracking.
+
+        Should be called periodically (e.g., hourly) to enable
+        calculation of change metrics.
+        """
+        if not self._initialized:
+            return False
+
+        try:
+            async with self.async_session() as session:
+                snapshot = StatsSnapshot(
+                    total_volume_24h=total_volume_24h,
+                    active_tokens=active_tokens,
+                    safe_tokens=safe_tokens,
+                    scams_detected=scams_detected,
+                    tokens_analyzed=tokens_analyzed,
+                    total_liquidity=total_liquidity
+                )
+                session.add(snapshot)
+                await session.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to save stats snapshot: {e}")
+            return False
+
+    async def get_stats_snapshot_24h_ago(self) -> Optional[Dict[str, Any]]:
+        """
+        Get stats snapshot from approximately 24 hours ago.
+
+        Returns the closest snapshot to 24h ago for calculating changes.
+        """
+        if not self._initialized:
+            return None
+
+        try:
+            async with self.async_session() as session:
+                target_time = datetime.utcnow() - timedelta(hours=24)
+                
+                # Get the snapshot closest to 24h ago
+                result = await session.execute(
+                    select(StatsSnapshot)
+                    .where(StatsSnapshot.timestamp <= target_time)
+                    .order_by(StatsSnapshot.timestamp.desc())
+                    .limit(1)
+                )
+                snapshot = result.scalar_one_or_none()
+                
+                if snapshot:
+                    return {
+                        "total_volume_24h": snapshot.total_volume_24h,
+                        "active_tokens": snapshot.active_tokens,
+                        "safe_tokens": snapshot.safe_tokens,
+                        "scams_detected": snapshot.scams_detected,
+                        "tokens_analyzed": snapshot.tokens_analyzed,
+                        "total_liquidity": snapshot.total_liquidity,
+                        "timestamp": snapshot.timestamp
+                    }
+                return None
+        except Exception as e:
+            logger.error(f"Failed to get stats snapshot: {e}")
+            return None
 
     # ═══════════════════════════════════════════════════════════════════════════
     # WALLET FORENSICS
@@ -1121,6 +1395,308 @@ class Database:
                 "created_at": blink.created_at.isoformat() if blink.created_at else None,
                 "last_verified_at": blink.last_verified_at.isoformat() if blink.last_verified_at else None,
             }
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # WEB USER MANAGEMENT
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def get_or_create_web_user(self, wallet_address: str) -> Optional[WebUser]:
+        """
+        Get or create a web user by wallet address.
+        
+        Args:
+            wallet_address: Solana wallet address
+            
+        Returns:
+            WebUser object or None if database not available
+        """
+        if not self._initialized:
+            return None
+
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(WebUser).where(WebUser.wallet_address == wallet_address)
+            )
+            user = result.scalar_one_or_none()
+
+            if user:
+                user.last_login = datetime.utcnow()
+                await session.commit()
+                return user
+
+            # Create new user
+            user = WebUser(
+                wallet_address=wallet_address,
+                last_login=datetime.utcnow()
+            )
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+
+            logger.info(f"New web user created: {wallet_address[:8]}...")
+            return user
+
+    async def get_web_user(self, wallet_address: str) -> Optional[WebUser]:
+        """Get web user by wallet address."""
+        if not self._initialized:
+            return None
+
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(WebUser).where(WebUser.wallet_address == wallet_address)
+            )
+            return result.scalar_one_or_none()
+
+    async def increment_web_user_analyses(self, wallet_address: str) -> bool:
+        """Increment analyses count for web user."""
+        if not self._initialized:
+            return False
+
+        async with self.async_session() as session:
+            await session.execute(
+                update(WebUser)
+                .where(WebUser.wallet_address == wallet_address)
+                .values(analyses_count=WebUser.analyses_count + 1)
+            )
+            await session.commit()
+            return True
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SESSION MANAGEMENT
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def create_user_session(
+        self,
+        token: str,
+        wallet_address: str,
+        expires_at: datetime
+    ) -> Optional[UserSession]:
+        """
+        Create a new user session.
+        
+        Args:
+            token: Session token
+            wallet_address: User's wallet address
+            expires_at: Session expiration datetime
+            
+        Returns:
+            Created UserSession or None
+        """
+        if not self._initialized:
+            return None
+
+        # Ensure user exists
+        await self.get_or_create_web_user(wallet_address)
+
+        async with self.async_session() as session:
+            user_session = UserSession(
+                token=token,
+                wallet_address=wallet_address,
+                expires_at=expires_at
+            )
+            session.add(user_session)
+            await session.commit()
+            await session.refresh(user_session)
+            return user_session
+
+    async def get_user_session(self, token: str) -> Optional[UserSession]:
+        """Get session by token."""
+        if not self._initialized:
+            return None
+
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(UserSession).where(UserSession.token == token)
+            )
+            return result.scalar_one_or_none()
+
+    async def update_session_last_used(self, token: str) -> bool:
+        """Update session last_used timestamp."""
+        if not self._initialized:
+            return False
+
+        async with self.async_session() as session:
+            await session.execute(
+                update(UserSession)
+                .where(UserSession.token == token)
+                .values(last_used=datetime.utcnow())
+            )
+            await session.commit()
+            return True
+
+    async def extend_user_session(self, token: str, new_expires_at: datetime) -> bool:
+        """Extend session expiration."""
+        if not self._initialized:
+            return False
+
+        async with self.async_session() as session:
+            await session.execute(
+                update(UserSession)
+                .where(UserSession.token == token)
+                .values(
+                    expires_at=new_expires_at,
+                    last_used=datetime.utcnow()
+                )
+            )
+            await session.commit()
+            return True
+
+    async def delete_user_session(self, token: str) -> bool:
+        """Delete a session."""
+        if not self._initialized:
+            return False
+
+        async with self.async_session() as session:
+            await session.execute(
+                select(UserSession).where(UserSession.token == token)
+            )
+            # Delete using raw SQL since we need to delete by token
+            from sqlalchemy import delete
+            await session.execute(
+                delete(UserSession).where(UserSession.token == token)
+            )
+            await session.commit()
+            return True
+
+    async def cleanup_expired_sessions(self) -> int:
+        """Clean up expired sessions."""
+        if not self._initialized:
+            return 0
+
+        async with self.async_session() as session:
+            from sqlalchemy import delete
+            result = await session.execute(
+                delete(UserSession).where(UserSession.expires_at < datetime.utcnow())
+            )
+            await session.commit()
+            return result.rowcount or 0
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # TRACKED WALLETS
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def add_tracked_wallet(
+        self,
+        owner_wallet: str,
+        tracked_address: str,
+        label: Optional[str] = None
+    ) -> Optional[TrackedWallet]:
+        """
+        Add a wallet to track for a user.
+        
+        Args:
+            owner_wallet: User's wallet address
+            tracked_address: Wallet address to track
+            label: Optional label for the wallet
+            
+        Returns:
+            Created TrackedWallet or None
+        """
+        if not self._initialized:
+            return None
+
+        # Ensure user exists
+        await self.get_or_create_web_user(owner_wallet)
+
+        async with self.async_session() as session:
+            # Check if already tracking
+            result = await session.execute(
+                select(TrackedWallet).where(
+                    TrackedWallet.owner_wallet == owner_wallet,
+                    TrackedWallet.tracked_address == tracked_address
+                )
+            )
+            existing = result.scalar_one_or_none()
+            if existing:
+                # Update label if provided
+                if label:
+                    existing.label = label
+                    await session.commit()
+                return existing
+
+            # Create new tracked wallet
+            tracked = TrackedWallet(
+                owner_wallet=owner_wallet,
+                tracked_address=tracked_address,
+                label=label
+            )
+            session.add(tracked)
+
+            # Update user's tracked wallet count
+            await session.execute(
+                update(WebUser)
+                .where(WebUser.wallet_address == owner_wallet)
+                .values(tracked_wallets_count=WebUser.tracked_wallets_count + 1)
+            )
+
+            await session.commit()
+            await session.refresh(tracked)
+            return tracked
+
+    async def get_tracked_wallets(self, owner_wallet: str) -> List[TrackedWallet]:
+        """Get all wallets tracked by a user."""
+        if not self._initialized:
+            return []
+
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(TrackedWallet)
+                .where(TrackedWallet.owner_wallet == owner_wallet)
+                .order_by(TrackedWallet.added_at.desc())
+            )
+            return list(result.scalars().all())
+
+    async def remove_tracked_wallet(self, owner_wallet: str, tracked_address: str) -> bool:
+        """Remove a tracked wallet."""
+        if not self._initialized:
+            return False
+
+        async with self.async_session() as session:
+            from sqlalchemy import delete
+            result = await session.execute(
+                delete(TrackedWallet).where(
+                    TrackedWallet.owner_wallet == owner_wallet,
+                    TrackedWallet.tracked_address == tracked_address
+                )
+            )
+            
+            if result.rowcount and result.rowcount > 0:
+                # Update user's tracked wallet count
+                await session.execute(
+                    update(WebUser)
+                    .where(WebUser.wallet_address == owner_wallet)
+                    .values(tracked_wallets_count=WebUser.tracked_wallets_count - 1)
+                )
+            
+            await session.commit()
+            return (result.rowcount or 0) > 0
+
+    async def update_tracked_wallet_stats(
+        self,
+        owner_wallet: str,
+        tracked_address: str,
+        token_count: int,
+        total_value_usd: float
+    ) -> bool:
+        """Update tracked wallet statistics."""
+        if not self._initialized:
+            return False
+
+        async with self.async_session() as session:
+            await session.execute(
+                update(TrackedWallet)
+                .where(
+                    TrackedWallet.owner_wallet == owner_wallet,
+                    TrackedWallet.tracked_address == tracked_address
+                )
+                .values(
+                    token_count=token_count,
+                    total_value_usd=total_value_usd,
+                    last_synced=datetime.utcnow()
+                )
+            )
+            await session.commit()
+            return True
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

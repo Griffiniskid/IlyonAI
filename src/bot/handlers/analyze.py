@@ -373,8 +373,11 @@ async def do_analyze(msg: Message, addr: str, mode: str = "standard"):
 🎯 <b>Rug Probability:</b> <b>{rug_prob}%</b> {"🚨" if rug_prob > 60 else "⚠️" if rug_prob > 30 else "✅"}
 """
 
-        # AI Summary
-        if t.ai_summary:
+        # AI Narrative / Summary
+        if getattr(t, 'ai_narrative', None):
+             # Grok block (already formatted with HTML tags, do NOT escape)
+            text += f"\n{t.ai_narrative}\n"
+        elif t.ai_summary:
             text += f"📝 <i>{html.escape(t.ai_summary)}</i>\n"
 
         # AI Red Flags with explanations for critical ones

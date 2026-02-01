@@ -41,15 +41,15 @@ class TokenScorer:
     # Weight configuration (totals 100%)
     # Updated to include advanced analytics and honeypot detection
     BASE_WEIGHTS = {
-        'security': 0.23,              # Reduced from 0.25
-        'liquidity': 0.16,             # Reduced from 0.18
-        'distribution': 0.14,          # Reduced from 0.15
-        'social': 0.10,
-        'activity': 0.10,
-        'contract_quality': 0.06,      # Reduced from 0.07
-        'deployer_reputation': 0.07,   # Reduced from 0.08: Developer wallet forensics
-        'behavioral_anomaly': 0.06,    # Reduced from 0.07: Predictive rug detection
-        'honeypot': 0.08,              # NEW: Honeypot detection via sell simulation
+        'security': 0.20,
+        'liquidity': 0.15,
+        'distribution': 0.12,
+        'social': 0.08,
+        'activity': 0.08,
+        'contract_quality': 0.07,
+        'deployer_reputation': 0.10,   # High weight: bad deployers are fatal
+        'behavioral_anomaly': 0.08,
+        'honeypot': 0.12,              # High weight: cannot sell = worthless
     }
 
     def _get_weights(self) -> dict:
@@ -107,28 +107,90 @@ class TokenScorer:
         goods.extend(deployer_goods + anomaly_goods + honeypot_goods)
 
         # ═══════════════════════════════════════════════════════════
-        # PHASE 3: AI Score IS the Final Score
+        # PHASE 3: Hybrid AI-Centric Scoring (Enhanced)
         # ═══════════════════════════════════════════════════════════
         #
-        # The AI score is the primary determinant of the final score.
-        # Metric scores (safety, liquidity, etc.) are kept for display
-        # as context explaining why the AI scored as it did.
+        # The AI Score is the primary baseline (80-90% weight equivalent).
+        # We apply OBJECTIVE BONUSES and PENALTIES to this baseline to ensure:
+        # 1. Good tokens get the boost they deserve (e.g., LP locked, high reputation).
+        # 2. Bad tokens get punished (e.g., mint enabled, low liquidity).
         #
-        # Only two hard caps apply:
-        # 1. Known scammer deployer → max 25
-        # 2. Already rugged → 0 (handled in Phase 1)
+        # This approach respects the AI's qualitative analysis while enforcing
+        # strict mathematical standards for critical security metrics.
+
+        base_score = token.ai_score
+        adjustments = 0
+        adjustment_reasons = []
+
+        # --- BONUSES (Reward Good Behavior) ---
+
+        # 1. Liquidity Lock (The most important safety feature)
+        if token.liquidity_locked and token.lp_lock_percent >= 90:
+            adjustments += 5
+            adjustment_reasons.append("+5 LP Fully Locked")
+        
+        # 2. Perfect Security (No Mint/Freeze)
+        if not token.mint_authority_enabled and not token.freeze_authority_enabled:
+            adjustments += 5
+            adjustment_reasons.append("+5 Contracts Renounced")
+
+        # 3. Established History
+        if token.age_hours > 168:  # 1 week
+            adjustments += 2
+            adjustment_reasons.append("+2 Established Token")
+
+        # 4. Strong Socials (Website + Twitter + Telegram)
+        if token.socials_count >= 3 and token.website_quality > 70:
+            adjustments += 3
+            adjustment_reasons.append("+3 Strong Social Presence")
+            
+        # 5. Doxxed/Reputable Deployer
+        if deployer_score > 80:
+            adjustments += 5
+            adjustment_reasons.append("+5 High Rep Deployer")
+
+        # --- PENALTIES (Punish Critical Risks) ---
+
+        # 1. Mint Authority (Infinite inflation risk)
+        if token.mint_authority_enabled:
+            adjustments -= 20
+            adjustment_reasons.append("-20 Mint Authority Enabled")
+
+        # 2. Freeze Authority (Censorship risk)
+        if token.freeze_authority_enabled:
+            adjustments -= 10
+            adjustment_reasons.append("-10 Freeze Authority Enabled")
+
+        # 3. Unlocked Liquidity (Rug risk)
+        if not token.liquidity_locked:
+            adjustments -= 15
+            adjustment_reasons.append("-15 LP Unlocked")
+        elif token.lp_lock_percent < 50:
+            adjustments -= 5
+            adjustment_reasons.append("-5 Low LP Lock %")
+
+        # 4. Suspicious Holder Concentration
+        if distribution_score < 30: # derived from strict concentration metrics
+            adjustments -= 10
+            adjustment_reasons.append("-10 High Whale Concentration")
+
+        # 5. Low Liquidity
+        if liquidity_score < 30:
+            adjustments -= 10
+            adjustment_reasons.append("-10 Thin Liquidity")
+
+        # Apply Adjustments
+        overall = base_score + adjustments
+        
+        # Clamp Score (0-100)
+        overall = max(0, min(100, overall))
 
         logger.info(
-            f"📈 Metric context for {token.symbol}: "
-            f"security={safety_score}, liquidity={liquidity_score}, "
-            f"distribution={distribution_score}, social={social_score}, "
-            f"activity={activity_score}, contract={contract_score}, "
-            f"deployer={deployer_score}, anomaly={anomaly_score}, "
-            f"honeypot={honeypot_score}"
+            f"📈 Scoring Calculation for {token.symbol}: "
+            f"AI Base ({base_score}) + Adjustments ({adjustments}) = {overall} "
+            f"| Reasons: {', '.join(adjustment_reasons)}"
         )
 
-        # AI score is the base final score
-        overall = token.ai_score
 
         # Add AI flags to risks/goods for display
         for flag in token.ai_red_flags[:5]:

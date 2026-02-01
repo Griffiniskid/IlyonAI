@@ -195,23 +195,51 @@ class HoneypotDetector:
                     f"Jupiter API error: {quote.error}"
                 )
 
-            # Step 3: Build swap transaction
+            # Step 3: Build swap transaction (optional - may fail for unfunded simulation wallet)
+            # Jupiter now validates token ownership, so this will fail for tokens we don't hold
+            # The quote success alone is a good indicator of sellability
             swap = await self.jupiter.build_swap_transaction(
                 quote=quote,
                 user_public_key=self.SIMULATION_WALLET
             )
 
-            if not swap.success or not swap.swap_transaction:
-                # Jupiter itself reported a simulation error
-                return self._analyze_jupiter_failure(
-                    quote=quote,
-                    swap=swap,
-                    token_address=token_address
+            # Check if swap building failed due to unfunded wallet (expected behavior)
+            if not swap.success:
+                # Check if it's the expected "no prior credit" error (wallet doesn't own tokens)
+                error_str = str(swap.simulation_error or swap.error or "").lower()
+                is_wallet_funding_error = (
+                    "no record of a prior credit" in error_str or
+                    "attempt to debit" in error_str or
+                    "insufficient" in error_str and "lamports" in error_str
                 )
+                
+                if is_wallet_funding_error:
+                    # This is expected - simulation wallet doesn't own the tokens
+                    # The quote was successful, so the token IS tradeable via Jupiter
+                    logger.info(
+                        f"Swap build failed due to unfunded simulation wallet (expected). "
+                        f"Using quote data for honeypot analysis."
+                    )
+                    # Fall through to quote analysis - the route exists and that's what matters
+                    return self._analyze_quote_results(
+                        quote=quote,
+                        token_address=token_address,
+                        token_amount=token_amount,
+                        target_sol_lamports=int(self.DEFAULT_SELL_AMOUNT_SOL * self.LAMPORTS_PER_SOL),
+                        simulation_verified=False  # Note: not fully verified via simulation
+                    )
+                else:
+                    # Other error - analyze it for honeypot indicators
+                    return self._analyze_jupiter_failure(
+                        quote=quote,
+                        swap=swap,
+                        token_address=token_address
+                    )
 
             # Step 4: Additional Solana RPC simulation (optional, for extra confidence)
             # Jupiter already simulates, but we can double-check
-            if self.solana:
+            # Only run if we have a valid swap transaction
+            if self.solana and swap.success and swap.swap_transaction:
                 simulation = await self.solana.simulate_transaction(
                     transaction_base64=swap.swap_transaction
                 )
@@ -228,7 +256,8 @@ class HoneypotDetector:
                 quote=quote,
                 token_address=token_address,
                 token_amount=token_amount,
-                target_sol_lamports=int(self.DEFAULT_SELL_AMOUNT_SOL * self.LAMPORTS_PER_SOL)
+                target_sol_lamports=int(self.DEFAULT_SELL_AMOUNT_SOL * self.LAMPORTS_PER_SOL),
+                simulation_verified=swap.success if swap else False
             )
 
         except Exception as e:
@@ -387,10 +416,18 @@ class HoneypotDetector:
         quote,
         token_address: str,
         token_amount: int,
-        target_sol_lamports: int
+        target_sol_lamports: int,
+        simulation_verified: bool = True
     ) -> HoneypotResult:
         """
         Analyze successful quote to detect sell tax.
+        
+        Args:
+            quote: Jupiter quote result
+            token_address: Token mint address
+            token_amount: Amount of tokens being sold
+            target_sol_lamports: Expected SOL output in lamports
+            simulation_verified: Whether the swap was verified via full simulation
         """
         expected_output = target_sol_lamports  # What we'd expect with 0 tax
         actual_output = quote.out_amount
@@ -441,6 +478,14 @@ class HoneypotDetector:
             warnings = []
             logger.info(f"SAFE: {token_address[:8]} can be sold (tax: {tax_percent:.1f}%)")
 
+        # Adjust confidence if not simulation verified (quote-only analysis)
+        if not simulation_verified:
+            confidence = confidence * 0.85  # Slightly lower confidence
+            if warnings:
+                warnings.append("Verified via Jupiter quote (simulation wallet unfunded)")
+            else:
+                warnings = ["Verified via Jupiter quote (simulation wallet unfunded)"]
+
         return HoneypotResult(
             status=status,
             is_honeypot=is_honeypot,
@@ -448,7 +493,7 @@ class HoneypotDetector:
             sell_tax_percent=tax_percent,
             expected_output_lamports=expected_output,
             actual_output_lamports=actual_output,
-            simulation_success=True,
+            simulation_success=simulation_verified,
             route_available=True,
             route_dex=self._extract_dex_from_route(quote.route_plan),
             price_impact_pct=quote.price_impact_pct,

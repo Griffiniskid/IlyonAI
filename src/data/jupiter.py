@@ -81,7 +81,8 @@ class JupiterClient:
         self,
         session: Optional[aiohttp.ClientSession] = None,
         timeout: int = DEFAULT_TIMEOUT,
-        max_retries: int = MAX_RETRIES
+        max_retries: int = MAX_RETRIES,
+        api_key: Optional[str] = None
     ):
         """
         Initialize Jupiter client.
@@ -90,11 +91,19 @@ class JupiterClient:
             session: Optional existing aiohttp session. If None, creates its own.
             timeout: Request timeout in seconds
             max_retries: Maximum number of retry attempts on failure
+            api_key: Jupiter API key (required as of Jan 31, 2026)
         """
         self._session = session
         self._owns_session = session is None
         self.timeout = timeout
         self.max_retries = max_retries
+        self.api_key = api_key or settings.jupiter_api_key
+        
+        if not self.api_key:
+            logger.warning(
+                "No Jupiter API key configured. Jupiter now requires an API key "
+                "(as of Jan 31, 2026). Get a free key at https://portal.jup.ag"
+            )
 
     async def __aenter__(self):
         """Async context manager entry"""
@@ -148,12 +157,17 @@ class JupiterClient:
         """
         try:
             session = await self._ensure_session()
+            
+            # Build headers with API key
+            headers = {}
+            if self.api_key:
+                headers["x-api-key"] = self.api_key
 
             if method.upper() == "GET":
-                async with session.get(url, params=params) as resp:
+                async with session.get(url, params=params, headers=headers) as resp:
                     return await self._handle_response(resp, url, retry_count)
             else:
-                async with session.post(url, json=json_body) as resp:
+                async with session.post(url, json=json_body, headers=headers) as resp:
                     return await self._handle_response(resp, url, retry_count)
 
         except asyncio.TimeoutError:
@@ -181,6 +195,14 @@ class JupiterClient:
         retry_count: int
     ) -> Optional[Dict[str, Any]]:
         """Handle HTTP response with status code checks."""
+        if resp.status == 401:
+            logger.error(
+                f"Jupiter API returned 401 Unauthorized for {url}. "
+                "API key is required as of Jan 31, 2026. "
+                "Set JUPITER_API_KEY in .env (get free key at https://portal.jup.ag)"
+            )
+            return None
+        
         if resp.status == 429:
             logger.warning(f"Jupiter rate limit hit for {url}")
             if retry_count < self.max_retries:

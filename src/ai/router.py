@@ -13,7 +13,9 @@ from dataclasses import dataclass
 
 from src.ai.base import AIResponse, TokenAnalysisRequest, AIProvider
 from src.ai.openai_client import OpenAIClient
+from src.ai.grok_client import GrokClient
 from src.core.models import TokenInfo
+from src.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +28,9 @@ class MultiAIResult:
     Stores response from AI provider and aggregated metrics.
     """
 
-    # AI response
+    # AI responses
     openai: Optional[AIResponse] = None
+    grok: Optional[AIResponse] = None  # New field for Grok results
 
     # Aggregate metrics
     total_latency_ms: int = 0
@@ -36,7 +39,9 @@ class MultiAIResult:
     @property
     def success(self) -> bool:
         """Check if analysis succeeded"""
-        return self.openai is not None and self.openai.success
+        # Primarily check standard analysis, but also valid if just Grok works in some contexts
+        return (self.openai is not None and self.openai.success) or \
+               (self.grok is not None and self.grok.success)
 
     @property
     def any_successful(self) -> bool:
@@ -45,8 +50,11 @@ class MultiAIResult:
 
     @property
     def success_count(self) -> int:
-        """Count how many providers succeeded (0 or 1)"""
-        return 1 if self.success else 0
+        """Count how many providers succeeded"""
+        count = 0
+        if self.openai and self.openai.success: count += 1
+        if self.grok and self.grok.success: count += 1
+        return count
 
 
 class AIRouter:
@@ -55,26 +63,20 @@ class AIRouter:
 
     Supports two analysis modes:
     - quick: GPT-4o-mini only (fastest, ~3-5 seconds, basic analysis)
-    - standard/full: Primary model (balanced, ~10-15 seconds)
+    - standard/full: Primary model + Grok (parallel execution)
 
     Usage:
         router = AIRouter()
         result = await router.analyze(token, mode="standard")
-
-        # Access results
-        if result.openai and result.openai.success:
-            print(result.openai.content['ai_score'])
     """
 
     def __init__(self, openai_client: Optional[OpenAIClient] = None):
         """
-        Initialize AI Router with AI client.
+        Initialize AI Router with AI clients.
 
         Args:
             openai_client: Optional OpenAI client (creates default if None)
         """
-        from src.config import settings
-
         # Determine whether to use OpenRouter (preferred) or direct OpenAI
         has_openrouter = bool(settings.openrouter_api_key)
         has_openai = bool(settings.openai_api_key)
@@ -98,6 +100,14 @@ class AIRouter:
             # Create clients anyway (they will fail but with clear error)
             self.openai = openai_client or OpenAIClient()
             self.openai_mini = OpenAIClient(model="gpt-4o-mini")
+            
+        # Initialize Grok client
+        if settings.grok_api_key:
+            logger.info(f"🔄 Initializing Grok client for narrative analysis ({settings.grok_model})")
+            self.grok = GrokClient()
+        else:
+            logger.info("⚠️ Grok API key missing - narrative analysis disabled")
+            self.grok = None
 
         logger.info("✅ AI Router initialized")
 
@@ -115,16 +125,6 @@ class AIRouter:
 
         Returns:
             MultiAIResult with AI response
-
-        Modes:
-            - "quick": GPT-4o-mini only (~3-5 seconds)
-              * Fastest option
-              * Basic technical analysis
-              * Good for quick checks
-
-            - "standard" / "full": Primary model (~10-15 seconds)
-              * Comprehensive technical analysis
-              * Default mode
         """
         request = TokenAnalysisRequest.from_token_info(token)
         result = MultiAIResult()
@@ -134,9 +134,11 @@ class AIRouter:
 
         try:
             if mode == "quick":
+                # Quick mode: Only technical analysis with mini model
                 result = await self._quick_analysis(request)
             else:
-                # Both "standard" and "full" use primary model
+                # Standard/Full mode: Parallel execution of Technical + Narrative
+                # Both "standard" and "full" use primary model + Grok
                 result = await self._standard_analysis(request)
 
         except Exception as e:
@@ -144,7 +146,11 @@ class AIRouter:
 
         # Calculate total metrics
         result.total_latency_ms = int((time.time() - start_time) * 1000)
-        result.total_tokens_used = result.openai.tokens_used if result.openai and result.openai.success else 0
+        
+        # Sum tokens used
+        openai_tokens = result.openai.tokens_used if result.openai and result.openai.success else 0
+        grok_tokens = result.grok.tokens_used if result.grok and result.grok.success else 0
+        result.total_tokens_used = openai_tokens + grok_tokens
 
         logger.info(
             f"✅ {mode.upper()} analysis complete for {token.symbol}: "
@@ -158,8 +164,6 @@ class AIRouter:
     async def _quick_analysis(self, request: TokenAnalysisRequest) -> MultiAIResult:
         """
         Quick analysis using GPT-4o-mini only.
-
-        Fast and cost-effective for basic token checks.
         """
         result = MultiAIResult()
 
@@ -173,15 +177,42 @@ class AIRouter:
 
     async def _standard_analysis(self, request: TokenAnalysisRequest) -> MultiAIResult:
         """
-        Standard analysis using primary model.
-
-        Balanced approach with comprehensive technical analysis.
+        Standard analysis using primary model AND Grok in parallel.
         """
         result = MultiAIResult()
 
+        # Define tasks to run in parallel
+        tasks = [self.openai.analyze(request)]
+        
+        # Add Grok task if client is available
+        if self.grok:
+            tasks.append(self.grok.analyze(request))
+        else:
+            # Placeholder for consistent unpacking if needed, 
+            # but simpler to just handle variable length results or check indices
+            pass
+
         try:
-            result.openai = await self.openai.analyze(request)
-            logger.info("✅ Standard analysis complete")
+            # Run concurrently
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Process OpenAI result (always first)
+            openai_resp = responses[0]
+            if isinstance(openai_resp, Exception):
+                logger.error(f"OpenAI analysis failed: {openai_resp}")
+            else:
+                result.openai = openai_resp
+                logger.info("✅ OpenAI technical analysis complete")
+
+            # Process Grok result (if it ran)
+            if self.grok and len(responses) > 1:
+                grok_resp = responses[1]
+                if isinstance(grok_resp, Exception):
+                    logger.error(f"Grok analysis failed: {grok_resp}")
+                else:
+                    result.grok = grok_resp
+                    logger.info("✅ Grok narrative analysis complete")
+                    
         except Exception as e:
             logger.error(f"Standard analysis error: {e}")
 
@@ -190,13 +221,6 @@ class AIRouter:
     async def chat(self, message: str, system_prompt: str = "") -> str:
         """
         Simple chat using GPT-4o-mini for cost efficiency.
-
-        Args:
-            message: User message
-            system_prompt: Optional system prompt
-
-        Returns:
-            AI response text
         """
         return await self.openai_mini.chat(message, system_prompt)
 
@@ -207,6 +231,8 @@ class AIRouter:
         try:
             await self.openai.close()
             await self.openai_mini.close()
+            if self.grok:
+                await self.grok.close()
             logger.info("✅ AI clients closed")
 
         except Exception as e:

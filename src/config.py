@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # AI PROVIDERS CONFIGURATION
     # ═══════════════════════════════════════════════════════════════════════════
 
+    # Grok (xAI) - For Twitter/Narrative Analysis
+    grok_api_key: Optional[str] = Field(None, env="GROK_API_KEY")
+    grok_model: str = Field("grok-4.1-fast", env="GROK_MODEL", description="Grok model for narrative analysis")
+
     # OpenRouter (currently used)
     openrouter_api_key: Optional[str] = Field(None, env="OPENROUTER_API_KEY")
     ai_model: str = Field("openai/gpt-4o-mini", env="AI_MODEL", description="Default AI model")
@@ -86,6 +90,11 @@ class Settings(BaseSettings):
         15,
         env="JUPITER_API_TIMEOUT",
         description="Timeout for Jupiter API requests in seconds"
+    )
+    jupiter_api_key: Optional[str] = Field(
+        None,
+        env="JUPITER_API_KEY",
+        description="Jupiter API key (required as of Jan 31, 2026 - get from portal.jup.ag)"
     )
 
     # ═══════════════════════════════════════════════════════════════════════════

@@ -86,7 +86,17 @@ class OpenAIClient(BaseAIClient):
 - Market sentiment and social signals
 
 Your PRIMARY GOAL is to PROTECT users from financial loss.
-Be STRICT, CRITICAL, and NEVER overlook red flags.
+Be STRICT but CONTEXT-AWARE.
+- MEMECOINS: Judge based on "vibe", community strength, and originality. Do NOT penalize for lack of whitepaper/utility if the meme culture is strong.
+- UTILITY/DEFI: Judge based on roadmap, team transparency, and technical depth. Penalize heavily for vagueness.
+- SCAMS: Penalize hard for broken websites, honeypot code, or fake teams.
+
+Use the FULL 0-100 range.
+- 90-100: Exceptional quality (rare)
+- 70-89: Solid, safe projects
+- 40-69: Average/Risky
+- 0-39: Dangerous/Scam
+
 Respond ONLY with valid JSON without markdown formatting."""
 
     def _format_website_content_section(self, request: TokenAnalysisRequest) -> str:
@@ -224,33 +234,39 @@ Analyze ALL data above and provide EXPERT assessment:
 SCORING CALIBRATION RULES (CRITICAL - FOLLOW EXACTLY)
 ==========================================================
 
-IMPORTANT: Token age is NOT a primary scoring factor!
-- A new token (even <24h old) with excellent security can score 70-85
-- Age should only LOWER score if combined with OTHER concerning signals
-- Good metrics = good score, regardless of age
+IMPORTANT: Your score contributes 40% to the final weighted grade.
+The other 60% comes from objective metrics (liquidity, locks, etc.).
+Your job is to judge the QUALITATIVE aspects: Code quality, Website professionalism, Sentiment, and Narrative.
 
-SCORE 80-100 (SAFE):
+First, IDENTIFY THE TOKEN TYPE:
+- MEMECOIN: No utility, community-focused, humor-based.
+- UTILITY/DEFI: Promises product, yield, or tech.
+- SCAM: Obvious copy-paste, honeypot, fake promises.
+
+SCORE 80-100 (SAFE / STRONG):
 - Mint Authority DISABLED ✓
 - Freeze Authority DISABLED ✓
 - LP Lock 95%+ with verified duration ✓
 - At least 2 social channels (Twitter + Website or Telegram) ✓
 - Holder concentration <40% ✓
 - No suspicious trading patterns ✓
-- Age is NOT required for this tier if all else is excellent
+- MEME: Funny/original website, active community, "good vibes".
+- UTILITY: Doxxed team, clear whitepaper, working product.
 
-SCORE 60-79 (CAUTION):
+SCORE 60-79 (CAUTION / AVERAGE):
 - Good security fundamentals (no mint auth, LP locked)
 - Partial social presence (1-2 channels)
 - Moderate holder concentration (40-60%)
-- Some flags but nothing critical
-- New tokens CAN score 60-79 if security metrics are solid
+- MEME: Generic but functional website, standard template but clean.
+- UTILITY: Anon team but good code, roadmap exists but vague.
 
 SCORE 40-59 (RISKY):
 - Security concerns (freeze authority enabled, low LP lock%)
 - Missing key socials (no Twitter OR no Website)
 - High holder concentration (60-80%)
-- Multiple medium-severity flags combined
-- Suspicious data anomalies (e.g., 0% concentration = suspicious data quality)
+- Suspicious data anomalies
+- MEME: Low effort, "lorem ipsum" texts, broken links.
+- UTILITY: No whitepaper, no product, broken promises.
 
 SCORE 20-39 (DANGEROUS):
 - Mint Authority ENABLED = strong reason to score low
@@ -258,7 +274,6 @@ SCORE 20-39 (DANGEROUS):
 - NO social presence at all
 - Very high holder concentration (>80%)
 - Clear manipulation patterns
-- Multiple critical concerns
 
 SCORE 0-19 (SCAM):
 - Multiple CRITICAL red flags simultaneously
@@ -285,6 +300,7 @@ Respond STRICTLY in JSON format:
     "ai_rug_probability": <0-100 probability of rug pull>,
     "ai_verdict": "SAFE|CAUTION|RISKY|DANGEROUS|SCAM",
     "ai_summary": "<2-3 sentences: what is this token and main conclusion>",
+    "ai_token_type": "MEMECOIN|UTILITY|DEFI|GOVERNANCE|SCAM|UNKNOWN",
     "ai_code_audit": "<contract security assessment>",
     "ai_whale_risk": "<whale/concentration risk assessment>",
     "ai_sentiment": "<social presence evaluation>",

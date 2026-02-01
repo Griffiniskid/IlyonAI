@@ -17,6 +17,7 @@ class AIProvider(Enum):
     """Supported AI providers"""
     OPENAI = "openai"
     OPENROUTER = "openrouter"
+    GROK = "grok"
 
 
 @dataclass

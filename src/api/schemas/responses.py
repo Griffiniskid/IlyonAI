@@ -116,6 +116,7 @@ class AIAnalysisResponse(BaseModel):
     sentiment: str = ""
     trading: str = ""
     narrative: str = ""
+    grok: Optional[Dict[str, Any]] = None  # Structured narrative data
 
 
 class SocialsResponse(BaseModel):
@@ -447,3 +448,68 @@ class AnalysisCompleteMessage(BaseModel):
     type: str = "analysis_complete"
     address: str
     result: AnalysisResponse
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DASHBOARD STATS RESPONSE
+# ═══════════════════════════════════════════════════════════════════════════
+
+class VolumeDataPoint(BaseModel):
+    """Single volume data point for chart - can be time or token symbol"""
+    time: str  # Can be time label or token symbol
+    volume: float
+
+
+class RiskDistributionItem(BaseModel):
+    """Risk distribution category"""
+    name: str
+    count: int
+    color: str
+
+
+class MarketDistributionItem(BaseModel):
+    """Market category distribution"""
+    name: str
+    value: int
+    color: str
+
+
+class TopTokenVolume(BaseModel):
+    """Token volume data for chart"""
+    symbol: str
+    volume: float
+    address: str
+
+
+class DashboardStatsResponse(BaseModel):
+    """Dashboard statistics response - all data from real token analysis"""
+    # Main metrics (from tracked trending tokens)
+    total_volume_24h: float  # Sum of 24h volume from tracked tokens
+    volume_change_24h: float
+    active_tokens: int  # Number of tokens being tracked
+    active_tokens_change: int
+    safe_tokens_percent: float  # % of tracked tokens classified as safe
+    safe_tokens_change: float
+    scams_detected: int  # Risky + Scam tokens count
+    scams_change: int
+
+    # Liquidity metrics
+    avg_liquidity: float  # Average liquidity of tracked tokens
+    total_liquidity: float  # Total liquidity across tracked tokens
+
+    # Chart data
+    volume_chart: List[VolumeDataPoint]  # Top tokens by volume
+    risk_distribution: List[RiskDistributionItem]
+    market_distribution: List[MarketDistributionItem] = []  # Token categories
+    top_tokens_by_volume: List[Dict[str, Any]] = []  # Detailed token volume data
+
+    # Analysis stats
+    tokens_analyzed_today: int
+    total_tokens_analyzed: int
+
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }

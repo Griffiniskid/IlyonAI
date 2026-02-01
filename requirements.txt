@@ -26,6 +26,12 @@ solana>=0.30.0
 # Solana types and serialization
 solders>=0.18.0
 
+# Cryptography for wallet signature verification (Ed25519)
+pynacl>=1.5.0
+
+# Base58 encoding for Solana addresses
+base58>=2.1.0
+
 # ═══════════════════════════════════════════════════════════════════════════
 # HTTP & NETWORKING
 # ═══════════════════════════════════════════════════════════════════════════
