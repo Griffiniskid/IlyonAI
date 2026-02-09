@@ -1,5 +1,5 @@
 """
-Referral system for AI Sentinel viral growth.
+Referral system for Ilyon AI viral growth.
 
 Handles:
 - Referral code generation and tracking
@@ -26,7 +26,7 @@ class ReferralManager:
     - Leaderboard shows top referrers
     """
 
-    BOT_USERNAME = "AISentinelBot"  # Update with actual bot username
+    BOT_USERNAME = "IlyonAIBot"  # Update with actual bot username
 
     def __init__(self):
         """Initialize referral manager"""

@@ -50,7 +50,7 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        // AI Sentinel custom colors
+        // Ilyon AI custom colors
         emerald: {
           DEFAULT: "#10b981",
           50: "#ecfdf5",

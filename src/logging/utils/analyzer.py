@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class LogAnalyzer:
     """Analyzer for structured JSON logs."""
 
-    def __init__(self, log_file: str = "logs/ai_sentinel.json"):
+    def __init__(self, log_file: str = "logs/ilyon_ai.json"):
         """
         Initialize log analyzer.
 
@@ -256,7 +256,7 @@ class LogAnalyzer:
     def print_summary(self):
         """Print a summary of log analysis to console."""
         print("\n" + "="*70)
-        print("AI SENTINEL LOG ANALYSIS SUMMARY")
+        print("ILYON AI LOG ANALYSIS SUMMARY")
         print("="*70 + "\n")
 
         # Load logs

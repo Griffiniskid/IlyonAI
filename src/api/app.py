@@ -1,5 +1,5 @@
 """
-aiohttp Application factory for AI Sentinel Web API.
+aiohttp Application factory for Ilyon AI Web API.
 
 Creates and configures the API application with all routes
 and middleware for handling web requests and Blinks.
@@ -31,7 +31,7 @@ async def health_check(request: web.Request) -> web.Response:
     """
     return web.json_response({
         "status": "healthy",
-        "service": "AI Sentinel Web API",
+        "service": "Ilyon AI Web API",
         "version": "2.0.0",
         "blinks_enabled": settings.blinks_enabled,
         "web_api_enabled": True,
@@ -45,7 +45,7 @@ async def api_info(request: web.Request) -> web.Response:
     API information endpoint.
     """
     return web.json_response({
-        "name": "AI Sentinel API",
+        "name": "Ilyon AI API",
         "version": "1.0.0",
         "description": "Solana token security analysis API",
         "endpoints": {
@@ -89,7 +89,7 @@ def create_api_app() -> web.Application:
     setup_auth_routes(app)
     setup_stats_routes(app)
 
-    logger.info("AI Sentinel Web API application created with all routes")
+    logger.info("Ilyon AI Web API application created with all routes")
     return app
 
 

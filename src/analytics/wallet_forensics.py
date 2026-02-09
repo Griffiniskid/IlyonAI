@@ -778,7 +778,7 @@ class WalletForensicsEngine:
         return {
             "version": "1.0",
             "generated_at": datetime.utcnow().isoformat(),
-            "generator": "AI Sentinel Wallet Forensics",
+            "generator": "Ilyon AI Wallet Forensics",
             "methodology": {
                 "description": "Scammers identified through wallet forensics analysis",
                 "signals": [
@@ -797,7 +797,7 @@ class WalletForensicsEngine:
             },
             "scammers": scammers,
             "license": "MIT - Free to use, attribution appreciated",
-            "attribution": "AI Sentinel (https://github.com/yourusername/ai-sentinel)",
+            "attribution": "Ilyon AI (https://github.com/yourusername/ilyon-ai)",
         }
 
 

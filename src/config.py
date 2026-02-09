@@ -2,7 +2,7 @@
 Centralized configuration management using Pydantic Settings.
 All environment variables and application settings are defined here.
 
-NOTE: AI Sentinel is exclusively designed for Solana blockchain analysis.
+NOTE: Ilyon AI is exclusively designed for Solana blockchain analysis.
 All configurations are Solana-specific - no multi-chain support.
 """
 
@@ -17,27 +17,9 @@ class Settings(BaseSettings):
     """
     Application settings loaded from environment variables.
 
-    AI Sentinel is a Solana-exclusive token analysis platform.
+    Ilyon AI is a Solana-exclusive token analysis platform.
     All blockchain settings are for Solana mainnet only.
     """
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # TELEGRAM CONFIGURATION
-    # ═══════════════════════════════════════════════════════════════════════════
-
-    bot_token: str = Field(..., env="BOT_TOKEN", description="Telegram Bot API token")
-
-    # Access control - whitelist of allowed Telegram IDs (comma-separated)
-    # Field name matches env var: ALLOWED_USERS
-    allowed_users: str = Field(default="")
-
-    def get_allowed_user_ids(self) -> list[int]:
-        """Parse comma-separated Telegram IDs from env var"""
-        if not self.allowed_users or not self.allowed_users.strip():
-            return []
-        # Remove quotes if present and split by comma
-        raw = self.allowed_users.strip().strip('"').strip("'")
-        return [int(id.strip()) for id in raw.split(",") if id.strip()]
 
     # ═══════════════════════════════════════════════════════════════════════════
     # AI PROVIDERS CONFIGURATION
@@ -133,16 +115,12 @@ class Settings(BaseSettings):
     # WEBHOOK CONFIGURATION (PRODUCTION)
     # ═══════════════════════════════════════════════════════════════════════════
 
-    webhook_url: Optional[str] = Field(None, env="WEBHOOK_URL", description="Webhook URL for production")
-    webhook_secret: Optional[str] = Field(None, env="WEBHOOK_SECRET", description="Webhook secret token")
-    webhook_port: int = Field(8443, env="WEBHOOK_PORT", description="Webhook server port")
-
     # ═══════════════════════════════════════════════════════════════════════════
     # SOLANA ACTIONS / BLINKS CONFIGURATION
     # ═══════════════════════════════════════════════════════════════════════════
 
     actions_base_url: str = Field(
-        "https://api.aisentinel.io",
+        "https://api.ilyonai.io",
         env="ACTIONS_BASE_URL",
         description="Base URL for Solana Actions API (must be HTTPS in production)"
     )
@@ -151,6 +129,13 @@ class Settings(BaseSettings):
     blinks_rate_limit_per_minute: int = Field(30, env="BLINKS_RATE_LIMIT_PER_MINUTE")
     blinks_rate_limit_per_hour: int = Field(200, env="BLINKS_RATE_LIMIT_PER_HOUR")
     blink_ttl_hours: int = Field(168, env="BLINK_TTL_HOURS", description="Blink expiration time (0 = never)")
+
+    # Web App URL (for redirects)
+    webapp_url: str = Field(
+        "http://localhost:3000",
+        env="WEBAPP_URL",
+        description="Public URL of the web application"
+    )
 
     # ═══════════════════════════════════════════════════════════════════════════
     # WEB API CONFIGURATION
@@ -161,7 +146,7 @@ class Settings(BaseSettings):
 
     # CORS settings for web frontend
     cors_origins: str = Field(
-        "http://localhost:3000,http://localhost:3001,https://aisentinel.io,https://www.aisentinel.io",
+        "http://localhost:3000,http://localhost:3001,https://ilyonai.io,https://www.ilyonai.io",
         env="CORS_ORIGINS",
         description="Comma-separated list of allowed CORS origins"
     )

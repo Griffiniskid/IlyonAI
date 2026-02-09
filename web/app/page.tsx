@@ -448,7 +448,7 @@ export default function HomePage() {
                 <span className="text-gradient"> Safely?</span>
               </h2>
               <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-                Join thousands of traders who use AI Sentinel to protect their investments on Solana.
+                Join thousands of traders who use Ilyon AI to protect their investments on Solana.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <Link href="/trending">

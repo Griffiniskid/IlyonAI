@@ -1,5 +1,5 @@
 """
-API Response schemas for the AI Sentinel Web API.
+API Response schemas for the Ilyon AI Web API.
 
 Pydantic models that define the structure of all API responses.
 These are designed to match the frontend TypeScript interfaces.

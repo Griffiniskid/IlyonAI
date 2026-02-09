@@ -1,5 +1,5 @@
 """
-Basic integration tests for AI Sentinel.
+Basic integration tests for Ilyon AI.
 
 Tests core functionality without requiring API keys.
 """
@@ -28,11 +28,8 @@ async def test_config():
     print("TEST: Configuration")
     print("=" * 70)
 
-    print(f"✅ Bot Token: {'*' * 20}{settings.bot_token[-4:] if len(settings.bot_token) > 4 else '❌ NOT SET'}")
     print(f"✅ OpenAI API Key: {'Configured' if settings.openai_api_key else '❌ NOT SET'}")
-    print(f"✅ Gemini API Key: {'Configured' if settings.gemini_api_key else 'Not configured (optional)'}")
     print(f"✅ Grok API Key: {'Configured' if settings.grok_api_key else 'Not configured (optional)'}")
-    print(f"✅ Primary Affiliate: {settings.primary_affiliate}")
     print(f"✅ Solana RPC: {settings.solana_rpc_url[:50]}...")
     print("PASSED ✓\n")
 
@@ -48,12 +45,14 @@ async def test_affiliates():
 
     print(f"Enabled bots: {len(enabled)}")
     for bot in enabled:
-        print(f"  {bot.emoji} {bot.name} ({bot.commission}) - Priority {bot.priority}")
+        print(f"  {bot.emoji} {bot.name} ({bot.commission})")
 
     # Test link generation
     primary = manager.get_primary_bot()
     if primary:
-        link = primary.generate_link(BONK)
+        # Note: generate_link is not available on the mock bot object in the legacy wrapper
+        # The wrapper has get_primary_buy_link method instead
+        link = manager.get_primary_buy_link(BONK)
         print(f"\nPrimary bot: {primary.name}")
         print(f"Example link: {link[:60]}...")
         print("PASSED ✓\n")
@@ -177,7 +176,7 @@ async def test_quick_analysis():
 
 async def run_all_tests():
     """Run all tests"""
-    print("\n" + "🛡️  AI SENTINEL - INTEGRATION TESTS ".center(70, "="))
+    print("\n" + "🛡️  ILYON AI - INTEGRATION TESTS ".center(70, "="))
     print()
 
     # Run tests

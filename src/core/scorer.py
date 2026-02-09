@@ -239,6 +239,9 @@ class TokenScorer:
         token.risk_factors = risks[:10]  # Limit to top 10
         token.positive_factors = goods[:10]
 
+        # Update ai_verdict to match final score (fixes score/verdict mismatch bug)
+        token.ai_verdict = self._calc_verdict(overall)
+
         return AnalysisResult(
             token=token,
             safety_score=safety_score,
@@ -1146,6 +1149,30 @@ class TokenScorer:
             return RiskLevel.HIGH
         else:
             return RiskLevel.CRITICAL
+
+    def _calc_verdict(self, score: int) -> str:
+        """
+        Calculate verdict string from final overall score.
+
+        This ensures the verdict displayed to users matches the calculated score,
+        overriding any AI-provided verdict that may not account for score adjustments.
+
+        Args:
+            score: Final overall score (0-100)
+
+        Returns:
+            Verdict string: SAFE, CAUTION, RISKY, DANGEROUS, or SCAM
+        """
+        if score >= 80:
+            return "SAFE"
+        elif score >= 60:
+            return "CAUTION"
+        elif score >= 40:
+            return "RISKY"
+        elif score >= 20:
+            return "DANGEROUS"
+        else:
+            return "SCAM"
 
     # ═══════════════════════════════════════════════════════════════════════════
     # ADVANCED ANALYTICS SCORING (NEW FEATURES)

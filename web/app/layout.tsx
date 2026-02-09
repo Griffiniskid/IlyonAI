@@ -3,7 +3,6 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Header } from "@/components/layout/header";
-import { Toaster } from "@/components/ui/toaster";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -16,7 +15,7 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Sentinel | Solana Token Security Scanner",
+  title: "Ilyon AI | Solana Token Security Scanner",
   description:
     "AI-powered security analysis for Solana tokens. Detect rugpulls, honeypots, and scams before investing. Advanced wallet forensics and real-time risk assessment.",
   keywords: [
@@ -29,14 +28,14 @@ export const metadata: Metadata = {
     "AI analysis",
   ],
   openGraph: {
-    title: "AI Sentinel | Solana Token Security",
+    title: "Ilyon AI | Solana Token Security",
     description: "AI-powered security analysis for Solana tokens",
     type: "website",
-    siteName: "AI Sentinel",
+    siteName: "Ilyon AI",
   },
   twitter: {
     card: "summary_large_image",
-    title: "AI Sentinel | Solana Token Security",
+    title: "Ilyon AI | Solana Token Security",
     description: "AI-powered security analysis for Solana tokens",
   },
 };
@@ -66,9 +65,8 @@ export default function RootLayout({
             <footer className="border-t border-border/50 py-6 mt-auto">
               <div className="container mx-auto px-4">
                 <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">🛡️</span>
-                    <span className="font-semibold">AI Sentinel</span>
+                  <div className="flex items-center">
+                    <img src="/logo.png" alt="Ilyon AI" className="h-[88px] w-auto" />
                   </div>
                   <div className="text-sm text-muted-foreground">
                     Built for the Solana ecosystem
@@ -78,7 +76,7 @@ export default function RootLayout({
                       Documentation
                     </a>
                     <a
-                      href="https://twitter.com/aisentinel"
+                      href="https://x.com/ilyonProtocol"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="hover:text-foreground transition"
@@ -86,19 +84,18 @@ export default function RootLayout({
                       Twitter
                     </a>
                     <a
-                      href="https://github.com/aisentinel"
+                      href="https://t.me/ilyonProtocol"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="hover:text-foreground transition"
                     >
-                      GitHub
+                      Telegram
                     </a>
                   </div>
                 </div>
               </div>
             </footer>
           </div>
-          <Toaster />
         </Providers>
       </body>
     </html>

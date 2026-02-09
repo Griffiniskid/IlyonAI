@@ -1,5 +1,5 @@
 /**
- * TypeScript type definitions for AI Sentinel Web
+ * TypeScript type definitions for Ilyon AI Web
  * These mirror the Python Pydantic models for type safety
  */
 

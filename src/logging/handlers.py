@@ -1,5 +1,5 @@
 """
-Custom logging handlers for AI Sentinel.
+Custom logging handlers for Ilyon AI.
 
 Provides specialized file handlers with:
 - Automatic directory creation

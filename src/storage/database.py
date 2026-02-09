@@ -1,5 +1,5 @@
 """
-Database layer for AI Sentinel using async PostgreSQL (Supabase compatible).
+Database layer for Ilyon AI using async PostgreSQL (Supabase compatible).
 
 Handles:
 - User tracking and referrals
@@ -393,7 +393,7 @@ class TrackedWallet(Base):
 
 class Database:
     """
-    Async database interface for AI Sentinel.
+    Async database interface for Ilyon AI.
 
     Provides methods for user management, analysis tracking,
     referral system, and statistics.
@@ -416,36 +416,64 @@ class Database:
         """
         Initialize database connection and create tables.
 
+        Tries PostgreSQL first, falls back to local SQLite for development.
         Should be called once at startup.
         """
         if self._initialized:
             return
 
-        if not self.database_url:
-            logger.warning("DATABASE_URL not set - database features disabled")
-            return
+        # Try PostgreSQL first
+        if self.database_url:
+            try:
+                url = self.database_url
+                if url.startswith("postgres://"):
+                    url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+                elif url.startswith("postgresql://"):
+                    url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
+                self.engine = create_async_engine(url, echo=False, pool_pre_ping=True)
+                self.async_session = async_sessionmaker(
+                    self.engine,
+                    class_=AsyncSession,
+                    expire_on_commit=False
+                )
+
+                # Test connection and create tables
+                async with self.engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+
+                self._initialized = True
+                logger.info("✅ Database initialized (PostgreSQL)")
+                return
+
+            except Exception as e:
+                logger.warning(f"PostgreSQL unavailable ({e}), falling back to SQLite")
+                if self.engine:
+                    await self.engine.dispose()
+                    self.engine = None
+
+        # Fallback to local SQLite
         try:
-            # Convert postgres:// to postgresql+asyncpg://
-            url = self.database_url
-            if url.startswith("postgres://"):
-                url = url.replace("postgres://", "postgresql+asyncpg://", 1)
-            elif url.startswith("postgresql://"):
-                url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            import os
+            db_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
+            os.makedirs(db_dir, exist_ok=True)
+            sqlite_path = os.path.join(db_dir, "sentinel.db")
 
-            self.engine = create_async_engine(url, echo=False, pool_pre_ping=True)
+            self.engine = create_async_engine(
+                f"sqlite+aiosqlite:///{sqlite_path}",
+                echo=False,
+            )
             self.async_session = async_sessionmaker(
                 self.engine,
                 class_=AsyncSession,
                 expire_on_commit=False
             )
 
-            # Create tables
             async with self.engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
 
             self._initialized = True
-            logger.info("✅ Database initialized successfully")
+            logger.info(f"✅ Database initialized (SQLite: {sqlite_path})")
 
         except Exception as e:
             logger.error(f"❌ Database initialization failed: {e}")

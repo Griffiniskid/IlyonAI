@@ -8,8 +8,6 @@ Simplified from multi-bot system to Trojan-only per production requirements.
 import logging
 from typing import Optional
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-
 from src.config import settings
 
 logger = logging.getLogger(__name__)
@@ -66,111 +64,6 @@ def get_primary_buy_link(token_address: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# KEYBOARD GENERATION
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def get_main_keyboard(token_address: str) -> InlineKeyboardMarkup:
-    """
-    Generate main analysis keyboard with buy, report, refresh options.
-
-    Args:
-        token_address: Solana token address
-
-    Returns:
-        InlineKeyboardMarkup with main action buttons
-    """
-    buy_link = get_trojan_link(token_address)
-
-    keyboard = [
-        # Row 1: Quick Buy with Trojan
-        [
-            InlineKeyboardButton(
-                text=f"{TROJAN_EMOJI} Quick Buy ({TROJAN_NAME})",
-                url=buy_link
-            )
-        ],
-        # Row 2: Report Card and Refresh
-        [
-            InlineKeyboardButton(
-                text="📊 Report Card",
-                callback_data=f"report:{token_address}"
-            ),
-            InlineKeyboardButton(
-                text="🔄 Refresh",
-                callback_data=f"refresh:{token_address}"
-            )
-        ],
-        # Row 3: Deep Analysis
-        [
-            InlineKeyboardButton(
-                text="🔍 Deep Analysis",
-                callback_data=f"deep:{token_address}"
-            )
-        ]
-    ]
-
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
-
-def get_compact_keyboard(token_address: str) -> InlineKeyboardMarkup:
-    """
-    Generate compact keyboard for quick analysis.
-
-    Args:
-        token_address: Solana token address
-
-    Returns:
-        InlineKeyboardMarkup with compact buttons
-    """
-    buy_link = get_trojan_link(token_address)
-
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                text=f"{TROJAN_EMOJI} Buy",
-                url=buy_link
-            ),
-            InlineKeyboardButton(
-                text="📊 Full Analysis",
-                callback_data=f"full:{token_address}"
-            )
-        ]
-    ]
-
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
-
-def get_buy_keyboard(token_address: str) -> InlineKeyboardMarkup:
-    """
-    Generate buy-only keyboard.
-
-    Args:
-        token_address: Solana token address
-
-    Returns:
-        InlineKeyboardMarkup with Trojan buy button
-    """
-    buy_link = get_trojan_link(token_address)
-
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                text=f"{TROJAN_EMOJI} Trade on {TROJAN_NAME} ({TROJAN_COMMISSION})",
-                url=buy_link
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="⬅️ Back",
-                callback_data=f"back:{token_address}"
-            )
-        ]
-    ]
-
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # LEGACY COMPATIBILITY
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -219,9 +112,3 @@ def get_manager() -> AffiliateManager:
     if _manager is None:
         _manager = AffiliateManager()
     return _manager
-
-
-# Legacy function aliases
-def get_affiliate_buttons(token_address: str) -> InlineKeyboardMarkup:
-    """Legacy: Get affiliate buttons (now just Trojan)"""
-    return get_buy_keyboard(token_address)

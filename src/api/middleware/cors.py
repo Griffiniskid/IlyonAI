@@ -1,5 +1,5 @@
 """
-CORS middleware for AI Sentinel Web API.
+CORS middleware for Ilyon AI Web API.
 
 Supports both Solana Actions (permissive CORS) and Web API (configurable CORS).
 """
@@ -37,7 +37,9 @@ def get_cors_origin(request: web.Request) -> str:
     path = request.path
 
     # Actions/Blinks routes need permissive CORS
-    if path.startswith('/actions/') or path.startswith('/blinks/'):
+    if (path.startswith('/actions') or path.startswith('/blinks/')
+            or path.startswith('/api/v1/blinks/')
+            or path.startswith('/.well-known/')):
         return "*"
 
     # For other routes, check against configured origins

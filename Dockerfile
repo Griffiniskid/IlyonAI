@@ -1,4 +1,4 @@
-# AI Sentinel Bot - Production Dockerfile
+# Ilyon AI Bot - Production Dockerfile
 # Multi-stage build for optimized image size
 
 FROM python:3.11-slim as builder
@@ -54,12 +54,12 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:${WEBHOOK_PORT:-8443}/health || exit 1
+    CMD curl -f http://localhost:${WEB_API_PORT:-8080}/health || exit 1
 
 # Default command
 CMD ["python", "-m", "src.main"]
 
 # Labels
-LABEL maintainer="AI Sentinel Team"
-LABEL version="1.0"
-LABEL description="AI-powered Solana token analysis bot"
+LABEL maintainer="Ilyon AI Team"
+LABEL version="2.0"
+LABEL description="AI-powered Solana token analysis API"

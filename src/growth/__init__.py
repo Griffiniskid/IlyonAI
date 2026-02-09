@@ -1,5 +1,5 @@
 """
-Growth module for AI Sentinel.
+Growth module for Ilyon AI.
 
 Provides viral growth features:
 - Referral system

@@ -103,7 +103,7 @@ class BlinkService:
         self,
         token_address: str,
         analysis_result,
-        telegram_id: int,
+        telegram_id: Optional[int] = None,
     ) -> Dict[str, str]:
         """
         Create a new shareable Blink from analysis result.
@@ -111,12 +111,18 @@ class BlinkService:
         Args:
             token_address: Solana token address
             analysis_result: AnalysisResult from analyzer
-            telegram_id: Creator's Telegram ID
+            telegram_id: Creator's Telegram ID (optional)
 
         Returns:
             Dictionary with blink ID and URL
+
+        Raises:
+            RuntimeError: If database is not available
         """
         db = await get_database()
+
+        if not db._initialized:
+            raise RuntimeError("Database is not available - cannot create blink")
 
         # Check if recent blink exists for this token
         existing = await db.get_blink_by_token(token_address)
@@ -147,7 +153,7 @@ class BlinkService:
 
         # Create blink
         t = analysis_result.token
-        await db.create_blink(
+        created = await db.create_blink(
             blink_id=blink_id,
             token_address=token_address,
             token_symbol=getattr(t, "symbol", None),
@@ -161,6 +167,9 @@ class BlinkService:
             created_by_telegram_id=telegram_id,
             expires_at=expires_at,
         )
+
+        if not created:
+            raise RuntimeError("Failed to create blink in database")
 
         return {
             "id": blink_id,
@@ -292,7 +301,7 @@ class BlinkService:
                 f"Verdict: {verdict}\n"
                 f"Rug Probability: {rug_prob}%\n"
                 f"LP: {lp_status}\n\n"
-                f"Full report: https://t.me/aisentinelbot?start=check_{blink.token_address[:16]}"
+                f"Full report: {settings.webapp_url}/token/{blink.token_address}"
             )
 
             logger.info(f"Verification executed for blink {blink_id}: score={result.overall_score}")

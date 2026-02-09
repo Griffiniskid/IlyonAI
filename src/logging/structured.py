@@ -1,5 +1,5 @@
 """
-Structured logging formatters for AI Sentinel.
+Structured logging formatters for Ilyon AI.
 
 Provides dual output formats:
 - JSONFormatter: Machine-readable JSON logs for parsing and analysis

@@ -380,8 +380,8 @@ CRITICAL RULES:
 
             # Add OpenRouter-specific headers
             if self.use_openrouter:
-                headers["HTTP-Referer"] = "https://t.me/AI_Sentinel_Bot"
-                headers["X-Title"] = "AI Sentinel Bot"
+                headers["HTTP-Referer"] = "https://t.me/Ilyon_AI_Bot"
+                headers["X-Title"] = "Ilyon AI Bot"
 
             payload = {
                 "model": self.model,
@@ -734,7 +734,7 @@ CRITICAL RULES:
             session = await self._ensure_session()
 
             if not system_prompt:
-                system_prompt = """You are AI Sentinel, a STRICT cryptocurrency and Solana blockchain expert.
+                system_prompt = """You are Ilyon AI, a STRICT cryptocurrency and Solana blockchain expert.
 Answer concisely and directly.
 Always warn about risks.
 If asked about a specific token, suggest sending the address for analysis."""
@@ -745,8 +745,8 @@ If asked about a specific token, suggest sending the address for analysis."""
             }
 
             if self.use_openrouter:
-                headers["HTTP-Referer"] = "https://t.me/AI_Sentinel_Bot"
-                headers["X-Title"] = "AI Sentinel Bot"
+                headers["HTTP-Referer"] = "https://t.me/Ilyon_AI_Bot"
+                headers["X-Title"] = "Ilyon AI Bot"
 
             payload = {
                 "model": self.model,

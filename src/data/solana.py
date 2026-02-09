@@ -5,7 +5,7 @@ This module provides an async client for interacting with Solana RPC
 to fetch token mint information, holder data, analyze wallet distribution,
 and simulate transactions for honeypot detection.
 
-NOTE: This is the core blockchain client for AI Sentinel.
+NOTE: This is the core blockchain client for Ilyon AI.
 Exclusively designed for Solana mainnet - no other chains supported.
 """
 

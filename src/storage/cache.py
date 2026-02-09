@@ -1,5 +1,5 @@
 """
-Caching layer for AI Sentinel.
+Caching layer for Ilyon AI.
 
 Provides Redis-based caching with in-memory fallback.
 Caches token analysis results to reduce API calls and improve response times.

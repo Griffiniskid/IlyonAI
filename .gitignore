@@ -2,6 +2,9 @@
 # AI Sentinel - Git Ignore Configuration
 # ===========================================
 
+# Local SQLite database
+data/
+
 # Environment files (NEVER commit these)
 .env
 .env.local

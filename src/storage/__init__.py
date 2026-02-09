@@ -1,5 +1,5 @@
 """
-Storage module for AI Sentinel.
+Storage module for Ilyon AI.
 
 Provides database and caching functionality.
 """

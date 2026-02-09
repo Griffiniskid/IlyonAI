@@ -3,8 +3,6 @@ set -e
 
 echo "=== AI Sentinel Startup ==="
 
-cd /home/griffiniskid/Documents/ai-sentinel
-
 # Fix permissions
 echo "[1/4] Fixing permissions..."
 chmod -R 777 logs/ 2>/dev/null || mkdir -p logs && chmod -R 777 logs/
@@ -40,5 +38,3 @@ echo ""
 echo "=== Startup Complete ==="
 echo "API: http://localhost:8080"
 echo "Frontend: http://localhost:3000 (run 'cd web && npm run dev' separately)"
-echo "Telegram Bot: Active"
-echo "Logs: docker logs -f ai-sentinel-bot"

@@ -36,13 +36,17 @@ import {
   cn,
 } from "@/lib/utils";
 import { useState } from "react";
+import { createBlink } from "@/lib/api";
+import { useToast } from "@/components/ui/toaster";
 
 export default function TokenAnalysisPage() {
   const params = useParams();
   const router = useRouter();
   const address = params.address as string;
+  const { addToast } = useToast();
 
   const [copied, setCopied] = useState(false);
+  const [isCreatingBlink, setIsCreatingBlink] = useState(false);
   const [analysisStage, setAnalysisStage] = useState(0);
 
   const {
@@ -83,6 +87,21 @@ export default function TokenAnalysisPage() {
 
   const handleRefresh = () => {
     refresh({ address, mode: "standard" });
+  };
+
+  const handleShareBlink = async () => {
+    try {
+      setIsCreatingBlink(true);
+      const blink = await createBlink(address);
+      await copyToClipboard(blink.url);
+      
+      addToast("Blink Created! Link copied to clipboard.", "success");
+    } catch (error: any) {
+      const msg = error?.message || "Failed to create Blink. Please try again.";
+      addToast(msg, "error");
+    } finally {
+      setIsCreatingBlink(false);
+    }
   };
 
   // Loading state
@@ -224,9 +243,18 @@ export default function TokenAnalysisPage() {
             />
             Refresh
           </Button>
-          <Button variant="outline" size="sm">
-            <Share2 className="h-4 w-4 mr-2" />
-            Share
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={handleShareBlink}
+            disabled={isCreatingBlink}
+          >
+            {isCreatingBlink ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Share2 className="h-4 w-4 mr-2" />
+            )}
+            Share Blink
           </Button>
         </div>
       </div>

@@ -2,8 +2,14 @@
 
 import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import dynamic from "next/dynamic";
 import Link from "next/link";
+
+// Dynamically import WalletMultiButton with SSR disabled to prevent hydration mismatch
+const WalletMultiButton = dynamic(
+  () => import("@solana/wallet-adapter-react-ui").then((mod) => mod.WalletMultiButton),
+  { ssr: false }
+);
 import Image from "next/image";
 import { usePortfolio, useWalletPortfolio, useTrackedWallets, useTrackWallet } from "@/lib/hooks";
 import { GlassCard } from "@/components/ui/card";

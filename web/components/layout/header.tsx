@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +15,12 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+
+// Dynamically import WalletMultiButton with SSR disabled to prevent hydration mismatch
+const WalletMultiButton = dynamic(
+  () => import("@solana/wallet-adapter-react-ui").then((mod) => mod.WalletMultiButton),
+  { ssr: false }
+);
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -33,11 +39,8 @@ export function Header() {
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2">
-            <span className="text-2xl">🛡️</span>
-            <span className="font-bold text-xl tracking-tight">
-              AI <span className="text-emerald-500">SENTINEL</span>
-            </span>
+          <Link href="/" className="flex items-center">
+            <img src="/logo.png" alt="Ilyon AI" className="h-[88px] w-auto" />
           </Link>
 
           {/* Desktop Navigation */}

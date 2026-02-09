@@ -1,5 +1,5 @@
 """
-Solana Actions API module for AI Sentinel.
+Solana Actions API module for Ilyon AI.
 
 Provides shareable Blinks (Blockchain Links) that render as
 interactive cards on Twitter/X for viral token security verification.

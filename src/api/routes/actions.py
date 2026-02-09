@@ -48,7 +48,7 @@ async def actions_get(request: web.Request) -> web.Response:
     Returns extended actions manifest with metadata.
     """
     manifest = {
-        "name": "AI Sentinel",
+        "name": "Ilyon AI",
         "description": "Solana Token Security Analysis - Verify tokens before you buy",
         "icon": f"{settings.actions_base_url}/static/icon.png",
         "rules": [

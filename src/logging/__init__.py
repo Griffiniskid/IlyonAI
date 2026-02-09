@@ -1,5 +1,5 @@
 """
-Advanced logging system for AI Sentinel.
+Advanced logging system for Ilyon AI.
 
 This package provides comprehensive logging with:
 - Structured JSON logs for machine parsing

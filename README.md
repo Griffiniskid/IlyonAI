@@ -1,13 +1,23 @@
-# AI Sentinel
+# Ilyon AI
 
 **Solana Token Security Intelligence Platform**
 
-AI Sentinel is an open-source Telegram bot that protects Solana traders from rug pulls and scams using advanced AI analysis, behavioral detection, and wallet forensics.
+> 🇬🇧 **Proud Candidate for the Solana Foundation UK Grant**
+
+![Blinks Ready](https://img.shields.io/badge/Solana%20Actions-Blinks%20Ready-9945FF?style=for-the-badge&logo=solana)
+
+Ilyon AI is an open-source security layer that protects Solana traders from rug pulls and scams using advanced AI analysis, behavioral detection, and wallet forensics.
+
+## 🚀 Key Innovation: Solana Blinks Integrated
+Ilyon AI is one of the first security tools to fully support **Solana Actions (Blinks)**. 
+Users can share a token address on X (Twitter), and Ilyon AI unfurls an interactive "Verify Token" card that performs a real-time risk check without the user ever leaving their feed.
+
+![Blink Demo](https://placehold.co/600x300/1a1a2e/FFF?text=Ilyon+AI+Blink+Preview)
 
 ## Key Features
 
 ### Predictive Rug Detection
-Unlike tools that detect rugs *after* they happen, AI Sentinel warns you *before* using behavioral pattern analysis:
+Unlike tools that detect rugs *after* they happen, Ilyon AI warns you *before* using behavioral pattern analysis:
 - Liquidity staging detection (small removals before major rug)
 - Volume/price divergence identification
 - Sell pressure buildup monitoring
@@ -52,8 +62,8 @@ Consensus-based risk assessment using multiple AI providers:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/ai-sentinel.git
-cd ai-sentinel
+git clone https://github.com/yourusername/ilyon-ai.git
+cd ilyon-ai
 
 # Create virtual environment
 python -m venv venv
@@ -115,7 +125,7 @@ HELIUS_API_KEY=your_helius_key
 ALLOWED_USERS=123456789,987654321  # Comma-separated Telegram IDs
 
 # Optional
-DATABASE_URL=postgresql://user:pass@localhost:5432/ai_sentinel
+DATABASE_URL=postgresql://user:pass@localhost:5432/ilyon_ai
 REDIS_URL=redis://localhost:6379
 ```
 
@@ -168,7 +178,7 @@ Or use the analyze command:
 ## Architecture
 
 ```
-ai-sentinel/
+ilyon-ai/
 ├── src/
 │   ├── main.py              # Application entry point
 │   ├── config.py            # Configuration management
@@ -271,7 +281,7 @@ Contributions are welcome! Please:
 
 ### Reporting Vulnerabilities
 
-If you discover a security vulnerability, please email security@aisentinel.io instead of opening a public issue.
+If you discover a security vulnerability, please email security@ilyonai.io instead of opening a public issue.
 
 ### Best Practices
 
@@ -290,4 +300,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Disclaimer
 
-AI Sentinel provides analysis and risk assessment for educational purposes. It is not financial advice. Always do your own research before trading. The developers are not responsible for any financial losses.
+Ilyon AI provides analysis and risk assessment for educational purposes. It is not financial advice. Always do your own research before trading. The developers are not responsible for any financial losses.

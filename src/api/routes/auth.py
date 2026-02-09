@@ -39,13 +39,13 @@ def generate_challenge() -> str:
 
 def create_sign_message(wallet: str, nonce: str) -> str:
     """Create the message to be signed by the wallet."""
-    return f"""AI Sentinel Authentication
+    return f"""Ilyon AI Authentication
 
 Wallet: {wallet}
 Nonce: {nonce}
 Timestamp: {datetime.utcnow().isoformat()}
 
-Sign this message to authenticate with AI Sentinel.
+Sign this message to authenticate with Ilyon AI.
 This request will not trigger a blockchain transaction or cost any gas fees."""
 
 

@@ -49,7 +49,7 @@ class IconGenerator:
         self.padding = PADDING
         self._font_cache = {}
 
-    def _get_font(self, size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+    def _get_font(self, size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
         """Get or load a font"""
         cache_key = (size, bold)
         if cache_key in self._font_cache:
@@ -89,11 +89,15 @@ class IconGenerator:
     def _hex_to_rgb(self, hex_color: str) -> Tuple[int, int, int]:
         """Convert hex color to RGB tuple"""
         hex_color = hex_color.lstrip("#")
-        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        return (
+            int(hex_color[0:2], 16),
+            int(hex_color[2:4], 16),
+            int(hex_color[4:6], 16)
+        )
 
     def _draw_arc(
         self,
-        draw: ImageDraw.Draw,
+        draw: ImageDraw.ImageDraw,
         bbox: Tuple[int, int, int, int],
         start: float,
         end: float,
@@ -122,6 +126,15 @@ class IconGenerator:
         Returns:
             BytesIO containing PNG image
         """
+        # Ensure inputs are primitives (handle SQLAlchemy Column/InstrumentedAttribute)
+        if hasattr(score, "__int__"):
+             score = int(score)
+        else:
+             score = 0
+             
+        grade = str(grade) if grade is not None else "?"
+        symbol = str(symbol) if symbol is not None else "TOKEN"
+        
         # Create image
         img = Image.new("RGB", (self.size, self.size), COLORS["background"])
         draw = ImageDraw.Draw(img)
@@ -195,9 +208,9 @@ class IconGenerator:
         symbol_y = self.size - 70
         draw.text((symbol_x, symbol_y), symbol_text, fill=COLORS["text"], font=symbol_font)
 
-        # Draw "AI Sentinel" branding at top
+        # Draw "Ilyon AI" branding at top
         brand_font = self._get_font(20)
-        brand_text = "AI Sentinel"
+        brand_text = "Ilyon AI"
         brand_bbox = draw.textbbox((0, 0), brand_text, font=brand_font)
         brand_width = brand_bbox[2] - brand_bbox[0]
         brand_x = (self.size - brand_width) // 2
@@ -230,11 +243,26 @@ class IconGenerator:
         if not blink:
             raise ValueError("Blink not found")
 
+        # Explicitly cast to primitives to satisfy type checker/runtime
+        # We use str() and int() which will work at runtime for the ORM values
+        # The LSP complains because it sees the Column definition, but at runtime these are values
+        try:
+            score_val = int(blink.overall_score) if blink.overall_score is not None else 0
+            grade_val = str(blink.grade) if blink.grade is not None else "?"
+            symbol_val = str(blink.token_symbol) if blink.token_symbol is not None else "TOKEN"
+            verdict_val = str(blink.ai_verdict) if blink.ai_verdict is not None else None
+        except Exception:
+            # Fallback for safety
+            score_val = 0
+            grade_val = "?"
+            symbol_val = "TOKEN"
+            verdict_val = None
+
         return self.generate(
-            score=blink.overall_score or 0,
-            grade=blink.grade or "?",
-            symbol=blink.token_symbol or "TOKEN",
-            verdict=blink.ai_verdict,
+            score=score_val,
+            grade=grade_val,
+            symbol=symbol_val,
+            verdict=verdict_val,
         )
 
     def generate_default(self) -> io.BytesIO:

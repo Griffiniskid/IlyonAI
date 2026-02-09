@@ -111,8 +111,8 @@ def cmd_tail(args):
 
 def main():
     """Main CLI entry point."""
-    parser = argparse.ArgumentParser(description="AI Sentinel Log Analysis CLI")
-    parser.add_argument('--log-file', default='logs/ai_sentinel.json', help='Path to JSON log file')
+    parser = argparse.ArgumentParser(description="Ilyon AI Log Analysis CLI")
+    parser.add_argument('--log-file', default='logs/ilyon_ai.json', help='Path to JSON log file')
 
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 

@@ -1,5 +1,5 @@
 """
-API Request schemas for the AI Sentinel Web API.
+API Request schemas for the Ilyon AI Web API.
 
 Pydantic models that define the structure of all API requests.
 """

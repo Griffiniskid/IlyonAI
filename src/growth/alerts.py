@@ -1,5 +1,5 @@
 """
-Sniper Alert System for AI Sentinel.
+Sniper Alert System for Ilyon AI.
 
 Monitors for new token launches and sends alerts to subscribed users.
 This is a background service that can be run alongside the main bot.

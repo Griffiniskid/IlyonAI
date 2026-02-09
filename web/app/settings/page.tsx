@@ -2,8 +2,14 @@
 
 import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import dynamic from "next/dynamic";
 import { useAuth, useUser } from "@/lib/hooks";
+
+// Dynamically import WalletMultiButton with SSR disabled to prevent hydration mismatch
+const WalletMultiButton = dynamic(
+  () => import("@solana/wallet-adapter-react-ui").then((mod) => mod.WalletMultiButton),
+  { ssr: false }
+);
 import { GlassCard } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -223,9 +229,8 @@ export default function SettingsPage() {
         <div className="space-y-2">
           {[
             { label: "Documentation", href: "/docs" },
-            { label: "Twitter", href: "https://twitter.com/aisentinel" },
-            { label: "Telegram", href: "https://t.me/aisentinel" },
-            { label: "GitHub", href: "https://github.com/aisentinel" },
+            { label: "Twitter", href: "https://x.com/ilyonProtocol" },
+            { label: "Telegram", href: "https://t.me/ilyonProtocol" },
           ].map((link) => (
             <a
               key={link.label}
