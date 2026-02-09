@@ -1,7 +1,5 @@
-# Ilyon AI Bot - Docker Compose Configuration
-# Production deployment with bot, Redis, and optional PostgreSQL
-
-version: '3.8'
+# Ilyon AI - Docker Compose Configuration
+# Production deployment with API, Web Frontend, Redis, and PostgreSQL
 
 services:
   # ═══════════════════════════════════════════════════════════════════════════
@@ -32,6 +30,32 @@ services:
       - "${ACTIONS_API_PORT:-8080}:${ACTIONS_API_PORT:-8080}"
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ILYON AI WEB FRONTEND
+  # ═══════════════════════════════════════════════════════════════════════════
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${ACTIONS_BASE_URL:-https://ilyonai.com}
+        NEXT_PUBLIC_SOLANA_NETWORK: mainnet-beta
+        NEXT_PUBLIC_SOLANA_RPC_URL: https://api.mainnet-beta.solana.com
+    container_name: ilyon-ai-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    networks:
+      - ilyon-ai-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
       retries: 3
