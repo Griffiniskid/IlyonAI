@@ -60,11 +60,13 @@ export function useSearchTokens(query: string) {
 export function useTrendingTokens(
   category: "trending" | "gainers" | "losers" | "new" = "trending"
 ) {
+  // New pairs need faster refresh to show tokens created seconds ago
+  const interval = category === "new" ? 10 * 1000 : 30 * 1000;
   return useQuery({
     queryKey: ["trending", category],
     queryFn: () => api.getTrendingTokens(category),
-    staleTime: 30 * 1000, // 30 seconds
-    refetchInterval: 30 * 1000, // Auto-refresh every 30s
+    staleTime: interval,
+    refetchInterval: interval,
   });
 }
 
@@ -103,9 +105,10 @@ export function useTrackWallet() {
   return useMutation({
     mutationFn: ({ address, label }: { address: string; label?: string }) =>
       api.trackWallet(address, label),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["trackedWallets"] });
       queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+      queryClient.invalidateQueries({ queryKey: ["portfolio", variables.address] });
     },
   });
 }

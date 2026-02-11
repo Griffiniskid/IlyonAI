@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import { useWhaleActivity } from "@/lib/hooks";
+import * as api from "@/lib/api";
 import { GlassCard } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,13 +28,30 @@ import {
 } from "@/lib/utils";
 
 export default function WhalesPage() {
-  const [minAmount, setMinAmount] = useState(10000);
+  const [minAmount, setMinAmount] = useState(1000);
   const [typeFilter, setTypeFilter] = useState<"buy" | "sell" | undefined>();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const queryClient = useQueryClient();
 
-  const { data, isLoading, refetch, isFetching } = useWhaleActivity({
-    minAmountUsd: minAmount,
-    type: typeFilter,
-  });
+  const params = { minAmountUsd: minAmount, type: typeFilter };
+  const { data, isLoading, isFetching } = useWhaleActivity(params);
+
+  const handleForceRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const freshData = await api.getWhaleActivity({
+        ...params,
+        forceRefresh: true,
+      });
+      queryClient.setQueryData(["whales", params], freshData);
+    } catch (e) {
+      queryClient.invalidateQueries({ queryKey: ["whales", params] });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const busy = isFetching || isRefreshing;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -49,11 +68,11 @@ export default function WhalesPage() {
         </div>
         <Button
           variant="outline"
-          onClick={() => refetch()}
-          disabled={isFetching}
+          onClick={handleForceRefresh}
+          disabled={busy}
         >
           <RefreshCw
-            className={cn("h-4 w-4 mr-2", isFetching && "animate-spin")}
+            className={cn("h-4 w-4 mr-2", busy && "animate-spin")}
           />
           Refresh
         </Button>
@@ -61,7 +80,7 @@ export default function WhalesPage() {
 
       {/* Filters */}
       <GlassCard className="mb-8">
-        <div className="flex flex-col md:flex-row gap-4 items-end">
+        <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-end">
           <div className="flex-1">
             <label className="text-sm text-muted-foreground mb-2 block">
               Minimum Amount (USD)
@@ -78,23 +97,24 @@ export default function WhalesPage() {
             <Button
               variant={typeFilter === undefined ? "default" : "outline"}
               onClick={() => setTypeFilter(undefined)}
+              className="flex-1 md:flex-initial"
             >
               All
             </Button>
             <Button
               variant={typeFilter === "buy" ? "default" : "outline"}
               onClick={() => setTypeFilter("buy")}
-              className={typeFilter === "buy" ? "bg-emerald-600" : ""}
+              className={cn("flex-1 md:flex-initial", typeFilter === "buy" ? "bg-emerald-600" : "")}
             >
-              <TrendingUp className="h-4 w-4 mr-2" />
+              <TrendingUp className="h-4 w-4 mr-1 sm:mr-2" />
               Buys
             </Button>
             <Button
               variant={typeFilter === "sell" ? "default" : "outline"}
               onClick={() => setTypeFilter("sell")}
-              className={typeFilter === "sell" ? "bg-red-600" : ""}
+              className={cn("flex-1 md:flex-initial", typeFilter === "sell" ? "bg-red-600" : "")}
             >
-              <TrendingDown className="h-4 w-4 mr-2" />
+              <TrendingDown className="h-4 w-4 mr-1 sm:mr-2" />
               Sells
             </Button>
           </div>
@@ -116,37 +136,37 @@ export default function WhalesPage() {
               key={tx.signature}
               className="hover:border-emerald-500/30 transition"
             >
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4">
+                <div className="flex items-center gap-3 md:gap-4">
                   {/* Type badge */}
                   <div
                     className={cn(
-                      "w-12 h-12 rounded-xl flex items-center justify-center",
+                      "w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center shrink-0",
                       tx.type === "buy"
                         ? "bg-emerald-500/20"
                         : "bg-red-500/20"
                     )}
                   >
                     {tx.type === "buy" ? (
-                      <TrendingUp className="h-6 w-6 text-emerald-400" />
+                      <TrendingUp className="h-5 w-5 md:h-6 md:w-6 text-emerald-400" />
                     ) : (
-                      <TrendingDown className="h-6 w-6 text-red-400" />
+                      <TrendingDown className="h-5 w-5 md:h-6 md:w-6 text-red-400" />
                     )}
                   </div>
 
                   {/* Token info */}
-                  <div>
+                  <div className="min-w-0">
                     <Link
                       href={`/token/${tx.token_address}`}
                       className="font-semibold hover:text-emerald-400 transition"
                     >
                       {tx.token_symbol}
-                      <span className="text-muted-foreground font-normal ml-2">
+                      <span className="text-muted-foreground font-normal ml-2 hidden sm:inline">
                         {tx.token_name}
                       </span>
                     </Link>
-                    <div className="text-sm text-muted-foreground flex items-center gap-2">
-                      <Clock className="h-3 w-3" />
+                    <div className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1 sm:gap-2">
+                      <Clock className="h-3 w-3 shrink-0" />
                       {formatRelativeTime(tx.timestamp)}
                       <span>•</span>
                       {tx.dex_name}
@@ -154,26 +174,26 @@ export default function WhalesPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-6">
+                <div className="flex items-center gap-3 sm:gap-6 ml-13 md:ml-0">
                   {/* Amount */}
-                  <div className="text-right">
+                  <div className="text-left md:text-right flex-1 md:flex-initial">
                     <div
                       className={cn(
-                        "font-mono font-bold text-lg",
+                        "font-mono font-bold text-base md:text-lg",
                         tx.type === "buy" ? "text-emerald-400" : "text-red-400"
                       )}
                     >
                       {tx.type === "buy" ? "+" : "-"}
                       {formatUSD(tx.amount_usd)}
                     </div>
-                    <div className="text-sm text-muted-foreground font-mono">
+                    <div className="text-xs sm:text-sm text-muted-foreground font-mono">
                       {formatCompact(tx.amount_tokens)} tokens
                     </div>
                   </div>
 
                   {/* Wallet */}
-                  <div className="text-right min-w-[100px]">
-                    <div className="text-sm">
+                  <div className="text-right min-w-[80px] sm:min-w-[100px]">
+                    <div className="text-xs sm:text-sm">
                       {tx.wallet_label || (
                         <span className="font-mono text-muted-foreground">
                           {truncateAddress(tx.wallet_address, 4)}
@@ -190,7 +210,7 @@ export default function WhalesPage() {
                     href={`https://solscan.io/tx/${tx.signature}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-muted-foreground hover:text-foreground transition"
+                    className="text-muted-foreground hover:text-foreground transition shrink-0"
                   >
                     <ExternalLink className="h-4 w-4" />
                   </a>

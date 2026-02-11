@@ -33,13 +33,16 @@ async def get_trending_tokens(request: web.Request) -> web.Response:
 
     limit = min(int(request.query.get('limit', 20)), 50)
     category = request.query.get('category', 'trending')
+    force_refresh = request.query.get('force_refresh', '').lower() in ('1', 'true')
 
     cache_key = f"{category}:{limit}"
+    # Shorter cache for new pairs to enable near-real-time updates
+    effective_ttl = 10 if category == 'new' else _cache_ttl
 
-    # Check cache
-    if cache_key in _trending_cache:
+    # Check cache (skip if force_refresh)
+    if not force_refresh and cache_key in _trending_cache:
         cached = _trending_cache[cache_key]
-        if (datetime.utcnow() - cached['time']).seconds < _cache_ttl:
+        if (datetime.utcnow() - cached['time']).seconds < effective_ttl:
             return web.json_response(cached['data'])
 
     try:
@@ -71,6 +74,9 @@ async def get_trending_tokens(request: web.Request) -> web.Response:
                 if created_at:
                     age_hours = (datetime.now().timestamp() - created_at / 1000) / 3600
 
+                txns = t.get('txns', {}).get('h1', {})
+                txns_1h = int(txns.get('buys', 0) or 0) + int(txns.get('sells', 0) or 0)
+
                 tokens.append(TrendingTokenResponse(
                     address=base_token.get('address', ''),
                     name=base_token.get('name', 'Unknown'),
@@ -83,7 +89,8 @@ async def get_trending_tokens(request: web.Request) -> web.Response:
                     liquidity_usd=float(liquidity.get('usd', 0) or 0),
                     market_cap=float(t.get('marketCap', 0) or 0),
                     age_hours=age_hours,
-                    dex_name=t.get('dexId', 'unknown').title()
+                    dex_name=t.get('dexId', 'unknown').title(),
+                    txns_1h=txns_1h,
                 ))
             except Exception as e:
                 logger.warning(f"Error parsing token: {e}")
@@ -151,6 +158,9 @@ async def get_gainers(request: web.Request) -> web.Response:
                 if created_at:
                     age_hours = (datetime.now().timestamp() - created_at / 1000) / 3600
 
+                txns = t.get('txns', {}).get('h1', {})
+                txns_1h = int(txns.get('buys', 0) or 0) + int(txns.get('sells', 0) or 0)
+
                 tokens.append(TrendingTokenResponse(
                     address=base_token.get('address', ''),
                     name=base_token.get('name', 'Unknown'),
@@ -163,7 +173,8 @@ async def get_gainers(request: web.Request) -> web.Response:
                     liquidity_usd=float(liquidity.get('usd', 0) or 0),
                     market_cap=float(t.get('marketCap', 0) or 0),
                     age_hours=age_hours,
-                    dex_name=t.get('dexId', 'unknown').title()
+                    dex_name=t.get('dexId', 'unknown').title(),
+                    txns_1h=txns_1h,
                 ))
             except Exception:
                 continue
@@ -210,6 +221,9 @@ async def get_losers(request: web.Request) -> web.Response:
                 if created_at:
                     age_hours = (datetime.now().timestamp() - created_at / 1000) / 3600
 
+                txns = t.get('txns', {}).get('h1', {})
+                txns_1h = int(txns.get('buys', 0) or 0) + int(txns.get('sells', 0) or 0)
+
                 tokens.append(TrendingTokenResponse(
                     address=base_token.get('address', ''),
                     name=base_token.get('name', 'Unknown'),
@@ -222,7 +236,8 @@ async def get_losers(request: web.Request) -> web.Response:
                     liquidity_usd=float(liquidity.get('usd', 0) or 0),
                     market_cap=float(t.get('marketCap', 0) or 0),
                     age_hours=age_hours,
-                    dex_name=t.get('dexId', 'unknown').title()
+                    dex_name=t.get('dexId', 'unknown').title(),
+                    txns_1h=txns_1h,
                 ))
             except Exception:
                 continue

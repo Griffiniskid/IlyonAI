@@ -67,9 +67,9 @@ export function Header() {
             })}
           </nav>
 
-          {/* Wallet Connect */}
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:block">
+          {/* Wallet Connect - always visible, smaller on mobile */}
+          <div className="flex items-center gap-2 sm:gap-4">
+            <div className="scale-75 sm:scale-100 origin-right">
               <WalletMultiButton />
             </div>
 
@@ -116,9 +116,6 @@ export function Header() {
                   </Link>
                 );
               })}
-              <div className="pt-2 sm:hidden">
-                <WalletMultiButton />
-              </div>
             </nav>
           </div>
         )}

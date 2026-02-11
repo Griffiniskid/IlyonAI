@@ -89,13 +89,13 @@ function FeatureCard({
 function StatCard({ value, label, icon: Icon, loading }: { value: string; label: string; icon: React.ElementType; loading?: boolean }) {
   return (
     <div className="stat-card text-center">
-      <Icon className="w-8 h-8 text-emerald-400 mx-auto mb-3" />
+      <Icon className="w-6 h-6 sm:w-8 sm:h-8 text-emerald-400 mx-auto mb-2 sm:mb-3" />
       {loading ? (
         <div className="h-9 w-20 bg-muted/50 animate-pulse rounded mx-auto mb-1" />
       ) : (
-        <div className="text-3xl font-bold text-gradient mb-1">{value}</div>
+        <div className="text-2xl sm:text-3xl font-bold text-emerald-400 mb-1">{value}</div>
       )}
-      <div className="text-sm text-muted-foreground">{label}</div>
+      <div className="text-xs sm:text-sm text-muted-foreground">{label}</div>
     </div>
   );
 }
@@ -317,8 +317,8 @@ export default function HomePage() {
               loading={statsLoading}
             />
             <StatCard
-              value={statsData ? statsData.active_tokens.toLocaleString() : "0"}
-              label="Active Tokens"
+              value={statsData ? formatCompact(statsData.solana_tvl || 0) : "$0"}
+              label="Solana TVL"
               icon={Activity}
               loading={statsLoading}
             />

@@ -28,6 +28,60 @@ def get_user_wallet(request: web.Request) -> Optional[str]:
     return request.get('user_wallet')
 
 
+def _calculate_health_score(tokens: List, total_value: float) -> int:
+    """
+    Calculate portfolio health score (0-100) based on meaningful criteria.
+
+    Factors:
+    - Diversity: How spread out holdings are (Herfindahl index)
+    - Stability: Average absolute 24h price change
+    - Token count: More tokens = better diversification
+    """
+    if not tokens or total_value <= 0:
+        return 50  # Default for empty portfolios
+
+    score = 50  # Base score
+
+    # 1. Diversity bonus (0-20 points) - Herfindahl index
+    # Lower HHI = more diversified = higher score
+    weights = []
+    for token in tokens:
+        val = getattr(token, 'balance_usd', 0) if hasattr(token, 'balance_usd') else token.get('balance_usd', 0)
+        if total_value > 0 and val > 0:
+            weights.append(val / total_value)
+
+    if weights:
+        hhi = sum(w ** 2 for w in weights)
+        # HHI ranges from 1/n (perfectly diversified) to 1 (single token)
+        # Map: HHI 1.0 -> 0 points, HHI < 0.1 -> 20 points
+        diversity_score = max(0, min(20, int((1 - hhi) * 22)))
+        score += diversity_score
+
+    # 2. Stability bonus (0-15 points) - lower avg volatility = higher
+    price_changes = []
+    for token in tokens:
+        change = getattr(token, 'price_change_24h', 0) if hasattr(token, 'price_change_24h') else token.get('price_change_24h', 0)
+        if change is not None:
+            price_changes.append(abs(float(change)))
+
+    if price_changes:
+        avg_volatility = sum(price_changes) / len(price_changes)
+        # Low volatility (<10%) = 15 points, high (>100%) = 0 points
+        stability_score = max(0, min(15, int(15 - avg_volatility / 7)))
+        score += stability_score
+
+    # 3. Token count bonus (0-15 points)
+    n_tokens = len(tokens)
+    if n_tokens >= 10:
+        score += 15
+    elif n_tokens >= 5:
+        score += 10
+    elif n_tokens >= 3:
+        score += 5
+
+    return max(0, min(100, score))
+
+
 async def get_wallet_tokens(wallet_address: str) -> List[Dict]:
     """Fetch token holdings for a wallet using Helius."""
     try:
@@ -107,12 +161,7 @@ async def get_portfolio(request: web.Request) -> web.Response:
             ))
             total_value += value_usd
 
-    # Calculate health score based on portfolio diversity
-    health_score = 70  # Default score
-    if len(all_tokens) > 5:
-        health_score = 75
-    if len(all_tokens) > 10:
-        health_score = 80
+    health_score = _calculate_health_score(all_tokens, total_value)
 
     response = PortfolioResponse(
         wallet_address="aggregate",
@@ -177,12 +226,7 @@ async def get_wallet_portfolio(request: web.Request) -> web.Response:
         ))
         total_value += value
 
-    # Calculate health score
-    health_score = 70
-    if len(tokens) > 5:
-        health_score = 75
-    if len(tokens) > 10:
-        health_score = 80
+    health_score = _calculate_health_score(tokens, total_value)
 
     response = PortfolioResponse(
         wallet_address=wallet_address,

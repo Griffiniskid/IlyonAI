@@ -835,25 +835,25 @@ class Database:
             logger.error(f"Failed to track web analysis: {e}")
             return False
 
-    async def count_analyses_today(self) -> int:
-        """Count total analyses performed today (all sources)."""
+    async def count_analyses_last_24h(self) -> int:
+        """Count total analyses performed in the last 24 hours (all sources)."""
         if not self._initialized:
             return 0
 
         try:
             async with self.async_session() as session:
-                today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-                
+                cutoff = datetime.utcnow() - timedelta(hours=24)
+
                 # Count from both Analysis (Telegram) and WebAnalysis tables
                 telegram_result = await session.execute(
                     select(func.count(Analysis.id))
-                    .where(Analysis.created_at >= today_start)
+                    .where(Analysis.created_at >= cutoff)
                 )
                 telegram_count = telegram_result.scalar() or 0
 
                 web_result = await session.execute(
                     select(func.count(WebAnalysis.id))
-                    .where(WebAnalysis.analyzed_at >= today_start)
+                    .where(WebAnalysis.analyzed_at >= cutoff)
                 )
                 web_count = web_result.scalar() or 0
 
@@ -879,6 +879,38 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to count total analyses: {e}")
             return 0
+
+    async def get_grade_distribution(self) -> Dict[str, int]:
+        """Get distribution of analysis grades from real analyzed tokens."""
+        if not self._initialized:
+            return {}
+
+        try:
+            async with self.async_session() as session:
+                result: Dict[str, int] = {}
+
+                # From Telegram analyses
+                tg_rows = await session.execute(
+                    select(Analysis.grade, func.count(Analysis.id))
+                    .where(Analysis.grade.isnot(None))
+                    .group_by(Analysis.grade)
+                )
+                for grade, count in tg_rows:
+                    result[grade] = result.get(grade, 0) + count
+
+                # From Web analyses
+                web_rows = await session.execute(
+                    select(WebAnalysis.grade, func.count(WebAnalysis.id))
+                    .where(WebAnalysis.grade.isnot(None))
+                    .group_by(WebAnalysis.grade)
+                )
+                for grade, count in web_rows:
+                    result[grade] = result.get(grade, 0) + count
+
+                return result
+        except Exception as e:
+            logger.error(f"Failed to get grade distribution: {e}")
+            return {}
 
     # ═══════════════════════════════════════════════════════════════════════════
     # STATS SNAPSHOTS (for change metrics)

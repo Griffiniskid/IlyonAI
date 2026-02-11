@@ -27,6 +27,10 @@ export const metadata: Metadata = {
     "crypto security",
     "AI analysis",
   ],
+  icons: {
+    icon: "/shield.png",
+    apple: "/shield.png",
+  },
   openGraph: {
     title: "Ilyon AI | Solana Token Security",
     description: "AI-powered security analysis for Solana tokens",

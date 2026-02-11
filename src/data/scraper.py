@@ -802,14 +802,17 @@ class WebsiteScraper:
                 # ════════════════════════════════════════════════════════════
                 # If we got very little content but the site loaded successfully,
                 # it's likely JavaScript-rendered. Try Playwright.
-                # Triggers if: SPA detected OR framework detected OR content < 100 chars
+                # Low content alone is sufficient reason - SPA/framework detection
+                # often fails on minimal initial HTML since the detection patterns
+                # are in the JS-rendered DOM, not the server response.
                 should_try_playwright = (
                     PLAYWRIGHT_AVAILABLE and
-                    len(content) < 200 and
-                    (result.get('uses_modern_framework') or
-                     result.get('is_spa') or
-                     len(content) < 100)  # Very low content = probably JS-rendered
+                    len(content) < 500  # Any site with < 500 chars likely needs JS rendering
                 )
+
+                if not PLAYWRIGHT_AVAILABLE and len(content) < 500:
+                    logger.warning(f"⚠️ Low content ({len(content)} chars) but Playwright unavailable for {url}")
+                    result["red_flags"].append(f"⚠️ Low content extracted ({len(content)} chars) - site may require JavaScript rendering")
 
                 if should_try_playwright:
                     logger.info(f"🔄 Low content detected ({len(content)} chars), retrying with Playwright: {url}")

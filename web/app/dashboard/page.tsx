@@ -59,23 +59,23 @@ function StatCard({
   return (
     <GlassCard className="relative overflow-hidden">
       <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground mb-1">{title}</p>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs sm:text-sm text-muted-foreground mb-1">{title}</p>
           {loading ? (
             <div className="h-8 w-24 bg-muted/50 animate-pulse rounded" />
           ) : (
-            <p className="text-2xl font-bold">{value}</p>
+            <p className="text-lg sm:text-2xl font-bold truncate">{value}</p>
           )}
           {change && !loading && (
             <div className="flex items-center gap-1 mt-1">
               {changeType === "positive" ? (
-                <ArrowUpRight className="w-4 h-4 text-emerald-400" />
+                <ArrowUpRight className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-400 shrink-0" />
               ) : changeType === "negative" ? (
-                <ArrowDownRight className="w-4 h-4 text-red-400" />
+                <ArrowDownRight className="w-3 h-3 sm:w-4 sm:h-4 text-red-400 shrink-0" />
               ) : null}
               <span
                 className={cn(
-                  "text-sm",
+                  "text-xs sm:text-sm truncate",
                   changeType === "positive"
                     ? "text-emerald-400"
                     : changeType === "negative"
@@ -88,8 +88,8 @@ function StatCard({
             </div>
           )}
         </div>
-        <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-          <Icon className="w-6 h-6 text-emerald-400" />
+        <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 ml-2">
+          <Icon className="w-4 h-4 sm:w-6 sm:h-6 text-emerald-400" />
         </div>
       </div>
 
@@ -287,7 +287,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats Grid - Updated metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-8">
         <StatCard
           title="24h Volume"
           value={statsData ? formatCompact(statsData.total_volume_24h) : "$0"}
@@ -298,40 +298,40 @@ export default function DashboardPage() {
           loading={statsLoading}
         />
         <StatCard
-          title="Total Liquidity"
-          value={statsData ? formatCompact(statsData.total_liquidity) : "$0"}
-          change="Tracked tokens"
+          title="Solana TVL"
+          value={statsData ? formatCompact(statsData.solana_tvl || 0) : "$0"}
+          change="Total value locked"
           changeType="neutral"
           icon={DollarSign}
           loading={statsLoading}
         />
         <StatCard
-          title="Avg Liquidity"
-          value={statsData ? formatCompact(statsData.avg_liquidity) : "$0"}
-          change="Per token"
+          title="Total Liquidity"
+          value={statsData ? formatCompact(statsData.total_liquidity) : "$0"}
+          change="Tracked tokens"
           changeType="neutral"
           icon={TrendingUp}
           loading={statsLoading}
         />
         <StatCard
-          title="Scams Detected"
-          value={statsData ? statsData.scams_detected.toString() : "0"}
-          change={statsData ? `${statsData.scams_change}%` : undefined}
-          changeType={statsData && statsData.scams_change < 0 ? "negative" : "positive"}
-          icon={Eye}
+          title="Tokens Analyzed"
+          value={statsData ? (statsData.high_risk_tokens || statsData.total_tokens_analyzed || 0).toString() : "0"}
+          change={statsData ? `${statsData.tokens_analyzed_today} in 24h` : ""}
+          changeType="neutral"
+          icon={Shield}
           loading={statsLoading}
         />
       </div>
 
       {/* Charts Row */}
-      <div className="grid lg:grid-cols-3 gap-6 mb-8">
+      <div className="grid lg:grid-cols-3 gap-4 md:gap-6 mb-8">
         {/* Volume Chart - Now with proper hourly data */}
         <GlassCard className="lg:col-span-2">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold">Trading Volume (24h)</h3>
+          <div className="flex items-center justify-between mb-4 md:mb-6">
+            <h3 className="text-base md:text-lg font-semibold">Trading Volume (24h)</h3>
             <Badge variant="outline">Live</Badge>
           </div>
-          <div className="h-64">
+          <div className="h-48 md:h-64">
             {statsLoading ? (
               <div className="flex items-center justify-center h-full">
                 <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -443,19 +443,19 @@ export default function DashboardPage() {
       </div>
 
       {/* Second row: Risk Analysis */}
-      <div className="grid lg:grid-cols-3 gap-6 mb-8">
+      <div className="grid lg:grid-cols-3 gap-4 md:gap-6 mb-8">
         {/* Risk Distribution Chart */}
         <GlassCard>
-          <h3 className="text-lg font-semibold mb-6">Token Risk Analysis</h3>
+          <h3 className="text-lg font-semibold mb-6">Grade Distribution</h3>
           <div className="h-48">
             {statsLoading ? (
               <div className="flex items-center justify-center h-full">
                 <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
               </div>
-            ) : (
+            ) : (statsData?.risk_distribution || []).some((d: RiskDistributionItem) => d.count > 0) ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={statsData?.risk_distribution || []} layout="vertical">
-                  <XAxis type="number" stroke="rgba(255,255,255,0.5)" fontSize={12} />
+                  <XAxis type="number" stroke="rgba(255,255,255,0.5)" fontSize={12} allowDecimals={false} />
                   <YAxis
                     type="category"
                     dataKey="name"
@@ -477,13 +477,20 @@ export default function DashboardPage() {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                No tokens analyzed yet
+              </div>
             )}
           </div>
           <div className="text-center mt-4">
             <p className="text-sm text-muted-foreground">
-              Analyzed <span className="text-emerald-400 font-semibold">
-                {statsData?.tokens_analyzed_today || 0}
-              </span> tokens today
+              <span className="text-emerald-400 font-semibold">
+                {statsData?.total_tokens_analyzed || 0}
+              </span> tokens analyzed total
+              {(statsData?.tokens_analyzed_today || 0) > 0 && (
+                <span> · <span className="text-emerald-400 font-semibold">{statsData?.tokens_analyzed_today}</span> today</span>
+              )}
             </p>
           </div>
         </GlassCard>

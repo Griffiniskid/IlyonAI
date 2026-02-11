@@ -49,15 +49,16 @@ async def get_whale_activity(request: web.Request) -> web.Response:
     """
     global _whale_cache
 
-    min_amount = float(request.query.get('min_amount_usd', 10000))
+    min_amount = float(request.query.get('min_amount_usd', 1000))
     token_filter = request.query.get('token')
     type_filter = request.query.get('type')
     limit = min(int(request.query.get('limit', 50)), 200)
+    force_refresh = request.query.get('force_refresh', '').lower() in ('1', 'true')
 
     cache_key = f"whales:{min_amount}:{token_filter}:{type_filter}:{limit}"
 
-    # Check cache
-    if cache_key in _whale_cache:
+    # Check cache (skip if force_refresh)
+    if not force_refresh and cache_key in _whale_cache:
         cached = _whale_cache[cache_key]
         if (datetime.utcnow() - cached['time']).seconds < _cache_ttl:
             return web.json_response(cached['data'])
@@ -169,7 +170,7 @@ async def get_whale_activity_for_token(request: web.Request) -> web.Response:
             status=400
         )
 
-    min_amount = float(request.query.get('min_amount_usd', 5000))
+    min_amount = float(request.query.get('min_amount_usd', 1000))
     limit = min(int(request.query.get('limit', 50)), 200)
 
     try:

@@ -3,7 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTrendingTokens } from "@/lib/hooks";
+import * as api from "@/lib/api";
 import { GlassCard } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,7 +38,24 @@ const categories = [
 
 export default function TrendingPage() {
   const [category, setCategory] = useState<Category>("trending");
-  const { data, isLoading, refetch, isFetching } = useTrendingTokens(category);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const { data, isLoading, isFetching } = useTrendingTokens(category);
+  const queryClient = useQueryClient();
+
+  const handleForceRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const freshData = await api.getTrendingTokens(category, 20, true);
+      queryClient.setQueryData(["trending", category], freshData);
+    } catch (e) {
+      // Fallback to normal refetch
+      queryClient.invalidateQueries({ queryKey: ["trending", category] });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const busy = isFetching || isRefreshing;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -50,11 +69,11 @@ export default function TrendingPage() {
         </div>
         <Button
           variant="outline"
-          onClick={() => refetch()}
-          disabled={isFetching}
+          onClick={handleForceRefresh}
+          disabled={busy}
         >
           <RefreshCw
-            className={cn("h-4 w-4 mr-2", isFetching && "animate-spin")}
+            className={cn("h-4 w-4 mr-2", busy && "animate-spin")}
           />
           Refresh
         </Button>
@@ -166,22 +185,25 @@ export default function TrendingPage() {
                   </div>
                 </div>
 
-                {/* Quick score if available */}
-                {token.quick_score !== undefined && (
-                  <div className="mt-3 pt-3 border-t border-border/50">
+                {/* Txns & age */}
+                <div className="mt-3 pt-3 border-t border-border/50 flex items-center gap-2">
+                  {token.txns_1h != null && (
                     <Badge
                       variant={
-                        token.quick_score >= 70
+                        token.txns_1h >= 500
                           ? "safe"
-                          : token.quick_score >= 40
+                          : token.txns_1h >= 100
                           ? "caution"
                           : "danger"
                       }
                     >
-                      Score: {token.quick_score}
+                      {formatCompact(token.txns_1h)} txns/1h
                     </Badge>
-                  </div>
-                )}
+                  )}
+                  {token.age_hours < 1 && (
+                    <Badge variant="outline">New</Badge>
+                  )}
+                </div>
               </GlassCard>
             </Link>
           ))}

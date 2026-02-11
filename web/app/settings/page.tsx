@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import dynamic from "next/dynamic";
 import { useAuth, useUser } from "@/lib/hooks";
+import { useToast } from "@/components/ui/toaster";
 
 // Dynamically import WalletMultiButton with SSR disabled to prevent hydration mismatch
 const WalletMultiButton = dynamic(
@@ -29,9 +30,11 @@ import {
 import { truncateAddress, cn } from "@/lib/utils";
 
 export default function SettingsPage() {
-  const { connected, publicKey, disconnect } = useWallet();
+  const { connected, publicKey, disconnect, signMessage } = useWallet();
   const { authenticate, isAuthenticating, logout } = useAuth();
   const { data: user, isLoading: userLoading } = useUser();
+
+  const { addToast } = useToast();
 
   const [notifications, setNotifications] = useState({
     priceAlerts: true,
@@ -40,10 +43,20 @@ export default function SettingsPage() {
   });
 
   const handleAuthenticate = async () => {
+    if (!signMessage) {
+      addToast("Your wallet does not support message signing. Try a different wallet.", "error");
+      return;
+    }
     try {
       await authenticate();
-    } catch (error) {
-      console.error("Auth failed:", error);
+      addToast("Successfully authenticated!", "success");
+    } catch (error: any) {
+      const message = error?.message || "Authentication failed";
+      if (message.includes("User rejected")) {
+        addToast("Signature request was rejected", "error");
+      } else {
+        addToast(`Authentication failed: ${message}`, "error");
+      }
     }
   };
 
@@ -132,18 +145,18 @@ export default function SettingsPage() {
             <h2 className="font-semibold">Account Statistics</h2>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
-            <div className="text-center p-4 bg-card/50 rounded-lg">
-              <div className="text-2xl font-bold">{user.analyses_count}</div>
-              <div className="text-sm text-muted-foreground">Analyses</div>
+          <div className="grid grid-cols-3 gap-2 sm:gap-4">
+            <div className="text-center p-3 sm:p-4 bg-card/50 rounded-lg">
+              <div className="text-xl sm:text-2xl font-bold">{user.analyses_count}</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Analyses</div>
             </div>
-            <div className="text-center p-4 bg-card/50 rounded-lg">
-              <div className="text-2xl font-bold">{user.tracked_wallets}</div>
-              <div className="text-sm text-muted-foreground">Tracked Wallets</div>
+            <div className="text-center p-3 sm:p-4 bg-card/50 rounded-lg">
+              <div className="text-xl sm:text-2xl font-bold">{user.tracked_wallets}</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Tracked</div>
             </div>
-            <div className="text-center p-4 bg-card/50 rounded-lg">
-              <div className="text-2xl font-bold">{user.alerts_count}</div>
-              <div className="text-sm text-muted-foreground">Active Alerts</div>
+            <div className="text-center p-3 sm:p-4 bg-card/50 rounded-lg">
+              <div className="text-xl sm:text-2xl font-bold">{user.alerts_count}</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Alerts</div>
             </div>
           </div>
 

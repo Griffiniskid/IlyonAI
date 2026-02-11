@@ -216,7 +216,7 @@ class TrendingTokenResponse(BaseModel):
     market_cap: float
     age_hours: float
     dex_name: str
-    quick_score: Optional[int] = None  # Quick analysis score if available
+    txns_1h: Optional[int] = None  # Total transactions in last 1 hour
 
 
 class TrendingResponse(BaseModel):
@@ -470,7 +470,7 @@ class RiskDistributionItem(BaseModel):
 class MarketDistributionItem(BaseModel):
     """Market category distribution"""
     name: str
-    value: int
+    value: float
     color: str
 
 
@@ -486,12 +486,14 @@ class DashboardStatsResponse(BaseModel):
     # Main metrics (from tracked trending tokens)
     total_volume_24h: float  # Sum of 24h volume from tracked tokens
     volume_change_24h: float
-    active_tokens: int  # Number of tokens being tracked
+    solana_tvl: float = 0  # Solana total value locked from DefiLlama
+    active_tokens: int  # Number of tokens being tracked (kept for compatibility)
     active_tokens_change: int
     safe_tokens_percent: float  # % of tracked tokens classified as safe
     safe_tokens_change: float
-    scams_detected: int  # Risky + Scam tokens count
+    scams_detected: int  # Kept for backward compatibility
     scams_change: int
+    high_risk_tokens: int = 0  # Renamed from scams_detected - Risky + Scam tokens count
 
     # Liquidity metrics
     avg_liquidity: float  # Average liquidity of tracked tokens

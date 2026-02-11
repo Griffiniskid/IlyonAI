@@ -33,19 +33,19 @@ _cache_ttl = 60  # seconds
 DEFILLAMA_DEX_VOLUME_URL = "https://api.llama.fi/overview/dexs/solana"
 DEFILLAMA_CHAINS_URL = "https://api.llama.fi/v2/chains"
 
-# Patterns for token categorization
+# Patterns for token categorization (narrowed to avoid false positives)
 MEMECOIN_PATTERNS = [
-    r'(doge|shib|pepe|wojak|chad|mog|cat|dog|inu|elon|moon|safe|baby|floki|bonk|wif|popcat|brett|bome|slerf)',
-    r'(meme|coin|token|ape|frog|monkey|panda|bear|bull|trump|melania)',
+    r'\b(doge|shib|pepe|wojak|chad|mog|inu|floki|bonk|wif|popcat|brett|bome|slerf)\b',
+    r'\b(meme|frog|monkey|trump|melania)\b',
 ]
 
 DEFI_PATTERNS = [
-    r'(swap|finance|fi|yield|stake|lend|borrow|vault|pool|liqui|amm|dex)',
-    r'(usd[ct]|dai|frax|eur|gbp|jup|ray|orca|marinade)',
+    r'\b(swap|finance|yield|stake|lend|borrow|vault|liqui|amm|dex)\b',
+    r'\b(usd[ct]|dai|frax|jup|ray|orca|marinade|pyth|raydium|jupiter)\b',
 ]
 
 GAMING_NFT_PATTERNS = [
-    r'(game|play|nft|meta|verse|world|land|realm|guild|hero|quest)',
+    r'\b(game|play|nft|metaverse|realm|guild|quest)\b',
 ]
 
 
@@ -66,25 +66,6 @@ def categorize_token(name: str, symbol: str) -> str:
             return "Gaming/NFT"
 
     return "Other"
-
-
-def classify_risk(token: Dict) -> str:
-    """Classify token risk based on liquidity and volatility."""
-    liquidity = float(token.get("liquidity", {}).get("usd", 0) or 0)
-    price_change = abs(float(token.get("priceChange", {}).get("h24", 0) or 0))
-
-    # High liquidity, low volatility = Safe
-    if liquidity >= 100000 and price_change < 30:
-        return "Safe"
-    # Medium liquidity, moderate volatility = Caution
-    elif liquidity >= 25000 and price_change < 60:
-        return "Caution"
-    # Low liquidity or high volatility = Risky
-    elif liquidity >= 5000:
-        return "Risky"
-    # Very low liquidity = Potential Scam
-    else:
-        return "Scam"
 
 
 async def fetch_defillama_solana_volume() -> Dict[str, Any]:
@@ -246,40 +227,28 @@ async def get_dashboard_stats(request: web.Request) -> web.Response:
             for d in volume_chart_data[-24:]  # Last 24 hours
         ]
 
-        # Analyze trending tokens for risk/market distribution
-        risk_counts = {"Safe": 0, "Caution": 0, "Risky": 0, "Scam": 0}
-        category_counts = {"Memecoins": 0, "DeFi": 0, "Gaming/NFT": 0, "Other": 0}
+        # Market distribution from trending tokens (liquidity-weighted)
+        category_liquidity = {"Memecoins": 0.0, "DeFi": 0.0, "Gaming/NFT": 0.0, "Other": 0.0}
         total_liquidity = 0.0
-        
+
         if trending_tokens:
             for t in trending_tokens:
-                risk = classify_risk(t)
-                risk_counts[risk] += 1
-                
                 base = t.get("baseToken", {})
                 name = base.get("name", "")
                 symbol = base.get("symbol", "")
                 category = categorize_token(name, symbol)
-                category_counts[category] += 1
-                
-                total_liquidity += float(t.get("liquidity", {}).get("usd", 0) or 0)
+                token_liq = float(t.get("liquidity", {}).get("usd", 0) or 0)
+                category_liquidity[category] += token_liq
+                total_liquidity += token_liq
 
-        total_analyzed = len(trending_tokens) if trending_tokens else 0
-        avg_liquidity = total_liquidity / total_analyzed if total_analyzed > 0 else 0
-        safe_percent = (risk_counts["Safe"] / total_analyzed * 100) if total_analyzed > 0 else 0
+        total_trending = len(trending_tokens) if trending_tokens else 0
+        avg_liquidity = total_liquidity / total_trending if total_trending > 0 else 0
 
-        # Risk distribution
-        risk_distribution = [
-            RiskDistributionItem(name="Safe", count=risk_counts["Safe"], color="#10b981"),
-            RiskDistributionItem(name="Caution", count=risk_counts["Caution"], color="#f59e0b"),
-            RiskDistributionItem(name="Risky", count=risk_counts["Risky"], color="#ef4444"),
-            RiskDistributionItem(name="Scam", count=risk_counts["Scam"], color="#991b1b"),
-        ]
-
-        # Market distribution as MarketDistributionItem objects
         market_distribution = []
-        for name, value in category_counts.items():
-            if value > 0:
+        total_cat_liquidity = sum(category_liquidity.values())
+        for name, liq_value in category_liquidity.items():
+            if liq_value > 0:
+                pct = round(liq_value / total_cat_liquidity * 100, 1) if total_cat_liquidity > 0 else 0
                 color = {
                     "Memecoins": "#10b981",
                     "DeFi": "#3b82f6",
@@ -287,7 +256,7 @@ async def get_dashboard_stats(request: web.Request) -> web.Response:
                     "Other": "#6b7280"
                 }.get(name, "#6b7280")
                 market_distribution.append(
-                    MarketDistributionItem(name=name, value=value, color=color)
+                    MarketDistributionItem(name=name, value=pct, color=color)
                 )
 
         # Get top tokens by volume for display
@@ -298,7 +267,7 @@ async def get_dashboard_stats(request: web.Request) -> web.Response:
                 key=lambda x: float(x.get("volume", {}).get("h24", 0) or 0),
                 reverse=True
             )[:10]
-            
+
             for t in sorted_by_vol:
                 base = t.get("baseToken", {})
                 vol = float(t.get("volume", {}).get("h24", 0) or 0)
@@ -309,22 +278,41 @@ async def get_dashboard_stats(request: web.Request) -> web.Response:
                         "address": base.get("address", ""),
                     })
 
-        # Database stats for analysis counts
-        tokens_analyzed_today = total_analyzed
-        total_tokens_analyzed = total_analyzed
-        
+        # ── Real database stats (actual analyses, not heuristics) ──
+        tokens_analyzed_today = 0
+        total_tokens_analyzed = 0
+        grade_distribution: Dict[str, int] = {}
+
         try:
             db = await get_database()
             if db._initialized:
-                db_analyzed_today = await db.count_analyses_today()
-                db_total_analyzed = await db.count_total_analyses()
-                
-                if db_analyzed_today > 0:
-                    tokens_analyzed_today = db_analyzed_today
-                if db_total_analyzed > 0:
-                    total_tokens_analyzed = db_total_analyzed
+                tokens_analyzed_today = await db.count_analyses_last_24h()
+                total_tokens_analyzed = await db.count_total_analyses()
+                grade_distribution = await db.get_grade_distribution()
         except Exception as e:
             logger.warning(f"Database stats lookup failed: {e}")
+
+        # Build risk distribution from real grades (A+/A = Safe, B = Caution, C/D = Risky, F = Scam)
+        real_risk = {"Safe": 0, "Caution": 0, "Risky": 0, "Scam": 0}
+        for grade, count in grade_distribution.items():
+            if grade in ("A+", "A"):
+                real_risk["Safe"] += count
+            elif grade == "B":
+                real_risk["Caution"] += count
+            elif grade in ("C", "D"):
+                real_risk["Risky"] += count
+            elif grade == "F":
+                real_risk["Scam"] += count
+
+        total_graded = sum(real_risk.values())
+        safe_percent = (real_risk["Safe"] / total_graded * 100) if total_graded > 0 else 0
+
+        risk_distribution = [
+            RiskDistributionItem(name="Safe", count=real_risk["Safe"], color="#10b981"),
+            RiskDistributionItem(name="Caution", count=real_risk["Caution"], color="#f59e0b"),
+            RiskDistributionItem(name="Risky", count=real_risk["Risky"], color="#ef4444"),
+            RiskDistributionItem(name="Scam", count=real_risk["Scam"], color="#991b1b"),
+        ]
 
         # Solana TVL from chain stats
         solana_tvl = chain_stats.get("tvl", 0)
@@ -332,12 +320,14 @@ async def get_dashboard_stats(request: web.Request) -> web.Response:
         response = DashboardStatsResponse(
             total_volume_24h=total_volume,
             volume_change_24h=volume_change,
-            active_tokens=total_analyzed,  # Trending tokens analyzed
+            solana_tvl=solana_tvl,
+            active_tokens=total_trending,
             active_tokens_change=0,
             safe_tokens_percent=round(safe_percent, 1),
             safe_tokens_change=0.0,
-            scams_detected=risk_counts["Scam"] + risk_counts["Risky"],
+            scams_detected=real_risk["Scam"],
             scams_change=0,
+            high_risk_tokens=total_tokens_analyzed,  # Repurposed: total analyzed all time
             volume_chart=volume_chart,
             risk_distribution=risk_distribution,
             market_distribution=market_distribution,

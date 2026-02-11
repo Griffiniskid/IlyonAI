@@ -755,6 +755,63 @@ class SolanaClient:
         return None
 
     # ═══════════════════════════════════════════════════════════════════════════
+    # SOL PRICE CACHE
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    _sol_price_cache: Dict = {}  # class-level cache
+
+    async def _get_sol_price(self) -> float:
+        """
+        Get current SOL price in USD, cached for 60 seconds.
+        Uses Jupiter Price API as primary, CoinGecko as fallback.
+        """
+        import time
+        cache = SolanaClient._sol_price_cache
+        if cache.get('price') and cache.get('time', 0) > time.time() - 60:
+            return cache['price']
+
+        # Try Jupiter Price API first
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    "https://api.jup.ag/price/v2?ids=So11111111111111111111111111111111111111112",
+                    timeout=aiohttp.ClientTimeout(total=5)
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        price = float(data.get("data", {}).get(
+                            "So11111111111111111111111111111111111111112", {}
+                        ).get("price", 0))
+                        if price > 0:
+                            cache['price'] = price
+                            cache['time'] = time.time()
+                            logger.debug(f"SOL price from Jupiter: ${price:.2f}")
+                            return price
+        except Exception as e:
+            logger.debug(f"Jupiter price API failed: {e}")
+
+        # Fallback to CoinGecko
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+                    timeout=aiohttp.ClientTimeout(total=5)
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        price = float(data.get("solana", {}).get("usd", 0))
+                        if price > 0:
+                            cache['price'] = price
+                            cache['time'] = time.time()
+                            logger.debug(f"SOL price from CoinGecko: ${price:.2f}")
+                            return price
+        except Exception as e:
+            logger.debug(f"CoinGecko price API failed: {e}")
+
+        # Last resort fallback
+        return cache.get('price', 150.0)
+
+    # ═══════════════════════════════════════════════════════════════════════════
     # HELIUS WHALE TRACKING METHODS
     # ═══════════════════════════════════════════════════════════════════════════
 
@@ -784,12 +841,19 @@ class SolanaClient:
         
         all_transactions = []
         
-        # Major DEX programs to monitor
+        # Get real SOL price for accurate USD calculations
+        sol_price = await self._get_sol_price()
+        logger.info(f"Using SOL price: ${sol_price:.2f} for whale tracking")
+
+        # Major DEX programs to monitor (expanded coverage)
         DEX_PROGRAMS = {
             'Jupiter': 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
             'Raydium': '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
             'Pump.fun': '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
-            'Orca': 'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc'
+            'Orca': 'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc',
+            'Meteora': 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo',
+            'Phoenix': 'PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY',
+            'Lifinity': '2wT8Yq49kHgDzXuPxZSaeLaH1qbmGXtEyPy64bL7aD3s',
         }
         
         try:
@@ -806,11 +870,11 @@ class SolanaClient:
                             data = await resp.json()
                             if not data or not isinstance(data, list):
                                 return []
-                                
+
                             parsed_txs = []
                             # Process all returned transactions (usually 100) to find whales
                             for tx in data:
-                                p = await self._parse_helius_transaction(tx, min_amount_usd)
+                                p = await self._parse_helius_transaction(tx, min_amount_usd, sol_price=sol_price)
                                 if p:
                                     # Override dex name if we know the source program
                                     p['dex_name'] = name
@@ -901,7 +965,8 @@ class SolanaClient:
         tx: Dict,
         min_amount_usd: float,
         known_symbol: Optional[str] = None,
-        known_name: Optional[str] = None
+        known_name: Optional[str] = None,
+        sol_price: Optional[float] = None
     ) -> Optional[Dict]:
         """
         Parse a Helius transaction response into whale transaction format.
@@ -971,7 +1036,7 @@ class SolanaClient:
             for transfer in native_transfers:
                 lamports = float(transfer.get('amount', 0) or 0)
                 sol_amount = lamports / 1e9
-                sol_value = sol_amount * 150 # Fallback SOL price
+                sol_value = sol_amount * (sol_price or 150.0)  # Use real SOL price
                 
                 # Try to find price from Helius native transfer extensions if available
                 # Otherwise accumulate
@@ -1152,12 +1217,14 @@ class SolanaClient:
             logger.warning("Helius API key not configured")
             return []
 
+        # Get real SOL price for accurate USD calculations
+        sol_price = await self._get_sol_price()
         transactions = []
-        
+
         try:
             # Use Helius parsed transactions API
             url = f"https://api.helius.xyz/v0/addresses/{token_address}/transactions?api-key={self.helius_api_key}&type=SWAP"
-            
+
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                     if resp.status != 200:
@@ -1165,17 +1232,18 @@ class SolanaClient:
                         return []
 
                     data = await resp.json()
-                    
+
                     if not data or not isinstance(data, list):
                         return []
 
                     for tx in data[:limit * 2]:
                         try:
                             parsed = await self._parse_helius_transaction(
-                                tx, 
+                                tx,
                                 min_amount_usd,
                                 known_symbol=token_symbol,
-                                known_name=token_name
+                                known_name=token_name,
+                                sol_price=sol_price
                             )
                             if parsed:
                                 transactions.append(parsed)

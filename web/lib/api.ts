@@ -128,9 +128,12 @@ export async function createBlink(tokenAddress: string): Promise<BlinkResponse> 
 
 export async function getTrendingTokens(
   category: "trending" | "gainers" | "losers" | "new" = "trending",
-  limit = 20
+  limit = 20,
+  forceRefresh = false
 ): Promise<TrendingResponse> {
-  return fetchAPI<TrendingResponse>(`/api/v1/trending?category=${category}&limit=${limit}`);
+  const params = new URLSearchParams({ category, limit: limit.toString() });
+  if (forceRefresh) params.set("force_refresh", "1");
+  return fetchAPI<TrendingResponse>(`/api/v1/trending?${params}`);
 }
 
 export async function getNewPairs(limit = 20): Promise<TrendingResponse> {
@@ -186,12 +189,14 @@ export async function getWhaleActivity(params?: {
   minAmountUsd?: number;
   type?: "buy" | "sell";
   limit?: number;
+  forceRefresh?: boolean;
 }): Promise<WhaleActivityResponse> {
   const searchParams = new URLSearchParams();
   if (params?.token) searchParams.set("token", params.token);
   if (params?.minAmountUsd) searchParams.set("min_amount_usd", params.minAmountUsd.toString());
   if (params?.type) searchParams.set("type", params.type);
   if (params?.limit) searchParams.set("limit", params.limit.toString());
+  if (params?.forceRefresh) searchParams.set("force_refresh", "1");
 
   const query = searchParams.toString();
   return fetchAPI<WhaleActivityResponse>(`/api/v1/whales${query ? `?${query}` : ""}`);

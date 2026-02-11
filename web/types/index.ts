@@ -188,7 +188,7 @@ export interface TrendingTokenResponse {
   market_cap: number;
   age_hours: number;
   dex_name: string;
-  quick_score?: number;
+  txns_1h?: number;
 }
 
 export interface TrendingResponse {
@@ -340,12 +340,14 @@ export interface TopTokenVolume {
 export interface DashboardStatsResponse {
   total_volume_24h: number;
   volume_change_24h: number;
+  solana_tvl: number;
   active_tokens: number;
   active_tokens_change: number;
   safe_tokens_percent: number;
   safe_tokens_change: number;
   scams_detected: number;
   scams_change: number;
+  high_risk_tokens: number;
   volume_chart: VolumeDataPoint[];
   risk_distribution: RiskDistributionItem[];
   market_distribution: MarketDistributionItem[];
