@@ -295,6 +295,13 @@
 /* Wallet button styles */
 .wallet-adapter-button {
   @apply !bg-card !border !border-border !rounded-xl !font-sans !text-foreground hover:!border-emerald-500/50 transition-all;
+  @apply !text-xs !px-3 !py-2 !h-auto;
+}
+
+@media (min-width: 640px) {
+  .wallet-adapter-button {
+    @apply !text-sm !px-4 !py-2.5;
+  }
 }
 
 .wallet-adapter-button-trigger {

@@ -129,17 +129,20 @@ export function useUntrackWallet() {
 // WHALE HOOKS
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function useWhaleActivity(params?: {
-  token?: string;
-  minAmountUsd?: number;
-  type?: "buy" | "sell";
-  limit?: number;
-}) {
+export function useWhaleActivity(
+  params?: {
+    token?: string;
+    minAmountUsd?: number;
+    type?: "buy" | "sell";
+    limit?: number;
+  },
+  enabled: boolean = false
+) {
   return useQuery({
     queryKey: ["whales", params],
     queryFn: () => api.getWhaleActivity(params),
-    staleTime: 60 * 1000, // 1 minute
-    refetchInterval: 60 * 1000, // Auto-refresh every minute
+    enabled,
+    staleTime: 5 * 60 * 1000, // 5 minutes (matches backend cache)
   });
 }
 

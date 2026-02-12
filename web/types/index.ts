@@ -341,6 +341,8 @@ export interface DashboardStatsResponse {
   total_volume_24h: number;
   volume_change_24h: number;
   solana_tvl: number;
+  sol_price: number;
+  sol_price_change_24h: number;
   active_tokens: number;
   active_tokens_change: number;
   safe_tokens_percent: number;

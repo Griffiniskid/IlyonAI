@@ -39,8 +39,8 @@ export function Header() {
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center">
-            <img src="/logo.png" alt="Ilyon AI" className="h-[88px] w-auto" />
+          <Link href="/" className="flex items-center shrink-0">
+            <img src="/logo.png" alt="Ilyon AI" className="h-12 sm:h-[72px] w-auto" />
           </Link>
 
           {/* Desktop Navigation */}
@@ -67,11 +67,9 @@ export function Header() {
             })}
           </nav>
 
-          {/* Wallet Connect - always visible, smaller on mobile */}
+          {/* Wallet Connect - always visible */}
           <div className="flex items-center gap-2 sm:gap-4">
-            <div className="scale-75 sm:scale-100 origin-right">
-              <WalletMultiButton />
-            </div>
+            <WalletMultiButton />
 
             {/* Mobile menu button */}
             <Button

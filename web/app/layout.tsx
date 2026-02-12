@@ -70,7 +70,7 @@ export default function RootLayout({
               <div className="container mx-auto px-4">
                 <div className="flex flex-col md:flex-row items-center justify-between gap-4">
                   <div className="flex items-center">
-                    <img src="/logo.png" alt="Ilyon AI" className="h-[88px] w-auto" />
+                    <img src="/logo.png" alt="Ilyon AI" className="h-14 sm:h-[72px] w-auto" />
                   </div>
                   <div className="text-sm text-muted-foreground">
                     Built for the Solana ecosystem

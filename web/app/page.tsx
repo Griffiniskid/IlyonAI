@@ -247,7 +247,7 @@ export default function HomePage() {
               {/* Search bar */}
               <form onSubmit={handleAnalyze} className="animate-fade-in-up" style={{ animationDelay: '200ms' }}>
                 <div className={cn(
-                  "relative flex gap-2 p-2 rounded-2xl transition-all duration-300",
+                  "relative flex flex-col sm:flex-row gap-2 p-2 rounded-2xl transition-all duration-300",
                   isSearchFocused
                     ? "bg-card/80 border border-emerald-500/50 shadow-lg shadow-emerald-500/10"
                     : "bg-card/60 border border-white/10"
@@ -256,18 +256,18 @@ export default function HomePage() {
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <Input
                       type="text"
-                      placeholder="Enter token address or name..."
+                      placeholder="Enter token address..."
                       value={tokenAddress}
                       onChange={(e) => setTokenAddress(e.target.value)}
                       onFocus={() => setIsSearchFocused(true)}
                       onBlur={() => setIsSearchFocused(false)}
-                      className="pl-12 h-14 bg-transparent border-none text-lg placeholder:text-muted-foreground/50"
+                      className="pl-12 h-12 sm:h-14 bg-transparent border-none text-base sm:text-lg placeholder:text-muted-foreground"
                     />
                   </div>
                   <Button
                     type="submit"
                     size="lg"
-                    className="h-14 px-8 bg-emerald-600 hover:bg-emerald-500 text-black font-semibold rounded-xl"
+                    className="h-12 sm:h-14 px-8 bg-emerald-600 hover:bg-emerald-500 text-black font-semibold rounded-xl"
                   >
                     Analyze
                     <ArrowRight className="ml-2 w-5 h-5" />

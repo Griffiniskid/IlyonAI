@@ -197,7 +197,7 @@ export default function TrendingPage() {
                           : "danger"
                       }
                     >
-                      {formatCompact(token.txns_1h)} txns/1h
+                      {token.txns_1h.toLocaleString()} txns (1h)
                     </Badge>
                   )}
                   {token.age_hours < 1 && (

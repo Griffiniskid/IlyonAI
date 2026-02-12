@@ -131,6 +131,44 @@ async def fetch_defillama_solana_volume() -> Dict[str, Any]:
         return {}
 
 
+async def fetch_sol_price() -> Dict[str, float]:
+    """Fetch current SOL price and 24h change from CoinGecko."""
+    try:
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(
+                "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd&include_24hr_change=true"
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    sol = data.get("solana", {})
+                    return {
+                        "price": float(sol.get("usd", 0) or 0),
+                        "change_24h": round(float(sol.get("usd_24h_change", 0) or 0), 2),
+                    }
+    except Exception as e:
+        logger.debug(f"CoinGecko SOL price fetch failed: {e}")
+
+    # Fallback: Jupiter Price API (no 24h change available)
+    try:
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(
+                "https://api.jup.ag/price/v2?ids=So11111111111111111111111111111111111111112"
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    price = float(data.get("data", {}).get(
+                        "So11111111111111111111111111111111111111112", {}
+                    ).get("price", 0))
+                    if price > 0:
+                        return {"price": price, "change_24h": 0}
+    except Exception as e:
+        logger.debug(f"Jupiter SOL price fetch failed: {e}")
+
+    return {"price": 0, "change_24h": 0}
+
+
 async def fetch_solana_chain_stats() -> Dict[str, Any]:
     """
     Fetch Solana chain statistics from DefiLlama.
@@ -180,10 +218,13 @@ async def get_dashboard_stats(request: web.Request) -> web.Response:
 
     try:
         # Fetch aggregate Solana DEX volume from DefiLlama (real billions data)
-        defillama_data = await fetch_defillama_solana_volume()
-        
-        # Fetch Solana chain TVL
-        chain_stats = await fetch_solana_chain_stats()
+        # Fetch Solana chain TVL and SOL price in parallel
+        import asyncio
+        defillama_data, chain_stats, sol_price_data = await asyncio.gather(
+            fetch_defillama_solana_volume(),
+            fetch_solana_chain_stats(),
+            fetch_sol_price(),
+        )
         
         # Get trending tokens from DexScreener for market analysis
         async with DexScreenerClient() as client:
@@ -321,6 +362,8 @@ async def get_dashboard_stats(request: web.Request) -> web.Response:
             total_volume_24h=total_volume,
             volume_change_24h=volume_change,
             solana_tvl=solana_tvl,
+            sol_price=sol_price_data.get("price", 0),
+            sol_price_change_24h=sol_price_data.get("change_24h", 0),
             active_tokens=total_trending,
             active_tokens_change=0,
             safe_tokens_percent=round(safe_percent, 1),

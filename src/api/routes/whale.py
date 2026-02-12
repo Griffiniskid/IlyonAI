@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Cache for whale transactions
 _whale_cache: Dict[str, Any] = {}
-_cache_ttl = 60  # seconds
+_cache_ttl = 300  # 5 minutes (no auto-refresh, manual search only)
 
 # Known whale labels
 KNOWN_WHALES = {

@@ -52,6 +52,14 @@ class SolanaClient:
     TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
     TOKEN_2022 = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
 
+    # Well-known token mints for whale detection
+    WSOL_MINT = "So11111111111111111111111111111111111111112"
+    USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+    USDT_MINT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
+    STABLECOIN_MINTS = {USDC_MINT, USDT_MINT}
+    # All payment-side mints (not the traded asset)
+    PAYMENT_MINTS = {WSOL_MINT, USDC_MINT, USDT_MINT}
+
     # Known addresses to exclude from holder analysis
     KNOWN_ADDRESSES = {
         '5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1',  # Raydium Authority V4
@@ -849,6 +857,8 @@ class SolanaClient:
         DEX_PROGRAMS = {
             'Jupiter': 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
             'Raydium': '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
+            'Raydium CLMM': 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK',
+            'Raydium CP': 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C',
             'Pump.fun': '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
             'Orca': 'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc',
             'Meteora': 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo',
@@ -1025,69 +1035,60 @@ class SolanaClient:
                         # Ideally we'd check against a list of known DEX vaults
                         pass 
 
-            # Improved logic to determine buy/sell and value using Native transfers (SOL)
-            # A BUY involves sending SOL (fromUser) and receiving Token (toUser)
-            # A SELL involves sending Token (fromUser) and receiving SOL (toUser)
-            
+            # ── Calculate USD value from native SOL transfers ──
             sol_value_transferred = 0
             main_user = None
-            
-            # Calculate SOL value involved
+
             for transfer in native_transfers:
                 lamports = float(transfer.get('amount', 0) or 0)
                 sol_amount = lamports / 1e9
-                sol_value = sol_amount * (sol_price or 150.0)  # Use real SOL price
-                
-                # Try to find price from Helius native transfer extensions if available
-                # Otherwise accumulate
+                sol_value = sol_amount * (sol_price or 150.0)
                 sol_value_transferred += sol_value
-                
-                # The user is usually the one sending or receiving SOL not from a system account
+
                 if not main_user:
                     main_user = transfer.get('fromUserAccount') or transfer.get('toUserAccount')
 
-            # Determine primary token transfer (the asset being traded)
-            # Filter out WSOL transfers (So111...)
-            wsol = 'So11111111111111111111111111111111111111112'
-            asset_transfers = [t for t in token_transfers if t.get('mint') != wsol]
-            
+            # ── Calculate USD value from stablecoin (USDC/USDT) transfers ──
+            stablecoin_usd = 0
+            stablecoin_user = None
+
+            for transfer in token_transfers:
+                mint = transfer.get('mint', '')
+                if mint in self.STABLECOIN_MINTS:
+                    amount = float(transfer.get('tokenAmount', 0) or 0)
+                    stablecoin_usd += amount
+                    if not stablecoin_user:
+                        stablecoin_user = transfer.get('fromUserAccount') or transfer.get('toUserAccount')
+
+            total_usd = sol_value_transferred + stablecoin_usd
+
+            # If no SOL transfers, derive main_user from stablecoin transfers
+            if not main_user and stablecoin_user:
+                main_user = stablecoin_user
+
+            # ── Determine primary token transfer (the traded asset) ──
+            # Filter out payment-side mints (WSOL, USDC, USDT)
+            asset_transfers = [t for t in token_transfers if t.get('mint') not in self.PAYMENT_MINTS]
+
             if not asset_transfers:
                 return None
-                
-            # Take the largest transfer as the main asset
-            main_transfer = asset_transfers[0] # Simplification
-            
-            # Determine direction
-            # If main_user (from SOL transfers) is receiving tokens -> BUY
-            # If main_user is sending tokens -> SELL
-            
+
+            # Pick the largest token transfer as the main asset
+            main_transfer = max(asset_transfers, key=lambda t: float(t.get('tokenAmount', 0) or 0))
+
+            # ── Determine buy/sell direction ──
             if main_user and main_transfer.get('toUserAccount') == main_user:
                 tx_direction = 'buy'
             elif main_user and main_transfer.get('fromUserAccount') == main_user:
                 tx_direction = 'sell'
             else:
-                # Fallback: check if the 'from' account looks like a user (not a PDA)
-                # This is hard without checking curve, so default to buy if receiving token
-                tx_direction = 'buy' 
+                tx_direction = 'buy'
                 wallet_address = main_transfer.get('toUserAccount')
 
-            # If we couldn't find a wallet from native transfers, use token transfer
             if not main_user:
                 wallet_address = main_transfer.get('toUserAccount') if tx_direction == 'buy' else main_transfer.get('fromUserAccount')
             else:
                 wallet_address = main_user
-
-            # Estimate Value
-            # Helius often includes 'tokenStandard' but not always price
-            # We rely on the SOL value transferred or external price
-            # For this specific token tracker, we can use the known price if we had it,
-            # but simpler: use SOL value as proxy for trade value
-            
-            total_usd = sol_value_transferred
-            if total_usd < 1: # If SOL transfer not captured well, try to estimate from token amount if we knew price
-                 # Fallback: if we don't have price, we can't filter effectively.
-                 # But usually Helius SWAP type includes native transfers.
-                 pass
 
             # Filter by minimum amount
             if total_usd < min_amount_usd:

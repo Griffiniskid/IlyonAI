@@ -487,6 +487,8 @@ class DashboardStatsResponse(BaseModel):
     total_volume_24h: float  # Sum of 24h volume from tracked tokens
     volume_change_24h: float
     solana_tvl: float = 0  # Solana total value locked from DefiLlama
+    sol_price: float = 0  # Current SOL price in USD
+    sol_price_change_24h: float = 0  # SOL 24h price change %
     active_tokens: int  # Number of tokens being tracked (kept for compatibility)
     active_tokens_change: int
     safe_tokens_percent: float  # % of tracked tokens classified as safe

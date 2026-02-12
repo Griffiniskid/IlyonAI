@@ -20,6 +20,7 @@ import {
   Flame,
   DollarSign,
   TrendingUp,
+  Coins,
 } from "lucide-react";
 import {
   AreaChart,
@@ -314,11 +315,11 @@ export default function DashboardPage() {
           loading={statsLoading}
         />
         <StatCard
-          title="Tokens Analyzed"
-          value={statsData ? (statsData.high_risk_tokens || statsData.total_tokens_analyzed || 0).toString() : "0"}
-          change={statsData ? `${statsData.tokens_analyzed_today} in 24h` : ""}
-          changeType="neutral"
-          icon={Shield}
+          title="SOL Price"
+          value={statsData ? `$${(statsData.sol_price || 0).toFixed(2)}` : "$0"}
+          change={statsData ? `${statsData.sol_price_change_24h > 0 ? "+" : ""}${(statsData.sol_price_change_24h || 0).toFixed(2)}% (24h)` : undefined}
+          changeType={statsData ? (statsData.sol_price_change_24h >= 0 ? "positive" : "negative") : "neutral"}
+          icon={Coins}
           loading={statsLoading}
         />
       </div>
@@ -364,7 +365,10 @@ export default function DashboardPage() {
                       backgroundColor: "hsl(222, 47%, 7%)",
                       border: "1px solid rgba(255,255,255,0.1)",
                       borderRadius: "8px",
+                      color: "#e2e8f0",
                     }}
+                    itemStyle={{ color: "#e2e8f0" }}
+                    labelStyle={{ color: "#94a3b8" }}
                     formatter={(value: number) => [formatVolumeTooltip(value), "Volume"]}
                     labelFormatter={(label) => `Time: ${label}`}
                   />
@@ -410,7 +414,10 @@ export default function DashboardPage() {
                       backgroundColor: "hsl(222, 47%, 7%)",
                       border: "1px solid rgba(255,255,255,0.1)",
                       borderRadius: "8px",
+                      color: "#e2e8f0",
                     }}
+                    itemStyle={{ color: "#e2e8f0" }}
+                    labelStyle={{ color: "#94a3b8" }}
                     formatter={(value: number, name: string) => [
                       `${value} (${totalMarketItems > 0 ? ((value / totalMarketItems) * 100).toFixed(0) : 0}%)`,
                       name
@@ -468,7 +475,10 @@ export default function DashboardPage() {
                       backgroundColor: "hsl(222, 47%, 7%)",
                       border: "1px solid rgba(255,255,255,0.1)",
                       borderRadius: "8px",
+                      color: "#e2e8f0",
                     }}
+                    itemStyle={{ color: "#e2e8f0" }}
+                    labelStyle={{ color: "#94a3b8" }}
                   />
                   <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                     {(statsData?.risk_distribution || []).map((entry: RiskDistributionItem, index: number) => (

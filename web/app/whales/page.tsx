@@ -18,6 +18,7 @@ import {
   Filter,
   ExternalLink,
   Clock,
+  Search,
 } from "lucide-react";
 import {
   formatUSD,
@@ -31,10 +32,19 @@ export default function WhalesPage() {
   const [minAmount, setMinAmount] = useState(1000);
   const [typeFilter, setTypeFilter] = useState<"buy" | "sell" | undefined>();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const queryClient = useQueryClient();
 
   const params = { minAmountUsd: minAmount, type: typeFilter };
-  const { data, isLoading, isFetching } = useWhaleActivity(params);
+  const { data, isLoading, isFetching } = useWhaleActivity(params, hasSearched);
+
+  const handleSearch = () => {
+    if (hasSearched) {
+      // Already searched before — invalidate to re-fetch with current filters
+      queryClient.invalidateQueries({ queryKey: ["whales", params] });
+    }
+    setHasSearched(true);
+  };
 
   const handleForceRefresh = async () => {
     setIsRefreshing(true);
@@ -118,11 +128,30 @@ export default function WhalesPage() {
               Sells
             </Button>
           </div>
+          <Button
+            onClick={handleSearch}
+            disabled={busy}
+            className="bg-emerald-600 hover:bg-emerald-500 md:ml-auto"
+          >
+            <Search className="h-4 w-4 mr-2" />
+            Search Transactions
+          </Button>
         </div>
       </GlassCard>
 
+      {/* Initial prompt — before first search */}
+      {!hasSearched && !data && (
+        <GlassCard className="text-center py-16">
+          <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-semibold mb-2">Search for Whale Activity</h3>
+          <p className="text-muted-foreground">
+            Set your filters above and click &quot;Search Transactions&quot; to find large trades
+          </p>
+        </GlassCard>
+      )}
+
       {/* Loading state */}
-      {isLoading && (
+      {isLoading && hasSearched && (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
         </div>
