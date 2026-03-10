@@ -83,21 +83,69 @@ def _calculate_health_score(tokens: List, total_value: float) -> int:
 
 
 async def get_wallet_tokens(wallet_address: str) -> List[Dict]:
-    """Fetch token holdings for a wallet using Helius."""
-    try:
-        solana = SolanaClient(
-            settings.solana_rpc_url,
-            helius_api_key=settings.helius_api_key
-        )
-        
-        # Use Helius DAS API for comprehensive token data
-        tokens = await solana.get_wallet_assets(wallet_address)
-        await solana.close()
-        
-        return tokens
-    except Exception as e:
-        logger.error(f"Error fetching wallet tokens: {e}")
-        return []
+    """Fetch token holdings for a wallet using Helius (Solana) and Moralis (EVM)."""
+    tokens = []
+    
+    # Check if wallet is EVM or Solana based on format
+    is_evm = wallet_address.startswith("0x") and len(wallet_address) == 42
+    
+    if not is_evm:
+        # Solana handling
+        try:
+            solana = SolanaClient(
+                settings.solana_rpc_url,
+                helius_api_key=settings.helius_api_key
+            )
+            sol_tokens = await solana.get_wallet_assets(wallet_address)
+            await solana.close()
+            tokens.extend(sol_tokens)
+        except Exception as e:
+            logger.error(f"Error fetching Solana wallet tokens: {e}")
+    else:
+        # EVM handling
+        try:
+            from src.data.moralis import MoralisClient
+            moralis = MoralisClient()
+            import asyncio
+            
+            # Fetch balances for top EVM chains
+            evm_chains = ["ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"]
+            
+            async def fetch_chain(chain: str):
+                try:
+                    res = await moralis.get_wallet_token_balances(wallet_address, chain)
+                    # Convert Moralis format to expected format
+                    chain_tokens = []
+                    for t in res:
+                        # Moralis returns decimals, balance, usd_price, usd_value
+                        balance = float(t.get("balance_formatted") or 0)
+                        if balance <= 0:
+                            continue
+                        chain_tokens.append({
+                            "mint": t.get("token_address", ""),
+                            "name": t.get("name", ""),
+                            "symbol": t.get("symbol", ""),
+                            "logo": t.get("logo"),
+                            "amount": balance,
+                            "value_usd": float(t.get("usd_value") or 0),
+                            "price_usd": float(t.get("usd_price") or 0),
+                            "price_change_24h": float(t.get("usd_price_24hr_percent_change") or 0),
+                            "chain": chain
+                        })
+                    return chain_tokens
+                except Exception as e:
+                    logger.warning(f"Error fetching Moralis {chain} tokens: {e}")
+                    return []
+
+            results = await asyncio.gather(*(fetch_chain(c) for c in evm_chains))
+            for res in results:
+                tokens.extend(res)
+                
+            await moralis.close()
+        except Exception as e:
+            logger.error(f"Error fetching EVM wallet tokens: {e}")
+            
+    return tokens
 
 
 async def get_portfolio(request: web.Request) -> web.Response:
@@ -151,6 +199,7 @@ async def get_portfolio(request: web.Request) -> web.Response:
                 address=token.get('mint', ''),
                 name=token.get('name', 'Unknown'),
                 symbol=token.get('symbol', '???'),
+                chain=token.get('chain', 'solana'),
                 logo_url=token.get('logo'),
                 balance=token.get('amount', 0),
                 balance_usd=value_usd,
@@ -216,6 +265,7 @@ async def get_wallet_portfolio(request: web.Request) -> web.Response:
             address=token.get('mint', ''),
             name=token.get('name', 'Unknown'),
             symbol=token.get('symbol', '???'),
+            chain=token.get('chain', 'solana'),
             logo_url=token.get('logo'),
             balance=token.get('amount', 0),
             balance_usd=value,

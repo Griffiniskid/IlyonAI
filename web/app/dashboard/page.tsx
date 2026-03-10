@@ -122,6 +122,7 @@ function QuickTokenCard({
   price,
   change,
   address,
+  chain,
 }: {
   rank: number;
   symbol: string;
@@ -129,9 +130,10 @@ function QuickTokenCard({
   price: number;
   change: number;
   address: string;
+  chain?: string;
 }) {
   return (
-    <Link href={`/token/${address}`}>
+    <Link href={`/token/${address}${chain ? `?chain=${chain}` : ""}`}>
       <div className="token-row group cursor-pointer">
         <div className="flex items-center gap-4 flex-1">
           <span className="text-muted-foreground font-mono w-6">#{rank}</span>
@@ -142,7 +144,7 @@ function QuickTokenCard({
             <div className="font-semibold group-hover:text-emerald-400 transition-colors truncate">
               {symbol}
             </div>
-            <div className="text-xs text-muted-foreground truncate">{name}</div>
+            <div className="text-xs text-muted-foreground truncate">{name}{chain ? ` · ${chain}` : ""}</div>
           </div>
         </div>
         <div className="text-right">
@@ -526,13 +528,14 @@ export default function DashboardPage() {
               </div>
             ) : trendingData?.tokens.slice(0, 5).map((token, i) => (
               <QuickTokenCard
-                key={token.address}
+                key={`${token.chain}-${token.address}`}
                 rank={i + 1}
                 symbol={token.symbol}
                 name={token.name}
                 price={token.price_usd}
                 change={token.price_change_24h}
                 address={token.address}
+                chain={token.chain}
               />
             ))}
             {!trendingLoading && (!trendingData?.tokens || trendingData.tokens.length === 0) && (

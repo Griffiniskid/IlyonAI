@@ -1,5 +1,7 @@
 # Ilyon AI - Docker Compose Configuration
-# Production deployment with API, Web Frontend, Redis, and PostgreSQL
+# Supports side-by-side production and staging deployments.
+
+name: ${COMPOSE_PROJECT_NAME:-ilyonai-prod}
 
 services:
   # ═══════════════════════════════════════════════════════════════════════════
@@ -9,25 +11,22 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ilyon-ai-api
     restart: unless-stopped
     env_file:
-      - .env
+      - ${APP_ENV_FILE:-.env}
     environment:
-      - REDIS_URL=redis://redis:6379/0
-      - DATABASE_URL=postgresql://sentinel:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/ilyon_ai
+      REDIS_URL: redis://redis:6379/0
+      WEB_API_PORT: ${API_CONTAINER_PORT:-8080}
+      ACTIONS_API_PORT: ${API_CONTAINER_PORT:-8080}
     depends_on:
       redis:
         condition: service_healthy
       postgres:
         condition: service_healthy
     volumes:
-      - ./logs:/app/logs
-    networks:
-      - ilyon-ai-network
+      - ${LOGS_DIR:-./logs/prod}:/app/logs
     ports:
-      - "${WEBHOOK_PORT:-8443}:${WEBHOOK_PORT:-8443}"
-      - "${ACTIONS_API_PORT:-8080}:${ACTIONS_API_PORT:-8080}"
+      - "${API_HOST_PORT:-8080}:${API_CONTAINER_PORT:-8080}"
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
       interval: 30s
@@ -42,18 +41,19 @@ services:
       context: ./web
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${ACTIONS_BASE_URL:-https://ilyonai.com}
-        NEXT_PUBLIC_SOLANA_NETWORK: mainnet-beta
-        NEXT_PUBLIC_SOLANA_RPC_URL: https://api.mainnet-beta.solana.com
-    container_name: ilyon-ai-web
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://ilyonai.com}
+        NEXT_PUBLIC_SOLANA_NETWORK: ${NEXT_PUBLIC_SOLANA_NETWORK:-mainnet-beta}
+        NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
     restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://ilyonai.com}
+      NEXT_PUBLIC_SOLANA_NETWORK: ${NEXT_PUBLIC_SOLANA_NETWORK:-mainnet-beta}
+      NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
     ports:
-      - "3000:3000"
-    networks:
-      - ilyon-ai-network
+      - "${WEB_HOST_PORT:-3000}:3000"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
       interval: 30s
@@ -65,13 +65,10 @@ services:
   # ═══════════════════════════════════════════════════════════════════════════
   redis:
     image: redis:7-alpine
-    container_name: ilyon-ai-redis
     restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 100mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
-    networks:
-      - ilyon-ai-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -79,22 +76,19 @@ services:
       retries: 3
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # POSTGRESQL (Required for Blinks)
+  # POSTGRESQL
   # ═══════════════════════════════════════════════════════════════════════════
   postgres:
     image: postgres:15-alpine
-    container_name: ilyon-ai-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ilyon_ai
-      POSTGRES_USER: sentinel
+      POSTGRES_DB: ${POSTGRES_DB:-ilyon_ai}
+      POSTGRES_USER: ${POSTGRES_USER:-sentinel}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - ilyon-ai-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sentinel -d ilyon_ai"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sentinel} -d ${POSTGRES_DB:-ilyon_ai}"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -107,10 +101,3 @@ volumes:
     driver: local
   postgres_data:
     driver: local
-
-# ═══════════════════════════════════════════════════════════════════════════
-# NETWORKS
-# ═══════════════════════════════════════════════════════════════════════════
-networks:
-  ilyon-ai-network:
-    driver: bridge

@@ -15,32 +15,38 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ilyon AI | Solana Token Security Scanner",
+  title: "Ilyon AI | Multi-Chain DeFi Intelligence",
   description:
-    "AI-powered security analysis for Solana tokens. Detect rugpulls, honeypots, and scams before investing. Advanced wallet forensics and real-time risk assessment.",
+    "AI-powered DeFi intelligence across Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, Avalanche, and Solana. Token security analysis, contract auditing, approval management, and yield research.",
   keywords: [
-    "Solana",
+    "DeFi security",
+    "multi-chain",
     "token scanner",
+    "smart contract audit",
     "rugpull detector",
     "honeypot detector",
-    "DeFi security",
+    "approval manager",
+    "yield farming",
     "crypto security",
     "AI analysis",
+    "Ethereum",
+    "Solana",
+    "Base",
   ],
   icons: {
     icon: "/shield.png",
     apple: "/shield.png",
   },
   openGraph: {
-    title: "Ilyon AI | Solana Token Security",
-    description: "AI-powered security analysis for Solana tokens",
+    title: "Ilyon AI | Multi-Chain DeFi Intelligence",
+    description: "AI-powered security and intelligence across all major DeFi chains",
     type: "website",
     siteName: "Ilyon AI",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Ilyon AI | Solana Token Security",
-    description: "AI-powered security analysis for Solana tokens",
+    title: "Ilyon AI | Multi-Chain DeFi Intelligence",
+    description: "AI-powered security and intelligence across all major DeFi chains",
   },
 };
 
@@ -73,7 +79,7 @@ export default function RootLayout({
                     <img src="/logo.png" alt="Ilyon AI" className="h-14 sm:h-[72px] w-auto" />
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    Built for the Solana ecosystem
+                    Multi-chain DeFi intelligence
                   </div>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <a href="/docs" className="hover:text-foreground transition">

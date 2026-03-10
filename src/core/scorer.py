@@ -61,6 +61,18 @@ class TokenScorer:
         """
         return self.BASE_WEIGHTS.copy()
 
+    @staticmethod
+    def _liquidity_lock_status(token: TokenInfo) -> str:
+        if token.liquidity_locked is True:
+            return "locked"
+        if token.liquidity_locked is False:
+            return "unlocked"
+        return "unknown"
+
+    @staticmethod
+    def _liquidity_lock_percent(token: TokenInfo) -> float:
+        return float(token.lp_lock_percent or 0)
+
     def calculate(self, token: TokenInfo) -> AnalysisResult:
         """
         Calculate all scores and produce final AnalysisResult.
@@ -125,7 +137,10 @@ class TokenScorer:
         # --- BONUSES (Reward Good Behavior) ---
 
         # 1. Liquidity Lock (The most important safety feature)
-        if token.liquidity_locked and token.lp_lock_percent >= 90:
+        lock_status = self._liquidity_lock_status(token)
+        lock_pct = self._liquidity_lock_percent(token)
+
+        if lock_status == "locked" and lock_pct >= 90:
             adjustments += 5
             adjustment_reasons.append("+5 LP Fully Locked")
         
@@ -162,10 +177,10 @@ class TokenScorer:
             adjustment_reasons.append("-10 Freeze Authority Enabled")
 
         # 3. Unlocked Liquidity (Rug risk)
-        if not token.liquidity_locked:
+        if lock_status == "unlocked":
             adjustments -= 15
             adjustment_reasons.append("-15 LP Unlocked")
-        elif token.lp_lock_percent < 50:
+        elif lock_status == "locked" and lock_pct < 50:
             adjustments -= 5
             adjustment_reasons.append("-5 Low LP Lock %")
 
@@ -366,21 +381,28 @@ class TokenScorer:
         # LP LOCK STATUS (with percentage consideration)
         # ═══════════════════════════════════════════════════════════
 
-        if token.liquidity_locked:
-            if token.lp_lock_percent >= 95:
+        lock_status = self._liquidity_lock_status(token)
+        lock_pct = self._liquidity_lock_percent(token)
+
+        if lock_status == "locked":
+            if lock_pct >= 95:
                 safety += 15
-                goods.append(f"🔒 LP полностью заблокирован ({token.lp_lock_percent:.0f}%)")
-            elif token.lp_lock_percent >= 80:
+                goods.append(f"🔒 LP полностью заблокирован ({lock_pct:.0f}%)")
+            elif lock_pct >= 80:
                 safety += 10
-                goods.append(f"🔒 LP заблокирован ({token.lp_lock_percent:.0f}%)")
-            elif token.lp_lock_percent >= 50:
+                goods.append(f"🔒 LP заблокирован ({lock_pct:.0f}%)")
+            elif lock_pct >= 50:
                 safety += 5
-                goods.append(f"🔒 LP частично заблокирован ({token.lp_lock_percent:.0f}%)")
+                goods.append(f"🔒 LP частично заблокирован ({lock_pct:.0f}%)")
+            elif lock_pct > 0:
+                goods.append(f"🔒 LP заблокирован ({lock_pct:.0f}%)")
             else:
-                goods.append(f"🔒 LP заблокирован ({token.lp_lock_percent:.0f}%)")
-        else:
+                goods.append("🔒 LP заблокирован (процент не указан)")
+        elif lock_status == "unlocked":
             safety -= 20
             risks.append("🚨 LP НЕ ЗАЛОЧЕН!")
+        else:
+            risks.append("⚪ LP lock status is unverified")
 
         # ═══════════════════════════════════════════════════════════
         # RUGCHECK SCORE INTEGRATION
@@ -515,9 +537,9 @@ class TokenScorer:
         # LP LOCK STATUS - up to +/- 20 points (most important factor)
         # ═══════════════════════════════════════════════════════════
 
-        if token.liquidity_locked:
-            lock_pct = token.lp_lock_percent
-
+        lock_status = self._liquidity_lock_status(token)
+        if lock_status == "locked":
+            lock_pct = self._liquidity_lock_percent(token)
             if lock_pct >= 95:
                 liq += 20
                 goods.append(f"🔒 LP fully locked ({lock_pct:.0f}%)")
@@ -537,9 +559,11 @@ class TokenScorer:
                 # Locked but percentage unknown - give minimal bonus, not full credit
                 liq += 5
                 goods.append("🔒 LP locked (% unknown)")
-        else:
+        elif lock_status == "unlocked":
             liq -= 20
             risks.append("🚨 LP NOT LOCKED — high rug risk!")
+        else:
+            risks.append("⚪ LP lock status not verified")
 
         # ═══════════════════════════════════════════════════════════
         # SLIPPAGE RISK (Volume vs Liquidity) - up to +/- 10 points
@@ -1034,21 +1058,29 @@ class TokenScorer:
         # LP LOCK QUALITY
         # ═══════════════════════════════════════════════════════════
 
-        if token.liquidity_locked:
-            if token.lp_lock_percent >= 95:
+        lock_status = self._liquidity_lock_status(token)
+        lock_pct = self._liquidity_lock_percent(token)
+
+        if lock_status == "locked":
+            if lock_pct >= 95:
                 score += 20
-                goods.append(f"🔒 LP fully locked ({token.lp_lock_percent:.0f}%)")
-            elif token.lp_lock_percent >= 80:
+                goods.append(f"🔒 LP fully locked ({lock_pct:.0f}%)")
+            elif lock_pct >= 80:
                 score += 15
-                goods.append(f"🔒 LP mostly locked ({token.lp_lock_percent:.0f}%)")
-            elif token.lp_lock_percent >= 50:
+                goods.append(f"🔒 LP mostly locked ({lock_pct:.0f}%)")
+            elif lock_pct >= 50:
                 score += 5
-            else:
+            elif lock_pct > 0:
                 score -= 10
-                risks.append(f"⚠️ Low LP lock ({token.lp_lock_percent:.0f}%)")
-        else:
+                risks.append(f"⚠️ Low LP lock ({lock_pct:.0f}%)")
+            else:
+                score += 5
+                goods.append("🔒 LP lock verified (% unknown)")
+        elif lock_status == "unlocked":
             score -= 35
             risks.append("🚨 LP not locked - high rug risk!")
+        else:
+            risks.append("⚪ LP lock status unverified")
 
         # ═══════════════════════════════════════════════════════════
         # RUGCHECK INTEGRATION

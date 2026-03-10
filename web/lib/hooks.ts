@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useCallback, useState } from "react";
 import * as api from "./api";
-import type { AnalysisMode, AnalysisResponse } from "@/types";
+import type { AnalysisMode, AnalysisResponse, ChainName } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ANALYSIS HOOKS
@@ -14,19 +14,25 @@ export function useAnalyzeToken() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ address, mode }: { address: string; mode?: AnalysisMode }) =>
-      api.analyzeToken(address, mode),
+    mutationFn: ({
+      address,
+      mode,
+      chain,
+    }: {
+      address: string;
+      mode?: AnalysisMode;
+      chain?: ChainName;
+    }) => api.analyzeToken(address, mode, chain),
     onSuccess: (data, variables) => {
-      // Cache the result
-      queryClient.setQueryData(["token", variables.address], data);
+      queryClient.setQueryData(["token", variables.address, variables.chain ?? "auto"], data);
     },
   });
 }
 
-export function useTokenAnalysis(address: string | null) {
+export function useTokenAnalysis(address: string | null, chain?: ChainName | null) {
   return useQuery({
-    queryKey: ["token", address],
-    queryFn: () => api.getTokenAnalysis(address!),
+    queryKey: ["token", address, chain ?? "auto"],
+    queryFn: () => api.getTokenAnalysis(address!, chain ?? undefined),
     enabled: !!address,
     staleTime: 2 * 60 * 1000, // 2 minutes
   });
@@ -36,10 +42,17 @@ export function useRefreshAnalysis() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ address, mode }: { address: string; mode?: AnalysisMode }) =>
-      api.refreshAnalysis(address, mode),
+    mutationFn: ({
+      address,
+      mode,
+      chain,
+    }: {
+      address: string;
+      mode?: AnalysisMode;
+      chain?: ChainName;
+    }) => api.refreshAnalysis(address, mode, chain),
     onSuccess: (data, variables) => {
-      queryClient.setQueryData(["token", variables.address], data);
+      queryClient.setQueryData(["token", variables.address, variables.chain ?? "auto"], data);
     },
   });
 }
@@ -58,13 +71,14 @@ export function useSearchTokens(query: string) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function useTrendingTokens(
-  category: "trending" | "gainers" | "losers" | "new" = "trending"
+  category: "trending" | "gainers" | "losers" | "new" = "trending",
+  chain?: ChainName | null,
 ) {
   // New pairs need faster refresh to show tokens created seconds ago
   const interval = category === "new" ? 10 * 1000 : 30 * 1000;
   return useQuery({
-    queryKey: ["trending", category],
-    queryFn: () => api.getTrendingTokens(category),
+    queryKey: ["trending", category, chain ?? "all"],
+    queryFn: () => api.getTrendingTokens(category, 20, false, chain ?? undefined),
     staleTime: interval,
     refetchInterval: interval,
   });

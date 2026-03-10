@@ -1,16 +1,21 @@
 """
-Core data models for Solana token analysis.
+Core data models for multi-chain token analysis.
 
 This module contains all the data classes and enums used throughout the application
-for representing Solana token information, analysis results, and risk assessments.
+for representing token information, analysis results, and risk assessments
+across all supported blockchains.
 
-NOTE: All models are designed exclusively for Solana blockchain tokens.
-Fields like mint_authority and freeze_authority are Solana-specific concepts.
+Supports: Solana, Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, Avalanche.
+Chain-specific fields (e.g., mint_authority for Solana, proxy detection for EVM)
+are included with appropriate defaults.
 """
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.chains.base import ChainType as _ChainType
 
 
 class RiskLevel(Enum):
@@ -47,21 +52,56 @@ class TokenInfo:
     """
 
     # ═══════════════════════════════════════════════════════════════════════════
+    # CHAIN IDENTIFICATION
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    chain: str = "solana"           # ChainType.value string (avoids circular import)
+    chain_id: Optional[int] = None  # EVM chain ID (1=ETH, 56=BSC, etc.) — None for Solana
+
+    # ═══════════════════════════════════════════════════════════════════════════
     # BASIC TOKEN INFO
     # ═══════════════════════════════════════════════════════════════════════════
 
-    address: str
+    address: str = ""
     name: str = "Unknown"
     symbol: str = "???"
     decimals: int = 9
     supply: float = 0
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # ON-CHAIN SECURITY
+    # ON-CHAIN SECURITY — UNIVERSAL
     # ═══════════════════════════════════════════════════════════════════════════
 
+    # Solana-specific authorities
     mint_authority_enabled: bool = True
     freeze_authority_enabled: bool = True
+
+    # Universal security fields (EVM + cross-chain)
+    can_mint: bool = True           # Can new tokens be minted?
+    can_blacklist: bool = False     # Can addresses be blacklisted/blocked?
+    can_pause: bool = False         # Can token transfers be paused?
+    is_upgradeable: bool = False    # Can contract logic be changed?
+    is_renounced: bool = False      # Has ownership been renounced?
+
+    # EVM-specific contract fields
+    is_proxy_contract: Optional[bool] = None      # Is contract a proxy (EIP-1967)?
+    proxy_implementation: Optional[str] = None    # Proxy implementation address
+    is_verified: Optional[bool] = None            # Is source code verified on explorer?
+    is_open_source: Optional[bool] = None         # Whether verified source is available
+    compiler_version: Optional[str] = None        # Solidity compiler version
+    has_owner_function: Optional[bool] = None     # Has onlyOwner functions?
+    transfer_pausable: Optional[bool] = None      # Whether transfers can be paused
+
+    # GoPlus security data (EVM chains)
+    goplus_is_honeypot: Optional[bool] = None
+    goplus_buy_tax: Optional[float] = None
+    goplus_sell_tax: Optional[float] = None
+    goplus_is_mintable: Optional[bool] = None
+    goplus_can_blacklist: Optional[bool] = None
+    goplus_can_pause: Optional[bool] = None
+    goplus_is_proxy: Optional[bool] = None
+    goplus_owner_address: Optional[str] = None
+    goplus_creator_address: Optional[str] = None
 
     # ═══════════════════════════════════════════════════════════════════════════
     # HOLDER ANALYSIS
@@ -95,8 +135,10 @@ class TokenInfo:
     # ═══════════════════════════════════════════════════════════════════════════
 
     liquidity_usd: float = 0.0
-    liquidity_locked: bool = False
-    lp_lock_percent: float = 0.0
+    liquidity_locked: Optional[bool] = None
+    lp_lock_percent: Optional[float] = None
+    liquidity_lock_source: Optional[str] = None
+    liquidity_lock_note: Optional[str] = None
 
     # ═══════════════════════════════════════════════════════════════════════════
     # TRADING ACTIVITY

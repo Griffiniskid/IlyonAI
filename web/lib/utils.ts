@@ -74,7 +74,7 @@ export function formatAge(hours: number): string {
 }
 
 /**
- * Truncate a Solana address for display
+ * Truncate an address for display
  */
 export function truncateAddress(address: string, chars: number = 4): string {
   if (!address) return "";
@@ -143,6 +143,14 @@ export function getVerdictBadgeClasses(verdict: string): string {
 }
 
 /**
+ * Validate EVM address format
+ */
+export function isValidEvmAddress(address: string): boolean {
+  if (!address) return false;
+  return /^0x[a-fA-F0-9]{40}$/.test(address);
+}
+
+/**
  * Validate Solana address format
  */
 export function isValidSolanaAddress(address: string): boolean {
@@ -150,6 +158,24 @@ export function isValidSolanaAddress(address: string): boolean {
   // Base58 pattern for Solana addresses (32-44 chars)
   const base58Regex = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
   return base58Regex.test(address);
+}
+
+/**
+ * Get the explorer URL for an EVM address
+ */
+export function getEvmExplorerAddressUrl(chain: string, address: string): string | null {
+  const explorers: Record<string, string> = {
+    ethereum: "https://etherscan.io/address",
+    base: "https://basescan.org/address",
+    arbitrum: "https://arbiscan.io/address",
+    bsc: "https://bscscan.com/address",
+    polygon: "https://polygonscan.com/address",
+    optimism: "https://optimistic.etherscan.io/address",
+    avalanche: "https://snowtrace.io/address",
+  };
+
+  const baseUrl = explorers[chain.toLowerCase()];
+  return baseUrl ? `${baseUrl}/${address}` : null;
 }
 
 /**

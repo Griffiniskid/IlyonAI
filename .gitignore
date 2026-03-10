@@ -90,6 +90,8 @@ coverage.xml
 
 # Docker
 docker-compose.override.yml
+deploy/**/app.env
+deploy/**/compose.env
 
 # Database
 *.db

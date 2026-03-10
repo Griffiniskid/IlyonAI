@@ -1,11 +1,9 @@
 """
-DexScreener API client for fetching Solana DEX trading data.
+DexScreener API client for fetching multi-chain DEX trading data.
 
 This module provides an async client for interacting with the DexScreener API
-to fetch Solana token pair information, liquidity data, and trading metrics.
-
-NOTE: This client is exclusively for Solana blockchain analysis.
-Only Solana pairs are supported - other chains are filtered out.
+to fetch token pair information, liquidity data, and trading metrics across
+Solana and the major EVM chains supported by Ilyon AI.
 """
 
 import logging
@@ -37,6 +35,47 @@ class DexScreenerClient:
     DEFAULT_TIMEOUT = 15  # seconds
     MAX_RETRIES = 3
     RETRY_DELAY = 1.0  # seconds
+
+    CHAIN_ALIASES = {
+        "eth": "ethereum",
+        "bsc": "bsc",
+        "bnb": "bsc",
+        "bnb chain": "bsc",
+        "binance smart chain": "bsc",
+        "matic": "polygon",
+        "poly": "polygon",
+        "arb": "arbitrum",
+        "arbitrum one": "arbitrum",
+        "op": "optimism",
+        "avax": "avalanche",
+        "sol": "solana",
+    }
+
+    SUPPORTED_TRENDING_CHAINS = {
+        "solana",
+        "ethereum",
+        "base",
+        "arbitrum",
+        "bsc",
+        "polygon",
+        "optimism",
+        "avalanche",
+    }
+
+    TRENDING_SEARCH_KEYWORDS = [
+        "usdc",
+        "eth",
+        "sol",
+        "btc",
+        "ai",
+        "defi",
+        "meme",
+        "doge",
+        "pepe",
+        "cat",
+        "pump",
+        "launch",
+    ]
 
     def __init__(
         self,
@@ -90,7 +129,7 @@ class DexScreenerClient:
         self,
         url: str,
         retry_count: int = 0
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[Any]:
         """
         Make HTTP request with retry logic.
 
@@ -144,15 +183,24 @@ class DexScreenerClient:
             logger.error(f"Unexpected DexScreener error: {e}", exc_info=True)
             return None
 
-    async def get_token(self, address: str) -> Optional[Dict[str, Any]]:
+    def _normalize_chain(self, chain: Optional[str]) -> Optional[str]:
+        if not chain:
+            return None
+        normalized = chain.strip().lower()
+        return self.CHAIN_ALIASES.get(normalized, normalized)
+
+    async def get_token(self, address: str, chain: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
         Get token information and trading pairs from DexScreener.
 
-        Fetches all pairs for the token, filters for Solana pairs,
+        Fetches all pairs for the token, optionally filters for a specific chain,
         and sorts by liquidity (highest first).
 
         Args:
-            address: Solana token address
+            address: Token address
+            chain: Optional chain filter (solana, ethereum, base, arbitrum, bsc,
+                polygon, optimism, avalanche). If omitted, the highest-liquidity
+                pair across all chains is returned.
 
         Returns:
             Dict with structure:
@@ -164,7 +212,11 @@ class DexScreenerClient:
         """
         url = f"{self.BASE_URL}/latest/dex/tokens/{address}"
 
-        logger.info(f"🔍 Fetching DexScreener data for {address[:8]}...")
+        normalized_chain = self._normalize_chain(chain)
+        logger.info(
+            f"Fetching DexScreener data for {address[:8]}..."
+            f" (chain={normalized_chain or 'all'})"
+        )
 
         data = await self._make_request(url)
 
@@ -177,12 +229,15 @@ class DexScreenerClient:
             logger.warning(f"DexScreener returned no pairs for {address[:8]}")
             return None
 
-        # Filter for Solana pairs only (this bot is Solana-exclusive)
-        pairs = [p for p in data['pairs'] if p.get('chainId') == 'solana']
+        pairs = data['pairs']
+        if normalized_chain:
+            pairs = [p for p in pairs if self._normalize_chain(p.get('chainId')) == normalized_chain]
 
-        # No fallback to other chains - Solana only
         if not pairs:
-            logger.warning(f"No Solana pairs found for {address[:8]} (non-Solana pairs ignored)")
+            logger.warning(
+                f"No DexScreener pairs found for {address[:8]}"
+                f" on chain={normalized_chain or 'all'}"
+            )
             return None
 
         # Sort by liquidity (highest first)
@@ -201,7 +256,7 @@ class DexScreenerClient:
         }
 
         logger.info(
-            f"✅ Found {len(pairs)} pairs for {address[:8]}, "
+            f"Found {len(pairs)} pairs for {address[:8]}, "
             f"main pair liquidity: ${result['main'].get('liquidity', {}).get('usd', 0):,.0f}"
         )
 
@@ -224,186 +279,188 @@ class DexScreenerClient:
 
     async def _fetch_tokens_batch(
         self,
-        addresses: List[str],
-        existing_addresses: set
+        candidates: List[Dict[str, str]],
+        existing_ids: set,
     ) -> List[Dict[str, Any]]:
-        """
-        Fetch multiple tokens in parallel batches.
-        
-        Args:
-            addresses: List of token addresses to fetch
-            existing_addresses: Set of already-fetched addresses to skip
-            
-        Returns:
-            List of pair dicts for successfully fetched tokens
-        """
-        pairs = []
-        # Filter out already-fetched addresses
-        addresses_to_fetch = [a for a in addresses if a and a not in existing_addresses]
-        
-        if not addresses_to_fetch:
+        """Fetch token pairs in batches while preserving chain context."""
+        pairs: List[Dict[str, Any]] = []
+        candidates_to_fetch = []
+        for candidate in candidates:
+            address = candidate.get("address", "")
+            chain = self._normalize_chain(candidate.get("chain"))
+            if not address or not chain:
+                continue
+            identity = f"{chain}:{address.lower()}"
+            if identity in existing_ids:
+                continue
+            candidates_to_fetch.append({"address": address, "chain": chain})
+
+        if not candidates_to_fetch:
             return pairs
-            
-        # Fetch in batches of 5 to avoid rate limits
+
         batch_size = 5
-        for i in range(0, len(addresses_to_fetch), batch_size):
-            batch = addresses_to_fetch[i:i + batch_size]
-            
-            # Create tasks for parallel fetching
-            tasks = [self.get_token(addr) for addr in batch]
+        for i in range(0, len(candidates_to_fetch), batch_size):
+            batch = candidates_to_fetch[i:i + batch_size]
+            tasks = [self.get_token(item["address"], chain=item["chain"]) for item in batch]
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            for addr, result in zip(batch, results):
+
+            for candidate, result in zip(batch, results):
                 if isinstance(result, Exception):
-                    logger.debug(f"Batch fetch error for {addr}: {result}")
+                    logger.debug(f"Batch fetch error for {candidate}: {result}")
                     continue
-                if result and result.get('main'):
-                    main_pair = result['main']
-                    token_addr = main_pair.get('baseToken', {}).get('address')
-                    if token_addr and token_addr not in existing_addresses:
-                        pairs.append(main_pair)
-                        existing_addresses.add(token_addr)
-            
-            # Small delay between batches to avoid rate limits
-            if i + batch_size < len(addresses_to_fetch):
+                if not isinstance(result, dict):
+                    continue
+                if not result.get("main"):
+                    continue
+
+                main_pair = result["main"]
+                token_addr = main_pair.get("baseToken", {}).get("address")
+                pair_chain = self._normalize_chain(main_pair.get("chainId") or candidate.get("chain"))
+                if not token_addr or not pair_chain:
+                    continue
+
+                identity = f"{pair_chain}:{token_addr.lower()}"
+                if identity in existing_ids:
+                    continue
+
+                pairs.append(main_pair)
+                existing_ids.add(identity)
+
+            if i + batch_size < len(candidates_to_fetch):
                 await asyncio.sleep(0.3)
-        
+
         return pairs
 
-    async def _search_solana_pairs(
+    async def _search_market_pairs(
         self,
         keywords: List[str],
-        limit_per_keyword: int = 15
+        chain: Optional[str] = None,
+        limit_per_keyword: int = 12,
     ) -> List[Dict[str, Any]]:
-        """
-        Search for Solana pairs using multiple keywords.
-        
-        Uses the search API which returns full pair data directly,
-        avoiding the need for individual token lookups.
-        
-        Args:
-            keywords: List of search terms
-            limit_per_keyword: Max results per keyword
-            
-        Returns:
-            List of unique Solana pair dicts
-        """
-        pairs = []
-        seen_addresses = set()
-        
+        """Search DexScreener pairs across supported chains."""
+        pairs: List[Dict[str, Any]] = []
+        seen_ids = set()
+        normalized_chain = self._normalize_chain(chain)
+
         for keyword in keywords:
             try:
                 url = f"{self.BASE_URL}/latest/dex/search?q={keyword}"
                 data = await self._make_request(url)
-                
-                if data and 'pairs' in data:
-                    solana_pairs = [
-                        p for p in data['pairs']
-                        if p.get('chainId') == 'solana'
-                    ][:limit_per_keyword]
-                    
-                    for pair in solana_pairs:
-                        addr = pair.get('baseToken', {}).get('address')
-                        if addr and addr not in seen_addresses:
-                            # Ensure the pair has basic required fields
-                            if pair.get('priceUsd') and pair.get('liquidity'):
-                                pairs.append(pair)
-                                seen_addresses.add(addr)
-                
-                # Small delay between searches
+                if not data or "pairs" not in data:
+                    continue
+
+                filtered_pairs = []
+                for pair in data["pairs"]:
+                    pair_chain = self._normalize_chain(pair.get("chainId"))
+                    if not pair_chain or pair_chain not in self.SUPPORTED_TRENDING_CHAINS:
+                        continue
+                    if normalized_chain and pair_chain != normalized_chain:
+                        continue
+                    filtered_pairs.append(pair)
+
+                for pair in filtered_pairs[:limit_per_keyword]:
+                    address = pair.get("baseToken", {}).get("address")
+                    pair_chain = self._normalize_chain(pair.get("chainId"))
+                    if not address or not pair_chain:
+                        continue
+                    identity = f"{pair_chain}:{address.lower()}"
+                    if identity in seen_ids:
+                        continue
+                    if pair.get("priceUsd") and pair.get("liquidity"):
+                        pairs.append(pair)
+                        seen_ids.add(identity)
+
                 await asyncio.sleep(0.2)
-                
             except Exception as e:
                 logger.debug(f"Search for '{keyword}' failed: {e}")
                 continue
-        
+
+        return pairs
+
+    async def _collect_candidate_tokens(
+        self,
+        chain: Optional[str] = None,
+        per_source_limit: int = 40,
+    ) -> List[Dict[str, str]]:
+        """Collect token candidates from boosted/profile endpoints."""
+        normalized_chain = self._normalize_chain(chain)
+        candidates: List[Dict[str, str]] = []
+        seen_ids = set()
+
+        for endpoint in ("/token-boosts/top/v1", "/token-profiles/latest/v1"):
+            try:
+                data = await self._make_request(f"{self.BASE_URL}{endpoint}")
+                if not data or not isinstance(data, list):
+                    continue
+
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    item_chain = self._normalize_chain(item.get("chainId"))
+                    address = item.get("tokenAddress")
+                    if not item_chain or not address:
+                        continue
+                    if item_chain not in self.SUPPORTED_TRENDING_CHAINS:
+                        continue
+                    if normalized_chain and item_chain != normalized_chain:
+                        continue
+
+                    identity = f"{item_chain}:{address.lower()}"
+                    if identity in seen_ids:
+                        continue
+
+                    seen_ids.add(identity)
+                    candidates.append({"address": address, "chain": item_chain})
+                    if len(candidates) >= per_source_limit * 2:
+                        break
+            except Exception as e:
+                logger.warning(f"Candidate collection failed for {endpoint}: {e}")
+
+        return candidates
+
+    async def _collect_market_pairs(
+        self,
+        chain: Optional[str] = None,
+        limit_hint: int = 20,
+    ) -> List[Dict[str, Any]]:
+        """Collect market pairs for trending/gainers/losers/new flows."""
+        pairs: List[Dict[str, Any]] = []
+        seen_ids = set()
+
+        candidates = await self._collect_candidate_tokens(chain=chain, per_source_limit=max(30, limit_hint * 2))
+        pairs.extend(await self._fetch_tokens_batch(candidates, seen_ids))
+
+        if len(pairs) < limit_hint * 3:
+            search_pairs = await self._search_market_pairs(
+                self.TRENDING_SEARCH_KEYWORDS,
+                chain=chain,
+                limit_per_keyword=max(6, limit_hint // 2),
+            )
+            for pair in search_pairs:
+                address = pair.get("baseToken", {}).get("address")
+                pair_chain = self._normalize_chain(pair.get("chainId"))
+                if not address or not pair_chain:
+                    continue
+                identity = f"{pair_chain}:{address.lower()}"
+                if identity in seen_ids:
+                    continue
+                seen_ids.add(identity)
+                pairs.append(pair)
+
         return pairs
 
     async def get_trending_tokens(
         self,
-        limit: int = 20
+        limit: int = 20,
+        chain: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """
-        Get trending Solana tokens by 24h volume.
-
-        Uses multiple data sources:
-        1. DexScreener's boosted tokens endpoint
-        2. Token profiles (recently updated)
-        3. Search API with popular Solana keywords as fallback
-
-        Args:
-            limit: Max tokens to return
-
-        Returns:
-            List of Solana pair dicts in DexScreener format
-        """
-        logger.info(f"🔥 Fetching trending Solana tokens...")
-
-        pairs = []
-        existing_addresses = set()
-
-        # Try boosted tokens first (these are trending/promoted)
-        try:
-            url = f"{self.BASE_URL}/token-boosts/top/v1"
-            data = await self._make_request(url)
-
-            if data and isinstance(data, list):
-                solana_tokens = [
-                    item.get("tokenAddress")
-                    for item in data
-                    if item.get("chainId") == "solana" and item.get("tokenAddress")
-                ][:25]
-
-                # Parallel batch fetch
-                new_pairs = await self._fetch_tokens_batch(solana_tokens, existing_addresses)
-                pairs.extend(new_pairs)
-                
-        except Exception as e:
-            logger.warning(f"Token boosts fetch failed: {e}")
-
-        # Supplement with token profiles
-        if len(pairs) < limit:
-            try:
-                url = f"{self.BASE_URL}/token-profiles/latest/v1"
-                data = await self._make_request(url)
-
-                if data and isinstance(data, list):
-                    solana_profiles = [
-                        item.get("tokenAddress")
-                        for item in data
-                        if item.get("chainId") == "solana" and item.get("tokenAddress")
-                    ][:25]
-
-                    new_pairs = await self._fetch_tokens_batch(solana_profiles, existing_addresses)
-                    # Filter for minimum volume/liquidity
-                    for pair in new_pairs:
-                        vol = float(pair.get("volume", {}).get("h24", 0) or 0)
-                        liq = float(pair.get("liquidity", {}).get("usd", 0) or 0)
-                        if vol > 500 and liq > 2000:
-                            pairs.append(pair)
-                            
-            except Exception as e:
-                logger.warning(f"Token profiles fetch failed: {e}")
-
-        # Fallback: Use search API with popular keywords if still need more
-        if len(pairs) < limit:
-            logger.info("Using search fallback for trending tokens...")
-            search_keywords = ["SOL", "BONK", "WIF", "PEPE", "meme", "pump", "ai", "cat", "dog"]
-            
-            search_pairs = await self._search_solana_pairs(search_keywords, limit_per_keyword=10)
-            
-            for pair in search_pairs:
-                addr = pair.get('baseToken', {}).get('address')
-                if addr and addr not in existing_addresses:
-                    vol = float(pair.get("volume", {}).get("h24", 0) or 0)
-                    liq = float(pair.get("liquidity", {}).get("usd", 0) or 0)
-                    if vol > 500 and liq > 2000:
-                        pairs.append(pair)
-                        existing_addresses.add(addr)
-                if len(pairs) >= limit * 2:
-                    break
-
-        # Sort by volume (highest first)
+        logger.info(f"🔥 Fetching trending tokens (chain={chain or 'all'})...")
+        pairs: List[Dict[str, Any]] = await self._collect_market_pairs(chain=chain, limit_hint=limit)
+        pairs = [
+            pair for pair in pairs
+            if float(pair.get("volume", {}).get("h24", 0) or 0) >= 500
+            and float(pair.get("liquidity", {}).get("usd", 0) or 0) >= 2000
+        ]
         pairs.sort(
             key=lambda x: float(x.get("volume", {}).get("h24", 0) or 0),
             reverse=True
@@ -418,89 +475,16 @@ class DexScreenerClient:
 
     async def get_top_gainers(
         self,
-        limit: int = 20
+        limit: int = 20,
+        chain: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """
-        Get top gaining Solana tokens by price change.
-
-        Uses multiple data sources to find extreme movers (1000%+ gains):
-        1. Boosted tokens (most active/promoted)
-        2. Token profiles (recently updated)
-        3. Search API with broad keywords for wider coverage
-
-        Args:
-            limit: Max tokens to return
-
-        Returns:
-            List of Solana pair dicts sorted by 24h price change (highest first)
-        """
-        logger.info(f"📈 Fetching top gainers...")
-
-        all_pairs = []
-        existing_addresses = set()
-
-        # 1. Boosted tokens first - these are most active/promoted and likely big movers
-        try:
-            url = f"{self.BASE_URL}/token-boosts/top/v1"
-            data = await self._make_request(url)
-
-            if data and isinstance(data, list):
-                solana_tokens = [
-                    item.get("tokenAddress")
-                    for item in data
-                    if item.get("chainId") == "solana" and item.get("tokenAddress")
-                ][:40]  # Fetch more to find extreme movers
-
-                new_pairs = await self._fetch_tokens_batch(solana_tokens, existing_addresses)
-                all_pairs.extend(new_pairs)
-                logger.info(f"Boosted tokens: {len(new_pairs)} pairs")
-
-        except Exception as e:
-            logger.warning(f"Boosted tokens fetch failed: {e}")
-
-        # 2. Token profiles - recently active tokens
-        try:
-            url = f"{self.BASE_URL}/token-profiles/latest/v1"
-            data = await self._make_request(url)
-
-            if data and isinstance(data, list):
-                solana_profiles = [
-                    item.get("tokenAddress")
-                    for item in data
-                    if item.get("chainId") == "solana" and item.get("tokenAddress")
-                ][:40]
-
-                new_pairs = await self._fetch_tokens_batch(solana_profiles, existing_addresses)
-                all_pairs.extend(new_pairs)
-                logger.info(f"Token profiles added {len(new_pairs)} pairs")
-
-        except Exception as e:
-            logger.warning(f"Token profiles fetch failed: {e}")
-
-        # 3. Search API with broad keywords for wider coverage
-        search_keywords = [
-            "SOL", "BONK", "WIF", "PEPE", "meme", "pump", "moon",
-            "ai", "cat", "dog", "trump", "elon", "doge", "shib",
-            "popcat", "brett", "jup", "ray", "orca", "new", "launch",
-            "gem", "100x", "bull", "fair", "baby", "mini"
-        ]
-
-        search_pairs = await self._search_solana_pairs(search_keywords, limit_per_keyword=25)
-        logger.info(f"Search API returned {len(search_pairs)} pairs for gainers")
-
-        for pair in search_pairs:
-            addr = pair.get('baseToken', {}).get('address')
-            if addr and addr not in existing_addresses:
-                all_pairs.append(pair)
-                existing_addresses.add(addr)
-
-        # Filter for gainers with low threshold to include micro-cap extreme movers
+        logger.info(f"📈 Fetching top gainers (chain={chain or 'all'})...")
+        all_pairs: List[Dict[str, Any]] = await self._collect_market_pairs(chain=chain, limit_hint=limit)
         gainers = []
         for pair in all_pairs:
             price_change = float(pair.get("priceChange", {}).get("h24", 0) or 0)
             liquidity = float(pair.get("liquidity", {}).get("usd", 0) or 0)
             volume = float(pair.get("volume", {}).get("h24", 0) or 0)
-            # Low liquidity threshold to include micro-cap tokens with 1000%+ gains
             if price_change > 0 and liquidity >= 100 and volume >= 50:
                 gainers.append(pair)
 
@@ -515,80 +499,11 @@ class DexScreenerClient:
 
     async def get_top_losers(
         self,
-        limit: int = 20
+        limit: int = 20,
+        chain: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """
-        Get top losing Solana tokens by price change.
-
-        Uses multiple data sources for wide coverage of extreme losers.
-
-        Args:
-            limit: Max tokens to return
-
-        Returns:
-            List of Solana pair dicts sorted by 24h price change (lowest first)
-        """
-        logger.info(f"📉 Fetching top losers...")
-
-        all_pairs = []
-        existing_addresses = set()
-
-        # 1. Boosted tokens first
-        try:
-            url = f"{self.BASE_URL}/token-boosts/top/v1"
-            data = await self._make_request(url)
-
-            if data and isinstance(data, list):
-                solana_tokens = [
-                    item.get("tokenAddress")
-                    for item in data
-                    if item.get("chainId") == "solana" and item.get("tokenAddress")
-                ][:40]
-
-                new_pairs = await self._fetch_tokens_batch(solana_tokens, existing_addresses)
-                all_pairs.extend(new_pairs)
-                logger.info(f"Boosted tokens: {len(new_pairs)} pairs for losers")
-
-        except Exception as e:
-            logger.warning(f"Boosted tokens fetch failed: {e}")
-
-        # 2. Token profiles
-        try:
-            url = f"{self.BASE_URL}/token-profiles/latest/v1"
-            data = await self._make_request(url)
-
-            if data and isinstance(data, list):
-                solana_profiles = [
-                    item.get("tokenAddress")
-                    for item in data
-                    if item.get("chainId") == "solana" and item.get("tokenAddress")
-                ][:40]
-
-                new_pairs = await self._fetch_tokens_batch(solana_profiles, existing_addresses)
-                all_pairs.extend(new_pairs)
-                logger.info(f"Token profiles added {len(new_pairs)} pairs for losers")
-
-        except Exception as e:
-            logger.warning(f"Token profiles fetch failed: {e}")
-
-        # 3. Search API with broad keywords
-        search_keywords = [
-            "SOL", "BONK", "WIF", "PEPE", "meme", "pump",
-            "ai", "cat", "dog", "trump", "elon", "doge", "shib",
-            "popcat", "brett", "jup", "ray", "orca", "pyth",
-            "new", "launch", "fair", "baby", "moon"
-        ]
-
-        search_pairs = await self._search_solana_pairs(search_keywords, limit_per_keyword=25)
-        logger.info(f"Search API returned {len(search_pairs)} pairs for losers")
-
-        for pair in search_pairs:
-            addr = pair.get('baseToken', {}).get('address')
-            if addr and addr not in existing_addresses:
-                all_pairs.append(pair)
-                existing_addresses.add(addr)
-
-        # Filter for losers with low threshold
+        logger.info(f"📉 Fetching top losers (chain={chain or 'all'})...")
+        all_pairs: List[Dict[str, Any]] = await self._collect_market_pairs(chain=chain, limit_hint=limit)
         losers = []
         for pair in all_pairs:
             price_change = float(pair.get("priceChange", {}).get("h24", 0) or 0)
@@ -608,111 +523,43 @@ class DexScreenerClient:
 
     async def get_new_tokens(
         self,
-        limit: int = 20
+        limit: int = 20,
+        chain: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """
-        Get newly created Solana token pairs (created within last 30 minutes).
-
-        Prioritizes token profiles endpoint for the freshest pairs,
-        supplemented by search and boosted tokens.
-
-        Args:
-            limit: Max tokens to return
-
-        Returns:
-            List of Solana pair dicts sorted by creation time (newest first)
-        """
         import time
-        logger.info(f"✨ Fetching new tokens...")
+        logger.info(f"✨ Fetching new tokens (chain={chain or 'all'})...")
 
-        all_pairs = []
-        existing_addresses = set()
-        # Cutoff: only include pairs created in the last 30 minutes
-        cutoff_ms = int((time.time() - 30 * 60) * 1000)
+        all_pairs: List[Dict[str, Any]] = await self._collect_market_pairs(chain=chain, limit_hint=limit)
+        fresh_cutoff_ms = int((time.time() - 6 * 3600) * 1000)
+        recent_cutoff_ms = int((time.time() - 24 * 3600) * 1000)
 
-        # 1. Token profiles first - these are the most recently created/updated
-        try:
-            url = f"{self.BASE_URL}/token-profiles/latest/v1"
-            data = await self._make_request(url)
-
-            if data and isinstance(data, list):
-                solana_profiles = [
-                    item.get("tokenAddress")
-                    for item in data
-                    if item.get("chainId") == "solana" and item.get("tokenAddress")
-                ][:50]  # Fetch more for new tokens
-
-                new_pairs = await self._fetch_tokens_batch(solana_profiles, existing_addresses)
-                all_pairs.extend(new_pairs)
-                logger.info(f"Token profiles: {len(new_pairs)} pairs for new tokens")
-
-        except Exception as e:
-            logger.warning(f"Token profiles fetch failed: {e}")
-
-        # 2. Boosted tokens
-        try:
-            url = f"{self.BASE_URL}/token-boosts/top/v1"
-            data = await self._make_request(url)
-
-            if data and isinstance(data, list):
-                solana_tokens = [
-                    item.get("tokenAddress")
-                    for item in data
-                    if item.get("chainId") == "solana" and item.get("tokenAddress")
-                ][:30]
-
-                new_pairs = await self._fetch_tokens_batch(solana_tokens, existing_addresses)
-                all_pairs.extend(new_pairs)
-                logger.info(f"Boosted tokens added {len(new_pairs)} pairs for new tokens")
-
-        except Exception as e:
-            logger.warning(f"Boosted tokens fetch failed: {e}")
-
-        # 3. Search API with new-token keywords
-        search_keywords = [
-            "pump", "new", "launch", "fair", "meme", "ai", "cat", "dog",
-            "moon", "gem", "baby", "mini", "inu", "sol"
-        ]
-
-        search_pairs = await self._search_solana_pairs(search_keywords, limit_per_keyword=20)
-        logger.info(f"Search API returned {len(search_pairs)} pairs for new tokens")
-
-        for pair in search_pairs:
-            addr = pair.get('baseToken', {}).get('address')
-            if addr and addr not in existing_addresses:
-                all_pairs.append(pair)
-                existing_addresses.add(addr)
-
-        # Filter: prioritize truly new pairs (created within last 30 min)
-        # but also include slightly older ones if not enough fresh pairs
         fresh_tokens = []
         recent_tokens = []
         for pair in all_pairs:
             liquidity = float(pair.get("liquidity", {}).get("usd", 0) or 0)
             created_at = pair.get("pairCreatedAt", 0) or 0
-            # Minimum liquidity for new tokens is very low
-            if liquidity >= 50 and created_at > 0:
-                if created_at >= cutoff_ms:
-                    fresh_tokens.append(pair)
-                else:
-                    recent_tokens.append(pair)
+            if liquidity < 50 or created_at <= 0:
+                continue
+            if created_at >= fresh_cutoff_ms:
+                fresh_tokens.append(pair)
+            elif created_at >= recent_cutoff_ms:
+                recent_tokens.append(pair)
 
-        # Sort both by creation time (newest first)
         fresh_tokens.sort(key=lambda x: x.get("pairCreatedAt", 0) or 0, reverse=True)
         recent_tokens.sort(key=lambda x: x.get("pairCreatedAt", 0) or 0, reverse=True)
 
-        # Prefer fresh tokens, fill remaining with recent ones
         new_tokens = fresh_tokens[:limit]
         if len(new_tokens) < limit:
             new_tokens.extend(recent_tokens[:limit - len(new_tokens)])
 
-        logger.info(f"✅ Found {len(new_tokens)} new tokens ({len(fresh_tokens)} created in last 30 min)")
+        logger.info(f"✅ Found {len(new_tokens)} new tokens")
         return new_tokens[:limit]
 
     async def search_tokens(
         self,
         query: str,
-        limit: int = 10
+        limit: int = 10,
+        chain: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Search for tokens by name or symbol.
@@ -732,8 +579,10 @@ class DexScreenerClient:
         if not data or "pairs" not in data:
             return []
 
-        # Filter for Solana pairs
-        pairs = [p for p in data.get("pairs", []) if p.get("chainId") == "solana"]
+        normalized_chain = self._normalize_chain(chain)
+        pairs = data.get("pairs", [])
+        if normalized_chain:
+            pairs = [p for p in pairs if self._normalize_chain(p.get("chainId")) == normalized_chain]
 
         results = []
         seen_addresses = set()
@@ -748,6 +597,9 @@ class DexScreenerClient:
                     "address": address,
                     "symbol": base.get("symbol", "???"),
                     "name": base.get("name", "Unknown"),
+                    "chain": self._normalize_chain(pair.get("chainId")) or pair.get("chainId"),
+                    "dex": pair.get("dexId", "unknown"),
+                    "logo_url": pair.get("info", {}).get("imageUrl"),
                     "priceUsd": pair.get("priceUsd"),
                     "liquidity": pair.get("liquidity", {}).get("usd", 0),
                 })

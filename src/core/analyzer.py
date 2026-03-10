@@ -1,22 +1,23 @@
 """
-Solana token analyzer orchestrator.
+Universal token analyzer orchestrator.
 
 This module coordinates all data collection, AI analysis, and scoring
-for comprehensive Solana token analysis. Integrates DexScreener, RugCheck,
-Solana RPC, website scraping, AI analysis, and scoring algorithms.
+for comprehensive multi-chain token analysis. Integrates chain-specific
+data providers, AI analysis, and scoring algorithms.
 
-NOTE: This analyzer is exclusively for Solana blockchain tokens.
-All data providers and analysis methods are Solana-specific.
+Supported chains: Solana, Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, Avalanche.
 
 Features:
-- Developer Wallet Forensics for Solana token deployers
+- Multi-chain token analysis with chain-specific risk factors
+- Developer Wallet Forensics for token deployers
 - Behavioral Anomaly Detection for predictive rug detection
-- Honeypot detection via Jupiter swap simulation
+- Honeypot detection via swap simulation (Jupiter for Solana, DEX routers for EVM)
+- Smart contract scanning and AI-powered auditing
 """
 
 import asyncio
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, cast
 from datetime import datetime
 
 from src.core.models import TokenInfo, AnalysisResult
@@ -27,6 +28,11 @@ from src.data.rugcheck import RugCheckClient
 from src.data.solana import SolanaClient
 from src.data.scraper import WebsiteScraper
 from src.ai.router import AIRouter, MultiAIResult
+
+# Multi-chain abstraction
+from src.chains.address import AddressResolver
+from src.chains.base import ChainType
+from src.chains.registry import ChainRegistry
 
 # NEW: Advanced analytics imports
 from src.analytics.wallet_forensics import WalletForensicsEngine, get_token_deployer
@@ -41,22 +47,23 @@ logger = logging.getLogger(__name__)
 
 class TokenAnalyzer:
     """
-    Main Solana token analysis orchestrator.
+    Universal multi-chain token analysis orchestrator.
 
-    Coordinates data collection from multiple Solana-specific sources,
+    Coordinates data collection from chain-specific and universal data sources,
     runs AI analysis, and calculates comprehensive risk scores.
 
-    NOTE: Exclusively for Solana blockchain - does not support other chains.
+    Supported chains: Solana, Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, Avalanche.
 
     Architecture:
-    1. Parallel data collection (DexScreener, RugCheck, Solana RPC, Website)
-    2. AI analysis via OpenRouter
-    3. Risk scoring with metric-AI balance
-    4. Results caching for performance
+    1. Chain detection and routing
+    2. Parallel data collection (chain-specific + universal providers)
+    3. AI analysis via OpenRouter/OpenAI
+    4. Risk scoring with chain-aware metric weights
+    5. Results caching for performance
 
     Usage:
         analyzer = TokenAnalyzer()
-        result = await analyzer.analyze(address, mode="standard")
+        result = await analyzer.analyze(address, chain="ethereum", mode="standard")
     """
 
     def __init__(
@@ -71,20 +78,6 @@ class TokenAnalyzer:
         anomaly_detector: Optional[BehavioralAnomalyDetector] = None,
         honeypot_detector: Optional[HoneypotDetector] = None
     ):
-        """
-        Initialize token analyzer with data clients.
-
-        Args:
-            dex_client: Optional DexScreener client
-            rugcheck_client: Optional RugCheck client
-            solana_client: Optional Solana RPC client
-            scraper: Optional website scraper
-            ai_router: Optional AI router
-            scorer: Optional token scorer
-            forensics_engine: Optional wallet forensics engine
-            anomaly_detector: Optional behavioral anomaly detector
-            honeypot_detector: Optional honeypot detector
-        """
         self.dex = dex_client or DexScreenerClient()
         self.rugcheck = rugcheck_client or RugCheckClient()
         self.solana = solana_client or SolanaClient(
@@ -95,7 +88,7 @@ class TokenAnalyzer:
         self.ai_router = ai_router or AIRouter()
         self.scorer = scorer or TokenScorer()
 
-        # NEW: Advanced analytics engines
+        # Advanced analytics engines
         self.forensics = forensics_engine or WalletForensicsEngine(
             solana_rpc_url=settings.solana_rpc_url
         )
@@ -104,101 +97,167 @@ class TokenAnalyzer:
             time_series_collector=self.time_series
         )
 
-        # Honeypot detection via Jupiter simulation
+        # Honeypot detection via Jupiter simulation (Solana)
         self.honeypot_detector = honeypot_detector or HoneypotDetector(
             solana_client=self.solana,
             rpc_url=settings.solana_rpc_url
         )
 
+        # Address resolver for chain auto-detection
+        self.address_resolver = AddressResolver()
+
+        # Shared chain registry for all chain clients
+        self.chain_registry = ChainRegistry()
+        self.chain_registry.initialize(settings)
+
+        # GoPlus client for EVM security data (lazy-initialized)
+        self._goplus_client = None
+
         # Simple in-memory cache (replace with Redis in production)
         self._cache: Dict[str, AnalysisResult] = {}
 
-        logger.info("✅ TokenAnalyzer initialized with advanced analytics + honeypot detection")
+        logger.info("TokenAnalyzer initialized — universal multi-chain mode")
+
+    def _get_goplus_client(self):
+        """Lazy-initialize GoPlus client."""
+        if self._goplus_client is None:
+            try:
+                from src.data.goplus import GoPlusClient
+                self._goplus_client = GoPlusClient()
+            except Exception as e:
+                logger.warning(f"GoPlus client unavailable: {e}")
+        return self._goplus_client
 
     def is_valid_address(self, address: str) -> bool:
         """
-        Validate Solana address format.
+        Validate address format for any supported chain.
 
         Args:
-            address: Solana address string
+            address: Token contract address (Solana base58 or EVM 0x hex)
 
         Returns:
-            True if valid Solana address
+            True if valid address format
         """
-        return self.solana.is_valid_address(address)
+        input_type = self.address_resolver.detect_input_type(address)
+        return input_type in ("evm_address", "solana_address")
+
+    def _resolve_chain(self, address: str, chain_hint: Optional[str] = None) -> ChainType:
+        """
+        Determine which chain to use for analysis.
+
+        Priority:
+        1. Explicit chain parameter
+        2. Auto-detect from address format
+        3. Default to Solana for base58 addresses
+
+        Args:
+            address: Token address
+            chain_hint: Optional explicit chain name
+
+        Returns:
+            ChainType to use
+        """
+        if chain_hint:
+            resolved = self.address_resolver.parse_chain_from_string(chain_hint)
+            if resolved:
+                return resolved
+            logger.warning(f"Unknown chain hint '{chain_hint}', auto-detecting")
+
+        detected = self.address_resolver.get_default_chain_for_address(address)
+        if detected:
+            return detected
+
+        return ChainType.SOLANA
 
     async def analyze(
         self,
         address: str,
-        mode: str = "standard"
+        mode: str = "standard",
+        chain: Optional[str] = None
     ) -> Optional[AnalysisResult]:
         """
         Analyze a token with full data collection and AI analysis.
 
         Args:
-            address: Solana token contract address
+            address: Token contract address (Solana or EVM)
             mode: Analysis mode ("quick", "standard", or "full")
+            chain: Optional chain name — auto-detected from address if omitted
 
         Returns:
             AnalysisResult with scores and recommendation, or None if failed
-
-        Modes:
-            - "quick": GPT-4o-mini only (~5 seconds)
-            - "standard" / "full": Full data + primary model (~15 seconds)
         """
+        # Resolve chain
+        chain_type = self._resolve_chain(address, chain)
+
         # Check cache
-        cache_key = f"{address}:{mode}"
+        cache_key = f"{chain_type.value}:{address}:{mode}"
         if cache_key in self._cache:
-            logger.info(f"✅ Cache hit for {address[:8]}... ({mode})")
+            logger.info(f"Cache hit for {address[:8]}... ({mode}, {chain_type.value})")
             return self._cache[cache_key]
 
-        logger.info(f"🔍 Starting {mode.upper()} analysis for {address[:8]}...")
+        logger.info(f"Starting {mode.upper()} analysis for {address[:8]}... on {chain_type.display_name}")
 
         try:
-            # Create token info object
-            token = TokenInfo(address=address)
+            # Create token info object with chain context
+            token = TokenInfo(
+                address=address,
+                chain=chain_type.value,
+                chain_id=chain_type.chain_id,
+            )
 
             # Stage 1: Parallel data collection
-            logger.info("📊 Stage 1: Collecting data from all sources...")
-            await self._collect_data(token)
+            logger.info("Stage 1: Collecting data from all sources...")
+            await self._collect_data(token, chain_type)
 
             # Stage 2: AI analysis (mode-dependent)
-            logger.info(f"🤖 Stage 2: Running {mode} AI analysis...")
+            logger.info(f"Stage 2: Running {mode} AI analysis...")
             ai_results = await self.ai_router.analyze(token, mode=mode)
 
             # Stage 3: Apply AI results to token
-            logger.info("📝 Stage 3: Applying AI results...")
+            logger.info("Stage 3: Applying AI results...")
             self._apply_ai_results(token, ai_results)
 
             # Stage 4: Calculate scores
-            logger.info("📊 Stage 4: Calculating risk scores...")
+            logger.info("Stage 4: Calculating risk scores...")
             result = self.scorer.calculate(token)
 
             # Cache result
             self._cache[cache_key] = result
 
             logger.info(
-                f"✅ Analysis complete for {token.symbol}: "
+                f"Analysis complete for {token.symbol} on {chain_type.display_name}: "
                 f"Score={result.overall_score}, Grade={result.grade}"
             )
 
             return result
 
         except Exception as e:
-            logger.error(f"❌ Analysis failed for {address[:8]}: {e}", exc_info=True)
+            logger.error(f"Analysis failed for {address[:8]}: {e}", exc_info=True)
             return None
 
-    async def _collect_data(self, token: TokenInfo) -> None:
+    async def _collect_data(self, token: TokenInfo, chain_type: ChainType) -> None:
         """
-        Collect data from all sources in parallel.
-
-        Runs DexScreener, RugCheck, Solana RPC, and website scraper
-        concurrently for maximum speed.
+        Collect data from all sources in parallel, routing by chain.
 
         Args:
             token: TokenInfo object to populate with data
+            chain_type: Which chain this token is on
         """
-        # Run all data collection in parallel
+        if chain_type == ChainType.SOLANA:
+            await self._collect_solana_data(token)
+        else:
+            await self._collect_evm_data(token, chain_type)
+
+        # Universal: website scraping
+        if token.has_website and token.website_url:
+            await self._scrape_website(token)
+
+        # Advanced analytics — Solana only for now (forensics uses Solana RPC)
+        if chain_type == ChainType.SOLANA:
+            await self._run_advanced_analytics(token)
+
+    async def _collect_solana_data(self, token: TokenInfo) -> None:
+        """Collect data for a Solana token (existing flow)."""
         tasks = {
             'dex': self.dex.get_token(token.address),
             'rugcheck': self.rugcheck.check_token(token.address),
@@ -206,56 +265,168 @@ class TokenAnalyzer:
             'holders': self.solana.get_top_holders(token.address, limit=20),
         }
 
-        results = await asyncio.gather(
-            *tasks.values(),
-            return_exceptions=True
-        )
-
-        # Map results back
+        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
         data = dict(zip(tasks.keys(), results))
 
-        # Log errors but continue
         for key, result in data.items():
             if isinstance(result, Exception):
-                logger.warning(f"⚠️ {key.capitalize()} data collection failed: {result}")
+                logger.warning(f"{key.capitalize()} data collection failed: {result}")
 
-        # Apply DexScreener data
         if not isinstance(data['dex'], Exception) and data['dex']:
-            self._apply_dex_data(token, data['dex'])
-        else:
-            logger.warning(f"⚠️ No DexScreener data for {token.symbol}")
+            self._apply_dex_data(token, data['dex'])  # type: ignore[arg-type]
 
-        # Apply RugCheck data
         if not isinstance(data['rugcheck'], Exception) and data['rugcheck']:
-            self._apply_rugcheck_data(token, data['rugcheck'])
+            self._apply_rugcheck_data(token, data['rugcheck'])  # type: ignore[arg-type]
+            # Map rugcheck fields to universal fields
+            token.can_mint = token.mint_authority_enabled
+            token.can_pause = token.freeze_authority_enabled
 
-        # Apply on-chain data
         if not isinstance(data['onchain'], Exception) and data['onchain']:
-            self._apply_onchain_data(token, data['onchain'])
+            self._apply_onchain_data(token, data['onchain'])  # type: ignore[arg-type]
 
-        # Apply holder data and analyze
         if not isinstance(data['holders'], Exception) and data['holders']:
-            token.top_holders = data['holders']
+            token.top_holders = data['holders']  # type: ignore[assignment]
             await self.solana.analyze_holder_distribution(token)
 
-        # Scrape website if available
-        if token.has_website and token.website_url:
-            await self._scrape_website(token)
+    async def _collect_evm_data(self, token: TokenInfo, chain_type: ChainType) -> None:
+        """Collect data for an EVM token using chain client + GoPlus."""
+        dex_task = self.dex.get_token(token.address, chain=chain_type.value)
+        goplus_task = self._collect_goplus_data(token, chain_type)
+        evm_task = self._collect_evm_onchain_data(token, chain_type)
 
-        # NEW: Run advanced analytics in parallel
-        await self._run_advanced_analytics(token)
+        dex_result, goplus_result, evm_result = await asyncio.gather(
+            dex_task,
+            goplus_task,
+            evm_task,
+            return_exceptions=True,
+        )
+
+        if isinstance(dex_result, Exception):
+            logger.warning(f"DexScreener EVM fetch failed: {dex_result}")
+        elif dex_result:
+            self._apply_dex_data(token, cast(Dict, dex_result))
+
+        if isinstance(goplus_result, Exception):
+            logger.warning(f"GoPlus EVM fetch failed: {goplus_result}")
+
+        if isinstance(evm_result, Exception):
+            logger.warning(f"EVM on-chain fetch failed: {evm_result}")
+
+        if token.liquidity_locked is None:
+            token.liquidity_lock_note = (
+                f"LP lock status is not currently verified for {chain_type.display_name}."
+            )
+
+    async def _collect_goplus_data(self, token: TokenInfo, chain_type: ChainType) -> None:
+        """Fetch GoPlus security data for EVM tokens."""
+        try:
+            goplus = self._get_goplus_client()
+            if not goplus:
+                return
+
+            data = await goplus.check_token_security(token.address, chain_type)
+            if not data:
+                return
+
+            # Map GoPlus fields to TokenInfo
+            token.goplus_is_honeypot = data.get('is_honeypot')
+            token.goplus_buy_tax = data.get('buy_tax')
+            token.goplus_sell_tax = data.get('sell_tax')
+            token.goplus_is_mintable = data.get('is_mintable')
+            token.goplus_can_blacklist = data.get('can_blacklist')
+            token.goplus_can_pause = data.get('can_pause_transfer') or data.get('can_pause')
+            token.goplus_is_proxy = data.get('is_proxy')
+            token.goplus_owner_address = data.get('owner_address')
+            token.goplus_creator_address = data.get('creator_address')
+            token.transfer_pausable = bool(data.get('transfer_pausable') or data.get('can_pause_transfer'))
+            token.is_open_source = bool(data.get('is_open_source'))
+
+            # Map to universal fields
+            token.can_mint = bool(data.get('is_mintable'))
+            token.can_blacklist = bool(data.get('can_blacklist'))
+            token.can_pause = bool(data.get('can_pause_transfer') or data.get('can_pause'))
+            token.is_upgradeable = bool(data.get('is_proxy'))
+            token.is_proxy_contract = bool(data.get('is_proxy'))
+            token.is_renounced = data.get('owner_address', '').lower() in ('', '0x0000000000000000000000000000000000000000')
+            token.deployer_address = data.get('creator_address')
+
+            # Map to honeypot fields for unified display
+            if token.goplus_is_honeypot is not None:
+                token.honeypot_is_honeypot = token.goplus_is_honeypot
+                token.honeypot_checked = True
+                if token.goplus_is_honeypot:
+                    token.honeypot_status = "honeypot"
+                    token.honeypot_explanation = "GoPlus Security: confirmed honeypot"
+                elif token.goplus_sell_tax and token.goplus_sell_tax > 50:
+                    token.honeypot_status = "extreme_tax"
+                    token.honeypot_sell_tax_percent = token.goplus_sell_tax
+                elif token.goplus_sell_tax and token.goplus_sell_tax > 10:
+                    token.honeypot_status = "high_tax"
+                    token.honeypot_sell_tax_percent = token.goplus_sell_tax
+                else:
+                    token.honeypot_status = "safe"
+
+            # Map mint authority (EVM equivalent)
+            token.mint_authority_enabled = bool(data.get('is_mintable'))
+            token.freeze_authority_enabled = bool(data.get('can_pause_transfer'))
+
+            logger.info(f"GoPlus data applied for {token.address[:8]} on {chain_type.display_name}")
+
+        except Exception as e:
+            logger.warning(f"GoPlus data collection failed: {e}")
+
+    async def _collect_evm_onchain_data(self, token: TokenInfo, chain_type: ChainType) -> None:
+        """Fetch on-chain data from EVM RPC."""
+        try:
+            client = self.chain_registry.get_client(chain_type)
+            if not client:
+                return
+
+            token_info = await client.get_token_info(token.address)
+            if not token_info:
+                return
+
+            token.name = token_info.get('name', token.name)
+            token.symbol = token_info.get('symbol', token.symbol)
+            token.decimals = token_info.get('decimals', token.decimals)
+            token.supply = token_info.get('total_supply', token_info.get('supply', token.supply))
+            token.is_verified = token_info.get('is_verified')
+            token.is_open_source = token_info.get('is_open_source', token.is_open_source)
+            token.compiler_version = token_info.get('compiler_version')
+            token.is_proxy_contract = token_info.get('is_proxy')
+            token.proxy_implementation = token_info.get('proxy_implementation', token_info.get('implementation'))
+            token.has_owner_function = token_info.get('has_owner_function')
+            token.transfer_pausable = token_info.get('transfer_pausable', token.transfer_pausable)
+            token.can_mint = bool(token_info.get('can_mint', token.can_mint))
+            token.can_blacklist = bool(token_info.get('can_blacklist', token.can_blacklist))
+            token.can_pause = bool(token_info.get('can_pause', token.can_pause))
+            token.is_renounced = bool(token_info.get('is_renounced', token.is_renounced))
+
+            if not token.deployer_address:
+                try:
+                    token.deployer_address = await client.get_deployer(token.address)
+                except Exception as deployer_error:
+                    logger.debug(f"Unable to resolve EVM deployer for {token.address[:8]}: {deployer_error}")
+
+            # Holders (top 10)
+            holders = await client.get_top_holders(token.address, limit=10)
+            if holders:
+                token.top_holders = holders
+                # Calculate concentration
+                if holders:
+                    token.top_holder_pct = holders[0].get('percentage', 0) if holders else 0
+                    top10_pct = sum(h.get('percentage', 0) for h in holders[:10])
+                    token.holder_concentration = top10_pct
+
+        except Exception as e:
+            logger.warning(f"EVM on-chain data collection failed: {e}")
 
     async def _run_advanced_analytics(self, token: TokenInfo) -> None:
         """
         Run advanced analytics: wallet forensics, anomaly detection, and honeypot check.
-
-        These provide:
-        1. Developer wallet reputation (cross-token scammer detection)
-        2. Behavioral anomaly detection (predictive rug warning)
-        3. Honeypot detection (sell simulation)
+        Currently Solana-only.
         """
         try:
-            # Run forensics, anomaly detection, and honeypot check in parallel
             forensics_task = self._run_forensics(token)
             anomaly_task = self._run_anomaly_detection(token)
             honeypot_task = self._run_honeypot_detection(token)
@@ -268,16 +439,11 @@ class TokenAnalyzer:
             )
 
         except Exception as e:
-            logger.warning(f"⚠️ Advanced analytics error: {e}")
+            logger.warning(f"Advanced analytics error: {e}")
 
     async def _run_forensics(self, token: TokenInfo) -> None:
-        """
-        Run deployer wallet forensics analysis.
-
-        Identifies serial scammers by tracking wallet history across tokens.
-        """
+        """Run deployer wallet forensics analysis."""
         try:
-            # Get deployer wallet
             deployer = await get_token_deployer(
                 token.address,
                 settings.solana_rpc_url
@@ -289,10 +455,8 @@ class TokenAnalyzer:
 
             token.deployer_address = deployer
 
-            # Run forensics analysis
             forensics_result = await self.forensics.analyze_wallet(deployer)
 
-            # Apply results to token
             token.deployer_reputation_score = forensics_result.reputation_score
             token.deployer_risk_level = forensics_result.risk_level.value
             token.deployer_tokens_deployed = forensics_result.tokens_deployed
@@ -306,27 +470,21 @@ class TokenAnalyzer:
             token.deployer_forensics_available = True
 
             logger.info(
-                f"🔍 Forensics for {token.symbol}: "
+                f"Forensics for {token.symbol}: "
                 f"Deployer={deployer[:8]}..., "
                 f"Reputation={forensics_result.reputation_score:.0f}, "
                 f"Risk={forensics_result.risk_level.value}"
             )
 
         except Exception as e:
-            logger.warning(f"⚠️ Forensics analysis failed for {token.symbol}: {e}")
+            logger.warning(f"Forensics analysis failed for {token.symbol}: {e}")
             token.deployer_forensics_available = False
 
     async def _run_anomaly_detection(self, token: TokenInfo) -> None:
-        """
-        Run behavioral anomaly detection for predictive rug warnings.
-
-        Uses time-series analysis to identify pre-rug patterns.
-        """
+        """Run behavioral anomaly detection for predictive rug warnings."""
         try:
-            # Run anomaly detection
             anomaly_result = await self.anomaly_detector.analyze_token(token.address)
 
-            # Apply results to token
             token.anomaly_score = anomaly_result.anomaly_score
             token.anomaly_rug_probability = anomaly_result.rug_probability
             token.anomaly_time_to_rug = anomaly_result.time_to_rug_estimate
@@ -338,44 +496,33 @@ class TokenAnalyzer:
             token.anomaly_available = True
 
             logger.info(
-                f"📊 Anomaly detection for {token.symbol}: "
+                f"Anomaly detection for {token.symbol}: "
                 f"Score={anomaly_result.anomaly_score:.0f}, "
                 f"RugProb={anomaly_result.rug_probability:.0f}%, "
                 f"Severity={anomaly_result.severity_level.value}"
             )
 
-            # Log critical warnings
             if anomaly_result.severity_level.value in ["CRITICAL", "HIGH"]:
                 logger.warning(
-                    f"⚠️ HIGH RISK ANOMALY for {token.symbol}: "
+                    f"HIGH RISK ANOMALY for {token.symbol}: "
                     f"{anomaly_result.recommendation}"
                 )
 
         except Exception as e:
-            logger.warning(f"⚠️ Anomaly detection failed for {token.symbol}: {e}")
+            logger.warning(f"Anomaly detection failed for {token.symbol}: {e}")
             token.anomaly_available = False
 
     async def _run_honeypot_detection(self, token: TokenInfo) -> None:
-        """
-        Run honeypot detection via Jupiter sell simulation.
-
-        Simulates selling 0.1 SOL worth of tokens to detect:
-        - Honeypots (tokens that cannot be sold)
-        - High tax tokens (>20% sell tax)
-        - Extreme tax tokens (>50% sell tax)
-        """
+        """Run honeypot detection via Jupiter sell simulation (Solana)."""
         try:
-            # Need token price to calculate amount to simulate
             if token.price_usd <= 0:
                 logger.debug(f"Skipping honeypot check for {token.symbol} - no price data")
                 token.honeypot_status = "unable_to_verify"
                 token.honeypot_explanation = "Cannot verify - missing price data"
                 return
 
-            # Get SOL price for calculation (use approximation if not available)
             sol_price = await self._get_sol_price()
 
-            # Run honeypot detection
             result = await self.honeypot_detector.check(
                 token_address=token.address,
                 token_decimals=token.decimals,
@@ -383,7 +530,6 @@ class TokenAnalyzer:
                 sol_price_usd=sol_price
             )
 
-            # Apply results to token
             token.honeypot_status = result.status.value
             token.honeypot_is_honeypot = result.is_honeypot
             token.honeypot_confidence = result.confidence
@@ -395,34 +541,21 @@ class TokenAnalyzer:
             token.honeypot_explanation = result.explanation
             token.honeypot_checked = True
 
-            # Log result
             if result.is_honeypot:
-                logger.warning(
-                    f"🍯 HONEYPOT DETECTED for {token.symbol}: {result.explanation}"
-                )
+                logger.warning(f"HONEYPOT DETECTED for {token.symbol}: {result.explanation}")
             elif result.status.value in ["high_tax", "extreme_tax"]:
-                logger.warning(
-                    f"💸 High tax for {token.symbol}: {result.sell_tax_percent:.1f}%"
-                )
+                logger.warning(f"High tax for {token.symbol}: {result.sell_tax_percent:.1f}%")
             else:
-                logger.info(
-                    f"✅ Honeypot check for {token.symbol}: {result.status.value}"
-                )
+                logger.info(f"Honeypot check for {token.symbol}: {result.status.value}")
 
         except Exception as e:
-            logger.warning(f"⚠️ Honeypot detection failed for {token.symbol}: {e}")
+            logger.warning(f"Honeypot detection failed for {token.symbol}: {e}")
             token.honeypot_status = "error"
             token.honeypot_checked = False
 
     async def _get_sol_price(self) -> float:
-        """
-        Get current SOL price in USD.
-
-        Uses DexScreener to fetch SOL price for honeypot calculations.
-        Falls back to a reasonable default if unavailable.
-        """
+        """Get current SOL price in USD."""
         try:
-            # SOL wrapped token address
             sol_mint = "So11111111111111111111111111111111111111112"
             sol_data = await self.dex.get_token(sol_mint)
             if sol_data and sol_data.get('main'):
@@ -431,52 +564,30 @@ class TokenAnalyzer:
                     return price
         except Exception as e:
             logger.debug(f"Could not fetch SOL price: {e}")
-
-        # Fallback to reasonable default
         return 150.0
 
     def _apply_dex_data(self, token: TokenInfo, dex_data: Dict) -> None:
-        """
-        Apply DexScreener data to token.
-
-        Extracts price, liquidity, volume, social links, and metadata.
-
-        Args:
-            token: TokenInfo to populate
-            dex_data: DexScreener API response
-        """
+        """Apply DexScreener data to token."""
         if not dex_data or not dex_data.get('main'):
             return
 
         p = dex_data['main']
 
-        # Basic token info
         base = p.get('baseToken', {})
         token.name = base.get('name', 'Unknown')
         token.symbol = base.get('symbol', '???')
 
-        # Price and market data
         token.price_usd = float(p.get('priceUsd') or 0)
         token.market_cap = float(p.get('marketCap') or 0)
         token.fdv = float(p.get('fdv') or 0)
 
-        # Liquidity
         liq = p.get('liquidity', {})
         token.liquidity_usd = float(liq.get('usd') or 0)
 
-        # DexScreener LP lock check (fallback)
-        labels = p.get('labels', [])
-        if any('lock' in str(l).lower() for l in labels):
-            token.liquidity_locked = True
-        if p.get('boosts', {}).get('active'):
-            token.liquidity_locked = True
-
-        # Social media extraction
         info = p.get('info', {})
         if info:
             token.logo_url = info.get('imageUrl')
 
-            # Socials
             socials = info.get('socials', [])
             for s in socials:
                 social_type = s.get('type', '').lower()
@@ -489,114 +600,79 @@ class TokenAnalyzer:
                     token.has_telegram = True
                     token.telegram_url = social_url
 
-            # Websites
             websites = info.get('websites', [])
             if websites:
                 token.has_website = True
                 token.website_url = websites[0].get('url', '')
 
-        # Count socials
         token.socials_count = sum([token.has_twitter, token.has_website, token.has_telegram])
-        logger.info(
-            f"📱 Socials for {token.symbol}: "
-            f"Twitter={token.has_twitter}, "
-            f"Website={token.has_website}, "
-            f"Telegram={token.has_telegram}"
-        )
 
-        # Volume
         vol = p.get('volume', {})
         token.volume_24h = float(vol.get('h24') or 0)
         token.volume_1h = float(vol.get('h1') or 0)
 
-        # Price changes
         pc = p.get('priceChange', {})
         token.price_change_24h = float(pc.get('h24') or 0)
         token.price_change_6h = float(pc.get('h6') or 0)
         token.price_change_1h = float(pc.get('h1') or 0)
         token.price_change_5m = float(pc.get('m5') or 0)
 
-        # Transactions
         txns = p.get('txns', {}).get('h24', {})
         token.buys_24h = int(txns.get('buys') or 0)
         token.sells_24h = int(txns.get('sells') or 0)
         token.txns_24h = token.buys_24h + token.sells_24h
 
-        # Pool info
         token.pair_address = p.get('pairAddress')
         token.dex_name = p.get('dexId', 'unknown').title()
 
-        # Token age
         created = p.get('pairCreatedAt')
         if created:
             token.age_hours = (datetime.now() - datetime.fromtimestamp(created / 1000)).total_seconds() / 3600
 
         logger.info(
-            f"✅ DexScreener data applied for {token.symbol}: "
-            f"${token.price_usd:.8f}, "
-            f"Liq=${token.liquidity_usd:,.0f}"
+            f"DexScreener data applied for {token.symbol}: "
+            f"${token.price_usd:.8f}, Liq=${token.liquidity_usd:,.0f}"
         )
 
     def _apply_rugcheck_data(self, token: TokenInfo, rugcheck_data: Dict) -> None:
-        """
-        Apply RugCheck LP lock verification data.
-
-        Args:
-            token: TokenInfo to populate
-            rugcheck_data: RugCheck API response
-        """
-        # LP lock verification (highest priority)
-        if rugcheck_data.get('lp_locked'):
-            token.liquidity_locked = True
+        """Apply RugCheck LP lock verification data (Solana)."""
+        token.liquidity_lock_source = "RugCheck"
+        token.liquidity_locked = bool(rugcheck_data.get('lp_locked', False))
+        if token.liquidity_locked:
             token.lp_lock_percent = rugcheck_data.get('lp_lock_percent', 0)
-            logger.info(f"🔒 LP Lock CONFIRMED via RugCheck for {token.symbol}")
+            token.liquidity_lock_note = "LP lock verified via RugCheck."
+            logger.info(f"LP Lock CONFIRMED via RugCheck for {token.symbol}")
+        else:
+            token.lp_lock_percent = 0
+            token.liquidity_lock_note = "RugCheck did not detect a verified LP lock."
 
-        # RugCheck score and risks
         token.rugcheck_score = rugcheck_data.get('rugcheck_score', 0)
         token.rugcheck_risks = rugcheck_data.get('risks', [])
 
-        logger.info(f"✅ RugCheck data applied for {token.symbol}")
-
     def _apply_onchain_data(self, token: TokenInfo, onchain_data: Dict) -> None:
-        """
-        Apply on-chain data from Solana RPC.
-
-        Args:
-            token: TokenInfo to populate
-            onchain_data: Solana RPC response
-        """
+        """Apply on-chain data from Solana RPC."""
         token.mint_authority_enabled = onchain_data.get('mint_auth', True)
         token.freeze_authority_enabled = onchain_data.get('freeze_auth', True)
         token.supply = onchain_data.get('supply', 0)
         token.decimals = onchain_data.get('decimals', 9)
-
-        logger.info(
-            f"✅ On-chain data applied for {token.symbol}: "
-            f"Mint={token.mint_authority_enabled}, "
-            f"Freeze={token.freeze_authority_enabled}"
-        )
+        # Map to universal fields
+        token.can_mint = token.mint_authority_enabled
+        token.can_pause = token.freeze_authority_enabled
 
     async def _scrape_website(self, token: TokenInfo) -> None:
-        """
-        Scrape and analyze token website with comprehensive quality scoring.
-
-        Args:
-            token: TokenInfo with website_url to scrape
-        """
-        logger.info(f"🌐 Scraping website for {token.symbol}...")
+        """Scrape and analyze token website."""
+        logger.info(f"Scraping website for {token.symbol}...")
 
         try:
-            website_data = await self.scraper.scrape_website(token.website_url)
+            website_data = await self.scraper.scrape_website(token.website_url or "")
 
             if website_data.get('success'):
-                # Core website data
-                token.website_content = website_data.get('content', '')[:2000]  # More content for AI
+                token.website_content = website_data.get('content', '')[:4000]
                 token.website_title = website_data.get('title', '')
                 token.website_description = website_data.get('description', '')
                 token.website_red_flags = website_data.get('red_flags', [])
                 token.website_load_time = website_data.get('load_time', 0)
 
-                # Trust signals
                 token.website_has_privacy_policy = website_data.get('has_privacy_policy', False)
                 token.website_has_terms = website_data.get('has_terms', False)
                 token.website_has_copyright = website_data.get('has_copyright', False)
@@ -607,7 +683,6 @@ class TokenAnalyzer:
                 token.website_company_name = website_data.get('company_name')
                 token.website_has_physical_address = website_data.get('has_physical_address', False)
 
-                # Token integration signals
                 token.website_has_contract_displayed = website_data.get('has_contract_address', False)
                 token.website_contract_displayed = website_data.get('contract_displayed')
                 token.website_has_tokenomics_numbers = website_data.get('has_tokenomics_numbers', False)
@@ -617,286 +692,157 @@ class TokenAnalyzer:
                 token.website_has_audit = website_data.get('has_audit_mention', False)
                 token.website_audit_provider = website_data.get('audit_provider')
 
-                # Technical quality signals
                 token.website_has_mobile_viewport = website_data.get('has_mobile_viewport', False)
                 token.website_has_favicon = website_data.get('has_favicon', False)
                 token.website_has_analytics = website_data.get('has_analytics', False)
                 token.website_uses_modern_framework = website_data.get('uses_modern_framework', False)
                 token.website_framework_detected = website_data.get('framework_detected')
                 token.website_is_spa = website_data.get('is_spa', False)
-                token.website_has_custom_domain = website_data.get('has_custom_domain', True)
+                token.website_has_custom_domain = website_data.get('has_custom_domain', False)
 
-                # Social presence
                 token.website_social_links = website_data.get('social_links', {})
                 token.website_has_discord = website_data.get('has_discord', False)
                 token.website_has_medium = website_data.get('has_medium', False)
                 token.website_has_github = website_data.get('has_github', False)
 
-                # Section presence
                 token.website_has_whitepaper = website_data.get('has_whitepaper', False)
                 token.website_has_roadmap = website_data.get('has_roadmap', False)
                 token.website_has_team = website_data.get('has_team', False)
                 token.website_has_tokenomics = website_data.get('has_tokenomics', False)
 
-                # Calculate granular quality score (0-100)
                 token.website_quality = self._calculate_website_quality(website_data)
-
-                # Legitimacy is based on score threshold
                 token.website_is_legitimate = token.website_quality >= 45
 
                 logger.info(
-                    f"✅ Website scraped for {token.symbol}: "
+                    f"Website scraped for {token.symbol}: "
                     f"Quality={token.website_quality}/100, "
-                    f"Legitimate={token.website_is_legitimate}, "
-                    f"Flags={len(token.website_red_flags)}, "
-                    f"Trust={sum([token.website_has_privacy_policy, token.website_has_terms, token.website_has_copyright])}/3"
+                    f"Legitimate={token.website_is_legitimate}"
                 )
             else:
-                # Website failed to load
                 token.website_quality = 0
                 token.website_is_legitimate = False
-                token.website_red_flags = [website_data.get('error', 'Сайт недоступен')]
-                logger.warning(f"⚠️ Website failed for {token.symbol}: {website_data.get('error')}")
+                token.website_red_flags = [website_data.get('error', 'Website unavailable')]
 
         except Exception as e:
             logger.error(f"Website scraping error for {token.symbol}: {e}")
 
     def _calculate_website_quality(self, website_data: dict) -> int:
-        """
-        Calculate comprehensive website quality score (0-100).
-
-        Every point matters with this granular scoring system:
-        - Content Substance (0-25): Length, title, description, sections
-        - Trust Signals (0-20): Legal pages, contact, copyright, company
-        - Token Integration (0-20): Contract displayed, tokenomics, buy links, audit
-        - Technical Quality (0-15): HTTPS, load time, mobile, favicon, analytics
-        - Professional Signals (0-15): Custom domain, social links
-        - Red Flag Deductions (up to -30)
-
-        Args:
-            website_data: Dict from scraper with all extracted signals
-
-        Returns:
-            Quality score from 0-100
-        """
-        from datetime import datetime
+        """Calculate comprehensive website quality score (0-100)."""
+        from datetime import datetime as dt
         score = 0
-
-        # ═══════════════════════════════════════════════════════════
-        # CONTENT SUBSTANCE (0-25 points)
-        # ═══════════════════════════════════════════════════════════
 
         content = website_data.get('content', '')
         content_len = len(content)
 
-        # Check if this is an SPA/JS site with little content
-        # This can happen when scraper can't execute JavaScript
         is_spa_with_low_content = (
             content_len < 500 and
             (website_data.get('uses_modern_framework', False) or
-             website_data.get('is_spa', False) or
-             content_len < 100)  # Very low content likely means JS rendering issue
+             website_data.get('is_spa', False))
         )
 
-        # Content length scoring (0-15 points)
         if is_spa_with_low_content:
-            # SPA detected - give higher base score as scraper likely missed content
+            score += 10
+        elif content_len >= 3000:
             score += 15
-        elif content_len >= 2000:
-            score += 15
-        elif content_len >= 1000:
-            score += 12
-        elif content_len >= 500:
-            score += 9
-        elif content_len >= 200:
-            score += 6
-        elif content_len >= 100:
+        elif content_len >= 1500:
+            score += 13
+        elif content_len >= 800:
+            score += 11
+        elif content_len >= 400:
+            score += 8
+        elif content_len >= 150:
+            score += 5
+        elif content_len >= 80:
             score += 3
 
-        # Meaningful title (0-3 points)
         title = website_data.get('title', '')
         if title and len(title) > 5 and title.lower() != "untitled":
             score += 3
         elif title:
             score += 2
 
-        # Meta description (0-3 points)
         description = website_data.get('description', '')
         if description and len(description) > 20:
             score += 3
         elif description:
             score += 2
 
-        # Structured sections (0-4 points)
-        if website_data.get('has_tokenomics'):
-            score += 2
-        if website_data.get('has_roadmap'):
-            score += 1
-        if website_data.get('has_team'):
-            score += 1
+        if website_data.get('has_tokenomics'): score += 2
+        if website_data.get('has_roadmap'): score += 1
+        if website_data.get('has_team'): score += 1
 
-        # ═══════════════════════════════════════════════════════════
-        # TRUST SIGNALS (0-20 points)
-        # ═══════════════════════════════════════════════════════════
+        if website_data.get('has_privacy_policy'): score += 3
+        if website_data.get('has_terms'): score += 3
+        if website_data.get('has_contact_info'): score += 2
+        if website_data.get('contact_email'): score += 2
 
-        # Legal pages (0-6 points)
-        if website_data.get('has_privacy_policy'):
-            score += 3
-        if website_data.get('has_terms'):
-            score += 3
-
-        # Contact info (0-4 points)
-        if website_data.get('has_contact_info'):
-            score += 2
-        if website_data.get('contact_email'):
-            score += 2
-
-        # Copyright with current year (0-4 points)
         if website_data.get('has_copyright'):
             score += 2
             copyright_year = website_data.get('copyright_year')
-            current_year = datetime.now().year
+            current_year = dt.now().year
             if copyright_year and copyright_year >= current_year - 1:
-                score += 2  # Current or last year = more trustworthy
+                score += 2
 
-        # Company/team name (0-3 points)
-        if website_data.get('has_company_name'):
-            score += 3
+        if website_data.get('has_company_name'): score += 3
+        if website_data.get('has_physical_address'): score += 3
 
-        # Physical address (0-3 points) - rare but highly trustworthy
-        if website_data.get('has_physical_address'):
-            score += 3
-
-        # ═══════════════════════════════════════════════════════════
-        # TOKEN INTEGRATION (0-20 points)
-        # ═══════════════════════════════════════════════════════════
-
-        # Contract address displayed (0-5 points)
-        if website_data.get('has_contract_address'):
-            score += 5
-
-        # Tokenomics with numbers (0-5 points)
+        if website_data.get('has_contract_address'): score += 5
         if website_data.get('has_tokenomics_numbers'):
             score += 5
         elif website_data.get('has_tokenomics'):
-            score += 2  # Has section but no specifics
-
-        # Buy/swap functionality (0-4 points)
-        if website_data.get('has_buy_button'):
-            score += 2
-        if len(website_data.get('buy_links', [])) > 0:
             score += 2
 
-        # Audit mention (0-6 points) - strong signal
+        if website_data.get('has_buy_button'): score += 2
+        if len(website_data.get('buy_links', [])) > 0: score += 2
+
         if website_data.get('has_audit_mention'):
             score += 4
-            if website_data.get('audit_provider'):
-                score += 2  # Named auditor = stronger
+            if website_data.get('audit_provider'): score += 2
 
-        # ═══════════════════════════════════════════════════════════
-        # TECHNICAL QUALITY (0-15 points)
-        # ═══════════════════════════════════════════════════════════
-
-        # HTTPS (0-4 points)
         url = website_data.get('url', '')
-        if url.startswith('https://'):
-            score += 4
+        if url.startswith('https://'): score += 4
 
-        # Load time (0-4 points)
         load_time = website_data.get('load_time', 0)
         if load_time > 0:
-            if load_time < 2.0:
-                score += 4
-            elif load_time < 3.5:
-                score += 3
-            elif load_time < 5.0:
-                score += 2
-            elif load_time < 8.0:
-                score += 1
+            if load_time < 2.0: score += 4
+            elif load_time < 3.5: score += 3
+            elif load_time < 5.0: score += 2
+            elif load_time < 8.0: score += 1
 
-        # Mobile viewport (0-2 points)
-        if website_data.get('has_mobile_viewport'):
-            score += 2
+        if website_data.get('has_mobile_viewport'): score += 2
+        if website_data.get('has_favicon'): score += 2
+        if website_data.get('has_analytics'): score += 2
+        if website_data.get('uses_modern_framework'): score += 1
 
-        # Favicon (0-2 points)
-        if website_data.get('has_favicon'):
-            score += 2
+        if website_data.get('has_custom_domain', False): score += 5
 
-        # Analytics (0-2 points)
-        if website_data.get('has_analytics'):
-            score += 2
-
-        # Modern framework (0-1 point) - professional signal
-        if website_data.get('uses_modern_framework'):
-            score += 1
-
-        # ═══════════════════════════════════════════════════════════
-        # PROFESSIONAL SIGNALS (0-15 points)
-        # ═══════════════════════════════════════════════════════════
-
-        # Custom domain (0-5 points)
-        if website_data.get('has_custom_domain', True):
-            score += 5
-
-        # Social presence on site (0-6 points)
         social_links = website_data.get('social_links', {})
-        if 'twitter' in social_links:
-            score += 2
-        if 'telegram' in social_links:
-            score += 2
-        if website_data.get('has_discord') or 'discord' in social_links:
-            score += 2
-
-        # GitHub presence (0-2 points) - indicates development activity
-        if website_data.get('has_github') or 'github' in social_links:
-            score += 2
-
-        # ═══════════════════════════════════════════════════════════
-        # RED FLAG DEDUCTIONS (up to -20)
-        # ═══════════════════════════════════════════════════════════
+        if 'twitter' in social_links: score += 2
+        if 'telegram' in social_links: score += 2
+        if website_data.get('has_discord') or 'discord' in social_links: score += 2
+        if website_data.get('has_github') or 'github' in social_links: score += 2
 
         red_flags = website_data.get('red_flags', [])
-
-        # For SPA sites, filter out "very little content" flag (JS can't be scraped)
         if is_spa_with_low_content:
             red_flags = [f for f in red_flags if 'little content' not in f.lower()]
 
-        # Graduated penalty based on flag count (significantly relaxed)
         flag_count = len(red_flags)
-        if flag_count >= 5:
-            score -= 15  # Was -20
-        elif flag_count >= 4:
-            score -= 10  # Was -15
-        elif flag_count >= 3:
-            score -= 6   # Was -10
-        elif flag_count >= 2:
-            score -= 3   # Was -6
-        elif flag_count == 1:
-            score -= 1   # Was -3
+        if flag_count >= 5: score -= 8
+        elif flag_count >= 4: score -= 6
+        elif flag_count >= 3: score -= 4
+        elif flag_count >= 2: score -= 2
+        elif flag_count == 1: score -= 1
 
-        # Specific severe flag penalties (in addition to count)
         for flag in red_flags:
             flag_lower = flag.lower() if isinstance(flag, str) else ''
-            # Relax penalties for generic flags
-            if 'lorem ipsum' in flag_lower:
-                score -= 5  # Was -10
-            elif 'scam' in flag_lower or 'honeypot' in flag_lower:
-                score -= 15
-            elif 'broken link' in flag_lower:
-                score -= 2
+            if 'lorem ipsum' in flag_lower: score -= 3
+            elif 'scam' in flag_lower or 'honeypot' in flag_lower: score -= 10
+            elif 'broken link' in flag_lower: score -= 1
 
-        # Ensure bounds
         return max(0, min(100, score))
 
     def _apply_ai_results(self, token: TokenInfo, ai_results: MultiAIResult) -> None:
-        """
-        Apply AI analysis results to token.
-
-        Args:
-            token: TokenInfo to populate
-            ai_results: MultiAIResult with AI response
-        """
-        # Apply AI results
+        """Apply AI analysis results to token."""
         if ai_results.openai and ai_results.openai.success:
             token.ai_available = True
             content = ai_results.openai.content
@@ -913,32 +859,23 @@ class TokenAnalyzer:
             token.ai_sentiment = content.get('ai_sentiment', '')
             token.ai_trading = content.get('ai_trading', '')
             token.ai_narrative = content.get('ai_narrative', '')
-            # Map AI narrative to website type for display
             token.ai_website_type = content.get('ai_token_type') or token.ai_narrative or "unknown"
 
-            # Apply AI website assessment
             token.website_ai_quality = content.get('ai_website_quality', '')
             ai_concerns = content.get('ai_website_concerns', [])
             token.website_ai_concerns = ai_concerns if isinstance(ai_concerns, list) else []
 
-            logger.info(
-                f"✅ AI analysis applied: "
-                f"Score={token.ai_score}, Verdict={token.ai_verdict}"
-            )
+            logger.info(f"AI analysis applied: Score={token.ai_score}, Verdict={token.ai_verdict}")
         else:
             token.ai_available = False
-            logger.warning(f"⚠️ AI analysis not available for {token.symbol}")
+            logger.warning(f"AI analysis not available for {token.symbol}")
 
-        # Apply Grok results (Narrative Override)
         if ai_results.grok and ai_results.grok.success:
             grok_content = ai_results.grok.content
-            
-            # Store raw data (if model supports it, otherwise just use what we used)
-            # Note: We added grok_analysis to TokenInfo in models.py
+
             if hasattr(token, 'grok_analysis'):
                 token.grok_analysis = grok_content
-            
-            # Extract key metrics
+
             narrative_score = grok_content.get('narrative_score', 50)
             sentiment = grok_content.get('sentiment', 'NEUTRAL')
             summary = grok_content.get('narrative_summary', '')
@@ -946,11 +883,9 @@ class TokenAnalyzer:
             category = grok_content.get('narrative_category', 'Uncategorized')
             vibe = grok_content.get('community_vibe', 'UNKNOWN')
             organic = grok_content.get('organic_score', 0)
-            
-            # Emoji selection based on score
+
             score_emoji = "🔥" if narrative_score >= 80 else "😐" if narrative_score >= 50 else "💀"
-            
-            # Format advanced narrative block for Telegram
+
             narrative_block = f"""
 🐦 <b>GROK NARRATIVE REPORT</b>
 • <b>Score:</b> {score_emoji} {narrative_score}/100 ({trending})
@@ -967,15 +902,14 @@ class TokenAnalyzer:
 ⚠️ <b>FUD Warnings:</b>
 {', '.join(grok_content.get('fud_warnings', ['None']))}
 """
-            # Override ai_narrative with the full block
             token.ai_narrative = narrative_block
             token.ai_sentiment = f"🐦 {sentiment} | Organic: {organic}%"
-            
-            logger.info(f"🐦 Grok narrative applied: Score={narrative_score}, Sentiment={sentiment}")
+
+            logger.info(f"Grok narrative applied: Score={narrative_score}, Sentiment={sentiment}")
 
     async def close(self):
         """Cleanup all resources"""
-        logger.info("🔄 Closing TokenAnalyzer...")
+        logger.info("Closing TokenAnalyzer...")
 
         await self.dex.close()
         await self.rugcheck.close()
@@ -984,4 +918,4 @@ class TokenAnalyzer:
         await self.ai_router.close()
         await self.honeypot_detector.close()
 
-        logger.info("✅ TokenAnalyzer closed")
+        logger.info("TokenAnalyzer closed")

@@ -1,7 +1,7 @@
 """
-Token analysis API routes.
+Token analysis API routes — multi-chain.
 
-Provides endpoints for token analysis, including quick and deep analysis modes.
+Provides endpoints for token analysis across all supported chains.
 """
 
 import logging
@@ -11,6 +11,7 @@ from typing import Optional
 
 from src.core.analyzer import TokenAnalyzer
 from src.core.models import AnalysisResult, TokenInfo
+from src.chains.address import AddressResolver
 from src.api.schemas.responses import (
     AnalysisResponse, TokenBasicInfo, ScoresResponse, MarketDataResponse,
     SecurityResponse, HolderAnalysisResponse, AIAnalysisResponse,
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 # Global analyzer instance (initialized on app startup)
 _analyzer: Optional[TokenAnalyzer] = None
 _cache: Optional[CacheLayer] = None
+_resolver = AddressResolver()
 
 
 async def init_analyzer(app: web.Application):
@@ -35,7 +37,7 @@ async def init_analyzer(app: web.Application):
     _cache = CacheLayer()
     app['analyzer'] = _analyzer
     app['cache'] = _cache
-    logger.info("TokenAnalyzer initialized for web API")
+    logger.info("TokenAnalyzer initialized for web API (multi-chain)")
 
 
 async def cleanup_analyzer(app: web.Application):
@@ -46,17 +48,45 @@ async def cleanup_analyzer(app: web.Application):
         logger.info("TokenAnalyzer closed")
 
 
+def _get_explorer_url(address: str, chain: str) -> Optional[str]:
+    """Build block explorer URL for a token address."""
+    explorers = {
+        "solana": f"https://solscan.io/token/{address}",
+        "ethereum": f"https://etherscan.io/token/{address}",
+        "base": f"https://basescan.org/token/{address}",
+        "arbitrum": f"https://arbiscan.io/token/{address}",
+        "bsc": f"https://bscscan.com/token/{address}",
+        "polygon": f"https://polygonscan.com/token/{address}",
+        "optimism": f"https://optimistic.etherscan.io/token/{address}",
+        "avalanche": f"https://snowtrace.io/token/{address}",
+    }
+    return explorers.get(chain)
+
+
+def _liquidity_lock_status(token: TokenInfo) -> str:
+    if token.liquidity_locked is True:
+        return "locked"
+    if token.liquidity_locked is False:
+        return "unlocked"
+    return "unknown"
+
+
 def convert_result_to_response(result: AnalysisResult, mode: str, cached: bool = False) -> dict:
     """Convert AnalysisResult to API response dict"""
     token = result.token
+    chain = token.chain
 
     return AnalysisResponse(
+        chain=chain,
         token=TokenBasicInfo(
             address=token.address,
             name=token.name,
             symbol=token.symbol,
             decimals=token.decimals,
-            logo_url=token.logo_url
+            logo_url=token.logo_url,
+            chain=chain,
+            chain_id=token.chain_id,
+            explorer_url=_get_explorer_url(token.address, chain),
         ),
         scores=ScoresResponse(
             overall=result.overall_score,
@@ -93,11 +123,25 @@ def convert_result_to_response(result: AnalysisResult, mode: str, cached: bool =
             freeze_authority_enabled=token.freeze_authority_enabled,
             liquidity_locked=token.liquidity_locked,
             lp_lock_percent=token.lp_lock_percent,
+            liquidity_lock_status=_liquidity_lock_status(token),
+            liquidity_lock_source=token.liquidity_lock_source,
+            liquidity_lock_note=token.liquidity_lock_note,
             honeypot_status=token.honeypot_status,
             honeypot_is_honeypot=token.honeypot_is_honeypot,
             honeypot_sell_tax_percent=token.honeypot_sell_tax_percent,
             honeypot_explanation=token.honeypot_explanation,
-            honeypot_warnings=token.honeypot_warnings
+            honeypot_warnings=token.honeypot_warnings,
+            can_mint=token.can_mint,
+            can_blacklist=token.can_blacklist,
+            can_pause=token.can_pause,
+            is_upgradeable=token.is_upgradeable,
+            is_renounced=token.is_renounced,
+            is_proxy_contract=token.is_proxy_contract,
+            is_verified=token.is_verified,
+            buy_tax=token.goplus_buy_tax,
+            sell_tax=token.goplus_sell_tax,
+            transfer_pausable=token.transfer_pausable,
+            is_open_source=token.is_open_source,
         ),
         holders=HolderAnalysisResponse(
             top_holder_pct=token.top_holder_pct,
@@ -105,7 +149,7 @@ def convert_result_to_response(result: AnalysisResult, mode: str, cached: bool =
             suspicious_wallets=token.suspicious_wallets,
             dev_wallet_risk=token.dev_wallet_risk,
             holder_flags=token.holder_flags,
-            top_holders=token.top_holders[:10]  # Top 10 only
+            top_holders=token.top_holders[:10]
         ),
         ai=AIAnalysisResponse(
             available=token.ai_available,
@@ -183,23 +227,21 @@ async def analyze_token(request: web.Request) -> web.Response:
     """
     POST /api/v1/analyze
 
-    Analyze a Solana token with AI-powered security assessment.
+    Analyze a token with AI-powered security assessment.
+    Supports all chains — auto-detected from address format.
 
     Request body:
         {
             "address": "token_address",
-            "mode": "quick" | "standard" | "deep"
+            "mode": "quick" | "standard" | "deep",
+            "chain": "ethereum" | "solana" | ...  (optional)
         }
-
-    Returns:
-        Full analysis response or error
     """
     global _analyzer
 
     try:
         data = await request.json()
 
-        # Validate request
         try:
             req = AnalyzeTokenRequest(**data)
         except Exception as e:
@@ -212,7 +254,6 @@ async def analyze_token(request: web.Request) -> web.Response:
                 status=400
             )
 
-        # Map mode
         mode_map = {
             AnalysisModeType.QUICK: "quick",
             AnalysisModeType.STANDARD: "standard",
@@ -220,19 +261,19 @@ async def analyze_token(request: web.Request) -> web.Response:
         }
         mode = mode_map.get(req.mode, "standard")
 
-        # Validate address format
-        if not _analyzer.is_valid_address(req.address):
+        # Validate address (multi-chain aware)
+        if not _analyzer or not _analyzer.is_valid_address(req.address):
             return web.json_response(
                 ErrorResponse(
-                    error="Invalid Solana address",
-                    code="INVALID_ADDRESS"
+                    error="Invalid token address",
+                    code="INVALID_ADDRESS",
+                    details={"supported": "Solana base58 or EVM 0x hex address"}
                 ).model_dump(mode='json'),
                 status=400
             )
 
-        # Run analysis
-        logger.info(f"Web API: Analyzing {req.address[:8]}... (mode={mode})")
-        result = await _analyzer.analyze(req.address, mode=mode)
+        logger.info(f"Web API: Analyzing {req.address[:8]}... (mode={mode}, chain={req.chain or 'auto'})")
+        result = await _analyzer.analyze(req.address, mode=mode, chain=req.chain)
 
         if not result:
             return web.json_response(
@@ -244,10 +285,9 @@ async def analyze_token(request: web.Request) -> web.Response:
                 status=500
             )
 
-        # Convert to response
         response = convert_result_to_response(result, mode)
 
-        # Track analysis in database for accurate stats
+        # Track analysis in database
         try:
             db = await get_database()
             if db._initialized:
@@ -283,10 +323,12 @@ async def get_token_analysis(request: web.Request) -> web.Response:
     GET /api/v1/token/{address}
 
     Get cached analysis for a token, or return 404 if not cached.
+    Optionally pass ?chain= to specify chain.
     """
     global _analyzer, _cache
 
     address = request.match_info.get('address')
+    chain = request.query.get('chain')
 
     if not address:
         return web.json_response(
@@ -294,21 +336,25 @@ async def get_token_analysis(request: web.Request) -> web.Response:
             status=400
         )
 
-    # Check if valid address
-    if not _analyzer.is_valid_address(address):
+    if not _analyzer or not _analyzer.is_valid_address(address):
         return web.json_response(
-            ErrorResponse(error="Invalid Solana address", code="INVALID_ADDRESS").model_dump(mode='json'),
+            ErrorResponse(error="Invalid token address", code="INVALID_ADDRESS").model_dump(mode='json'),
             status=400
         )
 
-    # Check cache
-    cache_key = f"{address}:standard"
-    if cache_key in _analyzer._cache:
-        result = _analyzer._cache[cache_key]
-        response = convert_result_to_response(result, "standard", cached=True)
-        return web.json_response(response)
+    # Try all modes in cache
+    from src.chains.address import AddressResolver
+    resolver = AddressResolver()
+    chain_type = resolver.get_default_chain_for_address(address)
+    chain_val = chain or (chain_type.value if chain_type else "solana")
 
-    # Not in cache
+    for mode in ["standard", "full", "quick"]:
+        cache_key = f"{chain_val}:{address}:{mode}"
+        if _analyzer and cache_key in _analyzer._cache:
+            result = _analyzer._cache[cache_key]
+            response = convert_result_to_response(result, mode, cached=True)
+            return web.json_response(response)
+
     return web.json_response(
         ErrorResponse(
             error="Token not found in cache. Use POST /api/v1/analyze to analyze.",
@@ -328,6 +374,7 @@ async def refresh_analysis(request: web.Request) -> web.Response:
 
     address = request.match_info.get('address')
     mode = request.query.get('mode', 'standard')
+    chain = request.query.get('chain')
 
     if not address:
         return web.json_response(
@@ -335,13 +382,13 @@ async def refresh_analysis(request: web.Request) -> web.Response:
             status=400
         )
 
-    # Clear cache
-    for key in list(_analyzer._cache.keys()):
-        if key.startswith(address):
-            del _analyzer._cache[key]
+    if _analyzer:
+        # Clear all cache entries for this address
+        for key in list(_analyzer._cache.keys()):
+            if address in key:
+                del _analyzer._cache[key]
 
-    # Run fresh analysis
-    result = await _analyzer.analyze(address, mode=mode)
+    result = await _analyzer.analyze(address, mode=mode, chain=chain) if _analyzer else None
 
     if not result:
         return web.json_response(
@@ -355,14 +402,17 @@ async def refresh_analysis(request: web.Request) -> web.Response:
 
 async def search_tokens(request: web.Request) -> web.Response:
     """
-    GET /api/v1/search?query=...
+    GET /api/v1/search?query=...&chain=...
 
-    Search for tokens by name or address.
-    Uses DexScreener search API.
+    Universal search across tokens, protocols, wallets.
+    Auto-detects input type (address, ENS, search query).
     """
     from src.data.dexscreener import DexScreenerClient
+    from src.chains.address import AddressResolver
+    from src.api.schemas.responses import SearchResultItem, UniversalSearchResponse
 
     query = request.query.get('query', '')
+    chain = request.query.get('chain')
     limit = min(int(request.query.get('limit', 10)), 50)
 
     if not query or len(query) < 2:
@@ -371,14 +421,47 @@ async def search_tokens(request: web.Request) -> web.Response:
             status=400
         )
 
+    resolver = AddressResolver()
+    input_type = resolver.detect_input_type(query)
+
     try:
-        async with DexScreenerClient() as client:
-            results = await client.search_tokens(query, limit=limit)
+        results = []
+
+        if input_type in ("evm_address", "solana_address"):
+            # Direct address lookup — return as single token result
+            detected_chain = resolver.get_default_chain_for_address(query)
+            chain_name = chain or (detected_chain.value if detected_chain else "solana")
+            results.append(SearchResultItem(
+                type="token",
+                title=f"Token {query[:8]}...",
+                subtitle=f"Direct address on {chain_name}",
+                address=query,
+                chain=chain_name,
+                url=f"/token/{query}?chain={chain_name}",
+            ).model_dump())
+        else:
+            # Name/symbol search via DexScreener
+            async with DexScreenerClient() as client:
+                dex_results = await client.search_tokens(query, limit=limit, chain=chain)
+
+            for r in dex_results:
+                result_chain = r.get('chain')
+                results.append(SearchResultItem(
+                    type="token",
+                    title=f"{r.get('name', '?')} ({r.get('symbol', '?')})",
+                    subtitle=f"{str(result_chain or 'unknown').upper()} · {r.get('dex', '')}",
+                    address=r.get('address'),
+                    chain=result_chain,
+                    url=f"/token/{r.get('address')}" + (f"?chain={result_chain}" if result_chain else ""),
+                    logo=r.get('logo_url'),
+                ).model_dump())
 
         return web.json_response({
-            "results": results,
             "query": query,
-            "count": len(results)
+            "input_type": input_type,
+            "results": results,
+            "count": len(results),
+            "total": len(results),
         })
 
     except Exception as e:
@@ -391,14 +474,12 @@ async def search_tokens(request: web.Request) -> web.Response:
 
 def setup_analysis_routes(app: web.Application):
     """Setup analysis API routes"""
-    # Analysis endpoints
     app.router.add_post('/api/v1/analyze', analyze_token)
     app.router.add_get('/api/v1/token/{address}', get_token_analysis)
     app.router.add_post('/api/v1/token/{address}/refresh', refresh_analysis)
     app.router.add_get('/api/v1/search', search_tokens)
 
-    # Lifecycle hooks
     app.on_startup.append(init_analyzer)
     app.on_cleanup.append(cleanup_analyzer)
 
-    logger.info("Analysis routes registered")
+    logger.info("Analysis routes registered (multi-chain)")

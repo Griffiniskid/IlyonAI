@@ -23,7 +23,7 @@ import {
   ChevronRight,
   RefreshCw,
 } from "lucide-react";
-import { cn, formatCompact } from "@/lib/utils";
+import { cn, formatCompact, isValidEvmAddress, isValidSolanaAddress } from "@/lib/utils";
 import { useDashboardStats } from "@/lib/hooks";
 
 // Animated background orbs
@@ -203,17 +203,121 @@ function TokenPreview() {
   );
 }
 
+// Chain definitions for the selector row
+const CHAINS = [
+  { id: "ethereum", label: "Ethereum", short: "ETH", color: "#627EEA", type: "evm" },
+  { id: "base", label: "Base", short: "BASE", color: "#0052FF", type: "evm" },
+  { id: "arbitrum", label: "Arbitrum", short: "ARB", color: "#28A0F0", type: "evm" },
+  { id: "bsc", label: "BSC", short: "BNB", color: "#F0B90B", type: "evm" },
+  { id: "polygon", label: "Polygon", short: "POL", color: "#8247E5", type: "evm" },
+  { id: "optimism", label: "Optimism", short: "OP", color: "#FF0420", type: "evm" },
+  { id: "avalanche", label: "Avalanche", short: "AVAX", color: "#E84142", type: "evm" },
+  { id: "solana", label: "Solana", short: "SOL", color: "#9945FF", type: "sol" },
+] as const;
+
+type ChainId = typeof CHAINS[number]["id"];
+
+function detectChainType(address: string): "evm" | "sol" | null {
+  if (!address) return null;
+  if (isValidEvmAddress(address)) return "evm";
+  if (isValidSolanaAddress(address)) return "sol";
+  return null;
+}
+
+function ChainSelectorRow({
+  selectedChain,
+  onSelect,
+  detectedType,
+}: {
+  selectedChain: ChainId | null;
+  onSelect: (id: ChainId) => void;
+  detectedType: "evm" | "sol" | null;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 pt-2">
+      <span className="text-xs text-muted-foreground shrink-0">Chain:</span>
+      {CHAINS.map((chain) => {
+        const isSelected = selectedChain === chain.id;
+        const isHighlighted = !selectedChain && detectedType === chain.type;
+        return (
+          <button
+            key={chain.id}
+            type="button"
+            onClick={() => onSelect(chain.id)}
+            className={cn(
+              "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 border",
+              isSelected
+                ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-300"
+                : isHighlighted
+                ? "border-white/30 bg-white/10 text-white/80"
+                : "border-white/10 bg-white/5 text-muted-foreground hover:border-white/20 hover:bg-white/10 hover:text-foreground"
+            )}
+          >
+            <span
+              className="w-2 h-2 rounded-full shrink-0"
+              style={{ background: chain.color }}
+            />
+            {chain.short}
+          </button>
+        );
+      })}
+      {selectedChain && (
+        <button
+          type="button"
+          onClick={() => onSelect(selectedChain)} // toggle off
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+        >
+          clear
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [tokenAddress, setTokenAddress] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [selectedChain, setSelectedChain] = useState<ChainId | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const { data: statsData, isLoading: statsLoading } = useDashboardStats();
+
+  const detectedType = detectChainType(tokenAddress);
+
+  const handleChainSelect = (id: ChainId) => {
+    setSearchError(null);
+    setSelectedChain(prev => prev === id ? null : id);
+  };
 
   const handleAnalyze = (e: React.FormEvent) => {
     e.preventDefault();
-    if (tokenAddress.trim()) {
-      router.push(`/token/${tokenAddress.trim()}`);
+    const trimmed = tokenAddress.trim();
+    if (!trimmed) return;
+
+    if (!detectedType) {
+      setSearchError("Enter a valid Solana or EVM token address.");
+      return;
     }
+
+    if (detectedType === "sol" && selectedChain && selectedChain !== "solana") {
+      setSearchError("Solana addresses can only be analyzed on Solana.");
+      return;
+    }
+
+    if (detectedType === "evm" && !selectedChain) {
+      setSearchError("Select the EVM chain before analyzing this address.");
+      return;
+    }
+
+    if (detectedType === "evm" && selectedChain === "solana") {
+      setSearchError("EVM addresses require an EVM chain selection.");
+      return;
+    }
+
+    setSearchError(null);
+    const chain = selectedChain ?? (detectedType === "sol" ? "solana" : undefined);
+    const params = chain ? `?chain=${chain}` : "";
+    router.push(`/token/${trimmed}${params}`);
   };
 
   return (
@@ -236,16 +340,16 @@ export default function HomePage() {
               <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold leading-tight animate-fade-in-up">
                 Protect Your
                 <br />
-                <span className="text-emerald-400">Solana Trades</span>
+                <span className="text-emerald-400">DeFi Trades</span>
               </h1>
 
               {/* Subheadline */}
               <p className="text-xl text-muted-foreground max-w-lg animate-fade-in-up" style={{ animationDelay: '100ms' }}>
-                Advanced token security analysis powered by AI. Detect rugs, honeypots, and scams before you trade.
+                Multi-chain token security powered by AI. Detect rugs, honeypots, and scams across Solana, Ethereum, Base, Arbitrum, and more.
               </p>
 
               {/* Search bar */}
-              <form onSubmit={handleAnalyze} className="animate-fade-in-up" style={{ animationDelay: '200ms' }}>
+              <form onSubmit={handleAnalyze} className="animate-fade-in-up space-y-4" style={{ animationDelay: '200ms' }}>
                 <div className={cn(
                   "relative flex flex-col sm:flex-row gap-2 p-2 rounded-2xl transition-all duration-300",
                   isSearchFocused
@@ -258,10 +362,13 @@ export default function HomePage() {
                       type="text"
                       placeholder="Enter token address..."
                       value={tokenAddress}
-                      onChange={(e) => setTokenAddress(e.target.value)}
+                      onChange={(e) => {
+                        setTokenAddress(e.target.value);
+                        setSearchError(null);
+                      }}
                       onFocus={() => setIsSearchFocused(true)}
                       onBlur={() => setIsSearchFocused(false)}
-                      className="pl-12 h-12 sm:h-14 bg-transparent border-none text-base sm:text-lg placeholder:text-muted-foreground"
+                      className="pl-12 h-12 sm:h-14 bg-transparent border-none text-base sm:text-lg placeholder:text-muted-foreground focus-visible:ring-0"
                     />
                   </div>
                   <Button
@@ -273,6 +380,13 @@ export default function HomePage() {
                     <ArrowRight className="ml-2 w-5 h-5" />
                   </Button>
                 </div>
+
+                <ChainSelectorRow
+                  selectedChain={selectedChain as any}
+                  onSelect={handleChainSelect as any}
+                  detectedType={detectedType as any}
+                />
+                {searchError && <p className="text-sm text-red-400">{searchError}</p>}
               </form>
 
               {/* Trust indicators */}
@@ -318,7 +432,7 @@ export default function HomePage() {
             />
             <StatCard
               value={statsData ? formatCompact(statsData.solana_tvl || 0) : "$0"}
-              label="Solana TVL"
+              label="Multi-Chain TVL"
               icon={Activity}
               loading={statsLoading}
             />
@@ -343,7 +457,7 @@ export default function HomePage() {
               <span className="text-gradient">Trade Safely</span>
             </h2>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Comprehensive security analysis tools designed for the Solana ecosystem
+              Comprehensive security and intelligence tools for multi-chain DeFi — Solana, Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, and Avalanche
             </p>
           </div>
 
@@ -351,38 +465,38 @@ export default function HomePage() {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             <FeatureCard
               icon={Shield}
-              title="Security Analysis"
-              description="Deep analysis of token contracts, mint authorities, freeze functions, and ownership patterns to identify potential risks."
+              title="Multi-Chain Security"
+              description="Deep token analysis across Solana, Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, and Avalanche — one unified interface."
               delay={0}
             />
             <FeatureCard
               icon={Eye}
               title="Honeypot Detection"
-              description="Simulate trades to detect honeypots, high taxes, and other mechanisms that could prevent you from selling."
+              description="Simulate trades to detect honeypots, high sell taxes, and mechanisms that prevent you from exiting."
               delay={100}
             />
             <FeatureCard
-              icon={BarChart3}
-              title="Holder Analysis"
-              description="Visualize token distribution, identify whale wallets, and track insider accumulation patterns."
+              icon={Lock}
+              title="Contract Scanner"
+              description="Static analysis + AI audit of any EVM smart contract. Identify reentrancy, access control flaws, and upgradeable proxies."
               delay={200}
             />
             <FeatureCard
               icon={Zap}
-              title="AI Insights"
-              description="GPT-4 powered analysis provides human-readable explanations and trading recommendations."
+              title="Approval Shield"
+              description="Scan your wallet for risky ERC-20 approvals across all chains and generate revoke transactions in one click."
               delay={300}
             />
             <FeatureCard
               icon={TrendingUp}
-              title="Market Data"
-              description="Real-time price, volume, liquidity, and market cap data from DexScreener and on-chain sources."
+              title="DeFi Intelligence"
+              description="Explore yield farms and liquidity pools with AI risk scoring — TVL, APY sustainability, and impermanent loss analysis."
               delay={400}
             />
             <FeatureCard
-              icon={Lock}
-              title="LP Analysis"
-              description="Verify liquidity pool locks, analyze LP distribution, and detect potential rug pull setups."
+              icon={BarChart3}
+              title="Protocol Audits"
+              description="Review smart contract audit records and security posture before you deposit into a protocol."
               delay={500}
             />
           </div>
@@ -406,7 +520,7 @@ export default function HomePage() {
               {
                 step: "01",
                 title: "Paste Address",
-                description: "Enter any Solana token address or search by name"
+                description: "Enter any token address or contract across 8 supported chains"
               },
               {
                 step: "02",
@@ -448,19 +562,19 @@ export default function HomePage() {
                 <span className="text-gradient"> Safely?</span>
               </h2>
               <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-                Join thousands of traders who use Ilyon AI to protect their investments on Solana.
+                Join thousands of traders who use Ilyon AI to protect their investments across 8 chains.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <Link href="/trending">
+                <Link href="/chat">
                   <Button size="lg" className="h-14 px-8 bg-emerald-600 hover:bg-emerald-500 text-black font-semibold">
-                    <TrendingUp className="mr-2 w-5 h-5" />
-                    Explore Trending
+                    <Sparkles className="mr-2 w-5 h-5" />
+                    Ask Ilyon AI
                   </Button>
                 </Link>
-                <Link href="/whales">
+                <Link href="/defi">
                   <Button size="lg" variant="outline" className="h-14 px-8">
-                    <Activity className="mr-2 w-5 h-5" />
-                    Track Whales
+                    <TrendingUp className="mr-2 w-5 h-5" />
+                    Explore DeFi
                   </Button>
                 </Link>
               </div>

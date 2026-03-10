@@ -120,9 +120,9 @@ Respond ONLY with valid JSON without markdown formatting."""
         if not website_content or len(website_content) < 50:
             return "\n- Content: Unable to retrieve website content"
 
-        # Truncate to reasonable size for AI context (max 2500 chars)
-        if len(website_content) > 2500:
-            website_content = website_content[:2500] + "...(truncated)"
+        # Truncate to reasonable size for AI context (max 4000 chars)
+        if len(website_content) > 4000:
+            website_content = website_content[:4000] + "...(truncated)"
 
         return f"""
 
@@ -141,6 +141,25 @@ Analyze the website content above for:
 7. Unrealistic promises ("1000x", "to the moon", "guaranteed profit")
 8. Copy-paste template content (lorem ipsum, placeholder text)
 9. Crypto scam patterns (Elon Musk mentions, "anti-whale", etc.)"""
+
+    def _format_liquidity_lock_text(self, request: TokenAnalysisRequest) -> str:
+        if request.liquidity_locked is True:
+            if request.lp_lock_percent is not None and request.lp_lock_percent > 0:
+                return f"LOCKED ({request.lp_lock_percent:.1f}%)"
+            return "LOCKED (verified, percentage unavailable)"
+        if request.liquidity_locked is False:
+            return "NOT LOCKED - verified rug risk"
+        note = request.liquidity_lock_note or "lock status not verified"
+        return f"UNKNOWN - {note}"
+
+    def _format_rug_pull_risk(self, request: TokenAnalysisRequest) -> str:
+        if request.liquidity_locked is False and request.mint_authority_enabled:
+            return "CRITICAL"
+        if request.liquidity_locked is False or request.mint_authority_enabled:
+            return "HIGH"
+        if request.liquidity_locked is None:
+            return "UNKNOWN - LP lock could not be verified, do not assume locked or unlocked"
+        return "Low"
 
     def _build_analysis_prompt(self, request: TokenAnalysisRequest) -> str:
         """
@@ -164,6 +183,9 @@ Analyze the website content above for:
             trend = "SIDEWAYS"
 
         # Build comprehensive technical data
+        liquidity_lock_text = self._format_liquidity_lock_text(request)
+        rug_pull_risk = self._format_rug_pull_risk(request)
+
         prompt = f"""
 ==========================================================
 COMPREHENSIVE TOKEN ANALYSIS
@@ -191,7 +213,7 @@ PRICE MOMENTUM:
 CONTRACT SECURITY (CRITICAL):
 - Mint Authority: {"ENABLED - dev can create new tokens!" if request.mint_authority_enabled else "DISABLED - supply is fixed"}
 - Freeze Authority: {"ENABLED - dev can freeze wallets!" if request.freeze_authority_enabled else "DISABLED - no freeze risk"}
-- LP Lock: {f"LOCKED ({request.lp_lock_percent:.1f}%)" if request.liquidity_locked else "NOT LOCKED - high rug risk!"}
+- LP Lock: {liquidity_lock_text}
 - RugCheck Score: {request.rugcheck_score} (0=excellent, >1000=dangerous)
 - RugCheck Risks: {', '.join(request.rugcheck_risks) if request.rugcheck_risks else 'None detected'}
 
@@ -211,7 +233,7 @@ RISK PATTERN DETECTION:
 - Micro-cap (<$50K): {"YES - easily manipulated" if request.market_cap < 50000 else "No"}
 - Low Liquidity (<$10K): {"YES - impossible to exit!" if request.liquidity_usd < 10000 else "No"}
 - Pump & Dump Signal: {"LIKELY" if request.price_change_24h < -50 and request.age_hours < 72 else "Possible" if request.price_change_24h < -30 else "Not detected"}
-- Rug Pull Risk: {"CRITICAL" if not request.liquidity_locked and request.mint_authority_enabled else "HIGH" if not request.liquidity_locked or request.mint_authority_enabled else "Low"}
+- Rug Pull Risk: {rug_pull_risk}
 
 WEBSITE ANALYSIS:
 - URL: {request.website_url if request.has_website else "NO WEBSITE"}
@@ -327,6 +349,7 @@ CRITICAL RULES:
 - Your ai_score IS the final score shown to users - make it count!
 - Good security metrics (mint disabled, LP locked, socials present) = score 60+ minimum
 - Critical security concerns (mint enabled, LP unlocked) = score appropriately low
+- UNKNOWN LP lock status is missing evidence, not proof of unlocked liquidity
 - Suspicious data (like 0% holder concentration) = flag it but don't over-penalize
 - Token age alone should NOT significantly lower an otherwise strong token
 - Be consistent: similar tokens should get similar scores

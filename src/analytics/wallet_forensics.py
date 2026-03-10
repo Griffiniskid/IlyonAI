@@ -5,7 +5,7 @@ Tracks developer wallets across multiple token launches to identify
 serial scammers before they can victimize new users.
 
 This creates a cross-token reputation system - a public good for the
-Solana ecosystem that benefits all traders.
+DeFi ecosystem (Solana + EVM) that benefits all traders.
 """
 
 import logging
@@ -35,6 +35,7 @@ class TokenDeploymentRecord:
     """Record of a token deployment by a wallet."""
     token_address: str
     token_symbol: str
+    chain: str
     deployed_at: datetime
     status: str  # "active", "rugged", "abandoned"
     peak_liquidity_usd: float = 0.0
@@ -49,6 +50,7 @@ class WalletForensicsResult:
     """Complete forensics analysis result for a wallet."""
 
     wallet_address: str
+    chain: str
     reputation_score: float  # 0-100 (higher = safer)
     risk_level: WalletRiskLevel
 
@@ -213,6 +215,7 @@ class WalletForensicsEngine:
         if self.is_known_scammer(wallet_address):
             result = WalletForensicsResult(
                 wallet_address=wallet_address,
+                chain="solana",
                 reputation_score=0.0,
                 risk_level=WalletRiskLevel.KNOWN_SCAMMER,
                 patterns_detected=["known_scammer"],
@@ -233,13 +236,13 @@ class WalletForensicsEngine:
             )
 
             # Handle errors gracefully
-            if isinstance(deployment_history, Exception):
+            if isinstance(deployment_history, BaseException):
                 logger.warning(f"Error getting deployments for {wallet_address}: {deployment_history}")
                 deployment_history = []
-            if isinstance(funding_chain, Exception):
+            if isinstance(funding_chain, BaseException):
                 logger.warning(f"Error tracing funding for {wallet_address}: {funding_chain}")
                 funding_chain = []
-            if isinstance(related_wallets, Exception):
+            if isinstance(related_wallets, BaseException):
                 logger.warning(f"Error finding related wallets for {wallet_address}: {related_wallets}")
                 related_wallets = []
 
@@ -296,6 +299,7 @@ class WalletForensicsEngine:
 
             result = WalletForensicsResult(
                 wallet_address=wallet_address,
+                chain="solana",
                 reputation_score=reputation_score,
                 risk_level=risk_level,
                 tokens_deployed=tokens_deployed,
@@ -323,6 +327,7 @@ class WalletForensicsEngine:
             # Return neutral result on error
             return WalletForensicsResult(
                 wallet_address=wallet_address,
+                chain="solana",
                 reputation_score=50.0,
                 risk_level=WalletRiskLevel.MEDIUM,
                 evidence_summary=f"Unable to complete full analysis: {str(e)[:100]}",

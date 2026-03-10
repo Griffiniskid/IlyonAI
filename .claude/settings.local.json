@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m venv:*)",
+      "Bash(venv\\\\Scripts\\\\python.exe -m pip:*)",
+      "Bash(./venv/Scripts/python.exe -m pip install:*)",
+      "Bash(dir /s \"c:\\\\Users\\\\griff\\\\Документи\\\\ai-sentinel\")",
+      "Bash(dir \"c:\\\\Users\\\\griff\\\\Документи\\\\ai-sentinel\" /s /b)",
+      "Bash(wc -l \"c:\\\\Users\\\\griff\\\\Документи\\\\ai-sentinel\\\\src\"/**/*.py)",
+      "Bash(find:*)",
+      "Bash(if not exist \"c:\\\\Users\\\\griff\\\\Документи\\\\ai-sentinel\\\\src\\\\growth\" mkdir \"c:\\\\Users\\\\griff\\\\Документи\\\\ai-sentinel\\\\src\\\\growth\")",
+      "Bash(tree:*)",
+      "Bash(wc:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(ls:*)",
+      "Bash(python -c:*)",
+      "Bash(source:*)",
+      "Bash(python3:*)",
+      "Bash(fc-list:*)",
+      "Read(//usr/share/fonts/**)",
+      "Bash(xargs ls:*)",
+      "Bash(git fetch:*)",
+      "Bash(sudo chown:*)",
+      "Bash(git remote add:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(curl:*)",
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:zomro.com)",
+      "Bash(pip show:*)",
+      "Bash(git -C /home/griffiniskid/Documents/ai-sentinel log --oneline -10)",
+      "Bash(git -C /home/griffiniskid/Documents/ai-sentinel show --name-status HEAD)",
+      "Bash(git -C /home/griffiniskid/Documents/ai-sentinel status --short)",
+      "Bash(git -C /home/griffiniskid/Documents/ai-sentinel log --all --full-history --oneline -- src/bot/ src/output/)",
+      "Bash(grep:*)"
+    ]
+  }
+}

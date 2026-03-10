@@ -83,8 +83,10 @@ class TokenAnalysisRequest:
     # On-chain security
     mint_authority_enabled: bool = False
     freeze_authority_enabled: bool = False
-    liquidity_locked: bool = False
-    lp_lock_percent: float = 0
+    liquidity_locked: Optional[bool] = None
+    lp_lock_percent: Optional[float] = None
+    liquidity_lock_status: str = "unknown"
+    liquidity_lock_note: str = ""
 
     # Pool information
     age_hours: float = 0
@@ -142,6 +144,12 @@ class TokenAnalysisRequest:
             freeze_authority_enabled=token.freeze_authority_enabled,
             liquidity_locked=token.liquidity_locked,
             lp_lock_percent=token.lp_lock_percent,
+            liquidity_lock_status=(
+                "locked" if token.liquidity_locked is True
+                else "unlocked" if token.liquidity_locked is False
+                else "unknown"
+            ),
+            liquidity_lock_note=token.liquidity_lock_note or "",
 
             # Pool information
             age_hours=token.age_hours,
@@ -182,6 +190,8 @@ class TokenAnalysisRequest:
             "freeze_authority_enabled": self.freeze_authority_enabled,
             "liquidity_locked": self.liquidity_locked,
             "lp_lock_percent": self.lp_lock_percent,
+            "liquidity_lock_status": self.liquidity_lock_status,
+            "liquidity_lock_note": self.liquidity_lock_note,
             "age_hours": self.age_hours,
             "dex_name": self.dex_name,
             "rugcheck_score": self.rugcheck_score,

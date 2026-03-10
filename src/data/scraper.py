@@ -38,7 +38,7 @@ class WebsiteScraper:
     """
 
     DEFAULT_TIMEOUT = 10  # seconds
-    MAX_CONTENT_LENGTH = 5000  # characters for AI analysis
+    MAX_CONTENT_LENGTH = 15000  # characters for deeper website analysis
     MIN_CONTENT_LENGTH = 100  # minimum for valid content
 
     # User agent strings
@@ -159,7 +159,7 @@ class WebsiteScraper:
         """
         Clean HTML and extract pure text content.
 
-        Removes scripts, styles, navigation, and other non-content elements.
+        Removes non-content elements while preserving structural text sections.
         Normalizes whitespace and limits length.
 
         Args:
@@ -171,24 +171,21 @@ class WebsiteScraper:
         try:
             soup = BeautifulSoup(html, 'html.parser')
 
-            # Remove unwanted tags
+            # Remove clearly non-content tags.
+            # Keep header/nav/footer because many modern token sites place
+            # meaningful text and links there.
             for tag in soup([
-                'script', 'style', 'nav', 'footer', 'header',
-                'iframe', 'noscript', 'svg', 'path', 'meta',
-                'link', 'button', 'input', 'form'
+                'script', 'style', 'iframe', 'noscript',
+                'svg', 'path', 'meta', 'link',
+                'button', 'input', 'form'
             ]):
                 tag.decompose()
 
             # Extract text
             text = soup.get_text(separator=' ', strip=True)
 
-            # Clean whitespace
-            lines = [line.strip() for line in text.splitlines() if line.strip()]
-            text = ' '.join(lines)
-
-            # Remove multiple spaces
-            while '  ' in text:
-                text = text.replace('  ', ' ')
+            # Normalize whitespace
+            text = re.sub(r'\s+', ' ', text).strip()
 
             # Limit length
             return text[:self.max_content_length]
@@ -224,7 +221,7 @@ class WebsiteScraper:
 
         return ""
 
-    def _detect_red_flags(self, soup: BeautifulSoup, html: str) -> List[str]:
+    def _detect_red_flags(self, soup: BeautifulSoup, html: str, cleaned_content: Optional[str] = None) -> List[str]:
         """
         Detect suspicious patterns and red flags in website content.
 
@@ -237,7 +234,7 @@ class WebsiteScraper:
         """
         flags = []
         html_lower = html.lower()
-        text = soup.get_text()
+        text = soup.get_text(separator=' ', strip=True)
         text_lower = text.lower()
 
         # ═══════════════════════════════════════════════════════════════
@@ -276,9 +273,10 @@ class WebsiteScraper:
         # ═══════════════════════════════════════════════════════════════
         # VERY LITTLE CONTENT
         # ═══════════════════════════════════════════════════════════════
-        text_stripped = text.strip()
-        if len(text_stripped) < 200:
-            flags.append(f"⚠️ Very little content ({len(text_stripped)} chars)")
+        content_for_length = cleaned_content if cleaned_content is not None else text
+        text_len = len(content_for_length.strip())
+        if text_len < 150:
+            flags.append(f"⚠️ Very little content ({text_len} chars)")
 
         # ═══════════════════════════════════════════════════════════════
         # UNDER CONSTRUCTION
@@ -353,7 +351,7 @@ class WebsiteScraper:
         # BROKEN/PLACEHOLDER LINKS
         # ═══════════════════════════════════════════════════════════════
         hash_links = soup.find_all('a', href='#')
-        if len(hash_links) > 5:
+        if len(hash_links) > 12:
             flags.append("⚠️ Many broken/placeholder links")
 
         # ═══════════════════════════════════════════════════════════════
@@ -705,7 +703,7 @@ class WebsiteScraper:
             "uses_modern_framework": False,
             "framework_detected": None,
             "is_spa": False,
-            "has_custom_domain": True,
+            "has_custom_domain": False,
             # Social links
             "social_links": {},
             "has_discord": False,
@@ -778,7 +776,7 @@ class WebsiteScraper:
                 result["has_content"] = len(content) >= self.MIN_CONTENT_LENGTH
 
                 # Detect red flags
-                result["red_flags"] = self._detect_red_flags(soup, html)
+                result["red_flags"] = self._detect_red_flags(soup, html, content)
 
                 # Check for important sections
                 sections = self._check_for_sections(soup)
@@ -807,10 +805,14 @@ class WebsiteScraper:
                 # are in the JS-rendered DOM, not the server response.
                 should_try_playwright = (
                     PLAYWRIGHT_AVAILABLE and
-                    len(content) < 500  # Any site with < 500 chars likely needs JS rendering
+                    len(content) < 800 and (
+                        result.get("uses_modern_framework", False) or
+                        result.get("is_spa", False) or
+                        len(content) < self.MIN_CONTENT_LENGTH
+                    )
                 )
 
-                if not PLAYWRIGHT_AVAILABLE and len(content) < 500:
+                if not PLAYWRIGHT_AVAILABLE and len(content) < self.MIN_CONTENT_LENGTH:
                     logger.warning(f"⚠️ Low content ({len(content)} chars) but Playwright unavailable for {url}")
                     result["red_flags"].append(f"⚠️ Low content extracted ({len(content)} chars) - site may require JavaScript rendering")
 
@@ -819,38 +821,49 @@ class WebsiteScraper:
 
                     # Try to get rendered HTML with Playwright
                     rendered_html = await self._scrape_with_playwright(url)
+                    if rendered_html:
+                        rendered_content = self._clean_html(rendered_html)
 
-                    if rendered_html and len(rendered_html) > len(html):
-                        # Re-parse with the rendered HTML
-                        soup = BeautifulSoup(rendered_html, 'html.parser')
-                        html = rendered_html
+                        # Prefer rendered content when it materially improves extraction.
+                        if len(rendered_content) > len(content):
+                            # Re-parse with the rendered HTML
+                            soup = BeautifulSoup(rendered_html, 'html.parser')
+                            html = rendered_html
 
-                        # Re-extract everything with the rendered content
-                        result["title"] = self._extract_title(soup)
-                        result["description"] = self._extract_description(soup)
+                            # Re-extract everything with the rendered content
+                            result["title"] = self._extract_title(soup)
+                            result["description"] = self._extract_description(soup)
 
-                        content = self._clean_html(html)
-                        result["content"] = content
-                        result["has_content"] = len(content) >= self.MIN_CONTENT_LENGTH
+                            content = rendered_content
+                            result["content"] = content
+                            result["has_content"] = len(content) >= self.MIN_CONTENT_LENGTH
 
-                        # Re-detect red flags with rendered content
-                        result["red_flags"] = self._detect_red_flags(soup, html)
+                            # Re-detect red flags with rendered content
+                            result["red_flags"] = self._detect_red_flags(soup, html, content)
 
-                        # Re-check sections
-                        sections = self._check_for_sections(soup)
-                        result.update(sections)
+                            # Re-check sections
+                            sections = self._check_for_sections(soup)
+                            result.update(sections)
 
-                        # Re-extract all signals
-                        trust_signals = self._extract_trust_signals(soup, html)
-                        result.update(trust_signals)
+                            # Re-extract all signals
+                            trust_signals = self._extract_trust_signals(soup, html)
+                            result.update(trust_signals)
 
-                        token_signals = self._extract_token_signals(soup, html)
-                        result.update(token_signals)
+                            token_signals = self._extract_token_signals(soup, html)
+                            result.update(token_signals)
 
-                        # Mark that Playwright was used
-                        result["playwright_used"] = True
+                            technical_signals = self._extract_technical_quality(soup, html, result["url"])
+                            result.update(technical_signals)
 
-                        logger.info(f"✅ Playwright rendered {len(content)} chars for {url}")
+                            # Mark that Playwright was used
+                            result["playwright_used"] = True
+
+                            logger.info(f"✅ Playwright rendered {len(content)} chars for {url}")
+                        else:
+                            logger.info(
+                                f"ℹ️ Playwright rendered page but content did not improve "
+                                f"({len(content)} -> {len(rendered_content)} chars) for {url}"
+                            )
 
                 # Mark as successful
                 result["success"] = True

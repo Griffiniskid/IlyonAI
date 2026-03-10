@@ -10,9 +10,11 @@ import {
   TrendingUp,
   Wallet,
   Fish,
-  Settings,
   Menu,
   X,
+  Shield,
+  MessageSquare,
+  Layers,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -25,9 +27,11 @@ const WalletMultiButton = dynamic(
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/trending", label: "Trending", icon: TrendingUp },
+  { href: "/defi", label: "DeFi", icon: Layers },
+  { href: "/shield", label: "Shield", icon: Shield },
+  { href: "/chat", label: "AI Chat", icon: MessageSquare },
   { href: "/portfolio", label: "Portfolio", icon: Wallet },
   { href: "/whales", label: "Whales", icon: Fish },
-  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function Header() {

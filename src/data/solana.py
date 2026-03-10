@@ -244,7 +244,7 @@ class SolanaClient:
                     # Add native SOL balance first
                     if native_balance:
                         sol_lamports = native_balance.get('lamports', 0)
-                        sol_price = native_balance.get('price_per_sol', 150)  # Fallback price
+                        sol_price = native_balance.get('price_per_sol', 200)  # Fallback price
                         sol_balance = sol_lamports / 1e9
                         
                         if sol_balance > 0.001:  # Only show if > 0.001 SOL
@@ -817,7 +817,7 @@ class SolanaClient:
             logger.debug(f"CoinGecko price API failed: {e}")
 
         # Last resort fallback
-        return cache.get('price', 150.0)
+        return cache.get('price', 200.0)
 
     # ═══════════════════════════════════════════════════════════════════════════
     # HELIUS WHALE TRACKING METHODS
@@ -867,38 +867,51 @@ class SolanaClient:
         }
         
         try:
-            tasks = []
-            
             # Helper to fetch and parse for a specific program
-            async def fetch_program_txs(name, address):
-                url = f"https://api.helius.xyz/v0/addresses/{address}/transactions?api-key={self.helius_api_key}&type=SWAP"
-                try:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            async def fetch_program_txs(name: str, address: str, session: aiohttp.ClientSession) -> List[Dict]:
+                url = (
+                    f"https://api.helius.xyz/v0/addresses/{address}/transactions"
+                    f"?api-key={self.helius_api_key}&type=SWAP&limit=100"
+                )
+
+                for attempt in range(2):
+                    try:
+                        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                             if resp.status != 200:
+                                should_retry = resp.status in {429, 500, 502, 503, 504} and attempt < 1
+                                if should_retry:
+                                    await asyncio.sleep(RETRY_DELAYS[attempt])
+                                    continue
+                                logger.debug(f"Helius {name} fetch returned status {resp.status}")
                                 return []
+
                             data = await resp.json()
                             if not data or not isinstance(data, list):
                                 return []
 
                             parsed_txs = []
-                            # Process all returned transactions (usually 100) to find whales
                             for tx in data:
-                                p = await self._parse_helius_transaction(tx, min_amount_usd, sol_price=sol_price)
-                                if p:
-                                    # Override dex name if we know the source program
-                                    p['dex_name'] = name
-                                    parsed_txs.append(p)
-                            return parsed_txs
-                except Exception as e:
-                    logger.debug(f"Error fetching {name} txs: {e}")
-                    return []
+                                parsed = await self._parse_helius_transaction(
+                                    tx,
+                                    min_amount_usd,
+                                    sol_price=sol_price
+                                )
+                                if parsed:
+                                    parsed['dex_name'] = name
+                                    parsed_txs.append(parsed)
 
-            # Launch parallel tasks for each DEX
-            for name, address in DEX_PROGRAMS.items():
-                tasks.append(fetch_program_txs(name, address))
-            
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+                            return parsed_txs
+                    except Exception as e:
+                        if attempt < 1:
+                            await asyncio.sleep(RETRY_DELAYS[attempt])
+                            continue
+                        logger.debug(f"Error fetching {name} txs: {e}")
+
+                return []
+
+            async with aiohttp.ClientSession() as session:
+                tasks = [fetch_program_txs(name, address, session) for name, address in DEX_PROGRAMS.items()]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
             
             # Aggregate results
             for res in results:
@@ -907,11 +920,18 @@ class SolanaClient:
             
             # Sort by time (newest first)
             from datetime import datetime, timezone
+
             def parse_time(tx):
+                timestamp = tx.get('timestamp')
+                if not timestamp:
+                    return 0.0
                 try:
-                    return datetime.fromisoformat(tx['timestamp'].replace('Z', '+00:00'))
-                except:
-                    return datetime.min.replace(tzinfo=timezone.utc)
+                    dt = datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt.timestamp()
+                except Exception:
+                    return 0.0
             
             all_transactions.sort(key=parse_time, reverse=True)
             
@@ -919,9 +939,12 @@ class SolanaClient:
             unique_txs = []
             seen_sigs = set()
             for tx in all_transactions:
-                if tx['signature'] not in seen_sigs:
-                    seen_sigs.add(tx['signature'])
-                    unique_txs.append(tx)
+                signature = tx.get('signature')
+                if signature:
+                    if signature in seen_sigs:
+                        continue
+                    seen_sigs.add(signature)
+                unique_txs.append(tx)
             
             final_txs = unique_txs[:limit]
             
@@ -929,7 +952,7 @@ class SolanaClient:
             # We collect all token addresses that need lookup
             tokens_to_fetch = set()
             for tx in final_txs:
-                if tx['token_symbol'] == '???':
+                if tx.get('token_symbol') == '???' and tx.get('token_address'):
                     tokens_to_fetch.add(tx['token_address'])
             
             if tokens_to_fetch:
@@ -1035,6 +1058,8 @@ class SolanaClient:
                         # Ideally we'd check against a list of known DEX vaults
                         pass 
 
+            effective_sol_price = sol_price or 200.0
+
             # ── Calculate USD value from native SOL transfers ──
             sol_value_transferred = 0
             main_user = None
@@ -1042,7 +1067,7 @@ class SolanaClient:
             for transfer in native_transfers:
                 lamports = float(transfer.get('amount', 0) or 0)
                 sol_amount = lamports / 1e9
-                sol_value = sol_amount * (sol_price or 150.0)
+                sol_value = sol_amount * effective_sol_price
                 sol_value_transferred += sol_value
 
                 if not main_user:
@@ -1060,11 +1085,34 @@ class SolanaClient:
                     if not stablecoin_user:
                         stablecoin_user = transfer.get('fromUserAccount') or transfer.get('toUserAccount')
 
-            total_usd = sol_value_transferred + stablecoin_usd
+            # ── Calculate USD value from wrapped SOL token transfers ──
+            wsol_usd = 0
+            wsol_user = None
 
-            # If no SOL transfers, derive main_user from stablecoin transfers
+            for transfer in token_transfers:
+                mint = transfer.get('mint', '')
+                if mint == self.WSOL_MINT:
+                    amount = float(transfer.get('tokenAmount', 0) or 0)
+                    wsol_usd += amount * effective_sol_price
+                    if not wsol_user:
+                        wsol_user = transfer.get('fromUserAccount') or transfer.get('toUserAccount')
+
+            # For swap routes with multiple transfer legs, avoid runaway over-counting.
+            # Use the strongest payment-side estimate while still supporting mixed paths.
+            payment_estimates = [
+                sol_value_transferred,
+                stablecoin_usd,
+                wsol_usd,
+                sol_value_transferred + stablecoin_usd,
+                stablecoin_usd + wsol_usd,
+            ]
+            total_usd = max(payment_estimates)
+
+            # If no SOL transfers, derive main_user from stablecoin/WSOL transfers
             if not main_user and stablecoin_user:
                 main_user = stablecoin_user
+            if not main_user and wsol_user:
+                main_user = wsol_user
 
             # ── Determine primary token transfer (the traded asset) ──
             # Filter out payment-side mints (WSOL, USDC, USDT)
@@ -1098,9 +1146,12 @@ class SolanaClient:
             symbol = known_symbol if known_symbol else '???'
             name = known_name if known_name else 'Unknown'
             
-            # Convert timestamp to datetime
-            from datetime import datetime
-            tx_time = datetime.fromtimestamp(timestamp) if timestamp else datetime.utcnow()
+            # Convert timestamp to timezone-aware UTC datetime
+            from datetime import datetime, timezone
+            tx_time = (
+                datetime.fromtimestamp(timestamp, tz=timezone.utc)
+                if timestamp else datetime.now(timezone.utc)
+            )
             
             return {
                 'signature': signature,
@@ -1198,8 +1249,8 @@ class SolanaClient:
         token_address: str,
         min_amount_usd: float = 5000,
         limit: int = 50,
-        token_symbol: str = None,
-        token_name: str = None
+        token_symbol: Optional[str] = None,
+        token_name: Optional[str] = None
     ) -> List[Dict]:
         """
         Get whale transactions for a specific token using Helius.
@@ -1221,24 +1272,51 @@ class SolanaClient:
         # Get real SOL price for accurate USD calculations
         sol_price = await self._get_sol_price()
         transactions = []
+        seen_signatures = set()
 
         try:
-            # Use Helius parsed transactions API
-            url = f"https://api.helius.xyz/v0/addresses/{token_address}/transactions?api-key={self.helius_api_key}&type=SWAP"
-
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                    if resp.status != 200:
-                        logger.warning(f"Helius token transactions returned {resp.status}")
-                        return []
+                before_signature = None
+                max_pages = 3
 
-                    data = await resp.json()
+                for _ in range(max_pages):
+                    url = (
+                        f"https://api.helius.xyz/v0/addresses/{token_address}/transactions"
+                        f"?api-key={self.helius_api_key}&type=SWAP&limit=100"
+                    )
+                    if before_signature:
+                        url = f"{url}&before={before_signature}"
+
+                    data = None
+                    for attempt in range(2):
+                        try:
+                            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                                if resp.status != 200:
+                                    should_retry = resp.status in {429, 500, 502, 503, 504} and attempt < 1
+                                    if should_retry:
+                                        await asyncio.sleep(RETRY_DELAYS[attempt])
+                                        continue
+                                    logger.warning(f"Helius token transactions returned {resp.status}")
+                                    data = []
+                                    break
+
+                                data = await resp.json()
+                                break
+                        except Exception:
+                            if attempt < 1:
+                                await asyncio.sleep(RETRY_DELAYS[attempt])
+                                continue
+                            data = []
 
                     if not data or not isinstance(data, list):
-                        return []
+                        break
 
-                    for tx in data[:limit * 2]:
+                    for tx in data:
                         try:
+                            signature = tx.get('signature')
+                            if signature and signature in seen_signatures:
+                                continue
+
                             parsed = await self._parse_helius_transaction(
                                 tx,
                                 min_amount_usd,
@@ -1246,12 +1324,27 @@ class SolanaClient:
                                 known_name=token_name,
                                 sol_price=sol_price
                             )
-                            if parsed:
-                                transactions.append(parsed)
-                                if len(transactions) >= limit:
-                                    break
+                            if not parsed:
+                                continue
+
+                            if signature:
+                                seen_signatures.add(signature)
+
+                            transactions.append(parsed)
+                            if len(transactions) >= limit:
+                                break
                         except Exception:
                             continue
+
+                    if len(transactions) >= limit:
+                        break
+
+                    if len(data) < 100:
+                        break
+
+                    before_signature = data[-1].get('signature')
+                    if not before_signature:
+                        break
 
             logger.info(f"✅ Found {len(transactions)} whale transactions for token {token_address[:8]}")
             return transactions[:limit]

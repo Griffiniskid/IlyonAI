@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+node_modules.root_bak/
 .pnp/
 .pnp.js
 
@@ -8,6 +9,8 @@ coverage/
 
 # Next.js
 .next/
+.next-local/
+.next.root_bak/
 out/
 
 # Production

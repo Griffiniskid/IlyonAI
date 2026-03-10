@@ -2,8 +2,8 @@
 Centralized configuration management using Pydantic Settings.
 All environment variables and application settings are defined here.
 
-NOTE: Ilyon AI is exclusively designed for Solana blockchain analysis.
-All configurations are Solana-specific - no multi-chain support.
+Ilyon AI is a multi-chain DeFi intelligence platform supporting
+Ethereum, Solana, Base, Arbitrum, BSC, Polygon, Optimism, and Avalanche.
 """
 
 from pydantic_settings import BaseSettings
@@ -17,8 +17,9 @@ class Settings(BaseSettings):
     """
     Application settings loaded from environment variables.
 
-    Ilyon AI is a Solana-exclusive token analysis platform.
-    All blockchain settings are for Solana mainnet only.
+    Ilyon AI is a multi-chain DeFi intelligence platform.
+    Supports EVM chains (Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, Avalanche)
+    and Solana.
     """
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -39,15 +40,71 @@ class Settings(BaseSettings):
     openai_mini_model: str = Field("gpt-4o-mini", env="OPENAI_MINI_MODEL")
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # SOLANA BLOCKCHAIN CONFIGURATION (SOLANA ONLY - NO MULTI-CHAIN SUPPORT)
+    # BLOCKCHAIN CONFIGURATION - MULTI-CHAIN
     # ═══════════════════════════════════════════════════════════════════════════
 
+    # Solana
     solana_rpc_url: str = Field(
         "https://api.mainnet-beta.solana.com",
         env="SOLANA_RPC_URL",
         description="Solana RPC endpoint (use Helius for production)"
     )
     helius_api_key: Optional[str] = Field(None, env="HELIUS_API_KEY")
+
+    # EVM Chains
+    ethereum_rpc_url: str = Field(
+        "https://eth.llamarpc.com",
+        env="ETHEREUM_RPC_URL",
+        description="Ethereum mainnet RPC endpoint"
+    )
+    base_rpc_url: str = Field(
+        "https://mainnet.base.org",
+        env="BASE_RPC_URL",
+        description="Base mainnet RPC endpoint"
+    )
+    arbitrum_rpc_url: str = Field(
+        "https://arb1.arbitrum.io/rpc",
+        env="ARBITRUM_RPC_URL",
+        description="Arbitrum One RPC endpoint"
+    )
+    bsc_rpc_url: str = Field(
+        "https://bsc-dataseed.binance.org",
+        env="BSC_RPC_URL",
+        description="BNB Smart Chain RPC endpoint"
+    )
+    polygon_rpc_url: str = Field(
+        "https://polygon-rpc.com",
+        env="POLYGON_RPC_URL",
+        description="Polygon mainnet RPC endpoint"
+    )
+    optimism_rpc_url: str = Field(
+        "https://mainnet.optimism.io",
+        env="OPTIMISM_RPC_URL",
+        description="Optimism mainnet RPC endpoint"
+    )
+    avalanche_rpc_url: str = Field(
+        "https://api.avax.network/ext/bc/C/rpc",
+        env="AVALANCHE_RPC_URL",
+        description="Avalanche C-Chain RPC endpoint"
+    )
+
+    # Block Explorer API Keys (Etherscan family)
+    etherscan_api_key: Optional[str] = Field(None, env="ETHERSCAN_API_KEY")
+    bscscan_api_key: Optional[str] = Field(None, env="BSCSCAN_API_KEY")
+    arbiscan_api_key: Optional[str] = Field(None, env="ARBISCAN_API_KEY")
+    polygonscan_api_key: Optional[str] = Field(None, env="POLYGONSCAN_API_KEY")
+    basescan_api_key: Optional[str] = Field(None, env="BASESCAN_API_KEY")
+    optimism_etherscan_api_key: Optional[str] = Field(None, env="OPTIMISM_ETHERSCAN_API_KEY")
+    snowtrace_api_key: Optional[str] = Field(None, env="SNOWTRACE_API_KEY")
+
+    # GoPlus Security API (multi-chain token security)
+    goplus_api_key: Optional[str] = Field(None, env="GOPLUS_API_KEY")
+
+    # Portfolio / Wallet Indexer
+    moralis_api_key: Optional[str] = Field(None, env="MORALIS_API_KEY", description="Moralis API key for EVM portfolio tracking")
+
+    # Default chain for analysis
+    default_chain: str = Field("solana", env="DEFAULT_CHAIN", description="Default blockchain for analysis")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # HONEYPOT DETECTION CONFIGURATION

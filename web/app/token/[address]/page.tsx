@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { useAnalyzeToken, useRefreshAnalysis } from "@/lib/hooks";
 import { GlassCard } from "@/components/ui/card";
@@ -27,6 +26,7 @@ import {
   Globe,
   Twitter,
   MessageCircle,
+  Shield,
 } from "lucide-react";
 import {
   formatUSD,
@@ -35,15 +35,34 @@ import {
   copyToClipboard,
   cn,
 } from "@/lib/utils";
-import { useState } from "react";
 import { createBlink } from "@/lib/api";
 import { useToast } from "@/components/ui/toaster";
+import type { ChainName } from "@/types";
+
+const SUPPORTED_CHAINS: ChainName[] = [
+  "solana",
+  "ethereum",
+  "base",
+  "arbitrum",
+  "bsc",
+  "polygon",
+  "optimism",
+  "avalanche",
+];
 
 export default function TokenAnalysisPage() {
   const params = useParams();
   const router = useRouter();
-  const address = params.address as string;
+  const searchParams = useSearchParams();
+  const rawAddress = params?.address;
+  const address = typeof rawAddress === "string" ? rawAddress : rawAddress?.[0] ?? "";
   const { addToast } = useToast();
+  const chain = useMemo(() => {
+    const value = searchParams.get("chain");
+    return value && SUPPORTED_CHAINS.includes(value as ChainName)
+      ? (value as ChainName)
+      : undefined;
+  }, [searchParams]);
 
   const [copied, setCopied] = useState(false);
   const [isCreatingBlink, setIsCreatingBlink] = useState(false);
@@ -61,9 +80,9 @@ export default function TokenAnalysisPage() {
   // Start analysis on mount
   useEffect(() => {
     if (address) {
-      analyze({ address, mode: "standard" });
+      analyze({ address, mode: "standard", chain });
     }
-  }, [address, analyze]);
+  }, [address, analyze, chain]);
 
   // Simulate analysis stages
   useEffect(() => {
@@ -86,12 +105,16 @@ export default function TokenAnalysisPage() {
   };
 
   const handleRefresh = () => {
-    refresh({ address, mode: "standard" });
+    refresh({ address, mode: "standard", chain });
   };
 
   const handleShareBlink = async () => {
     try {
       setIsCreatingBlink(true);
+      if (chain && chain !== "solana") {
+        throw new Error("Blink sharing is currently available for Solana tokens only.");
+      }
+
       const blink = await createBlink(address);
       await copyToClipboard(blink.url);
       
@@ -105,6 +128,8 @@ export default function TokenAnalysisPage() {
   };
 
   // Loading state
+  if (!address) return null;
+
   if (isAnalyzing && !analysis) {
     return (
       <div className="container mx-auto px-4 py-12">
@@ -166,7 +191,7 @@ export default function TokenAnalysisPage() {
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Go Back
               </Button>
-              <Button onClick={() => analyze({ address })}>
+              <Button onClick={() => analyze({ address, chain })}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Try Again
               </Button>
@@ -180,6 +205,8 @@ export default function TokenAnalysisPage() {
   if (!analysis) return null;
 
   const { token, scores, market, security, holders, ai, socials, deployer, website } = analysis;
+  const tokenChain = token.chain ?? chain;
+  const canShareBlink = tokenChain === "solana";
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -243,19 +270,21 @@ export default function TokenAnalysisPage() {
             />
             Refresh
           </Button>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={handleShareBlink}
-            disabled={isCreatingBlink}
-          >
-            {isCreatingBlink ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Share2 className="h-4 w-4 mr-2" />
-            )}
-            Share Blink
-          </Button>
+          {canShareBlink && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleShareBlink}
+              disabled={isCreatingBlink}
+            >
+              {isCreatingBlink ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Share2 className="h-4 w-4 mr-2" />
+              )}
+              Share Blink
+            </Button>
+          )}
         </div>
       </div>
 
@@ -445,6 +474,3 @@ export default function TokenAnalysisPage() {
     </div>
   );
 }
-
-// Import Shield for deployer section
-import { Shield } from "lucide-react";

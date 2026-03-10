@@ -91,8 +91,12 @@ class BlinkService:
         if blink.ai_verdict:
             parts.append(f"Verdict: {blink.ai_verdict}")
 
-        if blink.liquidity_locked is not None:
-            parts.append("LP Locked" if blink.liquidity_locked else "LP NOT LOCKED")
+        if blink.liquidity_locked is True:
+            parts.append("LP Locked")
+        elif blink.liquidity_locked is False:
+            parts.append("LP NOT LOCKED")
+        else:
+            parts.append("LP Lock Unknown")
 
         if blink.ai_rug_probability is not None:
             parts.append(f"Rug Risk: {blink.ai_rug_probability}%")
@@ -293,7 +297,12 @@ class BlinkService:
             symbol = getattr(t, "symbol", blink.token_symbol) or "Token"
             verdict = getattr(t, "ai_verdict", "UNKNOWN")
             rug_prob = getattr(t, "ai_rug_probability", "?")
-            lp_status = "Locked" if getattr(t, "liquidity_locked", False) else "NOT LOCKED"
+            if getattr(t, "liquidity_locked", None) is True:
+                lp_status = "Locked"
+            elif getattr(t, "liquidity_locked", None) is False:
+                lp_status = "NOT LOCKED"
+            else:
+                lp_status = "Unknown"
 
             message = (
                 f"Fresh Analysis for ${symbol}\n\n"

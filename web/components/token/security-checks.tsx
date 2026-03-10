@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, X, AlertTriangle, Lock, Unlock, Shield } from "lucide-react";
+import { Check, X, AlertTriangle, Shield } from "lucide-react";
 import { GlassCard } from "@/components/ui/card";
 import type { SecurityResponse } from "@/types";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,13 @@ interface SecurityChecksProps {
 }
 
 export function SecurityChecks({ security }: SecurityChecksProps) {
+  const liquidityLockLabel =
+    security.liquidity_lock_status === "locked"
+      ? `Locked ${security.lp_lock_percent && security.lp_lock_percent > 0 ? `(${security.lp_lock_percent.toFixed(0)}%)` : ""}`.trim()
+      : security.liquidity_lock_status === "unlocked"
+        ? "Unlocked"
+        : "Unknown";
+
   const checks = [
     {
       label: "Mint Authority",
@@ -27,10 +34,11 @@ export function SecurityChecks({ security }: SecurityChecksProps) {
     },
     {
       label: "Liquidity Lock",
-      value: security.liquidity_locked,
-      goodLabel: `Locked ${security.lp_lock_percent > 0 ? `(${security.lp_lock_percent.toFixed(0)}%)` : ""}`,
-      badLabel: "Unlocked",
-      description: "Is liquidity locked?",
+      value: security.liquidity_lock_status === "locked",
+      neutral: security.liquidity_lock_status === "unknown",
+      goodLabel: liquidityLockLabel,
+      badLabel: liquidityLockLabel,
+      description: security.liquidity_lock_note || "Is liquidity lock independently verified?",
     },
     {
       label: "Honeypot Status",
@@ -61,21 +69,31 @@ export function SecurityChecks({ security }: SecurityChecksProps) {
             <div
               className={cn(
                 "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold",
-                check.value
-                  ? "bg-emerald-500/20 text-emerald-400"
-                  : "bg-red-500/20 text-red-400"
+                check.neutral
+                  ? "bg-yellow-500/20 text-yellow-300"
+                  : check.value
+                    ? "bg-emerald-500/20 text-emerald-400"
+                    : "bg-red-500/20 text-red-400"
               )}
             >
-              {check.value ? (
+              {check.neutral ? (
+                <AlertTriangle className="h-3.5 w-3.5" />
+              ) : check.value ? (
                 <Check className="h-3.5 w-3.5" />
               ) : (
                 <X className="h-3.5 w-3.5" />
               )}
-              {check.value ? check.goodLabel : check.badLabel}
+              {check.neutral ? check.goodLabel : check.value ? check.goodLabel : check.badLabel}
             </div>
           </div>
         ))}
       </div>
+
+      {security.liquidity_lock_status === "unknown" && (
+        <div className="mt-4 rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-3 text-xs text-yellow-100/80">
+          LP lock status is currently unverified. Treat this as missing evidence, not proof of unlocked liquidity.
+        </div>
+      )}
 
       {/* Honeypot warnings */}
       {security.honeypot_warnings && security.honeypot_warnings.length > 0 && (

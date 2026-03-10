@@ -1,20 +1,51 @@
 # Ilyon AI
 
-**Solana Token Security Intelligence Platform**
+**AI-Powered DeFi Intelligence Platform**
 
-> 🇬🇧 **Proud Candidate for the Solana Foundation UK Grant**
+> Multi-chain security analysis, smart contract auditing, and DeFi protocol intelligence — powered by AI.
 
+![Multi-Chain](https://img.shields.io/badge/Multi--Chain-Ethereum%20%7C%20Solana%20%7C%20Base%20%7C%20BSC%20%7C%20Arbitrum%20%7C%20Polygon-9945FF?style=for-the-badge)
 ![Blinks Ready](https://img.shields.io/badge/Solana%20Actions-Blinks%20Ready-9945FF?style=for-the-badge&logo=solana)
 
-Ilyon AI is an open-source security layer that protects Solana traders from rug pulls and scams using advanced AI analysis, behavioral detection, and wallet forensics.
+Ilyon AI is an open-source DeFi intelligence platform that protects traders across all major blockchains from rug pulls, scams, and smart contract vulnerabilities using advanced AI analysis, behavioral detection, and wallet forensics.
 
-## 🚀 Key Innovation: Solana Blinks Integrated
-Ilyon AI is one of the first security tools to fully support **Solana Actions (Blinks)**. 
-Users can share a token address on X (Twitter), and Ilyon AI unfurls an interactive "Verify Token" card that performs a real-time risk check without the user ever leaving their feed.
+## Key Innovation
 
-![Blink Demo](https://placehold.co/600x300/1a1a2e/FFF?text=Ilyon+AI+Blink+Preview)
+### Multi-Chain DeFi Intelligence
+Ilyon AI supports **Ethereum, Solana, Base, Arbitrum, BSC, Polygon, Optimism, and Avalanche** with a unified analysis engine that adapts to each chain's unique risk factors.
+
+### AI-Native Architecture
+Every feature is powered by AI — not bolted on as an afterthought. From smart contract auditing to predictive rug detection, AI is the core engine.
+
+### Solana Blinks Integration
+One of the first security tools to fully support **Solana Actions (Blinks)** — share token analysis directly on X (Twitter).
 
 ## Key Features
+
+### Multi-Chain Token Analysis
+Comprehensive token security analysis across all major blockchains:
+- EVM chains: contract verification, proxy detection, ownership analysis
+- Solana: mint/freeze authority, LP lock verification, RugCheck integration
+- Universal: holder distribution, liquidity depth, market data
+
+### Smart Contract Scanner
+AI-powered contract auditing that goes beyond static pattern matching:
+- Source code analysis for verified contracts
+- Bytecode decompilation for unverified contracts
+- 200+ vulnerability detectors (reentrancy, overflow, access control, backdoors)
+- Scam template similarity detection
+
+### Shield (Approval Manager)
+Protect your wallets from risky smart contract approvals:
+- Scan all token approvals across EVM chains
+- Risk-score each approval with AI context
+- One-click revoke for dangerous approvals
+
+### DeFi Protocol Analysis
+Analyze liquidity pools, yield farms, and lending protocols:
+- Pool composition and impermanent loss estimation
+- APY verification (detect inflated yield claims)
+- Protocol health scoring based on TVL, audits, and incident history
 
 ### Predictive Rug Detection
 Unlike tools that detect rugs *after* they happen, Ilyon AI warns you *before* using behavioral pattern analysis:
@@ -24,29 +55,33 @@ Unlike tools that detect rugs *after* they happen, Ilyon AI warns you *before* u
 - Time-to-rug estimation
 
 ### Serial Scammer Tracking
-Cross-token wallet forensics that catches repeat offenders:
-- Tracks deployer wallets across multiple token launches
+Cross-chain wallet forensics that catches repeat offenders:
+- Tracks deployer wallets across multiple token launches and chains
 - Identifies patterns: rapid deployment, consistent rug timing, LP removal
-- Creates accountability - scammers can't hide behind new wallets
+- Creates accountability — scammers can't hide behind new wallets or chains
 
 ### Honeypot Detection
 Behavioral simulation that tests if tokens can actually be sold:
-- Jupiter-based swap simulation
-- Sell tax calculation
-- Route availability verification
-- Hidden fee detection
+- Jupiter-based swap simulation (Solana)
+- EVM swap simulation via DEX router calls
+- Sell tax calculation and hidden fee detection
 
-### Multi-AI Analysis
-Consensus-based risk assessment using multiple AI providers:
-- OpenAI GPT-4o for deep analysis
-- Gemini for supplementary insights
-- Structured output with confidence scoring
+### AI Agent & Chat
+Natural language interface to query any DeFi data:
+- "Is this token safe to buy?"
+- "What yield farming opportunities exist on Arbitrum with audited contracts?"
+- "Review my portfolio for risks"
+
+### Intelligence Database
+- REKT Database: searchable archive of DeFi hacks, exploits, and scams
+- Audit Database: indexed smart contract audits from major firms
+- Scammer Registry: cross-chain wallet blacklist
 
 ### Additional Features
-- Real-time DexScreener integration
-- RugCheck LP lock verification
-- Top holder concentration analysis
-- Website quality scoring
+- Multi-AI analysis (GPT-4o + Grok narrative analysis)
+- Real-time DexScreener integration across all chains
+- Portfolio tracking with multi-wallet aggregation
+- Whale activity monitoring
 - Solana Actions/Blinks for shareable reports
 
 ---

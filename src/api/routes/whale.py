@@ -7,7 +7,7 @@ Uses Helius API for real transaction data when available.
 
 import logging
 from aiohttp import web
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Optional, Any
 import asyncio
 
@@ -23,7 +23,9 @@ logger = logging.getLogger(__name__)
 
 # Cache for whale transactions
 _whale_cache: Dict[str, Any] = {}
-_cache_ttl = 300  # 5 minutes (no auto-refresh, manual search only)
+_whale_cache_locks: Dict[str, asyncio.Lock] = {}
+_cache_ttl = 300  # 5 minutes
+_token_cache_ttl = 60  # 1 minute for token-specific feeds
 
 # Known whale labels
 KNOWN_WHALES = {
@@ -33,6 +35,51 @@ KNOWN_WHALES = {
     "2AQdpHJ2JpcEgPiATUXjQxA8QmafFegfQwSLWSprPicm": "Circle",
     # Add more known whales as needed
 }
+
+
+def _get_or_create_lock(cache_key: str) -> asyncio.Lock:
+    lock = _whale_cache_locks.get(cache_key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _whale_cache_locks[cache_key] = lock
+    return lock
+
+
+def _is_cache_fresh(cached: Dict[str, Any], ttl_seconds: int) -> bool:
+    cache_time = cached.get('time')
+    if not isinstance(cache_time, datetime):
+        return False
+    age_seconds = (datetime.utcnow() - cache_time).total_seconds()
+    return age_seconds < ttl_seconds
+
+
+def _get_cached_data(cache_key: str, ttl_seconds: int) -> Optional[Dict[str, Any]]:
+    cached = _whale_cache.get(cache_key)
+    if not cached:
+        return None
+
+    if not _is_cache_fresh(cached, ttl_seconds):
+        _whale_cache.pop(cache_key, None)
+        return None
+
+    return cached.get('data')
+
+
+def _set_cached_data(cache_key: str, data: Dict[str, Any]) -> None:
+    _whale_cache[cache_key] = {
+        'data': data,
+        'time': datetime.utcnow(),
+    }
+
+
+def _build_filtered_response(base_response: Dict[str, Any], type_filter: Optional[str], limit: int) -> Dict[str, Any]:
+    transactions = base_response.get('transactions', [])
+    if type_filter:
+        transactions = [tx for tx in transactions if tx.get('type') == type_filter]
+
+    response = dict(base_response)
+    response['transactions'] = transactions[:limit]
+    return response
 
 
 async def get_whale_activity(request: web.Request) -> web.Response:
@@ -47,100 +94,131 @@ async def get_whale_activity(request: web.Request) -> web.Response:
         - type: Filter by "buy" or "sell"
         - limit: Max transactions (default 50, max 200)
     """
-    global _whale_cache
-
-    min_amount = float(request.query.get('min_amount_usd', 1000))
+    raw_min_amount = request.query.get('min_amount_usd', '1000')
+    raw_limit = request.query.get('limit', '50')
     token_filter = request.query.get('token')
     type_filter = request.query.get('type')
-    limit = min(int(request.query.get('limit', 50)), 200)
+    if type_filter:
+        type_filter = type_filter.lower()
     force_refresh = request.query.get('force_refresh', '').lower() in ('1', 'true')
 
-    cache_key = f"whales:{min_amount}:{token_filter}:{type_filter}:{limit}"
+    try:
+        min_amount = float(raw_min_amount)
+        limit = max(1, min(int(raw_limit), 200))
+    except ValueError:
+        return web.json_response(
+            ErrorResponse(
+                error="Invalid query parameters",
+                code="INVALID_PARAMS",
+                details={"min_amount_usd": raw_min_amount, "limit": raw_limit}
+            ).model_dump(mode='json'),
+            status=400
+        )
 
-    # Check cache (skip if force_refresh)
-    if not force_refresh and cache_key in _whale_cache:
-        cached = _whale_cache[cache_key]
-        if (datetime.utcnow() - cached['time']).seconds < _cache_ttl:
-            return web.json_response(cached['data'])
+    if min_amount < 0:
+        return web.json_response(
+            ErrorResponse(
+                error="min_amount_usd must be non-negative",
+                code="INVALID_PARAMS"
+            ).model_dump(mode='json'),
+            status=400
+        )
+
+    if type_filter and type_filter not in {'buy', 'sell'}:
+        return web.json_response(
+            ErrorResponse(
+                error="type must be 'buy' or 'sell'",
+                code="INVALID_PARAMS"
+            ).model_dump(mode='json'),
+            status=400
+        )
+
+    # Cache all transaction types together and apply filters in-memory.
+    cache_key = f"whales:{min_amount}:{token_filter or 'all'}"
+    cache_lock = _get_or_create_lock(cache_key)
 
     try:
-        # Initialize Solana client with Helius for whale tracking
-        solana = SolanaClient(
-            rpc_url=settings.solana_rpc_url,
-            helius_api_key=settings.helius_api_key
-        )
-        
-        try:
-            if token_filter:
-                # Get whale transactions for specific token
-                raw_transactions = await solana.get_token_whale_transactions(
-                    token_address=token_filter,
-                    min_amount_usd=min_amount,
-                    limit=limit
+        async with cache_lock:
+            base_response = None
+            if not force_refresh:
+                base_response = _get_cached_data(cache_key, _cache_ttl)
+
+            if base_response is None:
+                # Fetch a larger canonical set once, then filter/slice from cache.
+                fetch_limit = 200
+
+                solana = SolanaClient(
+                    rpc_url=settings.solana_rpc_url,
+                    helius_api_key=settings.helius_api_key
                 )
-            else:
-                # Get general whale activity
-                raw_transactions = await solana.get_recent_large_transactions(
-                    min_amount_usd=min_amount,
-                    limit=limit
-                )
-        finally:
-            await solana.close()
-        
-        # Convert to response format
-        trades = []
-        for tx in raw_transactions:
-            try:
-                # Check known whale labels
-                wallet_addr = tx.get('wallet_address', '')
-                wallet_label = tx.get('wallet_label') or KNOWN_WHALES.get(wallet_addr)
-                
-                # Parse timestamp
-                ts = tx.get('timestamp')
-                if isinstance(ts, str):
+
+                try:
+                    if token_filter:
+                        raw_transactions = await solana.get_token_whale_transactions(
+                            token_address=token_filter,
+                            min_amount_usd=min_amount,
+                            limit=fetch_limit
+                        )
+                    else:
+                        raw_transactions = await solana.get_recent_large_transactions(
+                            min_amount_usd=min_amount,
+                            limit=fetch_limit
+                        )
+                finally:
+                    await solana.close()
+
+                trades = []
+                seen_signatures = set()
+                for tx in raw_transactions:
                     try:
-                        timestamp = datetime.fromisoformat(ts.replace('Z', '+00:00'))
-                    except:
-                        timestamp = datetime.utcnow()
-                elif isinstance(ts, datetime):
-                    timestamp = ts
-                else:
-                    timestamp = datetime.utcnow()
-                
-                trades.append(WhaleTransactionResponse(
-                    signature=tx.get('signature', ''),
-                    wallet_address=wallet_addr,
-                    wallet_label=wallet_label,
-                    token_address=tx.get('token_address', ''),
-                    token_symbol=tx.get('token_symbol', '???'),
-                    token_name=tx.get('token_name', 'Unknown'),
-                    type=tx.get('type', 'buy'),
-                    amount_tokens=float(tx.get('amount_tokens', 0)),
-                    amount_usd=float(tx.get('amount_usd', 0)),
-                    price_usd=float(tx.get('price_usd', 0)),
-                    timestamp=timestamp,
-                    dex_name=tx.get('dex_name', 'Unknown')
-                ))
-            except Exception as e:
-                logger.debug(f"Error converting whale tx: {e}")
-                continue
+                        signature = tx.get('signature', '')
+                        if signature and signature in seen_signatures:
+                            continue
+                        if signature:
+                            seen_signatures.add(signature)
 
-        # Filter by type if specified
-        if type_filter:
-            trades = [t for t in trades if t.type == type_filter]
+                        wallet_addr = tx.get('wallet_address', '')
+                        wallet_label = tx.get('wallet_label') or KNOWN_WHALES.get(wallet_addr)
 
-        response = WhaleActivityResponse(
-            transactions=trades[:limit],
-            updated_at=datetime.utcnow(),
-            filter_token=token_filter,
-            min_amount_usd=min_amount
-        ).model_dump(mode='json')
+                        ts = tx.get('timestamp')
+                        if isinstance(ts, str):
+                            try:
+                                timestamp = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                            except Exception:
+                                timestamp = datetime.utcnow()
+                        elif isinstance(ts, datetime):
+                            timestamp = ts
+                        else:
+                            timestamp = datetime.utcnow()
 
-        # Cache
-        _whale_cache[cache_key] = {
-            'data': response,
-            'time': datetime.utcnow()
-        }
+                        trades.append(WhaleTransactionResponse(
+                            signature=signature,
+                            wallet_address=wallet_addr,
+                            wallet_label=wallet_label,
+                            token_address=tx.get('token_address', ''),
+                            token_symbol=tx.get('token_symbol', '???'),
+                            token_name=tx.get('token_name', 'Unknown'),
+                            type=tx.get('type', 'buy'),
+                            amount_tokens=float(tx.get('amount_tokens', 0)),
+                            amount_usd=float(tx.get('amount_usd', 0)),
+                            price_usd=float(tx.get('price_usd', 0)),
+                            timestamp=timestamp,
+                            dex_name=tx.get('dex_name', 'Unknown')
+                        ))
+                    except Exception as e:
+                        logger.debug(f"Error converting whale tx: {e}")
+                        continue
+
+                base_response = WhaleActivityResponse(
+                    transactions=trades,
+                    updated_at=datetime.utcnow(),
+                    filter_token=token_filter,
+                    min_amount_usd=min_amount
+                ).model_dump(mode='json')
+
+                _set_cached_data(cache_key, base_response)
+
+            response = _build_filtered_response(base_response, type_filter, limit)
 
         return web.json_response(response)
 
@@ -170,87 +248,123 @@ async def get_whale_activity_for_token(request: web.Request) -> web.Response:
             status=400
         )
 
-    min_amount = float(request.query.get('min_amount_usd', 1000))
-    limit = min(int(request.query.get('limit', 50)), 200)
+    raw_min_amount = request.query.get('min_amount_usd', '1000')
+    raw_limit = request.query.get('limit', '50')
+    force_refresh = request.query.get('force_refresh', '').lower() in ('1', 'true')
 
     try:
-        # Step 1: Get token metadata first so we don't have "???" symbols
-        symbol = "???"
-        name = "Unknown"
-        
-        try:
-            async with DexScreenerClient() as client:
-                token_data = await client.get_token(token_address)
-                if token_data and token_data.get('main'):
-                    base = token_data['main'].get('baseToken', {})
-                    symbol = base.get('symbol', symbol)
-                    name = base.get('name', name)
-        except Exception as e:
-            logger.warning(f"Failed to fetch metadata for whale check: {e}")
-
-        # Step 2: Initialize Solana client with Helius
-        solana = SolanaClient(
-            rpc_url=settings.solana_rpc_url,
-            helius_api_key=settings.helius_api_key
+        min_amount = float(raw_min_amount)
+        limit = max(1, min(int(raw_limit), 200))
+    except ValueError:
+        return web.json_response(
+            ErrorResponse(
+                error="Invalid query parameters",
+                code="INVALID_PARAMS",
+                details={"min_amount_usd": raw_min_amount, "limit": raw_limit}
+            ).model_dump(mode='json'),
+            status=400
         )
-        
-        try:
-            raw_transactions = await solana.get_token_whale_transactions(
-                token_address=token_address,
-                min_amount_usd=min_amount,
-                limit=limit,
-                token_symbol=symbol,
-                token_name=name
-            )
-        finally:
-            await solana.close()
-        
-        # Convert to response format
-        trades = []
-        for tx in raw_transactions:
-            try:
-                wallet_addr = tx.get('wallet_address', '')
-                wallet_label = tx.get('wallet_label') or KNOWN_WHALES.get(wallet_addr)
-                
-                # Parse timestamp
-                ts = tx.get('timestamp')
-                if isinstance(ts, str):
+
+    if min_amount < 0:
+        return web.json_response(
+            ErrorResponse(
+                error="min_amount_usd must be non-negative",
+                code="INVALID_PARAMS"
+            ).model_dump(mode='json'),
+            status=400
+        )
+
+    cache_key = f"whales:token:{token_address}:{min_amount}"
+    cache_lock = _get_or_create_lock(cache_key)
+
+    try:
+        async with cache_lock:
+            base_response = None
+            if not force_refresh:
+                base_response = _get_cached_data(cache_key, _token_cache_ttl)
+
+            if base_response is None:
+                symbol = "???"
+                name = "Unknown"
+
+                try:
+                    async with DexScreenerClient() as client:
+                        token_data = await client.get_token(token_address)
+                        if token_data and token_data.get('main'):
+                            base = token_data['main'].get('baseToken', {})
+                            symbol = base.get('symbol', symbol)
+                            name = base.get('name', name)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch metadata for whale check: {e}")
+
+                solana = SolanaClient(
+                    rpc_url=settings.solana_rpc_url,
+                    helius_api_key=settings.helius_api_key
+                )
+
+                try:
+                    raw_transactions = await solana.get_token_whale_transactions(
+                        token_address=token_address,
+                        min_amount_usd=min_amount,
+                        limit=200,
+                        token_symbol=symbol,
+                        token_name=name
+                    )
+                finally:
+                    await solana.close()
+
+                trades = []
+                seen_signatures = set()
+                for tx in raw_transactions:
                     try:
-                        timestamp = datetime.fromisoformat(ts.replace('Z', '+00:00'))
-                    except:
-                        timestamp = datetime.utcnow()
-                elif isinstance(ts, datetime):
-                    timestamp = ts
-                else:
-                    timestamp = datetime.utcnow()
-                
-                trades.append(WhaleTransactionResponse(
-                    signature=tx.get('signature', ''),
-                    wallet_address=wallet_addr,
-                    wallet_label=wallet_label,
-                    token_address=tx.get('token_address', token_address),
-                    token_symbol=tx.get('token_symbol', symbol),
-                    token_name=tx.get('token_name', name),
-                    type=tx.get('type', 'buy'),
-                    amount_tokens=float(tx.get('amount_tokens', 0)),
-                    amount_usd=float(tx.get('amount_usd', 0)),
-                    price_usd=float(tx.get('price_usd', 0)),
-                    timestamp=timestamp,
-                    dex_name=tx.get('dex_name', 'Unknown')
-                ))
-            except Exception as e:
-                logger.debug(f"Error converting whale tx: {e}")
-                continue
+                        signature = tx.get('signature', '')
+                        if signature and signature in seen_signatures:
+                            continue
+                        if signature:
+                            seen_signatures.add(signature)
 
-        # If no transactions from Helius, fallback to volume-based estimation is REMOVED
-        # We only want real data now.
+                        wallet_addr = tx.get('wallet_address', '')
+                        wallet_label = tx.get('wallet_label') or KNOWN_WHALES.get(wallet_addr)
 
-        response = WhaleActivityResponse(
-            transactions=trades,
-            updated_at=datetime.utcnow(),
-            filter_token=token_address,
-            min_amount_usd=min_amount
-        ).model_dump(mode='json')
+                        ts = tx.get('timestamp')
+                        if isinstance(ts, str):
+                            try:
+                                timestamp = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                            except Exception:
+                                timestamp = datetime.utcnow()
+                        elif isinstance(ts, datetime):
+                            timestamp = ts
+                        else:
+                            timestamp = datetime.utcnow()
+
+                        trades.append(WhaleTransactionResponse(
+                            signature=signature,
+                            wallet_address=wallet_addr,
+                            wallet_label=wallet_label,
+                            token_address=tx.get('token_address', token_address),
+                            token_symbol=tx.get('token_symbol', symbol),
+                            token_name=tx.get('token_name', name),
+                            type=tx.get('type', 'buy'),
+                            amount_tokens=float(tx.get('amount_tokens', 0)),
+                            amount_usd=float(tx.get('amount_usd', 0)),
+                            price_usd=float(tx.get('price_usd', 0)),
+                            timestamp=timestamp,
+                            dex_name=tx.get('dex_name', 'Unknown')
+                        ))
+                    except Exception as e:
+                        logger.debug(f"Error converting whale tx: {e}")
+                        continue
+
+                base_response = WhaleActivityResponse(
+                    transactions=trades,
+                    updated_at=datetime.utcnow(),
+                    filter_token=token_address,
+                    min_amount_usd=min_amount
+                ).model_dump(mode='json')
+
+                _set_cached_data(cache_key, base_response)
+
+            response = _build_filtered_response(base_response, None, limit)
 
         return web.json_response(response)
 

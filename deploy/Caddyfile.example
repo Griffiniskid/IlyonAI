@@ -1,0 +1,27 @@
+ilyonai.com {
+    @api path /api/* /health /actions /actions.json /.well-known/* /webhook /blinks/*
+
+    handle @api {
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:3000
+    }
+}
+
+www.ilyonai.com {
+    redir https://ilyonai.com{uri} permanent
+}
+
+staging.ilyonai.com {
+    @api path /api/* /health /actions /actions.json /.well-known/* /webhook /blinks/*
+
+    handle @api {
+        reverse_proxy 127.0.0.1:18080
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:13000
+    }
+}
