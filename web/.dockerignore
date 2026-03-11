@@ -1,5 +1,10 @@
 node_modules
+node_modules.root_bak
 .next
+.next-local
+.next-verify
+.next.root_bak
+tmp
 .env
 .env*.local
 npm-debug.log*

@@ -93,6 +93,34 @@ Note: Cloudflare Access protects the whole host, including `/api/*`. Browser tes
 
 Keep production and staging in separate worktrees on the VPS so each environment can pull a different branch safely.
 
+If the GitHub repository is private, authenticate the VPS first as the `aisentinel` user.
+
+Generate an SSH deploy key on the VPS:
+
+```bash
+su - aisentinel -c 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -C "aisentinel-vps"'
+su - aisentinel -c 'cat ~/.ssh/id_ed25519.pub'
+```
+
+Add that public key in GitHub -> repository `Settings` -> `Deploy keys` -> `Add deploy key`.
+Read-only access is enough.
+
+Then switch the repo remote to SSH:
+
+```bash
+su - aisentinel -c 'cat > ~/.ssh/config <<"EOF"
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+EOF
+chmod 600 ~/.ssh/config
+ssh-keyscan -H github.com >> ~/.ssh/known_hosts
+chmod 644 ~/.ssh/known_hosts
+cd /home/aisentinel/ai-sentinel && git remote set-url origin git@github.com:Griffiniskid/AISentinel.git'
+```
+
 Example layout:
 
 ```bash

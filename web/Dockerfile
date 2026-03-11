@@ -14,10 +14,12 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Build-time environment variables (baked into JS bundle)
+ARG NEXT_DIST_DIR=.next
 ARG NEXT_PUBLIC_API_URL=https://ilyonai.com
 ARG NEXT_PUBLIC_SOLANA_NETWORK=mainnet-beta
 ARG NEXT_PUBLIC_SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
 
+ENV NEXT_DIST_DIR=$NEXT_DIST_DIR
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_SOLANA_NETWORK=$NEXT_PUBLIC_SOLANA_NETWORK
 ENV NEXT_PUBLIC_SOLANA_RPC_URL=$NEXT_PUBLIC_SOLANA_RPC_URL
