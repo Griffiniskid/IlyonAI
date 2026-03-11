@@ -4,6 +4,8 @@
 
 # Local SQLite database
 data/
+!src/data/
+!src/data/**
 
 # Environment files (NEVER commit these)
 .env
