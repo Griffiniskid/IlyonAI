@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 import aiohttp
 
 from src.chains.base import ChainType
+from src.defi.opportunity_taxonomy import classify_defi_record
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +57,13 @@ def _normalize_pool_record(pool: Dict[str, Any]) -> Dict[str, Any]:
     apy_reward = _safe_float(pool.get("apyReward"))
     apy_mean_30d = _safe_float(pool.get("apyMean30d"))
     apy_borrow = _safe_float(pool.get("apyBorrow"))
+    apy_pct_1d = _safe_float(pool.get("apyPct1D"))
+    apy_pct_7d = _safe_float(pool.get("apyPct7D"))
+    apy_pct_30d = _safe_float(pool.get("apyPct30D"))
     total_supply_usd = _safe_float(pool.get("totalSupplyUsd"))
     total_borrow_usd = _safe_float(pool.get("totalBorrowUsd"))
+    volume_usd_1d = _safe_float(pool.get("volumeUsd1d"))
+    volume_usd_7d = _safe_float(pool.get("volumeUsd7d"))
 
     utilization = pool.get("utilization")
     if utilization is None and total_supply_usd > 0:
@@ -82,10 +88,20 @@ def _normalize_pool_record(pool: Dict[str, Any]) -> Dict[str, Any]:
         "apyMean30d": apy_mean_30d,
         "apy_borrow": apy_borrow,
         "apyBorrow": apy_borrow,
+        "apy_pct_1d": apy_pct_1d,
+        "apyPct1D": apy_pct_1d,
+        "apy_pct_7d": apy_pct_7d,
+        "apyPct7D": apy_pct_7d,
+        "apy_pct_30d": apy_pct_30d,
+        "apyPct30D": apy_pct_30d,
         "il_risk": pool.get("ilRisk", ""),
         "ilRisk": pool.get("ilRisk", ""),
         "stablecoin": bool(pool.get("stablecoin", False)),
         "exposure": pool.get("exposure", ""),
+        "volume_usd_1d": volume_usd_1d,
+        "volumeUsd1d": volume_usd_1d,
+        "volume_usd_7d": volume_usd_7d,
+        "volumeUsd7d": volume_usd_7d,
         "pool_meta": pool.get("poolMeta"),
         "poolMeta": pool.get("poolMeta"),
         "underlying_tokens": pool.get("underlyingTokens", []),
@@ -102,6 +118,7 @@ def _normalize_pool_record(pool: Dict[str, Any]) -> Dict[str, Any]:
         "totalBorrowUsd": total_borrow_usd,
         "utilization": utilization,
     }
+    normalized.update(classify_defi_record(normalized))
     return normalized
 
 
