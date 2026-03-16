@@ -877,10 +877,19 @@ class DefiOpportunityHistoryResponse(BaseModel):
 
 
 class DefiOpportunitySummaryResponse(BaseModel):
+    overall_score: Optional[int] = None
+    quality_score: Optional[int] = None
     opportunity_score: int
     safety_score: int
+    risk_burden_score: Optional[int] = None
+    yield_durability_score: Optional[int] = None
     yield_quality_score: int
+    exit_liquidity_score: Optional[int] = None
     exit_quality_score: int
+    apr_efficiency_score: Optional[int] = None
+    effective_apr: Optional[float] = None
+    required_apr: Optional[float] = None
+    return_potential_score: Optional[int] = None
     confidence_score: int
     risk_level: str
     strategy_fit: str
@@ -918,6 +927,8 @@ class DefiDeploymentResponse(BaseModel):
 class DefiOpportunityResponse(BaseModel):
     id: str
     kind: str
+    product_type: Optional[str] = None
+    score_family: Optional[str] = None
     title: str
     subtitle: str
     protocol: str
@@ -1102,48 +1113,13 @@ class AuditsListResponse(BaseModel):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# AI CHAT RESPONSE
-# ═══════════════════════════════════════════════════════════════════════════
-
-class ChatToolCallResponse(BaseModel):
-    """Single tool call surfaced to the frontend."""
-    tool: str
-    args: Dict[str, Any] = {}
-    result_preview: str = ""
-
-
-class ChatResponse(BaseModel):
-    """Chat API response."""
-    session_id: str
-    reply: str
-    tool_calls_made: List[ChatToolCallResponse] = []
-    tokens_used: int = 0
-    latency_ms: int = 0
-
-
-class ChatHistoryMessageResponse(BaseModel):
-    """Single stored conversation message."""
-    role: str
-    content: str
-    timestamp: float
-
-
-class ChatHistoryResponse(BaseModel):
-    """Conversation history."""
-    session_id: str
-    message_count: int = 0
-    created_at: float
-    last_active: float = 0
-    messages: List[ChatHistoryMessageResponse] = []
-
-
-# ═══════════════════════════════════════════════════════════════════════════
 # UNIVERSAL SEARCH RESPONSE
 # ═══════════════════════════════════════════════════════════════════════════
 
 class SearchResultItem(BaseModel):
     """Single universal search result"""
     type: str  # token / protocol / wallet / pool / audit / rekt
+    product_type: Optional[str] = None
     title: str
     subtitle: str
     address: Optional[str] = None

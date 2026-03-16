@@ -796,3 +796,75 @@ If asked about a specific token, suggest sending the address for analysis."""
         except Exception as e:
             logger.error(f"Chat error: {e}")
             return "An error occurred. Please try again."
+
+    async def chat_json(
+        self,
+        message: str,
+        system_prompt: str = "",
+        max_tokens: int = 900,
+        temperature: float = 0.1,
+    ) -> Dict[str, Any]:
+        """Structured JSON chat helper for deterministic integrations."""
+        try:
+            session = await self._ensure_session()
+
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+
+            if self.use_openrouter:
+                headers["HTTP-Referer"] = "https://t.me/Ilyon_AI_Bot"
+                headers["X-Title"] = "Ilyon AI Bot"
+
+            payload = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": message},
+                ],
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "response_format": {"type": "json_object"},
+            }
+
+            async with session.post(
+                self.base_url,
+                headers=headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=45),
+            ) as resp:
+                if resp.status != 200:
+                    error_text = await resp.text()
+                    logger.warning("Structured chat API error: %s - %s", resp.status, error_text[:300])
+                    return {}
+
+                data = await resp.json()
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                if not content:
+                    return {}
+                return self._extract_json_from_text(content)
+
+        except Exception as e:
+            logger.warning("Structured chat error: %s", e)
+            return {}
+
+    def _extract_json_from_text(self, raw_text: str) -> Dict[str, Any]:
+        text = (raw_text or "").strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:].strip()
+        try:
+            parsed = json.loads(text)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start >= 0 and end > start:
+                try:
+                    parsed = json.loads(text[start:end + 1])
+                    return parsed if isinstance(parsed, dict) else {}
+                except Exception:
+                    return {}
+        return {}

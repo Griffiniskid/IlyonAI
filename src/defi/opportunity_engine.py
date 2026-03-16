@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from statistics import mean
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -14,6 +15,7 @@ from src.defi.evidence import build_confidence_report, build_dependency_edges, p
 from src.defi.farm_analyzer import FarmAnalyzer
 from src.defi.history_store import DefiHistoryStore
 from src.defi.lending_analyzer import LENDING_PROTOCOLS, LendingAnalyzer
+from src.defi.opportunity_taxonomy import classify_defi_record
 from src.defi.pool_analyzer import PoolAnalyzer
 from src.defi.risk_engine import DefiRiskEngine, MAJOR_SYMBOLS, STABLE_SYMBOLS
 from src.defi.scenario_engine import DefiScenarioEngine
@@ -57,6 +59,24 @@ def _pool_value(pool: Dict[str, Any], snake_key: str, legacy_key: Optional[str] 
     if legacy_key and legacy_key in pool and pool.get(legacy_key) is not None:
         return pool.get(legacy_key)
     return default
+
+
+def _log_scale(value: float, low: float, high: float) -> float:
+    numeric = max(_safe_float(value), 1.0)
+    lower = max(low, 1.0)
+    upper = max(high, lower + 1.0)
+    ratio = (math.log10(numeric) - math.log10(lower)) / max(math.log10(upper) - math.log10(lower), 1e-9)
+    return max(0.0, min(100.0, ratio * 100.0))
+
+
+def _screening_docs_profile(default_governance_score: int = 52, has_oracle_mentions: bool = False) -> Dict[str, Any]:
+    return {
+        "available": False,
+        "placeholder": True,
+        "governance_score": default_governance_score,
+        "has_oracle_mentions": has_oracle_mentions,
+        "freshness_hours": None,
+    }
 
 
 class DefiOpportunityEngine:
@@ -203,10 +223,10 @@ class DefiOpportunityEngine:
             "matching_protocols": matching_protocols[:limit],
             "ai_market_brief": market_brief,
             "methodology": {
-                "public_ranking_default": "Balanced risk-adjusted yield with hard safety caps.",
-                "opportunity_score": "Balanced mode uses 45% safety, 30% yield quality, 15% exit quality, and 10% confidence.",
-                "hard_caps": "Recent critical exploits, low-quality reward tokens, shallow exits, and partial analysis cap scores directly.",
-                "confidence_score": "Confidence falls when sources disagree, coverage is partial, or key fields are missing.",
+                "quality_score": "Quality score prioritizes structural pool quality: safety, yield durability, exit liquidity, and evidence confidence for the product archetype.",
+                "overall_score": "Overall score is driven primarily by APR efficiency: effective APR after haircuts versus the hurdle APR required for the pool's weighted risk burden.",
+                "hard_caps": "Recent critical exploits, weak reward quality, shallow exits, and partial analysis can cap individual dimensions directly.",
+                "confidence_score": "Confidence only rises on real evidence; placeholder screening inputs no longer count as full docs or history coverage.",
             },
             "data_source": "DefiLlama + internal incident/audit intelligence + optional DeFi AI synthesis",
         }
@@ -273,7 +293,7 @@ class DefiOpportunityEngine:
             },
             "methodology": {
                 "protocol_safety": "Protocol safety blends contract safety, incident history, market maturity, governance posture, and dependency inheritance.",
-                "public_ranking_default": "Balanced risk-adjusted yield with hard safety caps.",
+                "public_ranking_default": "Balanced ranking blends product quality with return potential after taxonomy-aware hard caps.",
             },
         }
         profile["ai_analysis"] = await self.ai.build_protocol_analysis(profile) if include_ai else None
@@ -292,10 +312,14 @@ class DefiOpportunityEngine:
             if not raw:
                 return None
             opportunity = await self._build_pool_or_yield_opportunity(raw, kind, protocol_index, detail_mode=True, ranking_profile=ranking)
-            peers = await self.farm_analyzer.get_yields(chain=opportunity["chain"], min_tvl=0, min_apy=0, limit=16)
+            peers = [
+                item for item in pools
+                if str(item.get("chain") or "").lower() == opportunity["chain"]
+                and classify_defi_record(item).get("supports_pool_route")
+            ]
             opportunity["history"] = self.history.summarize_pool_history(await self.history.get_pool_history(raw_id))
             opportunity["related_opportunities"] = [
-                await self._build_pool_or_yield_opportunity(item, "yield" if item.get("sustainability_ratio") is not None else "pool", protocol_index, False, ranking)
+                await self._build_pool_or_yield_opportunity(item, str(classify_defi_record(item).get("default_kind") or "pool"), protocol_index, False, ranking)
                 for item in peers
                 if str(item.get("project") or "").lower() != opportunity["protocol"].lower()
             ][:6]
@@ -370,7 +394,7 @@ class DefiOpportunityEngine:
             "matrix": matrix,
             "opportunities": opportunities[:8],
             "methodology": {
-                "default": "Balanced risk-adjusted yield with hard safety caps.",
+                "default": "Balanced comparison blends product quality with return potential after taxonomy-aware hard caps.",
                 "compare": "Use compare when the asset and chain are constant and protocol quality is the main variable.",
             },
         }
@@ -399,17 +423,21 @@ class DefiOpportunityEngine:
         protocol = protocol_index.get(project.lower()) or {}
         protocol_slug = protocol.get("slug") or _slugify(project)
         docs_url = (LENDING_PROTOCOLS.get(protocol_slug, {}) or {}).get("docs_url")
-        docs_profile = await self.docs.analyze(protocol.get("url"), docs_url) if detail_mode else {"governance_score": 52}
+        classification = classify_defi_record(item)
+        enriched_item = {**item, **classification}
+        docs_profile = await self.docs.analyze(protocol.get("url"), docs_url) if detail_mode else _screening_docs_profile()
         audits, incidents = await self._fetch_protocol_intel(protocol_slug, protocol.get("name") or project) if detail_mode else ([], [])
-        assets = await self._build_asset_profiles(item, kind, detail_mode)
+        assets = await self._build_asset_profiles(enriched_item, kind, detail_mode)
         dependencies = build_dependency_edges(kind, str(item.get("chain") or "").lower(), protocol.get("name") or project, assets, docs_profile=docs_profile, incidents=incidents)
-        history_summary = self.history.summarize_pool_history(await self.history.get_pool_history(_pool_value(item, "pool_id", "pool") or "")) if detail_mode else {"available": False}
+        history_summary = self.history.summarize_pool_history(await self.history.get_pool_history(_pool_value(item, "pool_id", "pool") or "")) if detail_mode else {"available": False, "placeholder": True}
         protocol_safety = await self._estimate_protocol_safety(protocol, protocol_slug, docs_profile, audits, incidents)
-        scored = self.risk.score_opportunity(kind, item, assets, dependencies, protocol_safety, docs_profile, history_summary, incidents, ranking_profile=ranking_profile)
+        scored = self.risk.score_opportunity(kind, enriched_item, assets, dependencies, protocol_safety, docs_profile, history_summary, incidents, ranking_profile=ranking_profile)
 
         opportunity = {
             "id": self._encode_opportunity_id(kind, _pool_value(item, "pool_id", "pool") or item.get("symbol") or project),
             "kind": kind,
+            "product_type": classification.get("product_type"),
+            "score_family": classification.get("score_family"),
             "title": f"{'Farm' if kind == 'yield' else 'Provide'} {item.get('symbol') or 'Unknown'} {'on' if kind == 'yield' else 'liquidity on'} {protocol.get('name') or project}",
             "subtitle": f"{protocol.get('name') or project} on {_title_case_chain(str(item.get('chain') or 'unknown').lower())}",
             "protocol": project,
@@ -420,13 +448,13 @@ class DefiOpportunityEngine:
             "chain": str(item.get("chain") or "unknown").lower(),
             "apy": round(_safe_float(item.get("apy")), 2),
             "tvl_usd": round(_safe_float(item.get("tvl_usd") or item.get("tvlUsd")), 2),
-            "tags": self._build_pool_tags(item, kind, scored["summary"]["strategy_fit"]),
+            "tags": self._build_pool_tags(enriched_item, kind, scored["summary"]["strategy_fit"]),
             "summary": scored["summary"],
             "dimensions": scored["dimensions"],
             "confidence": scored["confidence"],
             "score_caps": scored["score_caps"],
-            "evidence": self._opportunity_evidence(kind, item, protocol, assets, dependencies, docs_profile, history_summary, incidents),
-            "scenarios": self.scenarios.build_opportunity_scenarios(kind, item),
+            "evidence": self._opportunity_evidence(kind, enriched_item, protocol, assets, dependencies, docs_profile, history_summary, incidents),
+            "scenarios": self.scenarios.build_opportunity_scenarios(kind, enriched_item),
             "dependencies": dependencies,
             "assets": assets,
             "deployment": {
@@ -438,10 +466,11 @@ class DefiOpportunityEngine:
             "raw": {
                 "pool": item.get("pool") or item.get("pool_id"),
                 "apy_tier": item.get("apy_tier"),
-                "exposure_type": item.get("exposure_type") or item.get("exposure"),
+                "exposure_type": enriched_item.get("normalized_exposure") or item.get("exposure_type") or item.get("exposure"),
                 "sustainability_ratio": item.get("sustainability_ratio"),
                 "risk_flags": item.get("risk_flags") or [],
                 "url": item.get("url"),
+                "product_type": classification.get("product_type"),
             },
         }
         if detail_mode:
@@ -459,7 +488,7 @@ class DefiOpportunityEngine:
         protocol = protocol_index.get(project.lower()) or {}
         protocol_slug = protocol.get("slug") or _slugify(project)
         docs_url = (LENDING_PROTOCOLS.get(protocol_slug, {}) or {}).get("docs_url")
-        docs_profile = await self.docs.analyze(protocol.get("url"), docs_url) if detail_mode else {"governance_score": 52, "has_oracle_mentions": True}
+        docs_profile = await self.docs.analyze(protocol.get("url"), docs_url) if detail_mode else _screening_docs_profile(has_oracle_mentions=True)
         audits, incidents = await self._fetch_protocol_intel(protocol_slug, protocol.get("name") or project) if detail_mode else ([], [])
         assets = await self._build_asset_profiles(item, "lending", detail_mode)
         dependencies = build_dependency_edges("lending", str(item.get("chain") or "").lower(), item.get("protocol_display") or protocol.get("name") or project, assets, docs_profile=docs_profile, incidents=incidents)
@@ -469,6 +498,8 @@ class DefiOpportunityEngine:
         opportunity = {
             "id": self._encode_opportunity_id("lending", item.get("pool_id") or item.get("symbol") or project),
             "kind": "lending",
+            "product_type": item.get("product_type") or "lending_supply_like",
+            "score_family": item.get("score_family") or "single_asset",
             "title": f"Deploy {item.get('symbol') or 'Unknown'} on {item.get('protocol_display') or protocol.get('name') or project}",
             "subtitle": f"{item.get('protocol_display') or protocol.get('name') or project} on {_title_case_chain(str(item.get('chain') or 'unknown').lower())}",
             "protocol": project,
@@ -545,37 +576,129 @@ class DefiOpportunityEngine:
         source = "heuristic"
         confidence = 56
         token_analysis = None
+        market_cap_usd = 0.0
+        liquidity_usd = 0.0
+        volume_24h = 0.0
+        age_hours = 0.0
+        volatility_24h = 0.0
+        is_stable = upper_symbol in STABLE_SYMBOLS
+        is_major = upper_symbol in MAJOR_SYMBOLS
+        wrapper_risk = 0
+        depeg_risk = 0
 
-        if upper_symbol in STABLE_SYMBOLS:
-            score = 92 if upper_symbol in {"USDC", "USDT", "DAI"} else 78
-            thesis = "Stablecoin quality is inferred from brand maturity, redemption assumptions, and wrapper risk."
-            if upper_symbol not in {"USDC", "USDT", "DAI"}:
-                thesis = "Stablecoin quality is discounted because wrapper, bridge, or newer stable risk may matter."
-        elif upper_symbol in MAJOR_SYMBOLS:
-            score = 88 if upper_symbol in {"ETH", "WETH", "BTC", "WBTC", "SOL"} else 78
-            thesis = "Blue-chip asset quality is inferred from liquidity depth and broad market acceptance."
+        stable_scores = {
+            "USDC": 95,
+            "USDT": 88,
+            "DAI": 86,
+            "USDS": 82,
+            "FDUSD": 80,
+            "USDP": 79,
+            "TUSD": 77,
+            "LUSD": 78,
+            "FRAX": 75,
+            "USDE": 70,
+            "USDBC": 69,
+            "GHO": 82,
+            "BUSD": 72,
+        }
+        major_scores = {
+            "BTC": 92,
+            "WBTC": 89,
+            "ETH": 92,
+            "WETH": 91,
+            "SOL": 88,
+            "STETH": 84,
+            "WSTETH": 85,
+            "RETH": 82,
+            "CBETH": 80,
+            "WEETH": 75,
+            "EZETH": 73,
+            "CBBTC": 83,
+            "SUSDE": 74,
+        }
+
+        if is_stable:
+            score = stable_scores.get(upper_symbol, 76)
+            depeg_risk = max(0, 100 - score)
+            thesis = "Stablecoin quality is inferred from redemption design, issuer credibility, and wrapper risk."
+        elif is_major:
+            score = major_scores.get(upper_symbol, 80)
+            thesis = "Blue-chip asset quality is inferred from liquidity depth, market depth, and long-term market acceptance."
         elif role == "reward":
-            score = 44
+            score = 38
             confidence = 48
-            thesis = "Reward-token quality starts discounted because emissions often create sell pressure and thin exit risk."
-        elif upper_symbol.startswith("W") or upper_symbol.startswith("C"):
-            score = 58
+            thesis = "Reward-token quality starts discounted because emissions often create sell pressure and fragile exits."
+        elif upper_symbol.startswith("W") or upper_symbol.startswith("C") or upper_symbol.endswith(("ETH", "BTC")):
+            score = 60
             thesis = "Wrapped or derivative exposure inherits settlement and redemption risk from the wrapper design."
+
+        if any(marker in upper_symbol for marker in ("AXL", "BRIDGED", "WORMHOLE", "USDBC", "CBBTC")):
+            wrapper_risk += 12
+            score -= 8
+        if any(marker in upper_symbol for marker in ("EZETH", "WEETH", "RETH", "STETH", "WSTETH", "SUSDE")):
+            wrapper_risk += 6
+            score -= 3
+        if role == "reward" and not (is_stable or is_major):
+            wrapper_risk += 4
 
         if detail_mode and address and chain in SUPPORTED_TOKEN_CHAINS and upper_symbol not in STABLE_SYMBOLS and upper_symbol not in MAJOR_SYMBOLS:
             analysis = await self._get_token_intelligence(address, chain)
             if analysis:
+                resolved_symbol = (analysis.token.symbol or upper_symbol).upper()
+                upper_symbol = resolved_symbol
                 overall = int(analysis.overall_score)
-                score = overall
-                confidence = 74
+                market_cap_usd = _safe_float(analysis.token.market_cap)
+                liquidity_usd = _safe_float(analysis.token.liquidity_usd)
+                volume_24h = _safe_float(analysis.token.volume_24h)
+                age_hours = _safe_float(analysis.token.age_hours)
+                volatility_24h = abs(_safe_float(analysis.token.price_change_24h))
+                security_penalty = 0
+                if analysis.token.can_mint:
+                    security_penalty += 8
+                if analysis.token.is_upgradeable:
+                    security_penalty += 5
+                if analysis.token.can_pause:
+                    security_penalty += 4
+                if analysis.token.can_blacklist:
+                    security_penalty += 4
+                if analysis.token.honeypot_is_honeypot:
+                    security_penalty += 18
+
+                depth_bonus = (_log_scale(liquidity_usd, 100_000, 5_000_000_000) * 0.16)
+                cap_bonus = (_log_scale(market_cap_usd, 1_000_000, 500_000_000_000) * 0.12)
+                maturity_bonus = min(8.0, math.log10(max(age_hours + 24.0, 24.0)) * 2.6)
+                volatility_adjustment = 10 if volatility_24h <= 8 else 4 if volatility_24h <= 18 else -4 if volatility_24h <= 35 else -10
+
+                score = int(round(
+                    max(
+                        5,
+                        min(
+                            100,
+                            (overall * 0.55)
+                            + (analysis.safety_score * 0.20)
+                            + depth_bonus
+                            + cap_bonus
+                            + maturity_bonus
+                            + volatility_adjustment
+                            - security_penalty,
+                        ),
+                    )
+                ))
+                confidence = 82
                 source = "token-engine"
                 token_analysis = {
                     "overall_score": overall,
                     "grade": analysis.grade,
                     "recommendation": analysis.recommendation,
                     "ai_analysis": analysis.ai_analysis,
+                    "market_cap": market_cap_usd,
+                    "liquidity_usd": liquidity_usd,
+                    "volume_24h": volume_24h,
+                    "price_change_24h": _safe_float(analysis.token.price_change_24h),
                 }
-                thesis = f"Inherited token risk from the existing token engine ({analysis.grade}, {overall}/100)."
+                thesis = f"Inherited token risk from the token engine ({analysis.grade}, {overall}/100) with market depth and security posture blended in."
+
+        score = max(5, min(100, score))
 
         profile = {
             "symbol": upper_symbol,
@@ -588,6 +711,15 @@ class DefiOpportunityEngine:
             "address": address,
             "thesis": thesis,
             "token_analysis": token_analysis,
+            "market_cap_usd": round(market_cap_usd, 2),
+            "liquidity_usd": round(liquidity_usd, 2),
+            "volume_24h": round(volume_24h, 2),
+            "age_hours": round(age_hours, 2),
+            "volatility_24h": round(volatility_24h, 2),
+            "depeg_risk": depeg_risk,
+            "wrapper_risk": wrapper_risk,
+            "is_stable": is_stable,
+            "is_major": is_major,
         }
         self._asset_cache[cache_key] = profile
         return profile
@@ -610,21 +742,58 @@ class DefiOpportunityEngine:
         incidents: Sequence[Dict[str, Any]],
     ) -> int:
         tvl = _safe_float(protocol.get("tvl"))
-        score = 66
-        if tvl > 100_000_000:
-            score += 10
-        elif tvl < 10_000_000:
-            score -= 8
+        chains = protocol.get("chains") or []
+        governance_score = _safe_float(docs_profile.get("governance_score"), 50)
+        score = 38 + (_log_scale(tvl, 5_000_000, 100_000_000_000) * 0.22) + min(len(chains), 8) * 2.8
+
         if audits:
-            score += min(12, len(audits) * 3)
+            critical_findings = sum(int((audit.get("severity_findings") or {}).get("critical", 0) or 0) for audit in audits)
+            freshest_age = min(
+                (age for age in (parse_age_hours(audit.get("date")) for audit in audits) if age is not None),
+                default=None,
+            )
+            score += min(20, len(audits) * 4.5)
+            score -= critical_findings * 7
+            if freshest_age is not None and freshest_age < 24 * 365:
+                score += 4
+            elif freshest_age is not None and freshest_age > 24 * 365 * 3:
+                score -= 6
         else:
-            score -= 10
-        if incidents:
-            score -= min(20, len(incidents) * 6)
-        score += int((docs_profile.get("governance_score") or 50 - 50) * 0.25)
-        if protocol_slug in LENDING_PROTOCOLS:
+            score -= 12
+
+        incident_penalty = 0.0
+        recent_critical = False
+        for incident in incidents:
+            severity = str(incident.get("severity") or "").upper()
+            age_hours = parse_age_hours(incident.get("date"))
+            base = 18 if severity == "CRITICAL" else 11 if severity == "HIGH" else 6
+            decay = 1.0
+            if age_hours is not None:
+                if age_hours > 24 * 365 * 2:
+                    decay = 0.35
+                elif age_hours > 24 * 365:
+                    decay = 0.55
+                elif age_hours > 24 * 180:
+                    decay = 0.8
+                if severity == "CRITICAL" and age_hours < 24 * 365:
+                    recent_critical = True
+            incident_penalty += base * decay
+        score -= incident_penalty
+
+        score += (governance_score - 50) * 0.30
+        if docs_profile.get("has_timelock_mentions"):
             score += 4
-        return _clamp(score)
+        if docs_profile.get("has_multisig_mentions"):
+            score += 3
+        if docs_profile.get("has_admin_mentions") and not docs_profile.get("has_timelock_mentions"):
+            score -= 7
+        if protocol_slug in LENDING_PROTOCOLS:
+            score += 3
+
+        final = _clamp(score)
+        if recent_critical:
+            final = min(final, 58)
+        return final
 
     async def _fetch_protocol_intel(self, protocol_slug: str, display_name: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         audits = await self.audits.get_audits(protocol=display_name, limit=20)
@@ -959,7 +1128,10 @@ class DefiOpportunityEngine:
 
     def _build_pool_tags(self, item: Dict[str, Any], kind: str, strategy_fit: str) -> List[str]:
         tags = [kind, strategy_fit]
-        exposure = item.get("exposure_type") or item.get("exposure")
+        product_type = item.get("product_type")
+        if product_type:
+            tags.append(str(product_type))
+        exposure = item.get("normalized_exposure") or item.get("exposure_type") or item.get("exposure")
         if exposure:
             tags.append(str(exposure))
         if str(item.get("il_risk") or item.get("ilRisk") or "").lower() == "yes":

@@ -554,10 +554,19 @@ export interface DefiScenarioItem {
 }
 
 export interface DefiOpportunitySummary {
+  overall_score?: number;
+  quality_score?: number;
   opportunity_score: number;
   safety_score: number;
+  risk_burden_score?: number;
+  yield_durability_score?: number;
   yield_quality_score: number;
+  exit_liquidity_score?: number;
   exit_quality_score: number;
+  apr_efficiency_score?: number;
+  effective_apr?: number;
+  required_apr?: number;
+  return_potential_score?: number;
   confidence_score: number;
   risk_level: "HIGH" | "MEDIUM" | "LOW";
   strategy_fit: "conservative" | "balanced" | "aggressive";
@@ -606,6 +615,8 @@ export interface DefiOpportunityHistory {
 export interface DefiOpportunityResponse {
   id: string;
   kind: "pool" | "yield" | "lending";
+  product_type?: string | null;
+  score_family?: string | null;
   title: string;
   subtitle: string;
   protocol: string;
@@ -907,37 +918,27 @@ export interface IntelStatsResponse {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CHAT TYPES
-// ═══════════════════════════════════════════════════════════════════════════
-
-export interface ChatToolCall {
-  tool: string;
-  args: Record<string, unknown>;
-  result_preview: string;
+export interface SearchResultResponse {
+  type: "token" | "pool" | "protocol" | string;
+  product_type?: string | null;
+  title: string;
+  subtitle: string;
+  address?: string | null;
+  chain?: string | null;
+  score?: number | null;
+  url?: string | null;
+  logo?: string | null;
 }
 
-export interface ChatMessageResponse {
-  session_id: string;
-  reply: string;
-  tool_calls_made: ChatToolCall[];
-  tokens_used: number;
-  latency_ms: number;
+export interface SearchResponse {
+  query: string;
+  input_type: string;
+  results: SearchResultResponse[];
+  count: number;
+  total: number;
 }
 
-export interface ChatHistoryMessage {
-  role: "user" | "assistant";
-  content: string;
-  timestamp: number;
-}
-
-export interface ChatHistoryResponse {
-  session_id: string;
-  message_count: number;
-  created_at: number;
-  last_active: number;
-  messages: ChatHistoryMessage[];
-}
+export type PoolAnalysisResponse = DefiOpportunityResponse;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DASHBOARD STATS TYPES

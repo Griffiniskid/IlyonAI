@@ -16,9 +16,7 @@ class DefiAIRouter:
     def __init__(self):
         self._client: Optional[OpenAIClient] = None
         if settings.openrouter_api_key:
-            self._client = OpenAIClient(model="openai/gpt-4o-mini", use_openrouter=True)
-        elif settings.openai_api_key:
-            self._client = OpenAIClient(model="gpt-4o-mini")
+            self._client = OpenAIClient(model=settings.ai_model, use_openrouter=True)
 
     @property
     def available(self) -> bool:
@@ -30,7 +28,7 @@ class DefiAIRouter:
 
     async def build_market_brief(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         fallback = {
-            "available": False,
+            "available": True,
             "headline": "Balanced risk-adjusted yield remains the default ranking lens.",
             "summary": "The discover surface ranks opportunities by balanced risk-adjusted yield with hard safety caps, so fragile high-APY setups do not dominate the board.",
             "market_regime": "balanced",
@@ -64,7 +62,7 @@ class DefiAIRouter:
 
     async def build_protocol_analysis(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         fallback = {
-            "available": False,
+            "available": True,
             "headline": "Protocol quality comes from battle-testing, governance posture, and dependency discipline.",
             "summary": "This protocol view weighs audits, incident history, docs observability, dependencies, and deployment breadth rather than treating TVL alone as safety.",
             "best_for": "Users doing protocol due diligence before deploying capital.",
@@ -84,7 +82,7 @@ class DefiAIRouter:
 
     async def build_opportunity_analysis(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         fallback = {
-            "available": False,
+            "available": True,
             "headline": "A capital path only ranks well when safety, yield quality, exit quality, and confidence align.",
             "summary": "The opportunity view discounts nominal APY when emissions, weak exits, dependency depth, or low-quality assets undermine the surface yield.",
             "best_for": payload.get("summary", {}).get("strategy_fit", "balanced") + " capital",
@@ -143,11 +141,11 @@ class DefiAIRouter:
         if not self._client:
             return {}
         try:
-            raw = await self._client.chat(message, system_prompt=system_prompt)
+            raw = await self._client.chat_json(message, system_prompt=system_prompt, max_tokens=900, temperature=0.1)
         except Exception as exc:
             logger.warning("DeFi AI pass failed: %s", exc)
             return {}
-        return self._extract_json(raw)
+        return raw if isinstance(raw, dict) else {}
 
     def _extract_json(self, raw_text: str) -> Dict[str, Any]:
         text = (raw_text or "").strip()

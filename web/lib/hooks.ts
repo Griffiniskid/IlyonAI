@@ -66,6 +66,35 @@ export function useSearchTokens(query: string) {
   });
 }
 
+export function useSearchCatalog(query: string, chain?: string | null) {
+  return useQuery({
+    queryKey: ["search", query, chain ?? "all"],
+    queryFn: () => api.searchTokens(query, chain ?? undefined),
+    enabled: query.length >= 2,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useAnalyzePool() {
+  return useMutation({
+    mutationFn: ({
+      poolId,
+      includeAi,
+      rankingProfile,
+      pairAddress,
+      chain,
+      source,
+    }: {
+      poolId: string;
+      includeAi?: boolean;
+      rankingProfile?: string;
+      pairAddress?: string;
+      chain?: string;
+      source?: string;
+    }) => api.analyzePool(poolId, { includeAi, rankingProfile, pairAddress, chain, source }),
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // TRENDING HOOKS
 // ═══════════════════════════════════════════════════════════════════════════

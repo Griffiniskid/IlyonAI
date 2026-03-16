@@ -15,9 +15,9 @@ def clamp(value: float, lower: float = 0, upper: float = 100) -> int:
 
 
 def risk_level_from_score(score: int) -> str:
-    if score >= 70:
+    if score >= 55:
         return "HIGH"
-    if score >= 45:
+    if score >= 30:
         return "MEDIUM"
     return "LOW"
 
@@ -132,24 +132,34 @@ def build_confidence_report(
     missing = [field for field in required if field not in present]
     coverage_ratio = (len(required) - len(missing)) / max(len(required), 1)
 
-    score = 35 + (coverage_ratio * 35) + min(source_count, 5) * 5
+    score = 10 + (coverage_ratio * 70) + min(source_count, 6) * 3
     if freshness_hours is not None:
         if freshness_hours <= 6:
-            score += 12
+            score += 10
         elif freshness_hours <= 24:
-            score += 8
+            score += 7
         elif freshness_hours <= 168:
-            score += 2
+            score += 3
         else:
-            score -= 10
+            score -= 12
     else:
-        score -= 4
+        score -= 6
 
     partial = bool(missing or coverage_ratio < 0.7)
-    if partial:
-        score = min(score, 60)
 
-    label = "HIGH" if score >= 80 else "MEDIUM" if score >= 60 else "PARTIAL" if partial else "LOW"
+    if coverage_ratio < 0.35:
+        score = min(score, 25)
+        label = "LOW"
+    elif partial:
+        score = min(score, 50)
+        label = "PARTIAL"
+    elif coverage_ratio < 0.9:
+        score = min(max(score, 52), 75)
+        label = "STANDARD"
+    else:
+        score = max(score, 76)
+        label = "HIGH"
+
     report = ConfidenceReport(
         score=clamp(score),
         label=label,

@@ -150,6 +150,10 @@ class PoolAnalyzer:
         # Apply filters
         filtered = []
         for pool in raw_pools:
+            if not bool(pool.get("is_lp_like")):
+                continue
+            if bool(pool.get("is_incentivized")):
+                continue
             pool_tvl = _pool_value(pool, "tvl_usd", "tvlUsd", 0) or 0
             pool_apy = _pool_value(pool, "apy", default=0) or 0
             pool_chain = (_pool_value(pool, "chain", default="") or "").lower()

@@ -158,6 +158,10 @@ class FarmAnalyzer:
 
         results = []
         for pool in raw:
+            if not bool(pool.get("is_lp_like")):
+                continue
+            if not bool(pool.get("is_incentivized")):
+                continue
             pool_apy = _pool_value(pool, "apy", default=0) or 0
             pool_tvl = _pool_value(pool, "tvl_usd", "tvlUsd", 0) or 0
             pool_chain = (_pool_value(pool, "chain", default="") or "").lower()

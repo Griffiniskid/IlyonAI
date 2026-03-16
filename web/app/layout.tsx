@@ -15,9 +15,9 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ilyon AI | Multi-Chain DeFi Intelligence",
+  title: "Ilyon AI | Multi-Chain Token And Pool Intelligence",
   description:
-    "AI-powered DeFi intelligence across Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, Avalanche, and Solana. Token security analysis, contract auditing, approval management, and yield research.",
+    "AI-powered token and pool intelligence across Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, Avalanche, and Solana. Analyze token security, pool sustainability, contract risk, and wallet approvals from one surface.",
   keywords: [
     "DeFi security",
     "multi-chain",
@@ -38,15 +38,15 @@ export const metadata: Metadata = {
     apple: "/shield.png",
   },
   openGraph: {
-    title: "Ilyon AI | Multi-Chain DeFi Intelligence",
-    description: "AI-powered security and intelligence across all major DeFi chains",
+    title: "Ilyon AI | Multi-Chain Token And Pool Intelligence",
+    description: "AI-powered token security and pool intelligence across all major chains",
     type: "website",
     siteName: "Ilyon AI",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Ilyon AI | Multi-Chain DeFi Intelligence",
-    description: "AI-powered security and intelligence across all major DeFi chains",
+    title: "Ilyon AI | Multi-Chain Token And Pool Intelligence",
+    description: "AI-powered token security and pool intelligence across all major chains",
   },
 };
 
@@ -79,7 +79,7 @@ export default function RootLayout({
                     <img src="/logo.png" alt="Ilyon AI" className="h-14 sm:h-[72px] w-auto" />
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    Multi-chain DeFi intelligence
+                    Multi-chain token and pool intelligence
                   </div>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <a href="/docs" className="hover:text-foreground transition">

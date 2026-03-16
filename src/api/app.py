@@ -25,7 +25,6 @@ from src.api.routes.contracts import setup_contracts_routes
 from src.api.routes.shield import setup_shield_routes
 from src.api.routes.defi import setup_defi_routes
 from src.api.routes.intel import setup_intel_routes
-from src.api.routes.chat import setup_chat_routes
 from src.agents.sentinel import start_sentinel, stop_sentinel
 from src.config import settings
 
@@ -70,6 +69,7 @@ async def api_info(request: web.Request) -> web.Response:
             "whales": "GET /api/v1/whales",
             "shield": "GET /api/v1/shield/{wallet}",
             "contract": "POST /api/v1/contract/scan",
+            "pool_analysis": "POST /api/v1/defi/pool/analyze",
             "defi_pools": "GET /api/v1/defi/pools",
             "defi_yields": "GET /api/v1/defi/yields",
             "defi_opportunities": "GET /api/v1/defi/opportunities",
@@ -79,7 +79,6 @@ async def api_info(request: web.Request) -> web.Response:
             "defi_v2_protocol": "GET /api/v2/defi/protocols/{slug}",
             "defi_v2_opportunity": "GET /api/v2/defi/opportunities/{id}",
             "chains": "GET /api/v1/chains",
-            "chat": "POST /api/v1/chat",
             "auth": "POST /api/v1/auth/challenge",
         },
         "docs": "/api/v1/docs"
@@ -115,6 +114,7 @@ async def api_docs(request: web.Request) -> web.Response:
                 "POST /api/v1/shield/revoke",
             ],
             "defi": [
+                "POST /api/v1/defi/pool/analyze",
                 "GET /api/v1/defi/pools",
                 "GET /api/v1/defi/yields",
                 "GET /api/v1/defi/lending",
@@ -128,12 +128,6 @@ async def api_docs(request: web.Request) -> web.Response:
                 "POST /api/v2/defi/simulate/lp",
                 "POST /api/v2/defi/simulate/lending",
                 "POST /api/v2/defi/positions/analyze",
-            ],
-            "chat": [
-                "POST /api/v1/chat",
-                "GET /api/v1/chat/session",
-                "GET /api/v1/chat/session/{session_id}",
-                "DELETE /api/v1/chat/session/{session_id}",
             ],
         },
         "examples": {
@@ -184,7 +178,6 @@ def create_api_app() -> web.Application:
     setup_shield_routes(app)
     setup_defi_routes(app)
     setup_intel_routes(app)
-    setup_chat_routes(app)
     setup_public_api_routes(app)
 
     # Background sentinel agent
@@ -246,7 +239,6 @@ def setup_api_routes(app: web.Application):
     setup_shield_routes(app)
     setup_defi_routes(app)
     setup_intel_routes(app)
-    setup_chat_routes(app)
     setup_public_api_routes(app)
 
     logger.info("All API routes added to existing application")

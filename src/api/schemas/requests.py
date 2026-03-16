@@ -4,7 +4,7 @@ API Request schemas for the Ilyon AI Web API.
 Pydantic models that define the structure of all API requests.
 """
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, model_validator, validator
 from typing import Optional, List
 from enum import Enum
 import re
@@ -124,6 +124,23 @@ class DefiCompareRequest(BaseModel):
     ranking_profile: str = "balanced"
 
 
+class AnalyzePoolRequest(BaseModel):
+    """Request to analyze a single DeFi pool."""
+    pool_id: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    pair_address: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    chain: Optional[str] = None
+    source: Optional[str] = Field(default=None, pattern="^(defillama|dexpair)$")
+    include_ai: bool = True
+    ranking_profile: str = "balanced"
+    kind: Optional[str] = Field(default=None, pattern="^(pool|yield)$")
+
+    @model_validator(mode="after")
+    def validate_identifier(self):
+        if not self.pool_id and not self.pair_address:
+            raise ValueError("Either pool_id or pair_address is required")
+        return self
+
+
 class DefiLPSimulationRequest(BaseModel):
     """Request to simulate LP or farm stress."""
     deposit_usd: float = Field(..., gt=0)
@@ -161,16 +178,6 @@ class DefiPositionAnalysisRequest(BaseModel):
     borrow_rate_spike_pct: Optional[float] = 0
     utilization_pct: Optional[float] = Field(default=0, ge=0, le=100)
     utilization_shock_pct: Optional[float] = Field(default=0, ge=0, le=100)
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# CHAT REQUESTS
-# ═══════════════════════════════════════════════════════════════════════════
-
-class ChatMessageRequest(BaseModel):
-    """Request to send a chat message"""
-    message: str = Field(..., min_length=1, max_length=2000)
-    conversation_id: Optional[str] = None  # None = new conversation
 
 
 # ═══════════════════════════════════════════════════════════════════════════

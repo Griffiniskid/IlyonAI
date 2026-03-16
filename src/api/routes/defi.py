@@ -14,10 +14,16 @@ GET /api/v1/defi/protocol/{slug}         - Protocol detail
 
 import asyncio
 import logging
-from typing import Optional
+from typing import Dict, Optional
 
 from aiohttp import web
 
+from src.api.schemas.requests import AnalyzePoolRequest
+from src.chains.base import ChainType
+from src.chains.registry import ChainRegistry
+from src.config import settings
+from src.data.dexscreener import DexScreenerClient
+from src.defi.opportunity_taxonomy import classify_defi_record
 from src.defi.pool_analyzer import PoolAnalyzer
 from src.defi.farm_analyzer import FarmAnalyzer
 from src.defi.lending_analyzer import LendingAnalyzer
@@ -31,10 +37,183 @@ _farm_analyzer: Optional[FarmAnalyzer] = None
 _lending_analyzer: Optional[LendingAnalyzer] = None
 _llama: Optional[DefiLlamaClient] = None
 _intelligence_engine: Optional[DefiIntelligenceEngine] = None
+_pair_client: Optional[DexScreenerClient] = None
 
 
 def _pool_tvl(item: dict) -> float:
     return float(item.get("tvl_usd") or item.get("tvlUsd") or 0)
+
+
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _infer_pool_kind(pool: dict) -> str:
+    taxonomy = classify_defi_record(pool)
+    return str(taxonomy.get("default_kind") or "pool")
+
+
+def _pair_project_slug(pair: dict) -> str:
+    dex = str(pair.get("dexId") or "unknown").strip().lower()
+    labels = {str(label).strip().lower() for label in pair.get("labels") or []}
+    if dex == "uniswap":
+        if "v4" in labels:
+            return "uniswap-v4"
+        if "v3" in labels:
+            return "uniswap-v3"
+        return "uniswap-v2"
+    if dex == "pancakeswap":
+        return "pancakeswap-amm"
+    if dex == "curve":
+        return "curve-dex"
+    if dex == "orca":
+        return "orca-dex"
+    if dex == "raydium":
+        return "raydium-amm"
+    return dex or "unknown"
+
+
+def _ordered_pair_symbols(pair: dict) -> list[str]:
+    stable_symbols = {"USDC", "USDT", "DAI", "FDUSD", "USDE", "BUSD", "TUSD", "FRAX", "LUSD"}
+    base = pair.get("baseToken") or {}
+    quote = pair.get("quoteToken") or {}
+    base_symbol = str(base.get("symbol") or "").upper()
+    quote_symbol = str(quote.get("symbol") or "").upper()
+    if quote_symbol in stable_symbols and base_symbol not in stable_symbols:
+        return [quote_symbol, base_symbol]
+    return [base_symbol, quote_symbol]
+
+
+def _chain_type_from_value(value: Optional[str]) -> Optional[ChainType]:
+    if not value:
+        return None
+    try:
+        return ChainType(str(value).strip().lower())
+    except Exception:
+        return None
+
+
+async def _fetch_pool_fee_tier_pct(chain_value: str, pair_address: str) -> Optional[float]:
+    chain_type = _chain_type_from_value(chain_value)
+    if not chain_type or not chain_type.is_evm or len(pair_address) != 42:
+        return None
+
+    registry = ChainRegistry.get_instance()
+    registry.initialize(settings)
+    client = registry.get_client(chain_type)
+    eth_call = getattr(client, "_eth_call", None)
+    if eth_call is None:
+        return None
+    raw = await eth_call(pair_address, "0xddca3f43")
+    if not raw or raw == "0x":
+        return None
+    try:
+        fee_units = int(raw, 16)
+    except Exception:
+        return None
+    if fee_units <= 0:
+        return None
+    return round(fee_units / 10000.0, 4)
+
+
+def _estimate_pair_apy(pair: dict, fee_tier_pct: Optional[float]) -> float:
+    if not fee_tier_pct:
+        return 0.0
+    volume_1d = _safe_float((pair.get("volume") or {}).get("h24"))
+    liquidity = _safe_float((pair.get("liquidity") or {}).get("usd"))
+    if volume_1d <= 0 or liquidity <= 0:
+        return 0.0
+    daily_fees = volume_1d * (fee_tier_pct / 100.0)
+    return round((daily_fees * 365.0 / liquidity) * 100.0, 4)
+
+
+async def _build_direct_pair_item(pair_address: str, chain_value: str, pair: dict) -> Dict[str, object]:
+    fee_tier_pct = await _fetch_pool_fee_tier_pct(chain_value, pair_address)
+    estimated_apy = _estimate_pair_apy(pair, fee_tier_pct)
+    symbols = [symbol for symbol in _ordered_pair_symbols(pair) if symbol]
+    stable_count = sum(1 for symbol in symbols if symbol in {"USDC", "USDT", "DAI", "FDUSD", "USDE", "BUSD", "TUSD", "FRAX", "LUSD"})
+    symbol = "-".join(symbols) if symbols else "UNKNOWN-UNKNOWN"
+    label_suffix = " ".join(str(label).upper() for label in pair.get("labels") or [])
+    pool_meta = f"{fee_tier_pct:.2f}% {label_suffix}".strip() if fee_tier_pct else f"Direct pair {label_suffix}".strip()
+    item = {
+        "pool_id": pair_address,
+        "pool": pair_address,
+        "pair_address": pair_address,
+        "project": _pair_project_slug(pair),
+        "symbol": symbol,
+        "chain": str(pair.get("chainId") or chain_value or "").upper(),
+        "tvl_usd": _safe_float((pair.get("liquidity") or {}).get("usd")),
+        "tvlUsd": _safe_float((pair.get("liquidity") or {}).get("usd")),
+        "apy": estimated_apy,
+        "apy_base": estimated_apy,
+        "apyBase": estimated_apy,
+        "apy_reward": 0.0,
+        "apyReward": 0.0,
+        "volume_usd_1d": _safe_float((pair.get("volume") or {}).get("h24")),
+        "volumeUsd1d": _safe_float((pair.get("volume") or {}).get("h24")),
+        "stablecoin": stable_count >= 1,
+        "exposure": "multi",
+        "il_risk": "no" if stable_count >= 2 else "yes",
+        "ilRisk": "no" if stable_count >= 2 else "yes",
+        "underlying_tokens": [
+            (pair.get("baseToken") or {}).get("address"),
+            (pair.get("quoteToken") or {}).get("address"),
+        ],
+        "underlyingTokens": [
+            (pair.get("baseToken") or {}).get("address"),
+            (pair.get("quoteToken") or {}).get("address"),
+        ],
+        "reward_tokens": [],
+        "rewardTokens": [],
+        "pool_meta": pool_meta,
+        "poolMeta": pool_meta,
+        "url": pair.get("url") or "",
+        "direct_pair": True,
+        "source": "dexpair",
+    }
+    item.update(classify_defi_record(item))
+    return item
+
+
+async def _analyze_direct_pair(req: AnalyzePoolRequest) -> Optional[Dict[str, object]]:
+    if _intelligence_engine is None or _pair_client is None or _llama is None:
+        return None
+
+    pair_address = str(req.pair_address or req.pool_id or "").strip()
+    pair = await _pair_client.find_pair(pair_address, chain=req.chain)
+    if not pair:
+        return None
+
+    item = await _build_direct_pair_item(pair_address, str(pair.get("chainId") or req.chain or ""), pair)
+    protocol_index = _intelligence_engine.engine._build_protocol_index(await _llama.get_protocols())
+    opportunity = await _intelligence_engine.engine._build_pool_or_yield_opportunity(
+        item,
+        "pool",
+        protocol_index,
+        detail_mode=True,
+        ranking_profile=req.ranking_profile,
+    )
+    opportunity["history"] = {"available": False, "points": []}
+    opportunity["related_opportunities"] = []
+    opportunity["safer_alternative"] = None
+    opportunity["raw"] = {
+        **opportunity.get("raw", {}),
+        "pair_address": pair_address,
+        "source": "dexpair",
+        "pool_url": pair.get("url"),
+    }
+    opportunity["protocol_profile"] = await _intelligence_engine.get_protocol_profile(
+        opportunity["protocol_slug"],
+        include_ai=False,
+        ranking_profile=req.ranking_profile,
+    )
+    opportunity["ai_analysis"] = await _intelligence_engine.engine.ai.build_opportunity_analysis(opportunity) if req.include_ai else None
+    return opportunity
 
 
 def _build_defi_highlights(pools: list, yields: list, markets: list, protocols: list) -> dict:
@@ -56,22 +235,29 @@ def _build_defi_highlights(pools: list, yields: list, markets: list, protocols: 
 
 
 async def init_defi(app: web.Application):
-    global _pool_analyzer, _farm_analyzer, _lending_analyzer, _llama, _intelligence_engine
+    global _pool_analyzer, _farm_analyzer, _lending_analyzer, _llama, _intelligence_engine, _pair_client
     _pool_analyzer = PoolAnalyzer()
     _farm_analyzer = FarmAnalyzer()
     _lending_analyzer = LendingAnalyzer()
     _llama = DefiLlamaClient()
+    _pair_client = DexScreenerClient()
     _intelligence_engine = DefiIntelligenceEngine(
         pool_analyzer=_pool_analyzer,
         farm_analyzer=_farm_analyzer,
         lending_analyzer=_lending_analyzer,
         llama=_llama,
     )
+    app["defi_pool_analyzer"] = _pool_analyzer
+    app["defi_farm_analyzer"] = _farm_analyzer
+    app["defi_lending_analyzer"] = _lending_analyzer
+    app["defi_llama"] = _llama
+    app["defi_intelligence_engine"] = _intelligence_engine
+    app["defi_pair_client"] = _pair_client
     logger.info("DeFi analyzers initialized")
 
 
 async def cleanup_defi(app: web.Application):
-    global _pool_analyzer, _farm_analyzer, _lending_analyzer, _llama, _intelligence_engine
+    global _pool_analyzer, _farm_analyzer, _lending_analyzer, _llama, _intelligence_engine, _pair_client
     if _pool_analyzer:
         await _pool_analyzer.close()
     if _farm_analyzer:
@@ -80,6 +266,8 @@ async def cleanup_defi(app: web.Application):
         await _lending_analyzer.close()
     if _llama:
         await _llama.close()
+    if _pair_client:
+        await _pair_client.close()
     if _intelligence_engine:
         await _intelligence_engine.close()
     logger.info("DeFi analyzers closed")
@@ -275,6 +463,67 @@ async def analyze_defi(request: web.Request) -> web.Response:
         return web.json_response({"error": "Failed to analyze DeFi opportunities"}, status=500)
 
     return web.json_response(analysis)
+
+
+async def analyze_pool(request: web.Request) -> web.Response:
+    """
+    POST /api/v1/defi/pool/analyze
+
+    Analyze a single pool by raw DefiLlama pool id and return the full
+    opportunity profile used by the new unified pool page.
+    """
+    if _intelligence_engine is None or _llama is None:
+        return web.json_response({"error": "DeFi analyzer not available"}, status=503)
+
+    try:
+        payload = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+    try:
+        req = AnalyzePoolRequest(**payload)
+    except Exception as e:
+        return web.json_response({"error": "Invalid request", "details": str(e)}, status=400)
+
+    try:
+        if req.source == "dexpair" or req.pair_address:
+            detail = await _analyze_direct_pair(req)
+            if not detail:
+                return web.json_response({"error": f"Pair '{req.pair_address or req.pool_id}' could not be analyzed"}, status=404)
+            return web.json_response(detail)
+
+        pools = await _llama.get_pools(min_tvl=0, min_apy=0)
+        raw_pool = next(
+            (item for item in pools if str(item.get("pool_id") or item.get("pool") or "") == req.pool_id),
+            None,
+        )
+        if not raw_pool:
+            return web.json_response({"error": f"Pool '{req.pool_id}' not found"}, status=404)
+
+        taxonomy = classify_defi_record(raw_pool)
+        if not taxonomy.get("supports_pool_route"):
+            return web.json_response(
+                {
+                    "error": "This yield product is not a pool-style LP and should not be opened on the pool route.",
+                    "product_type": taxonomy.get("product_type"),
+                },
+                status=400,
+            )
+
+        kind = req.kind or str(taxonomy.get("default_kind") or _infer_pool_kind(raw_pool))
+        detail = await _intelligence_engine.get_opportunity_profile(
+            f"{kind}--{req.pool_id}",
+            include_ai=req.include_ai,
+            ranking_profile=req.ranking_profile,
+        )
+    except Exception as e:
+        logger.error(f"Pool analysis error for {req.pool_id}: {e}", exc_info=True)
+        return web.json_response({"error": "Failed to analyze pool"}, status=500)
+
+    if not detail:
+        return web.json_response({"error": f"Pool '{req.pool_id}' could not be analyzed"}, status=404)
+
+    return web.json_response(detail)
 
 
 async def get_opportunities(request: web.Request) -> web.Response:
@@ -675,6 +924,7 @@ def setup_defi_routes(app: web.Application):
     app.on_cleanup.append(cleanup_defi)
 
     app.router.add_get("/api/v1/defi/analyze", analyze_defi)
+    app.router.add_post("/api/v1/defi/pool/analyze", analyze_pool)
     app.router.add_get("/api/v1/defi/pools", get_pools)
     app.router.add_get("/api/v1/defi/pools/{pool_id}", get_pool_detail)
     app.router.add_get("/api/v1/defi/yields", get_yields)

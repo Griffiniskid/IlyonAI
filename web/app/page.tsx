@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { GlassCard } from "@/components/ui/card";
 import {
   Shield,
   Search,
@@ -18,13 +17,15 @@ import {
   ArrowRight,
   CheckCircle2,
   AlertTriangle,
+  Loader2,
   Users,
   Activity,
   ChevronRight,
-  RefreshCw,
 } from "lucide-react";
 import { cn, formatCompact, isValidEvmAddress, isValidSolanaAddress } from "@/lib/utils";
-import { useDashboardStats } from "@/lib/hooks";
+import { useDashboardStats, useSearchCatalog } from "@/lib/hooks";
+import { searchTokens } from "@/lib/api";
+import type { SearchResultResponse } from "@/types";
 
 // Animated background orbs
 function BackgroundEffects() {
@@ -280,44 +281,108 @@ export default function HomePage() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [selectedChain, setSelectedChain] = useState<ChainId | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [isResolvingSearch, setIsResolvingSearch] = useState(false);
   const { data: statsData, isLoading: statsLoading } = useDashboardStats();
+  const { data: searchData, isFetching: isFetchingSearch } = useSearchCatalog(
+    debouncedQuery,
+    selectedChain ?? undefined
+  );
 
   const detectedType = detectChainType(tokenAddress);
+  const searchResults = searchData?.results ?? [];
+  const tokenResults = searchResults.filter((item) => item.type === "token");
+  const poolResults = searchResults.filter((item) => item.type === "pool");
+  const searchSections = searchResults[0]?.type === "pool"
+    ? [
+        { key: "pool", label: "Pools", items: poolResults },
+        { key: "token", label: "Tokens", items: tokenResults },
+      ]
+    : [
+        { key: "token", label: "Tokens", items: tokenResults },
+        { key: "pool", label: "Pools", items: poolResults },
+      ];
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(tokenAddress.trim());
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [tokenAddress]);
 
   const handleChainSelect = (id: ChainId) => {
     setSearchError(null);
     setSelectedChain(prev => prev === id ? null : id);
   };
 
-  const handleAnalyze = (e: React.FormEvent) => {
+  const handleResultSelect = (result: SearchResultResponse) => {
+    if (!result.url) return;
+    setSearchError(null);
+    setIsSearchFocused(false);
+    router.push(result.url);
+  };
+
+  const scrollToSearch = () => {
+    document.getElementById("main-search")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = tokenAddress.trim();
     if (!trimmed) return;
 
-    if (!detectedType) {
-      setSearchError("Enter a valid Solana or EVM token address.");
+    let fallbackTokenUrl: string | null = null;
+
+    if (detectedType) {
+      if (detectedType === "sol" && selectedChain && selectedChain !== "solana") {
+        setSearchError("Solana addresses can only be analyzed on Solana.");
+        return;
+      }
+
+      if (detectedType === "evm" && !selectedChain) {
+        setSearchError("Select the EVM chain before analyzing this address.");
+        return;
+      }
+
+      if (detectedType === "evm" && selectedChain === "solana") {
+        setSearchError("EVM addresses require an EVM chain selection.");
+        return;
+      }
+
+      setSearchError(null);
+      const chain = selectedChain ?? (detectedType === "sol" ? "solana" : undefined);
+      const params = chain ? `?chain=${chain}` : "";
+      fallbackTokenUrl = `/token/${trimmed}${params}`;
+    }
+
+    if (trimmed.length < 2) {
+      setSearchError("Enter at least 2 characters to search for a token or pool.");
       return;
     }
 
-    if (detectedType === "sol" && selectedChain && selectedChain !== "solana") {
-      setSearchError("Solana addresses can only be analyzed on Solana.");
-      return;
+    try {
+      setIsResolvingSearch(true);
+      setSearchError(null);
+      const response = await searchTokens(trimmed, selectedChain ?? undefined, 8);
+      const topResult = response.results[0];
+      if (!topResult?.url) {
+        if (fallbackTokenUrl) {
+          router.push(fallbackTokenUrl);
+          return;
+        }
+        setSearchError("No token or pool matched that query.");
+        return;
+      }
+      handleResultSelect(topResult);
+    } catch (error) {
+      if (fallbackTokenUrl) {
+        router.push(fallbackTokenUrl);
+        return;
+      }
+      setSearchError((error as Error).message || "Search failed.");
+    } finally {
+      setIsResolvingSearch(false);
     }
-
-    if (detectedType === "evm" && !selectedChain) {
-      setSearchError("Select the EVM chain before analyzing this address.");
-      return;
-    }
-
-    if (detectedType === "evm" && selectedChain === "solana") {
-      setSearchError("EVM addresses require an EVM chain selection.");
-      return;
-    }
-
-    setSearchError(null);
-    const chain = selectedChain ?? (detectedType === "sol" ? "solana" : undefined);
-    const params = chain ? `?chain=${chain}` : "";
-    router.push(`/token/${trimmed}${params}`);
   };
 
   return (
@@ -333,23 +398,23 @@ export default function HomePage() {
               {/* Badge */}
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 animate-fade-in-down">
                 <Sparkles className="w-4 h-4 text-emerald-400" />
-                <span className="text-sm text-emerald-400">AI-Powered Security Analysis</span>
+                <span className="text-sm text-emerald-400">Unified Token + Pool Analysis</span>
               </div>
 
               {/* Headline */}
               <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold leading-tight animate-fade-in-up">
-                Protect Your
+                Analyze Every
                 <br />
-                <span className="text-emerald-400">DeFi Trades</span>
+                <span className="text-emerald-400">Token And Pool</span>
               </h1>
 
               {/* Subheadline */}
               <p className="text-xl text-muted-foreground max-w-lg animate-fade-in-up" style={{ animationDelay: '100ms' }}>
-                Multi-chain token security powered by AI. Detect rugs, honeypots, and scams across Solana, Ethereum, Base, Arbitrum, and more.
+                Paste any token or pool address or name to open a full risk report. Review token safety, pool sustainability, exit quality, and AI context from one search surface.
               </p>
 
               {/* Search bar */}
-              <form onSubmit={handleAnalyze} className="animate-fade-in-up space-y-4" style={{ animationDelay: '200ms' }}>
+              <form onSubmit={handleAnalyze} className="animate-fade-in-up space-y-4" style={{ animationDelay: '200ms' }} id="main-search">
                 <div className={cn(
                   "relative flex flex-col sm:flex-row gap-2 p-2 rounded-2xl transition-all duration-300",
                   isSearchFocused
@@ -360,24 +425,31 @@ export default function HomePage() {
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <Input
                       type="text"
-                      placeholder="Enter token address..."
+                      placeholder="Paste any token or pool address or name here..."
                       value={tokenAddress}
                       onChange={(e) => {
                         setTokenAddress(e.target.value);
                         setSearchError(null);
                       }}
                       onFocus={() => setIsSearchFocused(true)}
-                      onBlur={() => setIsSearchFocused(false)}
+                      onBlur={() => window.setTimeout(() => setIsSearchFocused(false), 120)}
                       className="pl-12 h-12 sm:h-14 bg-transparent border-none text-base sm:text-lg placeholder:text-muted-foreground focus-visible:ring-0"
                     />
                   </div>
                   <Button
                     type="submit"
                     size="lg"
+                    disabled={isResolvingSearch}
                     className="h-12 sm:h-14 px-8 bg-emerald-600 hover:bg-emerald-500 text-black font-semibold rounded-xl"
                   >
-                    Analyze
-                    <ArrowRight className="ml-2 w-5 h-5" />
+                    {isResolvingSearch ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <>
+                        Analyze
+                        <ArrowRight className="ml-2 w-5 h-5" />
+                      </>
+                    )}
                   </Button>
                 </div>
 
@@ -387,6 +459,39 @@ export default function HomePage() {
                   detectedType={detectedType as any}
                 />
                 {searchError && <p className="text-sm text-red-400">{searchError}</p>}
+
+                {(isSearchFocused && debouncedQuery.length >= 2) ? (
+                  <div className="rounded-2xl border border-white/10 bg-card/90 backdrop-blur-xl overflow-hidden">
+                    {isFetchingSearch ? (
+                      <div className="flex items-center gap-3 px-4 py-4 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Searching tokens and pools...
+                      </div>
+                    ) : searchResults.length ? (
+                      <div className="divide-y divide-white/5">
+                        {searchSections.map((section) => section.items.length ? (
+                          <div key={section.key} className="p-2">
+                            <div className="px-3 py-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">{section.label}</div>
+                            {section.items.slice(0, 4).map((result) => (
+                              <button
+                                key={`${result.type}-${result.url}`}
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => handleResultSelect(result)}
+                                className="w-full rounded-xl px-3 py-3 text-left hover:bg-white/5 transition-colors"
+                              >
+                                <div className="font-medium">{result.title}</div>
+                                <div className="text-sm text-muted-foreground">{result.subtitle}</div>
+                              </button>
+                            ))}
+                          </div>
+                        ) : null)}
+                      </div>
+                    ) : (
+                      <div className="px-4 py-4 text-sm text-muted-foreground">No token or pool matches yet.</div>
+                    )}
+                  </div>
+                ) : null}
               </form>
 
               {/* Trust indicators */}
@@ -401,7 +506,7 @@ export default function HomePage() {
                 </div>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Real-time analysis</span>
+                  <span>Token + pool reports</span>
                 </div>
               </div>
             </div>
@@ -489,8 +594,8 @@ export default function HomePage() {
             />
             <FeatureCard
               icon={TrendingUp}
-              title="DeFi Intelligence"
-              description="Explore yield farms and liquidity pools with AI risk scoring — TVL, APY sustainability, and impermanent loss analysis."
+              title="Pool Intelligence"
+              description="Search liquidity pools directly from the main page and inspect safety, yield quality, confidence, and exit quality in one report."
               delay={400}
             />
             <FeatureCard
@@ -519,18 +624,18 @@ export default function HomePage() {
             {[
               {
                 step: "01",
-                title: "Paste Address",
-                description: "Enter any token address or contract across 8 supported chains"
+                title: "Paste Name Or Address",
+                description: "Enter any token or pool name, address, or id from one shared search bar"
               },
               {
                 step: "02",
-                title: "AI Analysis",
-                description: "Our AI analyzes 50+ security factors in real-time"
+                title: "Advanced Analysis",
+                description: "We score safety, sustainability, exit quality, confidence, and protocol risk in real time"
               },
               {
                 step: "03",
                 title: "Get Results",
-                description: "Receive a detailed safety score and recommendations"
+                description: "Open a full token or pool report with evidence, scenarios, charts, and AI commentary"
               }
             ].map((item, i) => (
               <div key={i} className="relative text-center group">
@@ -562,19 +667,17 @@ export default function HomePage() {
                 <span className="text-gradient"> Safely?</span>
               </h2>
               <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-                Join thousands of traders who use Ilyon AI to protect their investments across 8 chains.
+                Use one search surface to inspect tokens, pools, and protocol risk before you commit capital.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <Link href="/chat">
-                  <Button size="lg" className="h-14 px-8 bg-emerald-600 hover:bg-emerald-500 text-black font-semibold">
-                    <Sparkles className="mr-2 w-5 h-5" />
-                    Ask Ilyon AI
-                  </Button>
-                </Link>
-                <Link href="/defi">
+                <Button size="lg" className="h-14 px-8 bg-emerald-600 hover:bg-emerald-500 text-black font-semibold" onClick={scrollToSearch}>
+                  <Search className="mr-2 w-5 h-5" />
+                  Start A Search
+                </Button>
+                <Link href="/trending">
                   <Button size="lg" variant="outline" className="h-14 px-8">
                     <TrendingUp className="mr-2 w-5 h-5" />
-                    Explore DeFi
+                    View Trending
                   </Button>
                 </Link>
               </div>

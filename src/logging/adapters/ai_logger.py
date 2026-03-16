@@ -37,16 +37,8 @@ class AILogger:
     # Pricing per 1M tokens (input/output) in USD
     # Updated as of December 2025
     PRICING = {
-        # OpenAI models
-        "gpt-4o": {"input": 2.50, "output": 10.00},
-        "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-        "gpt-4o-2024-11-20": {"input": 2.50, "output": 10.00},
-        "gpt-4-turbo": {"input": 10.00, "output": 30.00},
-        "gpt-3.5-turbo": {"input": 0.50, "output": 1.50},
-
-        # OpenRouter (approximate, varies by model)
-        "openai/gpt-4o": {"input": 2.50, "output": 10.00},
-        "openai/gpt-4o-mini": {"input": 0.15, "output": 0.60},
+        # OpenRouter
+        "deepseek/deepseek-v3.2-exp": {"input": 0.27, "output": 1.10},
         "anthropic/claude-3.5-sonnet": {"input": 3.00, "output": 15.00},
 
         # Google Gemini
@@ -280,8 +272,8 @@ class AILogger:
         Returns:
             Cost in USD
         """
-        # Get pricing for model (default to gpt-4o if not found)
-        pricing = self.PRICING.get(model, self.PRICING.get("gpt-4o", {"input": 2.50, "output": 10.00}))
+        # Get pricing for model (default to DeepSeek if not found)
+        pricing = self.PRICING.get(model, self.PRICING.get("deepseek/deepseek-v3.2-exp", {"input": 0.27, "output": 1.10}))
 
         # Calculate cost (pricing is per 1M tokens)
         input_cost = (tokens_prompt / 1_000_000) * pricing["input"]

@@ -62,8 +62,8 @@ class AIRouter:
     Routes analysis requests to appropriate AI models.
 
     Supports two analysis modes:
-    - quick: GPT-4o-mini only (fastest, ~3-5 seconds, basic analysis)
-    - standard/full: Primary model + Grok (parallel execution)
+    - quick: DeepSeek via OpenRouter only
+    - standard/full: DeepSeek + Grok (parallel execution)
 
     Usage:
         router = AIRouter()
@@ -77,29 +77,18 @@ class AIRouter:
         Args:
             openai_client: Optional OpenAI client (creates default if None)
         """
-        # Determine whether to use OpenRouter (preferred) or direct OpenAI
+        # OpenRouter is required for all non-Grok AI analysis.
         has_openrouter = bool(settings.openrouter_api_key)
-        has_openai = bool(settings.openai_api_key)
 
         if has_openrouter:
             api_key_preview = settings.openrouter_api_key[:15] + "..." if len(settings.openrouter_api_key) > 15 else "***"
             logger.info(f"🔄 Using OpenRouter API for AI analysis (key: {api_key_preview})")
-            # Primary client via OpenRouter
-            self.openai = openai_client or OpenAIClient(use_openrouter=True)
-            # Mini client via OpenRouter (GPT-4o-mini)
-            self.openai_mini = OpenAIClient(model="openai/gpt-4o-mini", use_openrouter=True)
-        elif has_openai:
-            api_key_preview = settings.openai_api_key[:10] + "..." if len(settings.openai_api_key) > 10 else "***"
-            logger.info(f"🔄 Using direct OpenAI API for AI analysis (key: {api_key_preview})")
-            # Primary OpenAI client (GPT-4o)
-            self.openai = openai_client or OpenAIClient()
-            # Mini client for quick mode (GPT-4o-mini)
-            self.openai_mini = OpenAIClient(model="gpt-4o-mini")
+            self.openai = openai_client or OpenAIClient(model=settings.ai_model, use_openrouter=True)
+            self.openai_mini = OpenAIClient(model=settings.ai_model, use_openrouter=True)
         else:
-            logger.error("❌ No AI API key configured! Set OPENROUTER_API_KEY or OPENAI_API_KEY in .env")
-            # Create clients anyway (they will fail but with clear error)
-            self.openai = openai_client or OpenAIClient()
-            self.openai_mini = OpenAIClient(model="gpt-4o-mini")
+            logger.error("❌ No OpenRouter API key configured! Set OPENROUTER_API_KEY in .env for DeepSeek analysis")
+            self.openai = None
+            self.openai_mini = None
             
         # Initialize Grok client
         if settings.grok_api_key:
@@ -163,13 +152,15 @@ class AIRouter:
 
     async def _quick_analysis(self, request: TokenAnalysisRequest) -> MultiAIResult:
         """
-        Quick analysis using GPT-4o-mini only.
+        Quick analysis using DeepSeek via OpenRouter.
         """
         result = MultiAIResult()
 
         try:
+            if not self.openai_mini:
+                return result
             result.openai = await self.openai_mini.analyze(request)
-            logger.info("✅ Quick analysis (GPT-4o-mini) complete")
+            logger.info(f"✅ Quick analysis ({settings.ai_model}) complete")
         except Exception as e:
             logger.error(f"Quick analysis error: {e}")
 
@@ -180,6 +171,9 @@ class AIRouter:
         Standard analysis using primary model AND Grok in parallel.
         """
         result = MultiAIResult()
+
+        if not self.openai:
+            return result
 
         # Define tasks to run in parallel
         tasks = [self.openai.analyze(request)]
@@ -202,7 +196,7 @@ class AIRouter:
                 logger.error(f"OpenAI analysis failed: {openai_resp}")
             else:
                 result.openai = openai_resp
-                logger.info("✅ OpenAI technical analysis complete")
+                logger.info(f"✅ DeepSeek technical analysis complete ({settings.ai_model})")
 
             # Process Grok result (if it ran)
             if self.grok and len(responses) > 1:
@@ -220,8 +214,10 @@ class AIRouter:
 
     async def chat(self, message: str, system_prompt: str = "") -> str:
         """
-        Simple chat using GPT-4o-mini for cost efficiency.
+        Simple chat using DeepSeek via OpenRouter.
         """
+        if not self.openai_mini:
+            return ""
         return await self.openai_mini.chat(message, system_prompt)
 
     async def close(self):
@@ -229,8 +225,10 @@ class AIRouter:
         logger.info("🔄 Closing AI Router...")
 
         try:
-            await self.openai.close()
-            await self.openai_mini.close()
+            if self.openai:
+                await self.openai.close()
+            if self.openai_mini:
+                await self.openai_mini.close()
             if self.grok:
                 await self.grok.close()
             logger.info("✅ AI clients closed")

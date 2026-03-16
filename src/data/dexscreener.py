@@ -8,6 +8,7 @@ Solana and the major EVM chains supported by Ilyon AI.
 
 import logging
 import asyncio
+import re
 from typing import Optional, Dict, List, Any
 import aiohttp
 
@@ -61,6 +62,17 @@ class DexScreenerClient:
         "optimism",
         "avalanche",
     }
+
+    PAIR_LOOKUP_CHAINS = [
+        "ethereum",
+        "base",
+        "arbitrum",
+        "bsc",
+        "polygon",
+        "optimism",
+        "avalanche",
+        "solana",
+    ]
 
     TRENDING_SEARCH_KEYWORDS = [
         "usdc",
@@ -276,6 +288,55 @@ class DexScreenerClient:
         """
         result = await self.get_token(address)
         return result['pairs'] if result else None
+
+    def extract_address_like(self, value: str) -> Optional[str]:
+        text = str(value or "").strip()
+        if not text:
+            return None
+
+        direct_hex = re.fullmatch(r"0x[a-fA-F0-9]{40,64}", text)
+        if direct_hex:
+            return text
+
+        hex_match = re.search(r"0x[a-fA-F0-9]{40,64}", text)
+        if hex_match:
+            return hex_match.group(0)
+
+        return None
+
+    async def get_pair(self, address: str, chain: str) -> Optional[Dict[str, Any]]:
+        normalized_chain = self._normalize_chain(chain)
+        if not normalized_chain:
+            return None
+
+        url = f"{self.BASE_URL}/latest/dex/pairs/{normalized_chain}/{address}"
+        data = await self._make_request(url)
+        if not data:
+            return None
+
+        pair = data.get("pair") if isinstance(data, dict) else None
+        if isinstance(pair, dict) and pair.get("pairAddress"):
+            return pair
+
+        pairs = data.get("pairs") if isinstance(data, dict) else None
+        if isinstance(pairs, list) and pairs:
+            first = pairs[0]
+            if isinstance(first, dict) and first.get("pairAddress"):
+                return first
+        return None
+
+    async def find_pair(self, address: str, chain: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        address_like = self.extract_address_like(address) or str(address or "").strip()
+        if not address_like:
+            return None
+
+        normalized_chain = self._normalize_chain(chain)
+        chains = [normalized_chain] if normalized_chain else list(self.PAIR_LOOKUP_CHAINS)
+        for candidate_chain in chains:
+            pair = await self.get_pair(address_like, candidate_chain)
+            if pair:
+                return pair
+        return None
 
     async def _fetch_tokens_batch(
         self,

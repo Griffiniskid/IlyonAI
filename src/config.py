@@ -30,14 +30,14 @@ class Settings(BaseSettings):
     grok_api_key: Optional[str] = Field(None, env="GROK_API_KEY")
     grok_model: str = Field("grok-4.1-fast", env="GROK_MODEL", description="Grok model for narrative analysis")
 
-    # OpenRouter (currently used)
+    # OpenRouter (required for all non-Grok AI analysis)
     openrouter_api_key: Optional[str] = Field(None, env="OPENROUTER_API_KEY")
-    ai_model: str = Field("openai/gpt-4o-mini", env="AI_MODEL", description="Default AI model")
+    ai_model: str = Field("deepseek/deepseek-v3.2-exp", env="AI_MODEL", description="Default OpenRouter model for all non-Grok AI analysis")
 
-    # OpenAI (direct)
+    # Legacy OpenAI direct config (deprecated, kept for env compatibility only)
     openai_api_key: Optional[str] = Field(None, env="OPENAI_API_KEY")
-    openai_model: str = Field("gpt-4o", env="OPENAI_MODEL")
-    openai_mini_model: str = Field("gpt-4o-mini", env="OPENAI_MINI_MODEL")
+    openai_model: str = Field("deepseek/deepseek-v3.2-exp", env="OPENAI_MODEL")
+    openai_mini_model: str = Field("deepseek/deepseek-v3.2-exp", env="OPENAI_MINI_MODEL")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # BLOCKCHAIN CONFIGURATION - MULTI-CHAIN

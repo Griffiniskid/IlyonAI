@@ -25,9 +25,7 @@ class DefiAIExplainer:
         self._client: Optional[OpenAIClient] = None
 
         if settings.openrouter_api_key:
-            self._client = OpenAIClient(model="openai/gpt-4o-mini", use_openrouter=True)
-        elif settings.openai_api_key:
-            self._client = OpenAIClient(model="gpt-4o-mini")
+            self._client = OpenAIClient(model=settings.ai_model, use_openrouter=True)
 
     @property
     def available(self) -> bool:
@@ -135,8 +133,8 @@ class DefiAIExplainer:
             return {}
 
         try:
-            response = await self._client.chat(message, system_prompt=system_prompt)
-            return self._extract_json(response)
+            response = await self._client.chat_json(message, system_prompt=system_prompt, max_tokens=900, temperature=0.1)
+            return response if isinstance(response, dict) else {}
         except Exception as exc:
             logger.warning("DeFi AI explanation failed: %s", exc)
             return {}

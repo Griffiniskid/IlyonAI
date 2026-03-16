@@ -24,8 +24,6 @@ import type {
   RektIncident,
   AuditRecord,
   IntelStatsResponse,
-  ChatMessageResponse,
-  ChatHistoryResponse,
   VulnerabilityItem,
   ApprovalItem,
   LendingMarketResponse,
@@ -39,6 +37,8 @@ import type {
   DefiCompareResponse,
   DefiPositionAnalysisResponse,
   DefiSimulationResponse,
+  PoolAnalysisResponse,
+  SearchResponse,
 } from "@/types";
 
 export interface BlinkResponse {
@@ -515,6 +515,8 @@ function normalizeOpportunity(raw: any, depth = 0): DefiOpportunityResponse {
   return {
     id: normalizeText(raw.id, ""),
     kind: raw.kind ?? "pool",
+    product_type: raw.product_type != null ? normalizeText(raw.product_type) : null,
+    score_family: raw.score_family != null ? normalizeText(raw.score_family) : null,
     title: normalizeText(raw.title ?? raw.symbol, "Opportunity"),
     subtitle: normalizeText(raw.subtitle),
     protocol: normalizeText(raw.protocol),
@@ -527,10 +529,19 @@ function normalizeOpportunity(raw: any, depth = 0): DefiOpportunityResponse {
     tvl_usd: Number(raw.tvl_usd ?? raw.tvlUsd ?? 0),
     tags: normalizeStringArray(raw.tags),
     summary: {
+      overall_score: raw.summary?.overall_score != null ? Number(raw.summary?.overall_score) : undefined,
+      quality_score: raw.summary?.quality_score != null ? Number(raw.summary?.quality_score) : undefined,
       opportunity_score: Number(raw.summary?.opportunity_score ?? 0),
       safety_score: Number(raw.summary?.safety_score ?? 0),
+      risk_burden_score: raw.summary?.risk_burden_score != null ? Number(raw.summary?.risk_burden_score) : undefined,
+      yield_durability_score: raw.summary?.yield_durability_score != null ? Number(raw.summary?.yield_durability_score) : undefined,
       yield_quality_score: Number(raw.summary?.yield_quality_score ?? 0),
+      exit_liquidity_score: raw.summary?.exit_liquidity_score != null ? Number(raw.summary?.exit_liquidity_score) : undefined,
       exit_quality_score: Number(raw.summary?.exit_quality_score ?? 0),
+      apr_efficiency_score: raw.summary?.apr_efficiency_score != null ? Number(raw.summary?.apr_efficiency_score) : undefined,
+      effective_apr: raw.summary?.effective_apr != null ? Number(raw.summary?.effective_apr) : undefined,
+      required_apr: raw.summary?.required_apr != null ? Number(raw.summary?.required_apr) : undefined,
+      return_potential_score: raw.summary?.return_potential_score != null ? Number(raw.summary?.return_potential_score) : undefined,
       confidence_score: Number(raw.summary?.confidence_score ?? 0),
       risk_level: normalizeRiskLevel(raw.summary?.risk_level),
       strategy_fit: normalizeStrategyFit(raw.summary?.strategy_fit),
@@ -841,12 +852,51 @@ export async function refreshAnalysis(
   });
 }
 
-export async function searchTokens(query: string, limit = 10): Promise<{
-  results: Array<{ address: string; name: string; symbol: string }>;
-  query: string;
-  count: number;
-}> {
-  return fetchAPI(`/api/v1/search?query=${encodeURIComponent(query)}&limit=${limit}`);
+export async function searchTokens(
+  query: string,
+  chain?: string,
+  limit = 10
+): Promise<SearchResponse> {
+  const params = new URLSearchParams({ query, limit: String(limit) });
+  if (chain) params.set("chain", chain);
+  const raw = await fetchAPI<any>(`/api/v1/search?${params.toString()}`);
+  return {
+    query: normalizeText(raw.query, query),
+    input_type: normalizeText(raw.input_type, "search_query"),
+    results: Array.isArray(raw.results)
+      ? raw.results.map((item: any) => ({
+          type: normalizeText(item.type, "token"),
+          product_type: item.product_type != null ? normalizeText(item.product_type) : null,
+          title: normalizeText(item.title),
+          subtitle: normalizeText(item.subtitle),
+          address: item.address != null ? normalizeText(item.address) : null,
+          chain: item.chain != null ? normalizeText(item.chain) : null,
+          score: item.score != null ? Number(item.score) : null,
+          url: item.url != null ? normalizeText(item.url) : null,
+          logo: item.logo != null ? normalizeText(item.logo) : null,
+        }))
+      : [],
+    count: Number(raw.count ?? 0),
+    total: Number(raw.total ?? 0),
+  };
+}
+
+export async function analyzePool(
+  poolId: string,
+  params?: { includeAi?: boolean; rankingProfile?: string; pairAddress?: string; chain?: string; source?: string }
+): Promise<PoolAnalysisResponse> {
+  const data = await fetchAPI<any>("/api/v1/defi/pool/analyze", {
+    method: "POST",
+    body: JSON.stringify({
+      pool_id: poolId,
+      pair_address: params?.pairAddress ?? null,
+      chain: params?.chain ?? null,
+      source: params?.source ?? null,
+      include_ai: params?.includeAi ?? true,
+      ranking_profile: params?.rankingProfile ?? "balanced",
+    }),
+  });
+  return normalizeOpportunity(data);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1399,32 +1449,6 @@ export async function getAudits(params?: {
 
 export async function getIntelStats(): Promise<IntelStatsResponse> {
   return fetchAPI<IntelStatsResponse>("/api/v1/intel/stats");
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CHAT API
-// ═══════════════════════════════════════════════════════════════════════════
-
-export async function sendChatMessage(
-  message: string,
-  sessionId?: string
-): Promise<ChatMessageResponse> {
-  return fetchAPI<ChatMessageResponse>("/api/v1/chat", {
-    method: "POST",
-    body: JSON.stringify({ message, session_id: sessionId ?? null }),
-  });
-}
-
-export async function newChatSession(): Promise<{ session_id: string }> {
-  return fetchAPI("/api/v1/chat/session");
-}
-
-export async function getChatHistory(sessionId: string): Promise<ChatHistoryResponse> {
-  return fetchAPI<ChatHistoryResponse>(`/api/v1/chat/session/${sessionId}`);
-}
-
-export async function clearChatSession(sessionId: string): Promise<void> {
-  await fetchAPI(`/api/v1/chat/session/${sessionId}`, { method: "DELETE" });
 }
 
 export { APIError };
