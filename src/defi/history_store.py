@@ -8,6 +8,7 @@ from statistics import mean
 from typing import Any, Dict, List, Sequence, Tuple
 
 from src.data.defillama import DefiLlamaClient
+from src.defi.stores.evidence_store import EvidenceStore
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -71,8 +72,9 @@ def _trend_score(delta_pct: float, drawdown_pct: float, cv: float) -> int:
 
 
 class DefiHistoryStore:
-    def __init__(self, llama: DefiLlamaClient):
+    def __init__(self, llama: DefiLlamaClient, evidence_store: EvidenceStore | None = None):
         self.llama = llama
+        self.evidence_store = evidence_store or EvidenceStore()
         self._cache: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
 
     async def get_pool_history(self, pool_id: str) -> List[Dict[str, Any]]:
@@ -83,9 +85,16 @@ class DefiHistoryStore:
         if cached and (now - cached[0]) < 1800:
             return cached[1]
 
+        stored = await self.evidence_store.get_pool_history(pool_id)
+        if stored is not None:
+            history = list(stored)[-90:]
+            self._cache[pool_id] = (now, history)
+            return history
+
         points = await self.llama.get_pool_chart(pool_id)
         history = list(points or [])[-90:]
         self._cache[pool_id] = (now, history)
+        await self.evidence_store.save_pool_history(pool_id, history)
         return history
 
     def summarize_pool_history(self, history: Sequence[Dict[str, Any]]) -> Dict[str, Any]:

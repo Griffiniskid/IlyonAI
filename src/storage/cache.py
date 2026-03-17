@@ -344,6 +344,9 @@ class CacheLayer:
 _cache: Optional[CacheLayer] = None
 
 
+CacheManager = CacheLayer
+
+
 def get_cache() -> CacheLayer:
     """Get or create global cache instance"""
     global _cache

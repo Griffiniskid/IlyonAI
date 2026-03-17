@@ -7,6 +7,7 @@ import time
 from typing import Any, Dict, Optional, Tuple
 
 from src.data.scraper import WebsiteScraper
+from src.defi.stores.evidence_store import EvidenceStore
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,9 @@ def _keyword_hits(content: str, *terms: str) -> int:
 
 
 class ProtocolDocsAnalyzer:
-    def __init__(self, scraper: Optional[WebsiteScraper] = None):
+    def __init__(self, scraper: Optional[WebsiteScraper] = None, evidence_store: Optional[EvidenceStore] = None):
         self.scraper = scraper or WebsiteScraper(timeout=10, max_content_length=8000)
+        self.evidence_store = evidence_store or EvidenceStore()
         self._cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 
     async def close(self):
@@ -33,6 +35,11 @@ class ProtocolDocsAnalyzer:
         cached = self._cache.get(target)
         if cached and (now - cached[0]) < 3600:
             return cached[1]
+
+        stored = await self.evidence_store.get_protocol_docs(target)
+        if stored is not None:
+            self._cache[target] = (now, stored)
+            return stored
 
         try:
             page = await self.scraper.scrape_website(target)
@@ -81,6 +88,7 @@ class ProtocolDocsAnalyzer:
         }
 
         self._cache[target] = (now, profile)
+        await self.evidence_store.save_protocol_docs(target, profile)
         return profile
 
     def _observability_score(self, page: Dict[str, Any], governance_hits: int, timelock_hits: int, multisig_hits: int) -> int:
