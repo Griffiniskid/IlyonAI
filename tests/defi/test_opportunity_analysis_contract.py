@@ -18,11 +18,34 @@ def test_analysis_status_carries_provisional_results_and_version():
 def test_opportunity_analysis_exposes_behavior_and_recommendation_sections():
     analysis = OpportunityAnalysis.model_validate(
         {
-            "identity": {"id": "opp_1", "chain": "solana", "kind": "pool", "protocol_slug": "orca"},
+            "identity": {
+                "id": "opp_1",
+                "chain": "solana",
+                "kind": "pool",
+                "protocol_slug": "orca",
+                "category": "dex",
+                "assets": ["SOL", "USDC"],
+                "strategy_family": "liquidity",
+            },
             "market": {"apy": 12.4, "market_regime": "range-bound"},
-            "scores": {"deterministic_score": 72, "ai_judgment_score": 68, "final_deployability_score": 70},
+            "scores": {
+                "deterministic_score": 72,
+                "ai_judgment_score": 68,
+                "final_deployability_score": 70,
+                "safety_score": 74,
+                "apr_quality_score": 66,
+                "exit_quality_score": 71,
+                "resilience_score": 69,
+                "confidence_score": 77,
+            },
             "factors": [],
-            "behavior": {"whale_flow_direction": "accumulating"},
+            "behavior": {
+                "whale_flow_direction": "accumulating",
+                "smart_money_conviction": "building",
+                "user_momentum": "improving",
+                "liquidity_stability": "steady",
+                "volatility_regime": "contained",
+            },
             "scenarios": [],
             "recommendation": {"action": "watch", "rationale": ["need more evidence"]},
             "evidence": [],
@@ -40,6 +63,11 @@ def test_opportunity_analysis_requires_all_top_level_sections():
                     "deterministic_score": 72,
                     "ai_judgment_score": 68,
                     "final_deployability_score": 70,
+                    "safety_score": 74,
+                    "apr_quality_score": 66,
+                    "exit_quality_score": 71,
+                    "resilience_score": 69,
+                    "confidence_score": 77,
                 },
                 "behavior": {"whale_flow_direction": "accumulating"},
                 "recommendation": {"action": "watch", "rationale": ["need more evidence"]},
@@ -56,6 +84,9 @@ def test_opportunity_analysis_carries_market_factor_scenario_and_evidence_detail
                 "kind": "pool",
                 "protocol_slug": "kamino",
                 "protocol_name": "Kamino",
+                "category": "lending",
+                "assets": ["SOL", "USDC"],
+                "strategy_family": "carry",
             },
             "market": {
                 "apy": 19.25,
@@ -68,13 +99,20 @@ def test_opportunity_analysis_carries_market_factor_scenario_and_evidence_detail
                 "deterministic_score": 81,
                 "ai_judgment_score": 77,
                 "final_deployability_score": 79,
+                "safety_score": 83,
+                "apr_quality_score": 75,
+                "exit_quality_score": 78,
+                "resilience_score": 80,
+                "confidence_score": 82,
             },
             "factors": [
                 {
                     "key": "exit-liquidity",
                     "label": "Exit liquidity",
                     "value": "healthy",
+                    "normalized_score": 78,
                     "score_impact": 8,
+                    "scenario_sensitivity": "medium",
                     "summary": "Depth is sufficient for target sizing.",
                     "metadata": {
                         "raw_measurement": {"liquidity_usd": 1200000},
@@ -94,6 +132,8 @@ def test_opportunity_analysis_carries_market_factor_scenario_and_evidence_detail
                 "whale_flow_direction": "accumulating",
                 "smart_money_conviction": "building",
                 "user_momentum": "improving",
+                "liquidity_stability": "strengthening",
+                "volatility_regime": "contained",
             },
             "scenarios": [
                 {
@@ -121,6 +161,16 @@ def test_opportunity_analysis_carries_market_factor_scenario_and_evidence_detail
     )
 
     assert analysis.market.market_regime == "risk-on"
+    assert analysis.identity.category == "lending"
+    assert analysis.identity.assets == ["SOL", "USDC"]
+    assert analysis.identity.strategy_family == "carry"
+    assert analysis.scores.safety_score == 83
+    assert analysis.scores.apr_quality_score == 75
+    assert analysis.scores.exit_quality_score == 78
+    assert analysis.scores.resilience_score == 80
+    assert analysis.scores.confidence_score == 82
+    assert analysis.factors[0].normalized_score == 78
+    assert analysis.factors[0].scenario_sensitivity == "medium"
     assert analysis.factors[0].metadata.raw_measurement == {"liquidity_usd": 1200000}
     assert analysis.factors[0].metadata.confidence == 0.84
     assert analysis.factors[0].metadata.source == "dex-screener"
@@ -129,3 +179,66 @@ def test_opportunity_analysis_carries_market_factor_scenario_and_evidence_detail
     assert analysis.factors[0].metadata.hard_cap_effect.dimension == "exit_quality"
     assert analysis.scenarios[0].name == "base"
     assert analysis.evidence[0].source == "defillama"
+
+
+def test_opportunity_analysis_rejects_invalid_numeric_ranges():
+    with pytest.raises(ValidationError):
+        OpportunityAnalysis.model_validate(
+            {
+                "identity": {
+                    "id": "opp_3",
+                    "chain": "solana",
+                    "kind": "pool",
+                    "protocol_slug": "orca",
+                    "category": "dex",
+                    "assets": ["SOL", "USDC"],
+                    "strategy_family": "liquidity",
+                },
+                "market": {"apy": 12.4, "market_regime": "range-bound"},
+                "scores": {
+                    "deterministic_score": 101,
+                    "ai_judgment_score": 68,
+                    "final_deployability_score": 70,
+                    "safety_score": 74,
+                    "apr_quality_score": 66,
+                    "exit_quality_score": 71,
+                    "resilience_score": 69,
+                    "confidence_score": 77,
+                },
+                "factors": [
+                    {
+                        "key": "exit-liquidity",
+                        "label": "Exit liquidity",
+                        "normalized_score": -1,
+                        "scenario_sensitivity": "high",
+                        "summary": "Invalid test case.",
+                        "metadata": {
+                            "raw_measurement": {"liquidity_usd": 1200000},
+                            "confidence": 1.4,
+                            "source": "dex-screener",
+                            "freshness_hours": -2,
+                            "hard_cap_effect": {
+                                "applied": True,
+                                "dimension": "exit_quality",
+                                "capped_at": 120,
+                                "reason": "Invalid cap.",
+                            },
+                        },
+                    }
+                ],
+                "behavior": {
+                    "whale_flow_direction": "accumulating",
+                    "smart_money_conviction": "building",
+                    "user_momentum": "improving",
+                    "liquidity_stability": "steady",
+                    "volatility_regime": "contained",
+                },
+                "scenarios": [],
+                "recommendation": {
+                    "action": "deploy_small",
+                    "deployment_size_pct": 120,
+                    "rationale": ["Invalid test case."],
+                },
+                "evidence": [],
+            }
+        )

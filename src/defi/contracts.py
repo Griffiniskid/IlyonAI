@@ -23,6 +23,9 @@ class OpportunityIdentity(StrictContractModel):
     chain: str
     kind: str
     protocol_slug: str
+    category: Optional[str] = None
+    assets: list[str] = Field(default_factory=list)
+    strategy_family: Optional[str] = None
     protocol_name: Optional[str] = None
     title: Optional[str] = None
     symbol: Optional[str] = None
@@ -40,10 +43,14 @@ class MarketSnapshot(StrictContractModel):
 
 
 class ScoreBreakdown(StrictContractModel):
-    deterministic_score: int
-    ai_judgment_score: int
-    final_deployability_score: int
-    confidence_score: Optional[int] = None
+    deterministic_score: int = Field(ge=0, le=100)
+    ai_judgment_score: int = Field(ge=0, le=100)
+    final_deployability_score: int = Field(ge=0, le=100)
+    safety_score: int = Field(ge=0, le=100)
+    apr_quality_score: int = Field(ge=0, le=100)
+    exit_quality_score: int = Field(ge=0, le=100)
+    resilience_score: int = Field(ge=0, le=100)
+    confidence_score: int = Field(ge=0, le=100)
     capped_score: Optional[int] = None
     risk_penalty: Optional[int] = None
 
@@ -51,15 +58,15 @@ class ScoreBreakdown(StrictContractModel):
 class HardCapEffect(StrictContractModel):
     applied: bool = False
     dimension: Optional[str] = None
-    capped_at: Optional[int] = None
+    capped_at: Optional[int] = Field(default=None, ge=0, le=100)
     reason: Optional[str] = None
 
 
 class FactorMetadata(StrictContractModel):
     raw_measurement: Any = None
-    confidence: Optional[float] = None
+    confidence: Optional[float] = Field(default=None, ge=0, le=1)
     source: str = "unknown"
-    freshness_hours: Optional[float] = None
+    freshness_hours: Optional[float] = Field(default=None, ge=0)
     hard_cap_effect: HardCapEffect = Field(default_factory=HardCapEffect)
 
 
@@ -67,7 +74,9 @@ class FactorAssessment(StrictContractModel):
     key: str
     label: str
     value: Optional[str] = None
+    normalized_score: Optional[int] = Field(default=None, ge=0, le=100)
     score_impact: Optional[int] = None
+    scenario_sensitivity: Optional[str] = None
     summary: str = ""
     metadata: FactorMetadata = Field(default_factory=FactorMetadata)
 
@@ -76,6 +85,10 @@ class BehaviorSummary(StrictContractModel):
     whale_flow_direction: str = "unknown"
     smart_money_conviction: str = "unknown"
     user_momentum: str = "unknown"
+    liquidity_stability: str = "unknown"
+    volatility_regime: str = "unknown"
+    concentration_risk_signal: str = "unknown"
+    catalyst_momentum: str = "unknown"
 
 
 class ScenarioSummary(StrictContractModel):
@@ -88,7 +101,7 @@ class ScenarioSummary(StrictContractModel):
 class RecommendationSummary(StrictContractModel):
     action: Literal["deploy", "deploy_small", "watch", "avoid"]
     rationale: list[str] = Field(default_factory=list)
-    deployment_size_pct: Optional[float] = None
+    deployment_size_pct: Optional[float] = Field(default=None, ge=0, le=100)
     monitor_triggers: list[str] = Field(default_factory=list)
 
 
