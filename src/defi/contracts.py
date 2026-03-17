@@ -34,11 +34,11 @@ class OpportunityIdentity(StrictContractModel):
 
 class MarketSnapshot(StrictContractModel):
     apy: Optional[float] = None
-    tvl_usd: Optional[float] = None
-    liquidity_usd: Optional[float] = None
-    volume_24h_usd: Optional[float] = None
-    utilization_ratio: Optional[float] = None
-    volatility_30d: Optional[float] = None
+    tvl_usd: Optional[float] = Field(default=None, ge=0)
+    liquidity_usd: Optional[float] = Field(default=None, ge=0)
+    volume_24h_usd: Optional[float] = Field(default=None, ge=0)
+    utilization_ratio: Optional[float] = Field(default=None, ge=0, le=1)
+    volatility_30d: Optional[float] = Field(default=None, ge=0)
     market_regime: str = "unknown"
 
 
@@ -110,7 +110,7 @@ class EvidenceRecord(StrictContractModel):
     title: str
     summary: str
     source: str = "internal"
-    freshness_hours: Optional[float] = None
+    freshness_hours: Optional[float] = Field(default=None, ge=0)
     url: Optional[str] = None
 
 

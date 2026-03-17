@@ -145,10 +145,10 @@ class Settings(BaseSettings):
 
     cache_ttl_seconds: int = Field(120, env="CACHE_TTL", description="Cache TTL in seconds")
     analysis_timeout_seconds: int = Field(30, env="ANALYSIS_TIMEOUT")
-    defi_scan_limit: int = Field(48, env="DEFI_SCAN_LIMIT")
-    defi_top_band_limit: int = Field(12, env="DEFI_TOP_BAND_LIMIT")
-    defi_provider_timeout_seconds: int = Field(8, env="DEFI_PROVIDER_TIMEOUT_SECONDS")
-    defi_analysis_ttl_seconds: int = Field(300, env="DEFI_ANALYSIS_TTL_SECONDS")
+    defi_scan_limit: int = Field(48, ge=1, env="DEFI_SCAN_LIMIT")
+    defi_top_band_limit: int = Field(12, ge=1, env="DEFI_TOP_BAND_LIMIT")
+    defi_provider_timeout_seconds: int = Field(8, ge=1, env="DEFI_PROVIDER_TIMEOUT_SECONDS")
+    defi_analysis_ttl_seconds: int = Field(300, ge=1, env="DEFI_ANALYSIS_TTL_SECONDS")
     defi_score_model_version: str = Field("defi-v2", env="DEFI_SCORE_MODEL_VERSION")
 
     # ═══════════════════════════════════════════════════════════════════════════

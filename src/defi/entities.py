@@ -107,7 +107,9 @@ class FactorObservation(DictModel):
     key: str
     label: str
     value: Optional[str] = None
+    normalized_score: Optional[int] = None
     score_impact: Optional[int] = None
+    scenario_sensitivity: Optional[str] = None
     summary: str = ""
     metadata: FactorMetadata = field(default_factory=FactorMetadata)
 

@@ -1,6 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
+from src.config import Settings
+from src.defi.entities import FactorObservation
 from src.defi.contracts import AnalysisStatus, OpportunityAnalysis
 
 
@@ -194,7 +196,15 @@ def test_opportunity_analysis_rejects_invalid_numeric_ranges():
                     "assets": ["SOL", "USDC"],
                     "strategy_family": "liquidity",
                 },
-                "market": {"apy": 12.4, "market_regime": "range-bound"},
+                "market": {
+                    "apy": 12.4,
+                    "tvl_usd": -1,
+                    "liquidity_usd": -5,
+                    "volume_24h_usd": -10,
+                    "utilization_ratio": 1.5,
+                    "volatility_30d": -0.2,
+                    "market_regime": "range-bound",
+                },
                 "scores": {
                     "deterministic_score": 101,
                     "ai_judgment_score": 68,
@@ -239,6 +249,36 @@ def test_opportunity_analysis_rejects_invalid_numeric_ranges():
                     "deployment_size_pct": 120,
                     "rationale": ["Invalid test case."],
                 },
-                "evidence": [],
+                "evidence": [
+                    {
+                        "key": "bad-evidence",
+                        "title": "Bad freshness",
+                        "summary": "Invalid freshness.",
+                        "freshness_hours": -1,
+                    }
+                ],
             }
         )
+
+
+def test_defi_runtime_settings_reject_nonsensical_values():
+    with pytest.raises(ValidationError):
+        Settings(
+            defi_scan_limit=0,
+            defi_top_band_limit=0,
+            defi_provider_timeout_seconds=0,
+            defi_analysis_ttl_seconds=-1,
+        )
+
+
+def test_factor_observation_supports_expanded_factor_fields():
+    observation = FactorObservation(
+        key="exit-liquidity",
+        label="Exit liquidity",
+        normalized_score=78,
+        scenario_sensitivity="medium",
+        summary="Depth is sufficient for target sizing.",
+    )
+
+    assert observation.normalized_score == 78
+    assert observation.scenario_sensitivity == "medium"
