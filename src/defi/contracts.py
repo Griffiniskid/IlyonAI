@@ -103,10 +103,10 @@ class EvidenceRecord(StrictContractModel):
 
 class OpportunityAnalysis(StrictContractModel):
     identity: OpportunityIdentity
-    market: MarketSnapshot = Field(default_factory=MarketSnapshot)
+    market: MarketSnapshot
     scores: ScoreBreakdown
-    factors: list[FactorAssessment] = Field(default_factory=list)
+    factors: list[FactorAssessment]
     behavior: BehaviorSummary
-    scenarios: list[ScenarioSummary] = Field(default_factory=list)
+    scenarios: list[ScenarioSummary]
     recommendation: RecommendationSummary
-    evidence: list[EvidenceRecord] = Field(default_factory=list)
+    evidence: list[EvidenceRecord]
