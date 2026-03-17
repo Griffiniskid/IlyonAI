@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 
 class DictModel:
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return asdict(cast(Any, self))
 
 
 @dataclass
@@ -83,6 +83,33 @@ class ScoreCap(DictModel):
     dimension: str
     cap: int
     reason: str
+
+
+@dataclass
+class HardCapEffect(DictModel):
+    applied: bool = False
+    dimension: Optional[str] = None
+    capped_at: Optional[int] = None
+    reason: Optional[str] = None
+
+
+@dataclass
+class FactorMetadata(DictModel):
+    raw_measurement: Any = None
+    confidence: Optional[float] = None
+    source: str = "unknown"
+    freshness_hours: Optional[float] = None
+    hard_cap_effect: HardCapEffect = field(default_factory=HardCapEffect)
+
+
+@dataclass
+class FactorObservation(DictModel):
+    key: str
+    label: str
+    value: Optional[str] = None
+    score_impact: Optional[int] = None
+    summary: str = ""
+    metadata: FactorMetadata = field(default_factory=FactorMetadata)
 
 
 @dataclass
