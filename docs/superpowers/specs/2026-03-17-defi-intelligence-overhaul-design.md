@@ -14,12 +14,13 @@ This design combines three required directions into one layered system:
 2. a stronger opportunity intelligence platform
 3. an embedded AI analyst copilot
 
-The implementation plan that follows this spec should focus on the first executable program: the core opportunity-analysis pipeline, the upgraded scoring model, the behavioral-intelligence interfaces, and the decision-ready API surface required to support them. Broader product expansion remains part of the roadmap but is not all in scope for the first implementation plan.
+The implementation plan that follows this spec should focus on one bounded executable program: all of Phase 1, the minimum Phase 2 scoring slice required to rank LP, farm, lending-supply, and vault-like opportunities with haircut-APR and risk-burden outputs, and the Phase 3 interfaces required to ingest behavioral signals without implementing the full long-term entity graph yet. Broader product expansion remains part of the roadmap but is not all in scope for the first implementation plan.
 
 ## Decisions Captured During Brainstorming
 
 - Phase 1 focus: core intelligence
 - Chain strategy: full multi-chain parity
+- Phase 1 ship set: Solana, Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, and Avalanche
 - Latency target: under 30 seconds is acceptable; current multi-minute latency is not
 - Existing token analysis quality is acceptable; the weak point is DeFi usefulness
 - Primary user job: pick where to deploy
@@ -45,7 +46,7 @@ The result is a product that can look promising but is not yet structured to ans
 - Cut DeFi opportunity analysis latency from multi-minute behavior to a reliable sub-30-second workflow.
 - Turn DeFi outputs into decision-ready recommendations rather than generic rankings.
 - Preserve and extend deterministic scoring while elevating AI to a first-class analytical partner.
-- Support Solana and major EVM chains through a common model with chain-specific adapters.
+- Support the Phase 1 ship set of Solana, Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, and Avalanche through a common model with chain-specific adapters.
 - Make whale, smart-money, and anomaly signals directly relevant to opportunity ranking.
 - Expose a clean `OpportunityAnalysis` contract that both the API and web product can consume.
 - Build evidence, freshness, and confidence into every score so the system can degrade honestly.
@@ -55,7 +56,7 @@ The result is a product that can look promising but is not yet structured to ans
 - Full portfolio-construction and rebalancing automation
 - Personalized allocator profiles beyond minimal ranking-profile support already present
 - Full watchlist, alerting, and monitoring product completion
-- Every future DeFi archetype at once; the initial pass should prioritize LP, farm, lending, and vault-like surfaces
+- Every future DeFi archetype at once; the initial pass should prioritize LP, farm, lending-supply, and vault-like surfaces
 - Complete replacement of all token-analysis systems unrelated to DeFi ranking
 
 ## Design Principles
@@ -184,14 +185,18 @@ Each opportunity should expose a stable contract with these top-level sections:
 
 The scoring engine should move from a mostly generic DeFi scorecard to archetype-aware factor models.
 
-Initial archetypes:
+First-plan archetypes in scope:
 
-- LP and AMM
+- LP and AMM, including stable LP variants
 - single-sided farm
 - lending supply
-- lending borrow or loop
 - vault and auto-compounder
-- stable strategy
+
+Deferred archetypes for later phases:
+
+- lending borrow or loop
+- dedicated stable-strategy wrappers that are not already covered by LP, farm, or vault models
+- later expansions such as restaking, perps, basis, and structured strategies
 
 Cross-cutting top-level pillars:
 
@@ -344,6 +349,16 @@ Opportunity-facing behavioral outputs:
 
 The Solana and EVM stacks should share a common behavior interface while using separate collection adapters.
 
+First-plan behavioral inputs only need to reach the level required for ranking decisions:
+
+- whale flow direction
+- capital concentration
+- TVL stickiness estimate
+- anomaly flags grounded in durable time-series data
+- simple insider or deployer-linked heuristics where available
+
+Full entity-graph enrichment, advanced clustering, and protocol memory remain deferred.
+
 ## Speed Strategy
 
 The main speed improvement should come from removing expensive work from the user-critical path.
@@ -384,15 +399,42 @@ The API should converge on decision-ready opportunity resources.
 
 Required surfaces:
 
-- `GET /opportunities`
+- `POST /opportunities/analyses`
+- `GET /opportunities/analyses/{analysis_id}`
 - `GET /opportunities/{id}`
 - `POST /opportunities/compare`
-- `GET /protocols/{slug}`
-- `GET /entities/{wallet_or_cluster}`
-- `POST /positions/analyze`
-- `GET /signals`
 
-The payloads should be progressive-delivery friendly. A user should be able to receive a provisional result quickly, then poll or stream deeper enrichment updates using an analysis identifier.
+Optional follow-on surfaces, only if the first implementation plan still has room after the core flow is working:
+
+- `GET /protocols/{slug}` for dedicated protocol drill-down pages
+- `POST /positions/analyze` for position-aware analysis reuse
+- `GET /signals` for standalone signal browsing
+
+Explicitly deferred from the first implementation plan:
+
+- `GET /entities/{wallet_or_cluster}` until a minimal standalone entity contract exists beyond embedded behavioral signals in opportunity payloads
+
+Progressive-delivery contract:
+
+- `POST /opportunities/analyses` starts or coalesces an analysis request and returns:
+  - `analysis_id`
+  - current `status`
+  - provisional shortlist if already available
+  - freshness metadata and score-model version
+- `GET /opportunities/analyses/{analysis_id}` returns the latest assembled state for that analysis, including provisional results, enrichment progress, and final recommendation payloads when complete.
+- optional streaming can be added as `GET /opportunities/analyses/{analysis_id}/events`, but polling support is the minimum required contract for the first plan.
+- `GET /opportunities/{id}` should return the latest completed opportunity record for direct reads, cached exploration, and deep links, not act as the primary analysis-triggering surface.
+
+Synchronous versus asynchronous expectations:
+
+- creation and refresh of deep opportunity analysis are asynchronous behind `analysis_id`
+- direct reads of already-materialized opportunity documents may stay synchronous
+- comparison should accept either opportunity ids or analysis ids and return a synchronous assembled comparison when the underlying documents are already available
+
+Minimum first-plan API commitment:
+
+- the first implementation plan must ship `POST /opportunities/analyses`, `GET /opportunities/analyses/{analysis_id}`, `GET /opportunities/{id}`, and `POST /opportunities/compare`
+- everything else in this section is optional follow-on work or explicitly deferred
 
 ## Product Surface Required For Phase 1
 
@@ -452,17 +494,23 @@ Backtesting and replay should become part of calibration so the system can evalu
 - add provisional ranking, enrichment budgets, and request coalescing
 - fix API middleware ordering and authenticated rate-limit behavior
 
+Phase 1 output is a fast, bounded pipeline plus the async analysis contract needed to deliver provisional and final results reliably.
+
 ### Phase 2: Advanced Deployability Engine
 
 - implement archetype-specific factor models
 - add APR haircut math, expected decay, exit simulation, and scenario-aware outputs
 - formalize deterministic plus AI equal-weight ranking
 
+Only the minimum Phase 2 slice required for LP, farm, lending-supply, and vault-like ranking belongs in the first implementation plan. Broader archetype coverage stays deferred.
+
 ### Phase 3: Behavioral Intelligence Moat
 
 - implement entity graph, clustering, behavior classes, and protocol memory
 - make whales and anomalies ranking factors rather than side feeds
 - persist time-series data durably
+
+The first implementation plan should only define and wire the behavior-signal ingestion interfaces plus the first ranking inputs. Full clustering, protocol memory, and advanced entity intelligence stay deferred.
 
 ### Phase 4: Product Reshape
 
@@ -488,7 +536,8 @@ Backtesting and replay should become part of calibration so the system can evalu
 The implementation plan created from this spec should focus on:
 
 - Phase 1 in full
-- the architecture and interfaces needed to unlock Phase 2
+- the minimum Phase 2 scoring slice needed for LP, farm, lending-supply, and vault-like opportunities
+- the minimum Phase 3 signal interfaces needed to accept behavioral inputs without building the full long-term intelligence moat yet
 - only the minimum product and API surface required to expose the new intelligence model cleanly
 
 The first implementation plan should not attempt to complete the entire long-term roadmap in one pass.
@@ -500,7 +549,7 @@ This design is successful if the resulting implementation plan can produce a sys
 - returns useful DeFi opportunity analyses in under 30 seconds
 - ranks opportunities using a richer risk-to-APR decision model
 - combines deterministic and AI reasoning without letting AI bypass hard caps
-- treats whale, anomaly, and entity intelligence as ranking inputs
+- treats whale, anomaly, and first-layer behavioral signals as ranking inputs, with full entity intelligence explicitly deferred
 - exposes a stable `OpportunityAnalysis` contract to both API and frontend clients
 - degrades honestly when evidence is missing or stale
 
