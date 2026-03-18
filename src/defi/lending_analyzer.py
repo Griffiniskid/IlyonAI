@@ -16,6 +16,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from src.data.defillama import DefiLlamaClient
+from src.defi.opportunity_taxonomy import PHASE_1_CHAINS
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,8 @@ class LendingAnalyzer:
     Provides rate comparison, risk assessment, and health factor
     calculation for DeFi lending positions.
     """
+
+    SUPPORTED_CHAINS = PHASE_1_CHAINS
 
     def __init__(self):
         self._llama = DefiLlamaClient()

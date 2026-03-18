@@ -10,6 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from src.data.defillama import DefiLlamaClient
+from src.defi.opportunity_taxonomy import PHASE_1_CHAINS
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,8 @@ class FarmAnalyzer:
     - Sustainability assessment (emissions vs fees)
     - Risk-adjusted return estimates
     """
+
+    SUPPORTED_CHAINS = PHASE_1_CHAINS
 
     def __init__(self):
         self._llama = DefiLlamaClient()

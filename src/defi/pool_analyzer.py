@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 import aiohttp
 
 from src.data.defillama import DefiLlamaClient
+from src.defi.opportunity_taxonomy import PHASE_1_CHAINS
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,8 @@ class PoolAnalyzer:
     - DefiLlama: authoritative TVL + pool yields
     - DexScreener: 24h volume, price impact
     """
+
+    SUPPORTED_CHAINS = PHASE_1_CHAINS
 
     def __init__(self):
         self._llama = DefiLlamaClient()

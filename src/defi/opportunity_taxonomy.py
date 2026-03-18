@@ -9,6 +9,32 @@ STABLE_SYMBOLS = {
     "USDC", "USDT", "DAI", "FRAX", "BUSD", "LUSD", "SUSD", "TUSD", "USDP", "USDS", "USDE", "FDUSD", "GHO", "USDBC"
 }
 
+PHASE_1_CHAINS = frozenset({
+    "solana",
+    "ethereum",
+    "base",
+    "arbitrum",
+    "bsc",
+    "polygon",
+    "optimism",
+    "avalanche",
+})
+
+CHAIN_ALIASES = {
+    "eth": "ethereum",
+    "bsc": "bsc",
+    "bnb": "bsc",
+    "bnb chain": "bsc",
+    "binance smart chain": "bsc",
+    "matic": "polygon",
+    "poly": "polygon",
+    "arb": "arbitrum",
+    "arbitrum one": "arbitrum",
+    "op": "optimism",
+    "avax": "avalanche",
+    "sol": "solana",
+}
+
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
@@ -36,6 +62,16 @@ def _category_haystack(pool: Dict[str, Any]) -> str:
         str(pool.get(key) or "")
         for key in ("category", "project", "pool_meta", "symbol", "url")
     ).lower()
+
+
+def normalize_chain_name(chain: Any) -> Optional[str]:
+    if chain is None:
+        return None
+    normalized = str(chain).strip().lower()
+    if not normalized:
+        return None
+    normalized = CHAIN_ALIASES.get(normalized, normalized)
+    return normalized if normalized in PHASE_1_CHAINS else normalized
 
 
 def _normalized_exposure(pool: Dict[str, Any], asset_count: int, symbol_parts: Iterable[str]) -> str:
@@ -106,7 +142,15 @@ def classify_defi_record(pool: Dict[str, Any]) -> Dict[str, Any]:
         score_family = "single_asset"
         search_group = "yield"
 
-    display_kind = "yield" if has_rewards and score_family == "lp" else "pool" if score_family == "lp" else "lending" if product_type == "lending_supply_like" else "yield"
+    candidate_kind = (
+        "yield"
+        if has_rewards and score_family == "lp"
+        else "pool"
+        if score_family == "lp"
+        else "lending_supply"
+        if product_type == "lending_supply_like"
+        else "yield"
+    )
     return {
         "product_type": product_type,
         "score_family": score_family,
@@ -118,6 +162,7 @@ def classify_defi_record(pool: Dict[str, Any]) -> Dict[str, Any]:
         "is_single_asset": asset_count <= 1,
         "normalized_exposure": normalized_exposure,
         "stablecoin": stablecoin,
-        "default_kind": display_kind,
+        "default_kind": candidate_kind,
+        "candidate_kind": candidate_kind,
         "supports_pool_route": score_family == "lp",
     }

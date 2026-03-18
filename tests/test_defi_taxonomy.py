@@ -56,3 +56,4 @@ def test_excludes_single_asset_lending_from_pool_route():
     assert classification["product_type"] == "lending_supply_like"
     assert classification["score_family"] == "single_asset"
     assert classification["supports_pool_route"] is False
+    assert classification["default_kind"] == "lending_supply"
