@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from src.defi.entities import RiskDimension, ScoreCap
 from src.defi.evidence import build_confidence_report, clamp, parse_age_hours, risk_level_from_score
+from src.defi.scoring.deterministic import DeterministicScorer
 
 STABLE_SYMBOLS = {
     "USDC", "USDT", "DAI", "FRAX", "BUSD", "USDE", "USDS", "LUSD", "TUSD", "USDP", "FDUSD", "GHO", "USDBC"
@@ -101,6 +102,7 @@ def _incident_penalty(incidents: Sequence[Dict[str, Any]]) -> Tuple[float, bool]
 class DefiRiskEngine:
     def __init__(self, public_ranking_default: str = "balanced"):
         self.public_ranking_default = public_ranking_default
+        self._deterministic_scorer = DeterministicScorer(public_ranking_default=public_ranking_default)
 
     def score_protocol(
         self,
@@ -197,10 +199,19 @@ class DefiRiskEngine:
     ) -> Dict[str, Any]:
         docs_profile = docs_profile or {}
         history_summary = history_summary or {}
-        ranking = ranking_profile or self.public_ranking_default
-        if kind == "lending":
-            return self._score_lending(item, assets, dependencies, protocol_safety, docs_profile, incidents, ranking)
-        return self._score_pool_or_yield(kind, item, assets, dependencies, protocol_safety, docs_profile, history_summary, incidents, ranking)
+        return self._deterministic_scorer.score(
+            kind=kind,
+            candidate=item,
+            context={
+                "assets": assets,
+                "dependencies": dependencies,
+                "protocol_safety": protocol_safety,
+                "docs": docs_profile,
+                "history": history_summary,
+                "incidents": incidents,
+                "ranking_profile": ranking_profile or self.public_ranking_default,
+            },
+        )
 
     def _score_pool_or_yield(
         self,

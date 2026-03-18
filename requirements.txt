@@ -128,6 +128,7 @@ asyncpg>=0.29.0
 # Testing framework
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
+hypothesis>=6.0.0
 
 # Code formatting
 # black>=23.0.0
