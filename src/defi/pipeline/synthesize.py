@@ -41,9 +41,9 @@ class SynthesisPipeline:
             )
 
         hard_caps = deterministic.get("hard_caps") or []
-        evidence_confidence = int(deterministic.get("confidence_score") or 0)
-        deterministic_score = int(deterministic.get("final_score") or deterministic.get("overall_score") or 0)
-        ai_judgment_score = int(ai_bundle.get("judgment_score") or 0)
+        evidence_confidence = _int_value(deterministic, "confidence_score", default=0)
+        deterministic_score = _int_value(deterministic, "final_score", fallback_key="overall_score", default=0)
+        ai_judgment_score = _int_value(ai_bundle, "judgment_score", default=0)
         final_score = blend_final_score(deterministic_score, ai_judgment_score, evidence_confidence, hard_caps)
         action, size = recommend_action(final_score, hard_caps)
 
@@ -60,10 +60,10 @@ class SynthesisPipeline:
                 "deterministic_score": deterministic_score,
                 "ai_judgment_score": ai_judgment_score,
                 "final_deployability_score": final_score,
-                "safety_score": int(deterministic.get("safety_score") or deterministic_score),
-                "apr_quality_score": int(deterministic.get("apr_quality_score") or deterministic_score),
-                "exit_quality_score": int(deterministic.get("exit_quality_score") or deterministic_score),
-                "resilience_score": int(deterministic.get("resilience_score") or deterministic_score),
+                "safety_score": _int_value(deterministic, "safety_score", default=deterministic_score),
+                "apr_quality_score": _int_value(deterministic, "apr_quality_score", default=deterministic_score),
+                "exit_quality_score": _int_value(deterministic, "exit_quality_score", default=deterministic_score),
+                "resilience_score": _int_value(deterministic, "resilience_score", default=deterministic_score),
                 "confidence_score": evidence_confidence,
                 "capped_score": final_score if hard_caps else None,
             },
@@ -84,3 +84,12 @@ def _cap_reason(cap: dict[str, Any] | str) -> str:
     if isinstance(cap, str):
         return cap.replace("_", " ")
     return str(cap.get("reason") or cap.get("code") or "hard cap applied")
+
+
+def _int_value(source: dict[str, Any], key: str, *, fallback_key: str | None = None, default: int) -> int:
+    value = source.get(key)
+    if value is None and fallback_key is not None:
+        value = source.get(fallback_key)
+    if value is None:
+        value = default
+    return int(value)

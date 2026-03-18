@@ -81,6 +81,33 @@ def test_synthesis_honors_explicit_hard_cap_value_in_final_score():
     assert analysis.scores.capped_score == 41
 
 
+def test_synthesis_preserves_explicit_zero_deterministic_component_scores():
+    pipeline = SynthesisPipeline()
+
+    analysis = pipeline.combine(
+        deterministic={
+            "final_score": 0,
+            "overall_score": 91,
+            "safety_score": 0,
+            "apr_quality_score": 0,
+            "exit_quality_score": 0,
+            "resilience_score": 0,
+            "confidence_score": 0,
+            "hard_caps": [],
+        },
+        ai={"judgment_score": 0},
+    )
+
+    assert analysis.scores.deterministic_score == 0
+    assert analysis.scores.ai_judgment_score == 0
+    assert analysis.scores.final_deployability_score == 0
+    assert analysis.scores.safety_score == 0
+    assert analysis.scores.apr_quality_score == 0
+    assert analysis.scores.exit_quality_score == 0
+    assert analysis.scores.resilience_score == 0
+    assert analysis.scores.confidence_score == 0
+
+
 def test_synthesis_emits_full_opportunity_analysis_contract():
     pipeline = SynthesisPipeline()
 
