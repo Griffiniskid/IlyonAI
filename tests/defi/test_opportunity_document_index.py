@@ -1,8 +1,10 @@
 import pytest
 from typing import Any, cast
 
+from src.config import settings
 from src.defi.docs_analyzer import ProtocolDocsAnalyzer
 from src.defi.history_store import DefiHistoryStore
+from src.defi.stores.evidence_store import EvidenceStore
 from src.storage.cache import get_cache
 
 
@@ -44,6 +46,19 @@ class StubLlama:
         ]
 
 
+class RecordingCache:
+    def __init__(self):
+        self.data = {}
+        self.calls = []
+
+    async def set(self, key, value, ttl=None):
+        self.calls.append((key, value, ttl))
+        self.data[key] = value
+
+    async def get(self, key):
+        return self.data.get(key)
+
+
 @pytest.mark.asyncio
 async def test_docs_analyzer_reads_and_writes_via_evidence_store():
     await get_cache().clear()
@@ -76,3 +91,15 @@ async def test_history_store_reads_and_writes_via_evidence_store():
     assert second[-1]["tvlUsd"] == 1100
     assert llama.calls == 1
     assert second_llama.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_evidence_store_uses_defi_analysis_ttl_for_writes():
+    cache = RecordingCache()
+    store = EvidenceStore(cache=cast(Any, cache))
+
+    await store.save_protocol_docs("https://example.com", {"available": True})
+    await store.save_pool_history("pool-1", [{"apy": 10.0}])
+
+    assert cache.calls[0][2] == settings.defi_analysis_ttl_seconds
+    assert cache.calls[1][2] == settings.defi_analysis_ttl_seconds
