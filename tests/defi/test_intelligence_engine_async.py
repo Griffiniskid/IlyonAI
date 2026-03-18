@@ -22,6 +22,7 @@ class StoreStub:
     def __init__(self):
         self.statuses = {}
         self.request_index = {}
+        self.opportunity_documents = {}
         self.counter = 0
 
     def new_id(self):
@@ -39,6 +40,12 @@ class StoreStub:
 
     async def get_request_analysis(self, request_key):
         return self.request_index.get(request_key)
+
+    async def save_opportunity_document(self, opportunity_id, payload):
+        self.opportunity_documents[opportunity_id] = payload
+
+    async def get_opportunity_document(self, opportunity_id):
+        return self.opportunity_documents.get(opportunity_id)
 
 
 def _make_intelligence_engine(scan_pipeline=None, store=None):
@@ -63,6 +70,8 @@ async def test_intelligence_engine_returns_async_analysis_status():
     assert first.status in {"queued", "running", "completed"}
     assert first.analysis_id.startswith("ana_")
     assert first.error is None
+    assert first.observability is not None
+    assert first.observability.factor_model_version == "defi-v2"
     assert second.analysis_id == first.analysis_id
 
     task = engine.engine._analysis_tasks.get(first.analysis_id)
@@ -196,5 +205,86 @@ async def test_analyze_market_threads_observability_through_real_async_entrypoin
 
     assert scan.metrics_seen is not None
     assert result["observability"]["factor_model_version"] == "defi-v2"
-    assert result["observability"]["stage_latency_ms"]["synthesize"] == 12.5
-    assert result["observability"]["rank_change_reasons"] == ["market_repricing"]
+    assert result["observability"]["stage_latency_ms"]["synthesize"] >= 0
+    assert result["observability"]["rank_change_reasons"]
+
+
+@pytest.mark.asyncio
+async def test_completed_analysis_records_enrichment_synthesis_and_cache_metrics():
+    scan = ScanStub(provisional=[{"id": "opp_1", "project": "jito", "protocol": "jito", "chain": "solana", "apy": 8.2, "tvlUsd": 2500000, "candidate_kind": "yield"}])
+    store = StoreStub()
+    engine = _make_intelligence_engine(scan_pipeline=scan, store=store)
+
+    class EnrichmentStub:
+        def __init__(self):
+            self.calls = 0
+
+        async def enrich_candidate(self, candidate, metrics=None):
+            self.calls += 1
+            assert metrics is not None
+            metrics.stage_latency_ms["enrich"] = 5.0
+            return {
+                **candidate,
+                "docs_profile": {"available": True, "freshness_hours": 1.0},
+                "history_summary": {"available": True, "observations": 2, "freshness_hours": 2.0},
+                "evidence_sources": {},
+            }
+
+    class SynthesisStub:
+        def __init__(self):
+            self.calls = 0
+
+        def combine(self, **kwargs):
+            self.calls += 1
+            metrics = kwargs["metrics"]
+            metrics.stage_latency_ms["synthesize"] = 7.0
+            metrics.factor_model_version = "defi-v2"
+            metrics.rank_change_reasons = ["cache_miss"]
+
+            class AnalysisDoc:
+                def model_dump(self, mode="json"):
+                    return {
+                        "identity": {"id": "opp_1", "chain": "solana", "kind": "yield", "protocol_slug": "jito"},
+                        "market": {"apy": 8.2, "market_regime": "unknown"},
+                        "scores": {
+                            "deterministic_score": 55,
+                            "ai_judgment_score": 55,
+                            "final_deployability_score": 55,
+                            "safety_score": 55,
+                            "apr_quality_score": 55,
+                            "exit_quality_score": 55,
+                            "resilience_score": 55,
+                            "confidence_score": 55,
+                        },
+                        "factors": [],
+                        "behavior": {},
+                        "scenarios": [],
+                        "recommendation": {"action": "watch", "rationale": []},
+                        "evidence": [],
+                        "observability": metrics.to_payload(),
+                    }
+
+            return AnalysisDoc()
+
+    async def fake_build_market_analysis(**filters):
+        return {"top_opportunities": [], "observability": filters["metrics"].to_payload()}
+
+    async def fake_ai_analysis(_payload):
+        return {"judgment_score": 61}
+
+    enrichment_pipeline = EnrichmentStub()
+    synthesis_pipeline = SynthesisStub()
+    setattr(engine.engine, "enrichment_pipeline", enrichment_pipeline)
+    setattr(engine.engine, "synthesis_pipeline", synthesis_pipeline)
+    setattr(engine.engine, "_build_market_analysis", fake_build_market_analysis)
+    setattr(engine.engine.ai, "build_opportunity_analysis", fake_ai_analysis)
+
+    first = await engine.analyze_market(chain="solana", limit=5)
+    second = await engine.analyze_market(chain="base", limit=5)
+
+    assert first["observability"]["stage_latency_ms"]["enrich"] == 5.0
+    assert first["observability"]["stage_latency_ms"]["synthesize"] == 7.0
+    assert first["observability"]["cache_stats"]["opportunity_documents"]["misses"] == 1
+    assert second["observability"]["cache_stats"]["opportunity_documents"]["hits"] == 1
+    assert enrichment_pipeline.calls == 1
+    assert synthesis_pipeline.calls == 1

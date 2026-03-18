@@ -77,7 +77,7 @@ async def test_pipeline_records_observability_metrics_as_stages_run():
     assert metrics.stage_latency_ms["enrich"] >= 0
     assert metrics.stage_latency_ms["synthesize"] >= 0
     assert metrics.provider_stats["defillama"]["calls"] == 1
-    assert metrics.cache_stats["docs"]["misses"] == 1
+    assert metrics.cache_stats == {}
     assert metrics.enrichment_coverage_pct == 100.0
     assert metrics.ai_runtime_ms == 310.0
     assert metrics.ai_cost_usd == 0.0042

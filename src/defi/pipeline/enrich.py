@@ -88,7 +88,6 @@ class EnrichmentPipeline:
             payload = fallback()
             if metrics is not None:
                 metrics.record_provider(label, calls=1, failures=1, latency_ms=(perf_counter() - started) * 1000)
-                metrics.record_cache_miss(label)
             return EnrichmentLoad(payload=payload, meta=build_evidence_source_metadata("fallback", payload, fallback_used=True))
         except Exception:
             logger.exception("%s enrichment failed", label)
@@ -98,6 +97,4 @@ class EnrichmentPipeline:
 
         if metrics is not None:
             metrics.record_provider(label, calls=1, latency_ms=(perf_counter() - started) * 1000)
-            if label == "docs":
-                metrics.record_cache_miss(label)
         return EnrichmentLoad(payload=payload, meta=build_evidence_source_metadata("provider", payload))

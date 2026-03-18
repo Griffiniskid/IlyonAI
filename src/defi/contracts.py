@@ -16,6 +16,7 @@ class AnalysisStatus(StrictContractModel):
     status: Literal["queued", "running", "completed", "failed"]
     score_model_version: str
     provisional_shortlist: list[dict[str, Any]] = Field(default_factory=list)
+    observability: Optional["AnalysisMetricsPayload"] = None
     error: Optional[str] = None
 
 

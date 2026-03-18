@@ -20,6 +20,8 @@ from src.defi.farm_analyzer import FarmAnalyzer
 from src.defi.history_store import DefiHistoryStore
 from src.defi.lending_analyzer import LENDING_PROTOCOLS, LendingAnalyzer
 from src.defi.observability import AnalysisMetrics
+from src.defi.pipeline.enrich import EnrichmentPipeline
+from src.defi.pipeline.synthesize import SynthesisPipeline
 from src.defi.opportunity_taxonomy import classify_defi_record
 from src.defi.pipeline.coalescing import CoalescedAnalysisRunner
 from src.defi.pipeline.scan import MarketScanPipeline
@@ -178,6 +180,8 @@ class DefiOpportunityEngine:
         self.risk = DefiRiskEngine(public_ranking_default=public_ranking_default)
         self.scenarios = DefiScenarioEngine()
         self.ai = DefiAIRouter()
+        self.enrichment_pipeline = EnrichmentPipeline(docs=self.docs, history=self.history)
+        self.synthesis_pipeline = SynthesisPipeline()
         self.public_ranking_default = public_ranking_default
         self._token_analyzer: Optional[TokenAnalyzer] = None
         self._asset_cache: Dict[str, Dict[str, Any]] = {}
@@ -294,8 +298,8 @@ class DefiOpportunityEngine:
             "status": status.get("status", "running"),
             "score_model_version": status.get("score_model_version", settings.defi_score_model_version),
             "provisional_shortlist": status.get("provisional_shortlist") or [],
-            "error": status.get("error"),
             "observability": status.get("observability"),
+            "error": status.get("error"),
         }
 
     async def _finish_analysis(
@@ -308,6 +312,12 @@ class DefiOpportunityEngine:
     ) -> None:
         try:
             result = await self._build_market_analysis(**filters, metrics=metrics)
+            result = await self._materialize_opportunity_documents(
+                provisional=provisional,
+                result=result,
+                include_ai=bool(filters.get("include_ai", True)),
+                metrics=metrics,
+            )
         except Exception as exc:
             await self.analysis_store.save_status(
                 analysis_id,
@@ -353,8 +363,115 @@ class DefiOpportunityEngine:
             status=payload.get("status", "running"),
             score_model_version=payload.get("score_model_version", settings.defi_score_model_version),
             provisional_shortlist=payload.get("provisional_shortlist") or [],
+            observability=payload.get("observability"),
             error=payload.get("error"),
         )
+
+    async def _materialize_opportunity_documents(
+        self,
+        *,
+        provisional: List[Dict[str, Any]],
+        result: Dict[str, Any],
+        include_ai: bool,
+        metrics: AnalysisMetrics,
+    ) -> Dict[str, Any]:
+        if not provisional:
+            metrics.finalize_total_latency()
+            return {**result, "observability": metrics.to_payload()}
+
+        candidate = provisional[0]
+        opportunity_id = str(candidate.get("id") or self._encode_opportunity_id(str(candidate.get("candidate_kind") or "yield"), str(candidate.get("symbol") or "unknown")))
+        cached = await self.analysis_store.get_opportunity_document(opportunity_id)
+        if cached is not None:
+            metrics.record_cache_hit("opportunity_documents")
+            metrics.finalize_total_latency()
+            return {**result, "observability": metrics.to_payload()}
+
+        metrics.record_cache_miss("opportunity_documents")
+        enriched = await self.enrichment_pipeline.enrich_candidate(candidate, metrics=metrics)
+        ai_bundle: Dict[str, Any] | None = None
+        if include_ai:
+            ai_started = perf_counter()
+            ai_bundle = await self.ai.build_opportunity_analysis(enriched)
+            if ai_bundle is None:
+                ai_bundle = {}
+            ai_bundle = {
+                **ai_bundle,
+                "runtime_ms": round((perf_counter() - ai_started) * 1000, 3),
+            }
+        analysis = self.synthesis_pipeline.combine(
+            identity=self._analysis_identity_from_candidate(enriched),
+            market=self._analysis_market_from_candidate(enriched),
+            deterministic=self._analysis_deterministic_from_candidate(enriched),
+            ai=ai_bundle,
+            evidence=self._analysis_evidence_from_candidate(enriched),
+            metrics=metrics,
+        )
+        await self.analysis_store.save_opportunity_document(opportunity_id, analysis.model_dump(mode="json"))
+        metrics.finalize_total_latency()
+        return {**result, "observability": metrics.to_payload()}
+
+    def _analysis_identity_from_candidate(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
+        project = str(candidate.get("project") or candidate.get("protocol") or "unknown")
+        return {
+            "id": str(candidate.get("id") or project),
+            "chain": str(candidate.get("chain") or "unknown"),
+            "kind": str(candidate.get("candidate_kind") or "yield"),
+            "protocol_slug": _slugify(project),
+            "protocol_name": project,
+            "title": candidate.get("title") or candidate.get("symbol") or project,
+            "symbol": candidate.get("symbol"),
+            "product_type": candidate.get("product_type"),
+        }
+
+    def _analysis_market_from_candidate(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "apy": _safe_float(candidate.get("apy")),
+            "tvl_usd": _safe_float(candidate.get("tvlUsd") or candidate.get("tvl_usd")),
+            "market_regime": "unknown",
+        }
+
+    def _analysis_deterministic_from_candidate(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
+        score = max(0, min(100, int(round(_safe_float(candidate.get("shortlist_score"), 50.0)))))
+        return {
+            "final_score": score,
+            "overall_score": score,
+            "safety_score": score,
+            "apr_quality_score": score,
+            "exit_quality_score": score,
+            "resilience_score": score,
+            "confidence_score": 75 if candidate.get("docs_profile", {}).get("available") else 50,
+            "hard_caps": [],
+            "gross_apr": _safe_float(candidate.get("apy")),
+            "risk_to_apr_ratio": 1.0,
+            "rank_change_reasons": ["cache_miss"],
+        }
+
+    def _analysis_evidence_from_candidate(self, candidate: Dict[str, Any]) -> List[Dict[str, Any]]:
+        evidence: List[Dict[str, Any]] = []
+        docs_profile = candidate.get("docs_profile") or {}
+        history_summary = candidate.get("history_summary") or {}
+        if docs_profile:
+            evidence.append(
+                {
+                    "key": "docs",
+                    "title": "Protocol docs",
+                    "summary": "Docs enrichment completed.",
+                    "source": "docs",
+                    "freshness_hours": docs_profile.get("freshness_hours"),
+                }
+            )
+        if history_summary:
+            evidence.append(
+                {
+                    "key": "history",
+                    "title": "Pool history",
+                    "summary": "History enrichment completed.",
+                    "source": "history",
+                    "freshness_hours": history_summary.get("freshness_hours"),
+                }
+            )
+        return evidence
 
     async def _build_market_analysis(
         self,
