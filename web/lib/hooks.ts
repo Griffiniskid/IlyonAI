@@ -198,11 +198,14 @@ export function useOpportunityAnalysis(
   options?: { includeAi?: boolean; rankingProfile?: string; pollInterval?: number }
 ) {
   return useQuery({
-    queryKey: ["opportunity", opportunityId, options?.rankingProfile ?? "default"],
-    queryFn: () => api.getDefiOpportunity(opportunityId!, {
-      includeAi: options?.includeAi,
-      rankingProfile: options?.rankingProfile,
-    }),
+    queryKey: ["opportunity", opportunityId, options?.rankingProfile ?? "default", options?.includeAi ?? false],
+    queryFn: () => {
+      if (!opportunityId) return null;
+      return api.getDefiOpportunity(opportunityId, {
+        includeAi: options?.includeAi,
+        rankingProfile: options?.rankingProfile,
+      });
+    },
     enabled: !!opportunityId,
     refetchInterval: options?.pollInterval || false,
     staleTime: 60 * 1000,
@@ -219,18 +222,11 @@ export function useDefiOpportunities(params?: {
   rankingProfile?: string;
   pollInterval?: number;
 }) {
+  const { pollInterval, ...queryParams } = params || {};
   return useQuery({
-    queryKey: ["opportunities", params],
-    queryFn: () => api.getDefiOpportunities({
-      query: params?.query,
-      chain: params?.chain,
-      minTvl: params?.minTvl,
-      minApy: params?.minApy,
-      limit: params?.limit,
-      includeAi: params?.includeAi,
-      rankingProfile: params?.rankingProfile,
-    }),
-    refetchInterval: params?.pollInterval || false,
+    queryKey: ["opportunities", queryParams],
+    queryFn: () => api.getDefiOpportunities(queryParams),
+    refetchInterval: pollInterval || false,
     staleTime: 60 * 1000,
   });
 }
@@ -245,18 +241,11 @@ export function useDefiAnalyzer(params?: {
   rankingProfile?: string;
   pollInterval?: number;
 }) {
+  const { pollInterval, ...queryParams } = params || {};
   return useQuery({
-    queryKey: ["analyzer", params],
-    queryFn: () => api.analyzeDefi({
-      query: params?.query,
-      chain: params?.chain,
-      minTvl: params?.minTvl,
-      minApy: params?.minApy,
-      limit: params?.limit,
-      includeAi: params?.includeAi,
-      rankingProfile: params?.rankingProfile,
-    }),
-    refetchInterval: params?.pollInterval || false,
+    queryKey: ["analyzer", queryParams],
+    queryFn: () => api.analyzeDefi(queryParams),
+    refetchInterval: pollInterval || false,
     staleTime: 60 * 1000,
   });
 }
