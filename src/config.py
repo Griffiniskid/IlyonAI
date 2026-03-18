@@ -148,6 +148,7 @@ class Settings(BaseSettings):
     defi_scan_limit: int = Field(48, ge=1, env="DEFI_SCAN_LIMIT")
     defi_top_band_limit: int = Field(12, ge=1, env="DEFI_TOP_BAND_LIMIT")
     defi_provider_timeout_seconds: int = Field(8, ge=1, env="DEFI_PROVIDER_TIMEOUT_SECONDS")
+    defi_provider_concurrency_limit: int = Field(4, ge=1, env="DEFI_PROVIDER_CONCURRENCY_LIMIT")
     defi_analysis_ttl_seconds: int = Field(300, ge=1, env="DEFI_ANALYSIS_TTL_SECONDS")
     defi_score_model_version: str = Field("defi-v2", env="DEFI_SCORE_MODEL_VERSION")
 
