@@ -180,6 +180,37 @@ class DefiPositionAnalysisRequest(BaseModel):
     utilization_shock_pct: Optional[float] = Field(default=0, ge=0, le=100)
 
 
+class OpportunityAnalysisCreateRequest(BaseModel):
+    """Request to start or coalesce an opportunity analysis."""
+
+    chain: Optional[str] = None
+    query: Optional[str] = None
+    min_tvl: float = Field(default=100_000, ge=0)
+    min_apy: float = Field(default=3.0)
+    limit: int = Field(default=12, ge=1, le=50)
+    include_ai: bool = True
+    ranking_profile: Optional[str] = None
+
+
+class OpportunityComparisonItemRequest(BaseModel):
+    """Single opportunity comparison target."""
+
+    opportunity_id: Optional[str] = Field(default=None, min_length=1)
+    analysis_id: Optional[str] = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_target(self):
+        if not self.opportunity_id and not self.analysis_id:
+            raise ValueError("Either opportunity_id or analysis_id is required")
+        return self
+
+
+class OpportunityCompareRequest(BaseModel):
+    """Request to compare opportunity documents."""
+
+    items: List[OpportunityComparisonItemRequest] = Field(default_factory=list, min_length=1)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # PORTFOLIO REQUESTS
 # ═══════════════════════════════════════════════════════════════════════════

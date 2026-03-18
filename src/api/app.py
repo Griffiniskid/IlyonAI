@@ -26,6 +26,7 @@ from src.api.routes.contracts import setup_contracts_routes
 from src.api.routes.shield import setup_shield_routes
 from src.api.routes.defi import setup_defi_routes
 from src.api.routes.intel import setup_intel_routes
+from src.api.routes.opportunities import setup_opportunity_routes
 from src.agents.sentinel import start_sentinel, stop_sentinel
 from src.config import settings
 
@@ -180,6 +181,7 @@ def create_api_app() -> web.Application:
     setup_shield_routes(app)
     setup_defi_routes(app)
     setup_intel_routes(app)
+    setup_opportunity_routes(app)
     setup_public_api_routes(app)
 
     # Background sentinel agent
@@ -242,6 +244,7 @@ def setup_api_routes(app: web.Application):
     setup_shield_routes(app)
     setup_defi_routes(app)
     setup_intel_routes(app)
+    setup_opportunity_routes(app)
     setup_public_api_routes(app)
 
     logger.info("All API routes added to existing application")

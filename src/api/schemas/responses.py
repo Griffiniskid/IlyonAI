@@ -1090,6 +1090,26 @@ class DefiPositionAnalysisResponse(DefiSimulationResponse):
     monitor_triggers: List[str] = []
 
 
+class OpportunityAnalysisStatusResponse(BaseModel):
+    """Status payload for asynchronous opportunity analyses."""
+
+    analysis_id: str
+    status: str
+    score_model_version: str
+    freshness: Dict[str, Any] = Field(default_factory=dict)
+    provisional_shortlist: List[Dict[str, Any]] = Field(default_factory=list)
+    progress: Dict[str, Any] = Field(default_factory=dict)
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+    result: Optional[Dict[str, Any]] = None
+
+
+class OpportunityCompareResponse(BaseModel):
+    """Response payload for synchronous opportunity comparisons."""
+
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+    matrix: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # INTELLIGENCE PLATFORM RESPONSE (REKT / AUDITS)
 # ═══════════════════════════════════════════════════════════════════════════
