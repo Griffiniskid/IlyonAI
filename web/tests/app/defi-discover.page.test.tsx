@@ -3,12 +3,34 @@ import { render, screen, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import DiscoverClient from "@/app/defi/_components/discover-client";
 import * as hooks from "@/lib/hooks";
+import { useQuery } from "@tanstack/react-query";
+
+// Mock react-query
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...(actual as any),
+    useQuery: vi.fn(),
+    useQueryClient: vi.fn(() => ({
+      getQueryData: vi.fn(),
+      setQueryData: vi.fn(),
+    })),
+    useMutation: vi.fn(() => ({
+      mutate: vi.fn(),
+      isPending: false,
+    })),
+  };
+});
 
 // Mock the hooks
-vi.mock("@/lib/hooks", () => ({
-  useCreateOpportunityAnalysis: vi.fn(),
-  useOpportunityAnalysis: vi.fn(),
-}));
+vi.mock("@/lib/hooks", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...(actual as any),
+    useCreateOpportunityAnalysis: vi.fn(),
+    useOpportunityAnalysis: vi.fn(),
+  };
+});
 
 describe("Defi Discover Flow", () => {
   beforeEach(() => {
@@ -38,6 +60,29 @@ describe("Defi Discover Flow", () => {
     expect(screen.getByText(/Provisional Pool 1/i)).toBeInTheDocument();
   });
 
+  it("does not stop polling if analysisData is only partially populated from cache (missing title)", () => {
+    const mockMutate = vi.fn();
+    (hooks.useCreateOpportunityAnalysis as any).mockReturnValue({
+      mutate: mockMutate,
+      isPending: false,
+      data: { opportunityId: "job-123" }
+    });
+
+    // Return partial cached data (missing title, so it's not complete)
+    (hooks.useOpportunityAnalysis as any).mockReturnValue({
+      data: { id: "job-123" },
+      isLoading: false,
+    });
+
+    render(<DiscoverClient />);
+
+    // Should continue polling because it's not a fully populated analysis object
+    // Wait for any effects to settle
+    expect(hooks.useOpportunityAnalysis).toHaveBeenLastCalledWith("job-123", {
+      pollInterval: 3000,
+    });
+  });
+
   it("stops polling when analysisData is fully loaded", () => {
     const mockMutate = vi.fn();
     (hooks.useCreateOpportunityAnalysis as any).mockReturnValue({
@@ -46,7 +91,7 @@ describe("Defi Discover Flow", () => {
       data: { opportunityId: "job-123" }
     });
 
-    // Return completed data
+    // Return completed data (has title)
     (hooks.useOpportunityAnalysis as any).mockReturnValue({
       data: { id: "job-123", title: "Final Analyzed Pool" },
       isLoading: false,
@@ -55,7 +100,7 @@ describe("Defi Discover Flow", () => {
     render(<DiscoverClient />);
 
     // Check what was passed to useOpportunityAnalysis
-    expect(hooks.useOpportunityAnalysis).toHaveBeenCalledWith("job-123", {
+    expect(hooks.useOpportunityAnalysis).toHaveBeenLastCalledWith("job-123", {
       pollInterval: undefined,
     });
   });
@@ -97,5 +142,20 @@ describe("Defi Discover Flow", () => {
     rerender(<DiscoverClient />); // Simulate an update
 
     expect(mockMutate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useOpportunityAnalysis Hook", () => {
+  it("disables retries when polling is active to avoid exponential backoff on 404s", async () => {
+    // Import the actual hook instead of the mocked one
+    const actualHooks = await vi.importActual<typeof import("@/lib/hooks")>("@/lib/hooks");
+    
+    actualHooks.useOpportunityAnalysis("job-123", { pollInterval: 3000 });
+    
+    expect(useQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        retry: false, // Should disable retries to prevent pausing during polling
+      })
+    );
   });
 });

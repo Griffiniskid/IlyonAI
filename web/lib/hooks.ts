@@ -225,6 +225,7 @@ export function useOpportunityAnalysis(
     },
     enabled: !!opportunityId,
     refetchInterval: options?.pollInterval || false,
+    retry: options?.pollInterval ? false : 3, // Disable exponential backoff retries while polling
     staleTime: 60 * 1000,
   });
 }

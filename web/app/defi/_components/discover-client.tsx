@@ -34,7 +34,7 @@ export default function DiscoverClient() {
   });
 
   useEffect(() => {
-    if (analysisData) {
+    if (analysisData && analysisData.title) {
       setIsDone(true);
     }
   }, [analysisData]);
@@ -51,7 +51,7 @@ export default function DiscoverClient() {
         </div>
       )}
 
-      {createData?.provisional_shortlist && !analysisData && (
+      {createData?.provisional_shortlist && !isDone && (
         <div className="bg-gray-100 p-4 rounded">
           <h2 className="text-xl font-semibold mb-2">Provisional Shortlist</h2>
           <ul>
@@ -64,11 +64,11 @@ export default function DiscoverClient() {
         </div>
       )}
 
-      {isAnalyzing && opportunityId && !analysisData && (
+      {isAnalyzing && opportunityId && !isDone && (
         <p>Analysis is still running... (Job ID: {opportunityId})</p>
       )}
       
-      {analysisData && (
+      {isDone && analysisData && (
         <div className="bg-blue-50 p-4 rounded mt-4">
           <h2 className="text-xl font-semibold mb-2">Final Analysis Result</h2>
           <pre className="text-sm overflow-auto max-h-64">
