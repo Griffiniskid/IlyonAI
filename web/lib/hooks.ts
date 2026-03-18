@@ -190,6 +190,78 @@ export function useWhaleActivity(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// DEFI OPPORTUNITY HOOKS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function useOpportunityAnalysis(
+  opportunityId: string | null,
+  options?: { includeAi?: boolean; rankingProfile?: string; pollInterval?: number }
+) {
+  return useQuery({
+    queryKey: ["opportunity", opportunityId, options?.rankingProfile ?? "default"],
+    queryFn: () => api.getDefiOpportunity(opportunityId!, {
+      includeAi: options?.includeAi,
+      rankingProfile: options?.rankingProfile,
+    }),
+    enabled: !!opportunityId,
+    refetchInterval: options?.pollInterval || false,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useDefiOpportunities(params?: {
+  query?: string;
+  chain?: string;
+  minTvl?: number;
+  minApy?: number;
+  limit?: number;
+  includeAi?: boolean;
+  rankingProfile?: string;
+  pollInterval?: number;
+}) {
+  return useQuery({
+    queryKey: ["opportunities", params],
+    queryFn: () => api.getDefiOpportunities({
+      query: params?.query,
+      chain: params?.chain,
+      minTvl: params?.minTvl,
+      minApy: params?.minApy,
+      limit: params?.limit,
+      includeAi: params?.includeAi,
+      rankingProfile: params?.rankingProfile,
+    }),
+    refetchInterval: params?.pollInterval || false,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useDefiAnalyzer(params?: {
+  query?: string;
+  chain?: string;
+  minTvl?: number;
+  minApy?: number;
+  limit?: number;
+  includeAi?: boolean;
+  rankingProfile?: string;
+  pollInterval?: number;
+}) {
+  return useQuery({
+    queryKey: ["analyzer", params],
+    queryFn: () => api.analyzeDefi({
+      query: params?.query,
+      chain: params?.chain,
+      minTvl: params?.minTvl,
+      minApy: params?.minApy,
+      limit: params?.limit,
+      includeAi: params?.includeAi,
+      rankingProfile: params?.rankingProfile,
+    }),
+    refetchInterval: params?.pollInterval || false,
+    staleTime: 60 * 1000,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // DASHBOARD STATS HOOKS
 // ═══════════════════════════════════════════════════════════════════════════
 
