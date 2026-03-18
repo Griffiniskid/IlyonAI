@@ -193,6 +193,23 @@ export function useWhaleActivity(
 // DEFI OPPORTUNITY HOOKS
 // ═══════════════════════════════════════════════════════════════════════════
 
+export function useCreateOpportunityAnalysis() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: import("@/types").DefiDiscoverRequest) =>
+      api.createOpportunityAnalysis(payload),
+    onSuccess: (data) => {
+      // pre-populate the query cache for the opportunity if needed
+      if (data.opportunityId) {
+        queryClient.setQueryData(["opportunity", data.opportunityId, "default", false], {
+          id: data.opportunityId,
+          // other fields would be loaded in the next poll
+        });
+      }
+    },
+  });
+}
+
 export function useOpportunityAnalysis(
   opportunityId: string | null,
   options?: { includeAi?: boolean; rankingProfile?: string; pollInterval?: number }

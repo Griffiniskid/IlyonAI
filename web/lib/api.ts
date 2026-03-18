@@ -1236,8 +1236,17 @@ export async function getDefiOpportunity(
   if (params?.includeAi != null) p.set("include_ai", String(params.includeAi));
   if (params?.rankingProfile) p.set("ranking_profile", params.rankingProfile);
   const query = p.toString();
-  const data = await fetchAPI<any>(`/api/v1/defi/opportunities/${opportunityId}${query ? `?${query}` : ""}`);
+  const data = await fetchAPI<any>(`/api/v1/defi/opportunities/${opportunityId}${query ? "?" + query : ""}`);
   return normalizeOpportunity(data);
+}
+
+export async function createOpportunityAnalysis(
+  payload: import("../types").DefiDiscoverRequest
+): Promise<import("../types").DefiDiscoverResponse> {
+  return fetchAPI<import("../types").DefiDiscoverResponse>("/api/v1/defi/discover", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function getDefiProtocolProfile(

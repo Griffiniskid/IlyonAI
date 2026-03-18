@@ -771,6 +771,18 @@ export interface DefiAnalyzerResponse {
   data_source: string;
 }
 
+export interface DefiDiscoverResponse {
+  opportunityId: string;
+  provisional_shortlist: DefiOpportunityResponse[];
+}
+
+export interface DefiDiscoverRequest {
+  query?: string;
+  chain?: string;
+  amount?: number;
+  riskLevel?: string;
+}
+
 export interface DefiCompareRow {
   opportunity_id: string;
   protocol: string;
