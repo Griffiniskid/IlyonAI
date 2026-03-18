@@ -99,6 +99,22 @@ class DeterministicScorer:
         elif incident_effect["has_incident"]:
             fragility_flags.append("incident_history")
 
+        hard_caps = []
+        if incident_effect["recent_critical"]:
+            hard_caps.append({
+                "code": "recent_critical_incident",
+                "dimension": "safety",
+                "cap": 42,
+                "reason": "Recent critical incident caps deterministic safety until resilience is re-established.",
+            })
+        elif incident_effect["has_incident"]:
+            hard_caps.append({
+                "code": "incident_history",
+                "dimension": "safety",
+                "cap": 60,
+                "reason": "Incident history still caps deterministic safety.",
+            })
+
         summary = {
             "overall_score": overall_score,
             "quality_score": weighted_quality,
@@ -125,6 +141,7 @@ class DeterministicScorer:
             "risk_to_apr_ratio": round(weighted_risk_burden / max(haircut_apr, 0.1), 4),
             "fragility_flags": fragility_flags,
             "kill_switches": kill_switches,
+            "hard_caps": hard_caps,
             "best_fit_risk_profile": self._best_fit_profile(safety_score, weighted_risk_burden),
             "confidence_reasoning": confidence["report"]["notes"],
         }
@@ -138,12 +155,8 @@ class DeterministicScorer:
             self._dimension("confidence", "Confidence", confidence["score"], cfg["weights"]["confidence"], confidence["notes"][0]),
             self._dimension("apr_efficiency", "APR Efficiency", apr_efficiency, 0.40, "Risk-adjusted APR after deterministic haircuts and burden hurdles."),
         ]
-        score_caps = []
-        if incident_effect["recent_critical"]:
-            score_caps.append({"dimension": "safety", "cap": 42, "reason": "Recent critical incident caps deterministic safety until resilience is re-established."})
-        elif incident_effect["has_incident"]:
-            score_caps.append({"dimension": "safety", "cap": 60, "reason": "Incident history still caps deterministic safety."})
-        return {"summary": summary, "dimensions": dimensions, "confidence": confidence["report"], "score_caps": score_caps}
+        score_caps = [{"dimension": cap["dimension"], "cap": cap["cap"], "reason": cap["reason"]} for cap in hard_caps]
+        return {"summary": summary, "dimensions": dimensions, "confidence": confidence["report"], "score_caps": score_caps, "hard_caps": hard_caps}
 
     def _archetype_for(self, kind: str, candidate: Dict[str, Any]) -> str:
         if kind == "lending":

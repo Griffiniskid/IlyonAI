@@ -305,3 +305,7 @@ def test_recent_critical_incident_triggers_kill_switch_and_hard_cap():
     assert "recent_critical_incident" in incident_hit["summary"]["fragility_flags"]
     assert incident_hit["summary"]["overall_score"] < clean["summary"]["overall_score"]
     assert incident_hit["summary"]["safety_score"] <= 42
+    assert incident_hit["summary"]["hard_caps"]
+    assert incident_hit["summary"]["hard_caps"][0]["code"] == "recent_critical_incident"
+    assert incident_hit["summary"]["hard_caps"][0]["dimension"] == "safety"
+    assert incident_hit["summary"]["hard_caps"][0]["cap"] == 42
