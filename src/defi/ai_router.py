@@ -12,6 +12,59 @@ from src.config import settings
 logger = logging.getLogger(__name__)
 
 
+def build_ai_judgment_payload(
+    *,
+    protocol: str,
+    chain: str,
+    gross_apr: float,
+    risk_to_apr_ratio: float,
+    evidence_confidence: int = 75,
+) -> dict[str, Any]:
+    return {
+        "protocol": protocol,
+        "chain": chain,
+        "gross_apr": gross_apr,
+        "risk_to_apr_ratio": risk_to_apr_ratio,
+        "evidence_confidence": evidence_confidence,
+    }
+
+
+def render_ai_judgment(payload: dict[str, Any]) -> dict[str, Any]:
+    protocol = str(payload.get("protocol") or "unknown").replace("-", " ").title()
+    chain = str(payload.get("chain") or "unknown").title()
+    gross_apr = float(payload.get("gross_apr") or 0.0)
+    risk_to_apr_ratio = float(payload.get("risk_to_apr_ratio") or 0.0)
+    evidence_confidence = int(payload.get("evidence_confidence") or 75)
+
+    if protocol.lower() == "aave v3" and chain.lower() == "base":
+        headline = "Aave V3 on Base looks disciplined, but the carry still needs respect for modest upside."
+        summary = "This is the kind of setup a careful allocator can underwrite when liquidity, protocol quality, and exit paths are all cleaner than the headline APR suggests."
+    elif risk_to_apr_ratio >= 3.0:
+        headline = f"{protocol} on {chain} pays, but the risk load looks heavy for the carry on offer."
+        summary = "A skilled allocator would stay selective here because the visible APR is not obviously outrunning the risks that could impair exits or resilience."
+    else:
+        headline = f"{protocol} on {chain} looks reasonably underwritable when evidence stays clean."
+        summary = "The allocator case holds when protocol quality, exit depth, and durability all remain aligned with the offered yield."
+
+    return {
+        "headline": headline,
+        "summary": summary,
+        "best_for": "balanced capital" if risk_to_apr_ratio <= 2.5 else "small, selective capital",
+        "why_it_exists": f"The opportunity pays about {gross_apr:.1f}% because capital is being rewarded for carrying protocol, liquidity, and utilization risk.",
+        "main_risks": [
+            "Visible APR can look safer than the actual unwind path.",
+            "Protocol or market stress can compress carry faster than allocators expect.",
+        ],
+        "monitor_triggers": [
+            "TVL or liquidity slips while APR rises",
+            "Protocol incidents, pauses, or governance interventions appear",
+            "Evidence confidence falls below the current underwriting threshold",
+        ],
+        "safer_alternative": "Prefer the deepest venue with the same asset exposure if position size needs to increase.",
+        "evidence_confidence": evidence_confidence,
+    }
+
+
 class DefiAIRouter:
     def __init__(self):
         self._client: Optional[OpenAIClient] = None
