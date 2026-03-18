@@ -1,10 +1,12 @@
 import pytest
 from typing import Any, cast
+import asyncio
 
 from src.config import settings
 from src.defi.docs_analyzer import ProtocolDocsAnalyzer
 from src.defi.history_store import DefiHistoryStore
 from src.defi.stores.evidence_store import EvidenceStore
+from src.storage.cache import CacheLayer
 from src.storage.cache import get_cache
 
 
@@ -103,3 +105,17 @@ async def test_evidence_store_uses_defi_analysis_ttl_for_writes():
 
     assert cache.calls[0][2] == settings.defi_analysis_ttl_seconds
     assert cache.calls[1][2] == settings.defi_analysis_ttl_seconds
+
+
+@pytest.mark.asyncio
+async def test_evidence_store_ttl_override_survives_memory_fallback_default_ttl():
+    cache = CacheLayer(redis_url=None, ttl=cast(Any, 0.05), max_memory_items=10)
+    store = EvidenceStore(cache=cache)
+
+    await store.save_protocol_docs("https://example.com", {"available": True})
+    await asyncio.sleep(0.08)
+
+    saved = await store.get_protocol_docs("https://example.com")
+
+    assert saved is not None
+    assert saved["available"] is True

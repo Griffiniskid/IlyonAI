@@ -8,9 +8,8 @@ Caches token analysis results to reduce API calls and improve response times.
 import json
 import logging
 from typing import Optional, Any, Dict
-from datetime import datetime
-
-from cachetools import TTLCache
+from collections import OrderedDict
+import time
 
 from src.config import settings
 
@@ -55,11 +54,13 @@ class CacheLayer:
             max_memory_items: Max items in memory cache
         """
         self.ttl = ttl
+        self.max_memory_items = max_memory_items
         self.redis_client: Optional[redis.Redis] = None
         self.redis_connected = False
 
         # In-memory fallback cache
-        self._memory_cache: TTLCache = TTLCache(maxsize=max_memory_items, ttl=ttl)
+        self._memory_cache: OrderedDict[str, Any] = OrderedDict()
+        self._memory_expiry: Dict[str, float] = {}
 
         # Try to connect to Redis
         url = redis_url or settings.redis_url
@@ -100,6 +101,34 @@ class CacheLayer:
         except (json.JSONDecodeError, TypeError):
             return value
 
+    def _purge_expired_memory_keys(self) -> None:
+        now = time.monotonic()
+        expired_keys = [key for key, expires_at in self._memory_expiry.items() if expires_at <= now]
+        for key in expired_keys:
+            self._memory_cache.pop(key, None)
+            self._memory_expiry.pop(key, None)
+
+    def _memory_get(self, key: str) -> Optional[Any]:
+        self._purge_expired_memory_keys()
+        value = self._memory_cache.get(key)
+        if value is not None:
+            self._memory_cache.move_to_end(key)
+        return value
+
+    def _memory_set(self, key: str, value: Any, ttl: float) -> None:
+        self._purge_expired_memory_keys()
+        self._memory_cache[key] = value
+        self._memory_cache.move_to_end(key)
+        self._memory_expiry[key] = time.monotonic() + ttl
+
+        while len(self._memory_cache) > self.max_memory_items:
+            oldest_key, _ = self._memory_cache.popitem(last=False)
+            self._memory_expiry.pop(oldest_key, None)
+
+    def _memory_delete(self, key: str) -> None:
+        self._memory_cache.pop(key, None)
+        self._memory_expiry.pop(key, None)
+
     # ═══════════════════════════════════════════════════════════════════════════
     # CORE OPERATIONS
     # ═══════════════════════════════════════════════════════════════════════════
@@ -126,7 +155,7 @@ class CacheLayer:
                 logger.debug(f"Redis get error: {e}")
 
         # Fallback to memory
-        return self._memory_cache.get(key)
+        return self._memory_get(key)
 
     async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
         """
@@ -146,7 +175,7 @@ class CacheLayer:
 
         # Store in memory first (always works)
         try:
-            self._memory_cache[key] = value
+            self._memory_set(key, value, ttl)
         except Exception as e:
             logger.debug(f"Memory cache set error: {e}")
 
@@ -172,7 +201,7 @@ class CacheLayer:
             True if deleted
         """
         # Delete from memory
-        self._memory_cache.pop(key, None)
+        self._memory_delete(key)
 
         # Delete from Redis
         if await self._check_redis():
@@ -193,12 +222,14 @@ class CacheLayer:
                 pass
 
         # Check memory
+        self._purge_expired_memory_keys()
         return key in self._memory_cache
 
     async def clear(self) -> bool:
         """Clear all cached values"""
         # Clear memory
         self._memory_cache.clear()
+        self._memory_expiry.clear()
 
         # Clear Redis (be careful in production!)
         if await self._check_redis():
@@ -304,8 +335,8 @@ class CacheLayer:
                 logger.debug(f"Redis increment error: {e}")
 
         # Fallback to memory (not atomic but works)
-        count = self._memory_cache.get(key, 0) + 1
-        self._memory_cache[key] = count
+        count = (self._memory_get(key) or 0) + 1
+        self._memory_set(key, count, ttl)
         return count
 
     # ═══════════════════════════════════════════════════════════════════════════

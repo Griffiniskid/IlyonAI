@@ -1,8 +1,10 @@
 import pytest
 from typing import Any, cast
+import asyncio
 
 from src.config import settings
 from src.defi.stores.analysis_store import AnalysisStore
+from src.storage.cache import CacheLayer
 from src.storage.cache import get_cache
 
 
@@ -45,6 +47,20 @@ async def test_analysis_store_uses_defi_analysis_ttl_for_writes():
 
     assert cache.calls[0][2] == settings.defi_analysis_ttl_seconds
     assert cache.calls[1][2] == settings.defi_analysis_ttl_seconds
+
+
+@pytest.mark.asyncio
+async def test_analysis_store_ttl_override_survives_memory_fallback_default_ttl():
+    cache = CacheLayer(redis_url=None, ttl=cast(Any, 0.05), max_memory_items=10)
+    store = AnalysisStore(cache=cache)
+
+    await store.save_status("ana_1", {"status": "running"})
+    await asyncio.sleep(0.08)
+
+    saved = await store.get_status("ana_1")
+
+    assert saved is not None
+    assert saved["status"] == "running"
 
 
 @pytest.mark.asyncio
