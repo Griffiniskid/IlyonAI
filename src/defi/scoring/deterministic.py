@@ -25,12 +25,14 @@ class DeterministicScorer:
         context = context or {}
         archetype = self._archetype_for(kind, candidate)
         cfg = self._config_for(archetype)
+        assets = context.get("assets") or []
         protocol = score_protocol_integrity(context)
-        market = score_market_structure(kind, candidate)
+        market = score_market_structure(kind, candidate, assets)
         apr = score_apr_quality(candidate, context.get("history") or {})
         position = score_position_risk(kind, candidate)
         exit_quality = score_exit_quality(kind, candidate)
-        behavior = score_behavior(context.get("behavior") or {})
+        behavior_context = context.get("behavior") or candidate.get("behavior") or {}
+        behavior = score_behavior(behavior_context)
         chain = score_chain_risk(candidate, context)
         confidence = score_confidence(kind, candidate, context)
 
@@ -68,7 +70,15 @@ class DeterministicScorer:
             2,
         )
         apr_efficiency = self._apr_efficiency_score(haircut_apr, required_apr)
-        overall_score = self._overall_score(weighted_quality, safety_score, yield_durability, exit_score, apr_efficiency, confidence["score"])
+        overall_score = self._overall_score(
+            context.get("ranking_profile") or self.public_ranking_default,
+            weighted_quality,
+            safety_score,
+            yield_durability,
+            exit_score,
+            apr_efficiency,
+            confidence["score"],
+        )
         if archetype == "farm" and apr_efficiency < 35:
             overall_score = min(overall_score, 34)
 
@@ -149,7 +159,16 @@ class DeterministicScorer:
             return clamp(35 + ((ratio - 0.5) * 60))
         return clamp(ratio * 70)
 
-    def _overall_score(self, quality_score: int, safety_score: int, yield_durability: int, exit_score: int, apr_efficiency: int, confidence_score: int) -> int:
+    def _overall_score(self, ranking_profile: str, quality_score: int, safety_score: int, yield_durability: int, exit_score: int, apr_efficiency: int, confidence_score: int) -> int:
+        if ranking_profile == "conservative":
+            return clamp(
+                (apr_efficiency * 0.25)
+                + (quality_score * 0.22)
+                + (safety_score * 0.22)
+                + (yield_durability * 0.10)
+                + (exit_score * 0.14)
+                + (confidence_score * 0.07)
+            )
         return clamp(
             (apr_efficiency * 0.40)
             + (quality_score * 0.22)

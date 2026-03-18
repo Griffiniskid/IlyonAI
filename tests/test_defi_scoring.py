@@ -180,3 +180,91 @@ def test_bad_reward_heavy_farm_scores_poorly_overall():
     result = engine.score_opportunity("yield", item, assets, _deps(), 50, _docs(False), history, [], ranking_profile="balanced")
     assert result["summary"]["overall_score"] < 35
     assert result["summary"]["apr_efficiency_score"] < 40
+
+
+def test_asset_quality_materially_changes_deterministic_scoring():
+    engine = DefiRiskEngine()
+    item = {
+        "product_type": "stable_lp",
+        "score_family": "lp",
+        "normalized_exposure": "stable-stable",
+        "chain": "ethereum",
+        "project": "curve-dex",
+        "symbol": "PAIR",
+        "tvl_usd": 12_000_000,
+        "apy": 7.0,
+        "apy_base": 6.0,
+        "apy_reward": 1.0,
+        "volume_usd_1d": 5_000_000,
+        "il_risk": "no",
+    }
+    strong_assets = [
+        {"symbol": "USDC", "role": "underlying", "quality_score": 95, "is_stable": True, "is_major": False, "depeg_risk": 4, "wrapper_risk": 0, "liquidity_usd": 10_000_000, "market_cap_usd": 50_000_000_000, "volatility_24h": 1},
+        {"symbol": "USDT", "role": "underlying", "quality_score": 88, "is_stable": True, "is_major": False, "depeg_risk": 8, "wrapper_risk": 0, "liquidity_usd": 9_000_000, "market_cap_usd": 60_000_000_000, "volatility_24h": 1},
+    ]
+    weak_assets = [
+        {"symbol": "sUSDx", "role": "underlying", "quality_score": 38, "is_stable": True, "is_major": False, "depeg_risk": 42, "wrapper_risk": 28, "liquidity_usd": 120_000, "market_cap_usd": 3_000_000, "volatility_24h": 18},
+        {"symbol": "USDm", "role": "underlying", "quality_score": 35, "is_stable": True, "is_major": False, "depeg_risk": 46, "wrapper_risk": 24, "liquidity_usd": 95_000, "market_cap_usd": 2_500_000, "volatility_24h": 21},
+    ]
+
+    strong = engine.score_opportunity("pool", item, strong_assets, _deps(), 74, _docs(True), _history(True), [], ranking_profile="balanced")
+    weak = engine.score_opportunity("pool", item, weak_assets, _deps(), 74, _docs(True), _history(True), [], ranking_profile="balanced")
+
+    assert strong["summary"]["quality_score"] > weak["summary"]["quality_score"]
+    assert strong["summary"]["weighted_risk_burden"] < weak["summary"]["weighted_risk_burden"]
+
+
+def test_behavior_signals_flow_through_risk_engine_context():
+    engine = DefiRiskEngine()
+    item = {
+        "product_type": "incentivized_crypto_crypto_lp",
+        "score_family": "lp",
+        "normalized_exposure": "crypto-crypto",
+        "chain": "base",
+        "project": "shadow-exchange",
+        "symbol": "FOO-WETH",
+        "tvl_usd": 900_000,
+        "apy": 48.0,
+        "apy_base": 8.0,
+        "apy_reward": 40.0,
+        "volume_usd_1d": 160_000,
+        "il_risk": "yes",
+        "behavior": {"capital_concentration_score": 88, "anomaly_flags": [{"code": "reward_instability", "severity": "critical"}]},
+    }
+    assets = [
+        {"symbol": "FOO", "role": "underlying", "quality_score": 45, "is_stable": False, "is_major": False, "depeg_risk": 0, "wrapper_risk": 0, "liquidity_usd": 300_000, "market_cap_usd": 12_000_000, "volatility_24h": 16},
+        {"symbol": "WETH", "role": "underlying", "quality_score": 91, "is_stable": False, "is_major": True, "depeg_risk": 0, "wrapper_risk": 0, "liquidity_usd": 6_000_000, "market_cap_usd": 300_000_000_000, "volatility_24h": 5},
+    ]
+
+    result = engine.score_opportunity("yield", item, assets, _deps(), 62, _docs(True), _history(True), [], ranking_profile="balanced")
+
+    assert "reward_instability" in result["summary"]["fragility_flags"]
+    assert result["summary"]["kill_switches"] == ["reward_instability"]
+
+
+def test_conservative_ranking_profile_penalizes_same_pool_more_than_balanced():
+    engine = DefiRiskEngine(public_ranking_default="balanced")
+    item = {
+        "product_type": "crypto_stable_lp",
+        "score_family": "lp",
+        "normalized_exposure": "crypto-stable",
+        "chain": "ethereum",
+        "project": "uniswap-v3",
+        "symbol": "ETH-USDC",
+        "tvl_usd": 10_000_000,
+        "apy": 9.0,
+        "apy_base": 9.0,
+        "apy_reward": 0.0,
+        "volume_usd_1d": 4_500_000,
+        "il_risk": "yes",
+    }
+    assets = [
+        {"symbol": "ETH", "role": "underlying", "quality_score": 92, "is_stable": False, "is_major": True, "depeg_risk": 0, "wrapper_risk": 0, "liquidity_usd": 8_000_000, "market_cap_usd": 300_000_000_000, "volatility_24h": 5},
+        {"symbol": "USDC", "role": "underlying", "quality_score": 95, "is_stable": True, "is_major": False, "depeg_risk": 5, "wrapper_risk": 0, "liquidity_usd": 12_000_000, "market_cap_usd": 50_000_000_000, "volatility_24h": 1},
+    ]
+
+    balanced = engine.score_opportunity("pool", item, assets, _deps(), 74, _docs(True), _history(True), [], ranking_profile="balanced")
+    conservative = engine.score_opportunity("pool", item, assets, _deps(), 74, _docs(True), _history(True), [], ranking_profile="conservative")
+
+    assert conservative["summary"]["overall_score"] != balanced["summary"]["overall_score"]
+    assert conservative["summary"]["overall_score"] < balanced["summary"]["overall_score"]
