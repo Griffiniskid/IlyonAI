@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useOpportunityAnalysis } from "@/lib/hooks";
+import type { DefiEvidenceItem, DefiScenarioItem } from "@/types";
 
 export default function DetailClient({ opportunityId }: { opportunityId: string }) {
   const { data, isLoading } = useOpportunityAnalysis(opportunityId);
@@ -25,16 +26,16 @@ export default function DetailClient({ opportunityId }: { opportunityId: string 
       <section>
         <h2>Evidence</h2>
         <ul>
-          {data.evidence?.map((item: any, i: number) => (
-            <li key={i}>{item.title}</li>
+          {data.evidence?.map((item: DefiEvidenceItem) => (
+            <li key={item.key}>{item.title}</li>
           ))}
         </ul>
       </section>
       <section>
         <h2>Scenarios</h2>
         <ul>
-          {data.scenarios?.map((item: any, i: number) => (
-            <li key={i}>{item.title}</li>
+          {data.scenarios?.map((item: DefiScenarioItem) => (
+            <li key={item.key}>{item.title}</li>
           ))}
         </ul>
       </section>
