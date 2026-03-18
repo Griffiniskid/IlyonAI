@@ -3,22 +3,28 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 from statistics import mean
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from src.config import settings
 from src.core.analyzer import TokenAnalyzer
 from src.data.defillama import DefiLlamaClient
 from src.defi.ai_router import DefiAIRouter
+from src.defi.contracts import AnalysisStatus
 from src.defi.docs_analyzer import ProtocolDocsAnalyzer
 from src.defi.evidence import build_confidence_report, build_dependency_edges, parse_age_hours
 from src.defi.farm_analyzer import FarmAnalyzer
 from src.defi.history_store import DefiHistoryStore
 from src.defi.lending_analyzer import LENDING_PROTOCOLS, LendingAnalyzer
 from src.defi.opportunity_taxonomy import classify_defi_record
+from src.defi.pipeline.coalescing import CoalescedAnalysisRunner
+from src.defi.pipeline.scan import MarketScanPipeline
 from src.defi.pool_analyzer import PoolAnalyzer
 from src.defi.risk_engine import DefiRiskEngine, MAJOR_SYMBOLS, STABLE_SYMBOLS
 from src.defi.scenario_engine import DefiScenarioEngine
+from src.defi.stores.analysis_store import AnalysisStore
 from src.intel.rekt_database import AuditDatabase, RektDatabase
 
 
@@ -79,6 +85,50 @@ def _screening_docs_profile(default_governance_score: int = 52, has_oracle_menti
     }
 
 
+class _AsyncOpportunityScanPipeline:
+    def __init__(
+        self,
+        *,
+        pool_analyzer: PoolAnalyzer,
+        farm_analyzer: FarmAnalyzer,
+        lending_analyzer: LendingAnalyzer,
+    ) -> None:
+        self.pool_analyzer = pool_analyzer
+        self.farm_analyzer = farm_analyzer
+        self.lending_analyzer = lending_analyzer
+        self.scan = MarketScanPipeline()
+
+    def build_request_key(self, filters: Dict[str, Any]) -> str:
+        normalized = {key: value for key, value in sorted(filters.items()) if value is not None}
+        return json.dumps(normalized, sort_keys=True, separators=(",", ":"), default=str)
+
+    async def run(
+        self,
+        *,
+        chain: Optional[str] = None,
+        query: Optional[str] = None,
+        min_tvl: float = 100_000,
+        min_apy: float = 3.0,
+        limit: int = 12,
+        include_ai: bool = True,
+        ranking_profile: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        del include_ai, ranking_profile
+        pools_task = self.pool_analyzer.get_top_pools(chain=chain, min_tvl=min_tvl, min_apy=min_apy, limit=max(limit * 3, 36))
+        yields_task = self.farm_analyzer.get_yields(chain=chain, min_apy=min_apy, min_tvl=min_tvl, limit=max(limit * 3, 36))
+        lending_task = self.lending_analyzer.get_lending_markets(chain=chain, limit=max(limit * 3, 36))
+        pools, yields, markets = await asyncio.gather(pools_task, yields_task, lending_task)
+        candidates = self.scan.normalize_candidates(pools=pools, yields=yields, markets=markets)
+        if query:
+            needle = query.lower()
+            candidates = [
+                item for item in candidates
+                if needle in json.dumps(item, sort_keys=True, default=str).lower()
+            ]
+        candidates.sort(key=lambda item: item.get("shortlist_score", 0), reverse=True)
+        return candidates[:limit]
+
+
 class DefiOpportunityEngine:
     def __init__(
         self,
@@ -104,6 +154,14 @@ class DefiOpportunityEngine:
         self.public_ranking_default = public_ranking_default
         self._token_analyzer: Optional[TokenAnalyzer] = None
         self._asset_cache: Dict[str, Dict[str, Any]] = {}
+        self.scan_pipeline = _AsyncOpportunityScanPipeline(
+            pool_analyzer=self.pool_analyzer,
+            farm_analyzer=self.farm_analyzer,
+            lending_analyzer=self.lending_analyzer,
+        )
+        self.coalescer = CoalescedAnalysisRunner()
+        self.analysis_store = AnalysisStore()
+        self._analysis_tasks: Dict[str, asyncio.Task[Any]] = {}
 
     async def close(self):
         await self.docs.close()
@@ -112,6 +170,148 @@ class DefiOpportunityEngine:
             await self._token_analyzer.close()
 
     async def analyze_market(
+        self,
+        chain: Optional[str] = None,
+        query: Optional[str] = None,
+        min_tvl: float = 100_000,
+        min_apy: float = 3.0,
+        limit: int = 12,
+        include_ai: bool = True,
+        ranking_profile: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        status = await self.start_opportunity_analysis(
+            chain=chain,
+            query=query,
+            min_tvl=min_tvl,
+            min_apy=min_apy,
+            limit=limit,
+            include_ai=include_ai,
+            ranking_profile=ranking_profile,
+        )
+        return await self.get_completed_or_provisional_result(status.analysis_id)
+
+    async def start_opportunity_analysis(
+        self,
+        chain: Optional[str] = None,
+        query: Optional[str] = None,
+        min_tvl: float = 100_000,
+        min_apy: float = 3.0,
+        limit: int = 12,
+        include_ai: bool = True,
+        ranking_profile: Optional[str] = None,
+    ) -> AnalysisStatus:
+        filters = {
+            "chain": chain,
+            "query": query,
+            "min_tvl": min_tvl,
+            "min_apy": min_apy,
+            "limit": limit,
+            "include_ai": include_ai,
+            "ranking_profile": ranking_profile,
+        }
+        request_key = self.scan_pipeline.build_request_key(filters)
+        existing_analysis_id = await self.analysis_store.get_request_analysis(request_key)
+        if existing_analysis_id:
+            existing_status = await self.analysis_store.get_status(existing_analysis_id)
+            if existing_status and existing_status.get("status") != "failed":
+                return self._analysis_status_from_payload(existing_analysis_id, existing_status)
+
+        async def _start_new_analysis() -> AnalysisStatus:
+            linked_analysis_id = await self.analysis_store.get_request_analysis(request_key)
+            if linked_analysis_id:
+                linked_status = await self.analysis_store.get_status(linked_analysis_id)
+                if linked_status and linked_status.get("status") != "failed":
+                    return self._analysis_status_from_payload(linked_analysis_id, linked_status)
+
+            analysis_id = self.analysis_store.new_id()
+            await self.analysis_store.save_request_analysis(request_key, analysis_id)
+            provisional = await self.scan_pipeline.run(**filters)
+            payload = {
+                "status": "running",
+                "score_model_version": settings.defi_score_model_version,
+                "provisional_shortlist": provisional,
+                "request_key": request_key,
+            }
+            await self.analysis_store.save_status(analysis_id, payload)
+            task = asyncio.create_task(self._finish_analysis(analysis_id, filters, provisional, request_key))
+            self._analysis_tasks[analysis_id] = task
+            task.add_done_callback(lambda finished_task, current_id=analysis_id: self._clear_analysis_task(current_id, finished_task))
+            return self._analysis_status_from_payload(analysis_id, payload)
+
+        return await self.coalescer.run(request_key, _start_new_analysis)
+
+    async def get_opportunity_analysis(self, analysis_id: str) -> Optional[Dict[str, Any]]:
+        status = await self.analysis_store.get_status(analysis_id)
+        if status is None:
+            return None
+        return {"analysis_id": analysis_id, **status}
+
+    async def get_completed_or_provisional_result(self, analysis_id: str) -> Dict[str, Any]:
+        task = self._analysis_tasks.get(analysis_id)
+        if task is not None:
+            await asyncio.shield(task)
+        status = await self.analysis_store.get_status(analysis_id)
+        if status is None:
+            return {
+                "analysis_id": analysis_id,
+                "status": "failed",
+                "score_model_version": settings.defi_score_model_version,
+                "provisional_shortlist": [],
+            }
+        if status.get("status") == "completed" and status.get("result") is not None:
+            return status["result"]
+        return {
+            "analysis_id": analysis_id,
+            "status": status.get("status", "running"),
+            "score_model_version": status.get("score_model_version", settings.defi_score_model_version),
+            "provisional_shortlist": status.get("provisional_shortlist") or [],
+        }
+
+    async def _finish_analysis(
+        self,
+        analysis_id: str,
+        filters: Dict[str, Any],
+        provisional: List[Dict[str, Any]],
+        request_key: str,
+    ) -> None:
+        try:
+            result = await self._build_market_analysis(**filters)
+        except Exception as exc:
+            await self.analysis_store.save_status(
+                analysis_id,
+                {
+                    "status": "failed",
+                    "score_model_version": settings.defi_score_model_version,
+                    "provisional_shortlist": provisional,
+                    "request_key": request_key,
+                    "error": str(exc),
+                },
+            )
+            raise
+        await self.analysis_store.save_status(
+            analysis_id,
+            {
+                "status": "completed",
+                "score_model_version": settings.defi_score_model_version,
+                "provisional_shortlist": provisional,
+                "request_key": request_key,
+                "result": result,
+            },
+        )
+
+    def _clear_analysis_task(self, analysis_id: str, task: asyncio.Task[Any]) -> None:
+        if self._analysis_tasks.get(analysis_id) is task:
+            self._analysis_tasks.pop(analysis_id, None)
+
+    def _analysis_status_from_payload(self, analysis_id: str, payload: Dict[str, Any]) -> AnalysisStatus:
+        return AnalysisStatus(
+            analysis_id=analysis_id,
+            status=payload.get("status", "running"),
+            score_model_version=payload.get("score_model_version", settings.defi_score_model_version),
+            provisional_shortlist=payload.get("provisional_shortlist") or [],
+        )
+
+    async def _build_market_analysis(
         self,
         chain: Optional[str] = None,
         query: Optional[str] = None,

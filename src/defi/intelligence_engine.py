@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Sequence
 
 from src.data.defillama import DefiLlamaClient
+from src.defi.contracts import AnalysisStatus
 from src.defi.farm_analyzer import FarmAnalyzer
 from src.defi.lending_analyzer import LendingAnalyzer
 from src.defi.opportunity_engine import DefiOpportunityEngine
@@ -15,17 +16,17 @@ from src.intel.rekt_database import AuditDatabase, RektDatabase
 class DefiIntelligenceEngine:
     def __init__(
         self,
-        pool_analyzer: PoolAnalyzer,
-        farm_analyzer: FarmAnalyzer,
-        lending_analyzer: LendingAnalyzer,
+        pool_analyzer: Optional[PoolAnalyzer] = None,
+        farm_analyzer: Optional[FarmAnalyzer] = None,
+        lending_analyzer: Optional[LendingAnalyzer] = None,
         llama: Optional[DefiLlamaClient] = None,
         rekt_db: Optional[RektDatabase] = None,
         audit_db: Optional[AuditDatabase] = None,
         public_ranking_default: str = "balanced",
     ):
-        self.pool_analyzer = pool_analyzer
-        self.farm_analyzer = farm_analyzer
-        self.lending_analyzer = lending_analyzer
+        self.pool_analyzer = pool_analyzer or PoolAnalyzer()
+        self.farm_analyzer = farm_analyzer or FarmAnalyzer()
+        self.lending_analyzer = lending_analyzer or LendingAnalyzer()
         self.llama = llama or DefiLlamaClient()
         self.rekt = rekt_db or RektDatabase()
         self.audits = audit_db or AuditDatabase()
@@ -63,6 +64,15 @@ class DefiIntelligenceEngine:
             include_ai=include_ai,
             ranking_profile=ranking_profile,
         )
+
+    async def start_opportunity_analysis(self, **filters: Any) -> AnalysisStatus:
+        return await self.engine.start_opportunity_analysis(**filters)
+
+    async def get_opportunity_analysis(self, analysis_id: str) -> Optional[Dict[str, Any]]:
+        return await self.engine.get_opportunity_analysis(analysis_id)
+
+    async def get_completed_or_provisional_result(self, analysis_id: str) -> Dict[str, Any]:
+        return await self.engine.get_completed_or_provisional_result(analysis_id)
 
     async def get_protocol_profile(self, slug: str, include_ai: bool = True, ranking_profile: Optional[str] = None) -> Optional[Dict[str, Any]]:
         return await self.engine.get_protocol_profile(slug, include_ai=include_ai, ranking_profile=ranking_profile)
