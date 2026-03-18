@@ -87,6 +87,20 @@ def _build_filtered_response(base_response: Dict[str, Any], type_filter: Optiona
     return response
 
 
+def _collect_behavior_annotations(raw_transactions: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    anomaly_flags: List[Dict[str, Any]] = []
+    entity_heuristics: List[Dict[str, Any]] = []
+
+    for tx in raw_transactions:
+        anomaly_flags.extend(tx.get("anomaly_flags") or tx.get("anomalies") or [])
+        entity_heuristics.extend(tx.get("entity_heuristics") or tx.get("heuristics") or [])
+
+    return {
+        "anomaly_flags": anomaly_flags,
+        "entity_heuristics": entity_heuristics,
+    }
+
+
 async def get_whale_activity(request: web.Request) -> web.Response:
     """
     GET /api/v1/whales
@@ -316,6 +330,7 @@ async def get_whale_activity_for_token(request: web.Request) -> web.Response:
                         token_name=name
                     )
                     behavior_inputs = _behavior_adapter.adapt(raw_transactions)
+                    behavior_annotations = _collect_behavior_annotations(raw_transactions)
                 finally:
                     await solana.close()
 
@@ -370,6 +385,8 @@ async def get_whale_activity_for_token(request: web.Request) -> web.Response:
                 base_response["behavior"] = _behavior_builder.build(
                     whale_summary=behavior_inputs.get("whale_summary"),
                     concentration=behavior_inputs.get("concentration"),
+                    anomalies=behavior_annotations.get("anomaly_flags"),
+                    heuristics=behavior_annotations.get("entity_heuristics"),
                 ).to_dict()
 
                 _set_cached_data(cache_key, base_response)
