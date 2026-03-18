@@ -54,6 +54,33 @@ def test_synthesis_combines_deterministic_and_ai_scores_without_bypassing_caps()
     assert analysis.identity.protocol_slug == "aave-v3"
 
 
+def test_synthesis_honors_explicit_hard_cap_value_in_final_score():
+    pipeline = SynthesisPipeline()
+
+    analysis = pipeline.combine(
+        deterministic={
+            "final_score": 62,
+            "safety_score": 62,
+            "apr_quality_score": 62,
+            "exit_quality_score": 62,
+            "resilience_score": 62,
+            "confidence_score": 80,
+            "hard_caps": [
+                {
+                    "code": "exit_liquidity_cap",
+                    "dimension": "exit_quality",
+                    "cap": 41,
+                    "reason": "Exit depth is too thin for deployment sizing.",
+                }
+            ],
+        },
+        ai={"judgment_score": 95},
+    )
+
+    assert analysis.scores.final_deployability_score == 41
+    assert analysis.scores.capped_score == 41
+
+
 def test_synthesis_emits_full_opportunity_analysis_contract():
     pipeline = SynthesisPipeline()
 

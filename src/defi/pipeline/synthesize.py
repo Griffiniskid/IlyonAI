@@ -65,7 +65,7 @@ class SynthesisPipeline:
                 "exit_quality_score": int(deterministic.get("exit_quality_score") or deterministic_score),
                 "resilience_score": int(deterministic.get("resilience_score") or deterministic_score),
                 "confidence_score": evidence_confidence,
-                "capped_score": deterministic_score if hard_caps else None,
+                "capped_score": final_score if hard_caps else None,
             },
             factors=factors,
             behavior=behavior,

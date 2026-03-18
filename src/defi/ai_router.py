@@ -34,7 +34,10 @@ def render_ai_judgment(payload: dict[str, Any]) -> dict[str, Any]:
     chain = str(payload.get("chain") or "unknown").title()
     gross_apr = float(payload.get("gross_apr") or 0.0)
     risk_to_apr_ratio = float(payload.get("risk_to_apr_ratio") or 0.0)
-    evidence_confidence = int(payload.get("evidence_confidence") or 75)
+    evidence_confidence_value = payload.get("evidence_confidence")
+    if evidence_confidence_value is None:
+        evidence_confidence_value = 75
+    evidence_confidence = int(evidence_confidence_value)
 
     if protocol.lower() == "aave v3" and chain.lower() == "base":
         headline = "Aave V3 on Base looks disciplined, but the carry still needs respect for modest upside."

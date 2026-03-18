@@ -9,7 +9,13 @@ def build_ai_judgment_score(payload: dict[str, Any]) -> dict[str, Any]:
     explanation = render_ai_judgment(payload)
     gross_apr = float(payload.get("gross_apr") or 0.0)
     risk_to_apr_ratio = float(payload.get("risk_to_apr_ratio") or 0.0)
-    evidence_confidence = int(payload.get("evidence_confidence") or payload.get("confidence_score") or 70)
+
+    evidence_confidence_value = payload.get("evidence_confidence")
+    if evidence_confidence_value is None:
+        evidence_confidence_value = payload.get("confidence_score")
+    if evidence_confidence_value is None:
+        evidence_confidence_value = 70
+    evidence_confidence = int(evidence_confidence_value)
 
     score = 72
     if gross_apr >= 12:
@@ -26,4 +32,5 @@ def build_ai_judgment_score(payload: dict[str, Any]) -> dict[str, Any]:
         score = min(score, 65)
 
     explanation["judgment_score"] = max(0, min(100, int(round(score))))
+    explanation["evidence_confidence"] = evidence_confidence
     return explanation
