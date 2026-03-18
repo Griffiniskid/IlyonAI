@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from src.defi.evidence import clamp, risk_level_from_score
+from src.defi.evidence import clamp, parse_age_hours, risk_level_from_score
 from src.defi.scoring.archetypes.farm import config as farm_config
 from src.defi.scoring.archetypes.lending_supply import config as lending_supply_config
 from src.defi.scoring.archetypes.lp import config as lp_config
@@ -35,6 +35,7 @@ class DeterministicScorer:
         behavior = score_behavior(behavior_context)
         chain = score_chain_risk(candidate, context)
         confidence = score_confidence(kind, candidate, context)
+        incident_effect = self._incident_effect(context.get("incidents") or [])
 
         factors = {
             "protocol": protocol,
@@ -51,12 +52,18 @@ class DeterministicScorer:
         safety_score = clamp((protocol["score"] * 0.45) + (market["score"] * 0.20) + (position["score"] * 0.15) + (chain["score"] * 0.10) + (behavior["score"] * 0.10))
         yield_durability = clamp((apr["score"] * 0.65) + (confidence["score"] * 0.20) + (behavior["score"] * 0.15))
         exit_score = exit_quality["score"]
+        weighted_risk_burden = clamp(weighted_risk_burden + incident_effect["risk_burden_penalty"])
+        safety_score = clamp(safety_score - incident_effect["safety_penalty"])
+        if incident_effect["recent_critical"]:
+            safety_score = min(safety_score, 42)
+        elif incident_effect["has_incident"]:
+            safety_score = min(safety_score, 60)
 
         gross_apr = apr["gross_apr"]
         extreme_apr_penalty = 0.0
         if archetype == "farm":
             extreme_apr_penalty = min(0.55, max(0.0, gross_apr - 80.0) / 180.0)
-        haircut_penalty = min(0.92, apr["haircut_penalty"] + behavior["haircut_penalty"] + extreme_apr_penalty)
+        haircut_penalty = min(0.92, apr["haircut_penalty"] + behavior["haircut_penalty"] + extreme_apr_penalty + incident_effect["haircut_penalty"])
         haircut_apr = round(max(0.0, gross_apr * (1.0 - haircut_penalty)), 2)
         net_expected_apr = round(max(0.0, haircut_apr - (weighted_risk_burden * cfg["net_apr_burden_rate"])), 2)
         required_apr = round(
@@ -81,6 +88,16 @@ class DeterministicScorer:
         )
         if archetype == "farm" and apr_efficiency < 35:
             overall_score = min(overall_score, 34)
+        if incident_effect["recent_critical"]:
+            overall_score = min(overall_score, 32)
+
+        fragility_flags = list(behavior["fragility_flags"])
+        kill_switches = list(behavior["kill_switches"])
+        if incident_effect["recent_critical"]:
+            fragility_flags.append("recent_critical_incident")
+            kill_switches.append("recent_critical_incident")
+        elif incident_effect["has_incident"]:
+            fragility_flags.append("incident_history")
 
         summary = {
             "overall_score": overall_score,
@@ -106,8 +123,8 @@ class DeterministicScorer:
             "net_expected_apr": net_expected_apr,
             "weighted_risk_burden": weighted_risk_burden,
             "risk_to_apr_ratio": round(weighted_risk_burden / max(haircut_apr, 0.1), 4),
-            "fragility_flags": behavior["fragility_flags"],
-            "kill_switches": behavior["kill_switches"],
+            "fragility_flags": fragility_flags,
+            "kill_switches": kill_switches,
             "best_fit_risk_profile": self._best_fit_profile(safety_score, weighted_risk_burden),
             "confidence_reasoning": confidence["report"]["notes"],
         }
@@ -121,7 +138,12 @@ class DeterministicScorer:
             self._dimension("confidence", "Confidence", confidence["score"], cfg["weights"]["confidence"], confidence["notes"][0]),
             self._dimension("apr_efficiency", "APR Efficiency", apr_efficiency, 0.40, "Risk-adjusted APR after deterministic haircuts and burden hurdles."),
         ]
-        return {"summary": summary, "dimensions": dimensions, "confidence": confidence["report"], "score_caps": []}
+        score_caps = []
+        if incident_effect["recent_critical"]:
+            score_caps.append({"dimension": "safety", "cap": 42, "reason": "Recent critical incident caps deterministic safety until resilience is re-established."})
+        elif incident_effect["has_incident"]:
+            score_caps.append({"dimension": "safety", "cap": 60, "reason": "Incident history still caps deterministic safety."})
+        return {"summary": summary, "dimensions": dimensions, "confidence": confidence["report"], "score_caps": score_caps}
 
     def _archetype_for(self, kind: str, candidate: Dict[str, Any]) -> str:
         if kind == "lending":
@@ -187,3 +209,37 @@ class DeterministicScorer:
 
     def _dimension(self, key: str, label: str, score: int, weight: float, summary: str) -> Dict[str, Any]:
         return {"key": key, "label": label, "score": score, "weight": weight, "summary": summary}
+
+    def _incident_effect(self, incidents: list[Dict[str, Any]]) -> Dict[str, Any]:
+        safety_penalty = 0.0
+        risk_burden_penalty = 0.0
+        haircut_penalty = 0.0
+        has_incident = False
+        recent_critical = False
+        for incident in incidents:
+            severity = str(incident.get("severity") or "").lower()
+            if severity not in {"critical", "high", "medium", "low"}:
+                continue
+            has_incident = True
+            age_hours = parse_age_hours(incident.get("date"))
+            freshness = 1.0
+            if age_hours is not None:
+                if age_hours > 24 * 365 * 2:
+                    freshness = 0.35
+                elif age_hours > 24 * 365:
+                    freshness = 0.55
+                elif age_hours > 24 * 180:
+                    freshness = 0.8
+            if severity == "critical" and (age_hours is None or age_hours <= 24 * 365):
+                recent_critical = True
+            severity_base = {"low": 4.0, "medium": 8.0, "high": 14.0, "critical": 22.0}[severity]
+            safety_penalty += severity_base * freshness
+            risk_burden_penalty += (severity_base * 0.85) * freshness
+            haircut_penalty += min(0.24, (severity_base / 100.0) * freshness)
+        return {
+            "has_incident": has_incident,
+            "recent_critical": recent_critical,
+            "safety_penalty": safety_penalty,
+            "risk_burden_penalty": risk_burden_penalty,
+            "haircut_penalty": haircut_penalty,
+        }

@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from src.defi.risk_engine import DefiRiskEngine
 
 
@@ -268,3 +270,38 @@ def test_conservative_ranking_profile_penalizes_same_pool_more_than_balanced():
 
     assert conservative["summary"]["overall_score"] != balanced["summary"]["overall_score"]
     assert conservative["summary"]["overall_score"] < balanced["summary"]["overall_score"]
+
+
+def test_recent_critical_incident_triggers_kill_switch_and_hard_cap():
+    engine = DefiRiskEngine()
+    item = {
+        "product_type": "stable_lp",
+        "score_family": "lp",
+        "normalized_exposure": "stable-stable",
+        "chain": "ethereum",
+        "project": "curve-dex",
+        "symbol": "USDC-USDT",
+        "tvl_usd": 10_000_000,
+        "apy": 7.0,
+        "apy_base": 6.0,
+        "apy_reward": 1.0,
+        "volume_usd_1d": 5_000_000,
+        "il_risk": "no",
+    }
+    assets = [
+        {"symbol": "USDC", "role": "underlying", "quality_score": 95, "is_stable": True, "is_major": False, "depeg_risk": 5, "wrapper_risk": 0, "liquidity_usd": 10_000_000, "market_cap_usd": 50_000_000_000, "volatility_24h": 1},
+        {"symbol": "USDT", "role": "underlying", "quality_score": 88, "is_stable": True, "is_major": False, "depeg_risk": 12, "wrapper_risk": 0, "liquidity_usd": 9_000_000, "market_cap_usd": 60_000_000_000, "volatility_24h": 1},
+    ]
+    recent_critical = [{
+        "severity": "critical",
+        "date": (datetime.now(timezone.utc) - timedelta(days=10)).isoformat(),
+        "title": "Liquidity exploit",
+    }]
+
+    clean = engine.score_opportunity("pool", item, assets, _deps(), 74, _docs(True), _history(True), [], ranking_profile="balanced")
+    incident_hit = engine.score_opportunity("pool", item, assets, _deps(), 74, _docs(True), _history(True), recent_critical, ranking_profile="balanced")
+
+    assert "recent_critical_incident" in incident_hit["summary"]["kill_switches"]
+    assert "recent_critical_incident" in incident_hit["summary"]["fragility_flags"]
+    assert incident_hit["summary"]["overall_score"] < clean["summary"]["overall_score"]
+    assert incident_hit["summary"]["safety_score"] <= 42
