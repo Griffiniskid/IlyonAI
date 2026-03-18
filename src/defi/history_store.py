@@ -158,6 +158,12 @@ class DefiHistoryStore:
             "tvl_trend_score": _trend_score(tvl_delta_30d, tvl_drawdown, tvl_cv),
         }
 
+    def fallback_summary(self, reason: str = "Pool history unavailable") -> Dict[str, Any]:
+        summary = self.summarize_pool_history([])
+        summary["placeholder"] = True
+        summary["red_flags"] = [reason]
+        return summary
+
     def _apy_persistence_score(self, apy_values: Sequence[float]) -> int:
         if len(apy_values) < 5:
             return 40

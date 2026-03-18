@@ -91,6 +91,11 @@ class ProtocolDocsAnalyzer:
         await self.evidence_store.save_protocol_docs(target, profile)
         return profile
 
+    def fallback_profile(self, reason: str = "Protocol docs unavailable") -> Dict[str, Any]:
+        profile = self._empty(reason)
+        profile["placeholder"] = True
+        return profile
+
     def _observability_score(self, page: Dict[str, Any], governance_hits: int, timelock_hits: int, multisig_hits: int) -> int:
         score = 38
         if page.get("success"):

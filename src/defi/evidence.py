@@ -36,6 +36,23 @@ def parse_age_hours(date_str: Optional[str]) -> Optional[float]:
     return max(0.0, (now - dt).total_seconds() / 3600)
 
 
+def build_evidence_source_metadata(
+    source: str,
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    fallback_used: bool = False,
+    freshness_hours: Optional[float] = None,
+) -> Dict[str, Any]:
+    payload = payload or {}
+    resolved_freshness = freshness_hours if freshness_hours is not None else payload.get("freshness_hours")
+    return {
+        "source": source,
+        "fallback_used": fallback_used,
+        "freshness_hours": round(resolved_freshness, 2) if isinstance(resolved_freshness, (int, float)) else resolved_freshness,
+        "available": bool(payload.get("available")),
+    }
+
+
 def build_dependency_edges(
     kind: str,
     chain: str,
