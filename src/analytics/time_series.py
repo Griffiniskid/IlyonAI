@@ -31,6 +31,8 @@ class TimeSeriesDataPoint:
     sell_count: int = 0
     large_sells: int = 0  # Sells > 1% of liquidity
     price_change_1h: float = 0.0
+    whale_net_flow_usd: float = 0.0
+    repeat_wallet_share: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for storage."""
@@ -46,6 +48,8 @@ class TimeSeriesDataPoint:
             "sell_count": self.sell_count,
             "large_sells": self.large_sells,
             "price_change_1h": self.price_change_1h,
+            "whale_net_flow_usd": self.whale_net_flow_usd,
+            "repeat_wallet_share": self.repeat_wallet_share,
         }
 
     @classmethod
@@ -63,7 +67,41 @@ class TimeSeriesDataPoint:
             sell_count=data.get("sell_count", 0),
             large_sells=data.get("large_sells", 0),
             price_change_1h=data.get("price_change_1h", 0.0),
+            whale_net_flow_usd=data.get("whale_net_flow_usd", 0.0),
+            repeat_wallet_share=data.get("repeat_wallet_share", 0.0),
         )
+
+
+class TimeSeriesStore:
+    """Small in-memory store for first-layer behavior snapshots."""
+
+    def __init__(self):
+        self._behavior_snapshots: Dict[str, List[Dict[str, Any]]] = {}
+
+    def add_behavior_snapshot(self, token_address: str, snapshot: Dict[str, Any]) -> None:
+        snapshots = self._behavior_snapshots.setdefault(token_address, [])
+        snapshots.append(snapshot)
+        snapshots.sort(key=lambda item: item.get("timestamp") or datetime.min)
+
+    def get_behavior_summary(self, token_address: str) -> Dict[str, Any]:
+        snapshots = self._behavior_snapshots.get(token_address, [])
+        wallet_counts: Dict[str, int] = {}
+        total_wallet_observations = 0
+        repeated_observations = 0
+
+        for snapshot in snapshots:
+            for wallet in snapshot.get("wallets", []):
+                total_wallet_observations += 1
+                wallet_counts[wallet] = wallet_counts.get(wallet, 0) + 1
+                if wallet_counts[wallet] > 1:
+                    repeated_observations += 1
+
+        return {
+            "snapshot_count": len(snapshots),
+            "repeat_wallet_share": (
+                repeated_observations / total_wallet_observations if total_wallet_observations else 0.0
+            ),
+        }
 
 
 class TimeSeriesCollector:

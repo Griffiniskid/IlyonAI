@@ -1352,3 +1352,27 @@ class SolanaClient:
         except Exception as e:
             logger.error(f"Error fetching token whale transactions: {e}")
             return []
+
+    async def get_behavior_transactions(
+        self,
+        token_address: str,
+        min_amount_usd: float = 5000,
+        limit: int = 50,
+        token_symbol: Optional[str] = None,
+        token_name: Optional[str] = None,
+    ) -> List[Dict]:
+        transactions = await self.get_token_whale_transactions(
+            token_address=token_address,
+            min_amount_usd=min_amount_usd,
+            limit=limit,
+            token_symbol=token_symbol,
+            token_name=token_name,
+        )
+        if transactions:
+            return transactions
+
+        fallback = await self._get_whale_transactions_from_trending(
+            min_amount_usd=min_amount_usd,
+            limit=limit,
+        )
+        return [tx for tx in fallback if tx.get("token_address") == token_address][:limit]

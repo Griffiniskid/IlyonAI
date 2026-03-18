@@ -13,6 +13,8 @@ import asyncio
 
 from src.data.solana import SolanaClient
 from src.data.dexscreener import DexScreenerClient
+from src.analytics.behavior_adapters.evm import EVMBehaviorAdapter
+from src.analytics.behavior_signals import BehaviorSignalBuilder
 from src.api.schemas.responses import (
     WhaleActivityResponse, WhaleTransactionResponse, WhaleProfileResponse,
     ErrorResponse
@@ -20,6 +22,9 @@ from src.api.schemas.responses import (
 from src.config import settings
 
 logger = logging.getLogger(__name__)
+
+_behavior_adapter = EVMBehaviorAdapter()
+_behavior_builder = BehaviorSignalBuilder()
 
 # Cache for whale transactions
 _whale_cache: Dict[str, Any] = {}
@@ -303,13 +308,14 @@ async def get_whale_activity_for_token(request: web.Request) -> web.Response:
                 )
 
                 try:
-                    raw_transactions = await solana.get_token_whale_transactions(
+                    raw_transactions = await solana.get_behavior_transactions(
                         token_address=token_address,
                         min_amount_usd=min_amount,
                         limit=200,
                         token_symbol=symbol,
                         token_name=name
                     )
+                    behavior_inputs = _behavior_adapter.adapt(raw_transactions)
                 finally:
                     await solana.close()
 
@@ -361,6 +367,10 @@ async def get_whale_activity_for_token(request: web.Request) -> web.Response:
                     filter_token=token_address,
                     min_amount_usd=min_amount
                 ).model_dump(mode='json')
+                base_response["behavior"] = _behavior_builder.build(
+                    whale_summary=behavior_inputs.get("whale_summary"),
+                    concentration=behavior_inputs.get("concentration"),
+                ).to_dict()
 
                 _set_cached_data(cache_key, base_response)
 

@@ -17,6 +17,8 @@ from enum import Enum
 
 import aiohttp
 
+from src.analytics.signal_models import EntityHeuristic
+
 logger = logging.getLogger(__name__)
 
 
@@ -804,6 +806,58 @@ class WalletForensicsEngine:
             "license": "MIT - Free to use, attribution appreciated",
             "attribution": "Ilyon AI (https://github.com/yourusername/ilyon-ai)",
         }
+
+    def detect_entity_heuristics(
+        self,
+        deployer_wallet: Optional[str],
+        top_holders: List[Dict],
+    ) -> List[EntityHeuristic]:
+        heuristics: List[EntityHeuristic] = []
+        normalized_holders = []
+
+        for holder in top_holders:
+            share = float(holder.get("share", 0.0) or 0.0)
+            address = holder.get("address")
+            if not address or share <= 0:
+                continue
+            normalized_holders.append({"address": address, "share": share})
+
+        if deployer_wallet:
+            deployer_holder = next(
+                (holder for holder in normalized_holders if holder["address"] == deployer_wallet),
+                None,
+            )
+            if deployer_holder and deployer_holder["share"] >= 0.15:
+                heuristics.append(
+                    EntityHeuristic(
+                        code="deployer_retained_supply",
+                        severity="medium",
+                        confidence=min(1.0, deployer_holder["share"] * 2),
+                        description="Deployer wallet still controls a meaningful share of supply.",
+                        metadata={"share": deployer_holder["share"]},
+                    )
+                )
+
+        for idx, holder in enumerate(normalized_holders[:5]):
+            for other in normalized_holders[idx + 1:5]:
+                baseline = max(holder["share"], other["share"], 0.0001)
+                relative_diff = abs(holder["share"] - other["share"]) / baseline
+                if min(holder["share"], other["share"]) >= 0.05 and relative_diff <= 0.02:
+                    heuristics.append(
+                        EntityHeuristic(
+                            code="possible_insider_cluster",
+                            severity="medium",
+                            confidence=0.7,
+                            description="Top holders show unusually similar allocations.",
+                            metadata={
+                                "wallets": [holder["address"], other["address"]],
+                                "shares": [holder["share"], other["share"]],
+                            },
+                        )
+                    )
+                    return heuristics
+
+        return heuristics
 
 
 async def get_token_deployer(

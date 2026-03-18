@@ -15,6 +15,7 @@ from typing import List, Dict, Optional, Tuple
 from enum import Enum
 
 from src.analytics.time_series import TimeSeriesDataPoint, TimeSeriesCollector
+from src.analytics.signal_models import SignalFlag
 
 logger = logging.getLogger(__name__)
 
@@ -651,3 +652,38 @@ class BehavioralAnomalyDetector:
             return "Normal behavior with minor anomalies. Continue monitoring."
 
         return "No significant behavioral anomalies detected. Standard risk levels apply."
+
+    def detect_behavior_flags(
+        self,
+        time_series: List[TimeSeriesDataPoint],
+    ) -> List[SignalFlag]:
+        flags: List[SignalFlag] = []
+
+        for anomaly in (
+            self._analyze_liquidity_pattern(time_series),
+            self._analyze_transaction_patterns(time_series),
+            self._analyze_volume_pattern(time_series),
+            self._analyze_price_patterns(time_series),
+        ):
+            if not anomaly:
+                continue
+
+            code = (
+                anomaly.details.get("pattern")
+                or anomaly.anomaly_type
+                or "behavior_anomaly"
+            )
+            if code == "sell_dominance":
+                code = "sell_pressure_buildup"
+            if code == "transaction_anomaly" and anomaly.details.get("large_sell_count"):
+                code = "sell_pressure_buildup"
+            flags.append(
+                SignalFlag(
+                    code=str(code),
+                    severity=anomaly.severity.lower(),
+                    description=anomaly.description,
+                    metadata=dict(anomaly.details),
+                )
+            )
+
+        return flags
