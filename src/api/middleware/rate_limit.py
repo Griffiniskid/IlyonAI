@@ -4,11 +4,11 @@ Rate limiting middleware for Solana Actions API.
 Prevents abuse while allowing legitimate unfurling and verification.
 """
 
+import logging
 import hashlib
 import time
-import logging
-from typing import Dict, Tuple
 from collections import defaultdict
+from typing import Dict, Optional, Tuple
 from aiohttp import web
 from aiohttp.web import middleware
 
@@ -117,7 +117,8 @@ class RateLimiter:
 
 
 # Global rate limiter instance
-_rate_limiter: RateLimiter = None
+_rate_limiter: RateLimiter | None = None
+_authenticated_rate_limiter: RateLimiter | None = None
 
 
 def get_rate_limiter() -> RateLimiter:
@@ -129,6 +130,17 @@ def get_rate_limiter() -> RateLimiter:
             requests_per_hour=settings.blinks_rate_limit_per_hour,
         )
     return _rate_limiter
+
+
+def get_authenticated_rate_limiter() -> RateLimiter:
+    """Get or create global authenticated rate limiter."""
+    global _authenticated_rate_limiter
+    if _authenticated_rate_limiter is None:
+        _authenticated_rate_limiter = RateLimiter(
+            requests_per_minute=settings.blinks_rate_limit_per_minute * 2,
+            requests_per_hour=settings.blinks_rate_limit_per_hour * 2,
+        )
+    return _authenticated_rate_limiter
 
 
 @middleware
@@ -161,12 +173,7 @@ async def rate_limit_middleware(request: web.Request, handler):
     limiter = get_rate_limiter()
     
     if user_wallet:
-        # For authenticated users, use wallet address and higher limits
-        # Create a separate limiter with higher limits
-        auth_limiter = RateLimiter(
-            requests_per_minute=settings.blinks_rate_limit_per_minute * 2,
-            requests_per_hour=settings.blinks_rate_limit_per_hour * 2,
-        )
+        auth_limiter = get_authenticated_rate_limiter()
         allowed, reason = auth_limiter.check_rate_limit(user_wallet)
         request["rate_limit_key"] = f"wallet:{user_wallet[:8]}"
     else:

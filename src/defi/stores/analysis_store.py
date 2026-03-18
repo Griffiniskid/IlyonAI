@@ -6,6 +6,7 @@ import uuid
 from typing import Any, Dict, Optional
 
 from src.config import settings
+from src.defi.observability import AnalysisMetrics
 from src.storage.cache import CacheManager, get_cache
 
 
@@ -15,7 +16,7 @@ class AnalysisStore:
         self.ttl = settings.defi_analysis_ttl_seconds
 
     async def save_status(self, analysis_id: str, payload: Dict[str, Any]) -> None:
-        await self.cache.set(f"defi:analysis:{analysis_id}", payload, ttl=self.ttl)
+        await self.cache.set(f"defi:analysis:{analysis_id}", self._normalize_payload(payload), ttl=self.ttl)
 
     async def get_status(self, analysis_id: str) -> Optional[Dict[str, Any]]:
         return await self.cache.get(f"defi:analysis:{analysis_id}")
@@ -30,7 +31,14 @@ class AnalysisStore:
         return await self.cache.get(f"defi:analysis-request:{request_key}")
 
     async def save_opportunity_document(self, opportunity_id: str, payload: Dict[str, Any]) -> None:
-        await self.cache.set(f"defi:opportunity:{opportunity_id}", payload, ttl=self.ttl)
+        await self.cache.set(f"defi:opportunity:{opportunity_id}", self._normalize_payload(payload), ttl=self.ttl)
 
     async def get_opportunity_document(self, opportunity_id: str) -> Optional[Dict[str, Any]]:
         return await self.cache.get(f"defi:opportunity:{opportunity_id}")
+
+    def _normalize_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = dict(payload)
+        observability = normalized.get("observability")
+        if isinstance(observability, AnalysisMetrics):
+            normalized["observability"] = observability.to_payload()
+        return normalized

@@ -10,6 +10,7 @@ from aiohttp import web
 
 from src.api.middleware.cors import cors_middleware
 from src.api.middleware.rate_limit import rate_limit_middleware
+from src.api.routes.auth import auth_middleware
 from src.api.routes.actions import setup_actions_routes
 from src.api.routes.blinks import setup_blinks_routes
 from src.api.routes.analysis import setup_analysis_routes
@@ -154,6 +155,7 @@ def create_api_app() -> web.Application:
     app = web.Application(
         middlewares=[
             cors_middleware,
+            auth_middleware,
             rate_limit_middleware,
         ]
     )
@@ -200,6 +202,7 @@ def create_blinks_only_app() -> web.Application:
     app = web.Application(
         middlewares=[
             cors_middleware,
+            auth_middleware,
             rate_limit_middleware,
         ]
     )

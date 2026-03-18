@@ -32,6 +32,12 @@ _challenges: Dict[str, Dict] = {}
 CHALLENGE_TTL = 300  # 5 minutes
 
 
+async def get_session_store():
+    from src.storage.sessions import get_session_store as _get_session_store
+
+    return await _get_session_store()
+
+
 def generate_challenge() -> str:
     """Generate a random challenge string."""
     return secrets.token_hex(32)
@@ -247,7 +253,6 @@ async def verify_challenge(request: web.Request) -> web.Response:
 
     # Create session using session store
     try:
-        from src.storage.sessions import get_session_store
         session_store = await get_session_store()
         session_token = await session_store.create_session(req.wallet_address)
         expires = datetime.utcnow() + timedelta(hours=settings.session_ttl_hours)
@@ -288,7 +293,6 @@ async def logout(request: web.Request) -> web.Response:
     if auth_header.startswith('Bearer '):
         token = auth_header[7:]
         try:
-            from src.storage.sessions import get_session_store
             session_store = await get_session_store()
             await session_store.delete_session(token)
             logger.info("Session invalidated")
@@ -316,7 +320,6 @@ async def get_me(request: web.Request) -> web.Response:
     
     # Get session
     try:
-        from src.storage.sessions import get_session_store
         session_store = await get_session_store()
         session = await session_store.get_session(token)
     except Exception as e:
@@ -386,7 +389,6 @@ async def refresh_session(request: web.Request) -> web.Response:
     token = auth_header[7:]
     
     try:
-        from src.storage.sessions import get_session_store
         session_store = await get_session_store()
         success = await session_store.extend_session(token)
         
@@ -421,7 +423,6 @@ async def auth_middleware(request: web.Request, handler):
     if auth_header.startswith('Bearer '):
         token = auth_header[7:]
         try:
-            from src.storage.sessions import get_session_store
             session_store = await get_session_store()
             session = await session_store.get_session(token)
             
@@ -446,6 +447,4 @@ def setup_auth_routes(app: web.Application):
     app.router.add_get('/api/v1/auth/me', get_me)
 
     # Add auth middleware
-    app.middlewares.append(auth_middleware)
-
     logger.info("Auth routes registered with Ed25519 signature verification")

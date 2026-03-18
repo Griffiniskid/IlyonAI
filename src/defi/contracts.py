@@ -115,6 +115,18 @@ class EvidenceRecord(StrictContractModel):
     url: Optional[str] = None
 
 
+class AnalysisMetricsPayload(StrictContractModel):
+    total_latency_ms: Optional[float] = Field(default=None, ge=0)
+    stage_latency_ms: dict[str, float] = Field(default_factory=dict)
+    provider_stats: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    cache_stats: dict[str, dict[str, int]] = Field(default_factory=dict)
+    enrichment_coverage_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    ai_runtime_ms: Optional[float] = Field(default=None, ge=0)
+    ai_cost_usd: Optional[float] = Field(default=None, ge=0)
+    factor_model_version: Optional[str] = None
+    rank_change_reasons: list[str] = Field(default_factory=list)
+
+
 class OpportunityAnalysis(StrictContractModel):
     identity: OpportunityIdentity
     market: MarketSnapshot
@@ -124,3 +136,4 @@ class OpportunityAnalysis(StrictContractModel):
     scenarios: list[ScenarioSummary]
     recommendation: RecommendationSummary
     evidence: list[EvidenceRecord]
+    observability: Optional[AnalysisMetricsPayload] = None

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Any
 
+from src.config import settings
 from src.defi.assemblers.opportunity_analysis import assemble_opportunity_analysis
+from src.defi.observability import AnalysisMetrics
 from src.defi.scoring.ai_judgment import build_ai_judgment_score
 from src.defi.scoring.final_ranker import blend_final_score, recommend_action
 
@@ -19,7 +22,9 @@ class SynthesisPipeline:
         behavior: dict[str, Any] | None = None,
         scenarios: list[dict[str, Any]] | None = None,
         evidence: list[dict[str, Any]] | None = None,
+        metrics: AnalysisMetrics | None = None,
     ):
+        started = perf_counter()
         identity = identity or {
             "id": "unknown-opportunity",
             "chain": "unknown",
@@ -53,7 +58,7 @@ class SynthesisPipeline:
         if hard_caps:
             rationale.insert(0, _cap_reason(hard_caps[0]))
 
-        return assemble_opportunity_analysis(
+        analysis = assemble_opportunity_analysis(
             identity=identity,
             market=market,
             scores={
@@ -78,6 +83,14 @@ class SynthesisPipeline:
             },
             evidence=evidence,
         )
+        if metrics is None:
+            return analysis
+        metrics.stage_latency_ms["synthesize"] = round((perf_counter() - started) * 1000, 3)
+        metrics.record_ai_usage(runtime_ms=ai_bundle.get("runtime_ms"), cost_usd=ai_bundle.get("cost_usd"))
+        metrics.factor_model_version = settings.defi_score_model_version
+        metrics.set_rank_change_reasons(deterministic.get("rank_change_reasons"))
+        metrics.finalize_total_latency()
+        return analysis.model_validate({**analysis.model_dump(mode="json"), "observability": metrics.to_payload()})
 
 
 def _cap_reason(cap: dict[str, Any] | str) -> str:
