@@ -268,6 +268,22 @@ export function useDefiAnalyzer(params?: {
   });
 }
 
+export function useDefiComparison(params: {
+  asset: string;
+  chain?: string;
+  protocols?: string[];
+  mode?: "supply" | "borrow";
+  includeAi?: boolean;
+  rankingProfile?: string;
+}) {
+  return useQuery({
+    queryKey: ["comparison", params],
+    queryFn: () => api.getDefiComparison(params),
+    enabled: !!params.asset,
+    staleTime: 60 * 1000,
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // DASHBOARD STATS HOOKS
 // ═══════════════════════════════════════════════════════════════════════════
