@@ -1,8 +1,9 @@
 import pytest
+from typing import Any, cast
 
 from src.defi.docs_analyzer import ProtocolDocsAnalyzer
 from src.defi.history_store import DefiHistoryStore
-from src.defi.stores.evidence_store import EvidenceStore
+from src.storage.cache import get_cache
 
 
 class StubScraper:
@@ -45,27 +46,33 @@ class StubLlama:
 
 @pytest.mark.asyncio
 async def test_docs_analyzer_reads_and_writes_via_evidence_store():
+    await get_cache().clear()
     scraper = StubScraper()
-    store = EvidenceStore()
-    analyzer = ProtocolDocsAnalyzer(scraper=scraper, evidence_store=store)
+    analyzer = ProtocolDocsAnalyzer(scraper=cast(Any, scraper))
 
     first = await analyzer.analyze("https://example.com")
-    second = await analyzer.analyze("https://example.com")
+
+    second_scraper = StubScraper()
+    second = await ProtocolDocsAnalyzer(scraper=cast(Any, second_scraper)).analyze("https://example.com")
 
     assert first["url"] == "https://example.com"
     assert second["governance_signal_count"] == first["governance_signal_count"]
     assert scraper.calls == 1
+    assert second_scraper.calls == 0
 
 
 @pytest.mark.asyncio
 async def test_history_store_reads_and_writes_via_evidence_store():
+    await get_cache().clear()
     llama = StubLlama()
-    store = EvidenceStore()
-    history_store = DefiHistoryStore(llama, evidence_store=store)
+    history_store = DefiHistoryStore(cast(Any, llama))
 
     first = await history_store.get_pool_history("pool-1")
-    second = await history_store.get_pool_history("pool-1")
+
+    second_llama = StubLlama()
+    second = await DefiHistoryStore(cast(Any, second_llama)).get_pool_history("pool-1")
 
     assert first == second
     assert second[-1]["tvlUsd"] == 1100
     assert llama.calls == 1
+    assert second_llama.calls == 0

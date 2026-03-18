@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from src.storage.cache import CacheManager
+from src.storage.cache import CacheManager, get_cache
 
 
 class AnalysisStore:
     def __init__(self, cache: Optional[CacheManager] = None):
-        self.cache = cache or CacheManager()
+        self.cache = cache or get_cache()
 
     async def save_status(self, analysis_id: str, payload: Dict[str, Any]) -> None:
         await self.cache.set(f"defi:analysis:{analysis_id}", payload)

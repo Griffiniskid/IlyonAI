@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from src.storage.cache import CacheManager
+from src.storage.cache import CacheManager, get_cache
 
 
 class EvidenceStore:
     def __init__(self, cache: Optional[CacheManager] = None):
-        self.cache = cache or CacheManager()
+        self.cache = cache or get_cache()
 
     async def get_protocol_docs(self, target: str) -> Optional[Dict[str, Any]]:
         return await self.cache.get(self._docs_key(target))
