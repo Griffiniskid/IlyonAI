@@ -6,6 +6,7 @@ Uses Helius API for real transaction data when available.
 """
 
 import logging
+import json
 from aiohttp import web
 from datetime import datetime
 from typing import Dict, List, Optional, Any
@@ -90,10 +91,23 @@ def _build_filtered_response(base_response: Dict[str, Any], type_filter: Optiona
 def _collect_behavior_annotations(raw_transactions: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
     anomaly_flags: List[Dict[str, Any]] = []
     entity_heuristics: List[Dict[str, Any]] = []
+    seen_anomalies = set()
+    seen_heuristics = set()
 
     for tx in raw_transactions:
-        anomaly_flags.extend(tx.get("anomaly_flags") or tx.get("anomalies") or [])
-        entity_heuristics.extend(tx.get("entity_heuristics") or tx.get("heuristics") or [])
+        for item in tx.get("anomaly_flags") or tx.get("anomalies") or []:
+            key = json.dumps(item, sort_keys=True)
+            if key in seen_anomalies:
+                continue
+            seen_anomalies.add(key)
+            anomaly_flags.append(item)
+
+        for item in tx.get("entity_heuristics") or tx.get("heuristics") or []:
+            key = json.dumps(item, sort_keys=True)
+            if key in seen_heuristics:
+                continue
+            seen_heuristics.add(key)
+            entity_heuristics.append(item)
 
     return {
         "anomaly_flags": anomaly_flags,
