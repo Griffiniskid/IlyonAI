@@ -1,3 +1,6 @@
+import asyncio
+import logging
+
 import pytest
 
 from src.defi.pipeline.enrich import EnrichmentPipeline
@@ -56,3 +59,54 @@ async def test_enrichment_preserves_payloads_and_source_metadata():
         "freshness_hours": 1.0,
         "available": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_enrichment_runs_docs_and_history_concurrently():
+    release = asyncio.Event()
+    started = []
+
+    class DocsStub:
+        async def analyze(self, url, docs_url=None):
+            started.append("docs")
+            await asyncio.sleep(0)
+            await release.wait()
+            return {"available": True, "freshness_hours": 2.0}
+
+    class HistoryStub:
+        async def get_pool_history(self, pool_id):
+            started.append("history")
+            release.set()
+            return [{"apy": 7.2, "tvlUsd": 1000}]
+
+        def summarize_pool_history(self, history):
+            return {"available": True, "observations": len(history), "freshness_hours": 1.0}
+
+    pipeline = EnrichmentPipeline(docs=DocsStub(), history=HistoryStub(), provider_timeout_seconds=1)
+
+    enriched = await asyncio.wait_for(pipeline.enrich_candidate({"id": "opp_1", "pool_id": "pool_1"}), timeout=0.1)
+
+    assert started == ["docs", "history"]
+    assert enriched["history_summary"]["observations"] == 1
+
+
+@pytest.mark.asyncio
+async def test_enrichment_logs_and_reraises_unexpected_loader_exceptions(caplog):
+    class DocsStub:
+        async def analyze(self, url, docs_url=None):
+            raise RuntimeError("boom")
+
+    class HistoryStub:
+        async def get_pool_history(self, pool_id):
+            return []
+
+        def summarize_pool_history(self, history):
+            return {"available": False, "observations": 0, "freshness_hours": None}
+
+    pipeline = EnrichmentPipeline(docs=DocsStub(), history=HistoryStub(), provider_timeout_seconds=1)
+
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(RuntimeError, match="boom"):
+            await pipeline.enrich_candidate({"id": "opp_1"})
+
+    assert "docs enrichment failed" in caplog.text

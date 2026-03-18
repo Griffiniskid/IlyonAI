@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict
 
@@ -11,6 +12,8 @@ from src.defi.docs_analyzer import ProtocolDocsAnalyzer
 from src.defi.evidence import build_evidence_source_metadata
 from src.defi.history_store import DefiHistoryStore
 from src.defi.pipeline.budgets import get_provider_budget
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -33,15 +36,17 @@ class EnrichmentPipeline:
         self.history = history or DefiHistoryStore(DefiLlamaClient())
 
     async def enrich_candidate(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
-        docs = await self._load_with_budget(
-            "docs",
-            lambda: self.docs.analyze(candidate.get("protocol_url"), candidate.get("docs_url")),
-            lambda: self.docs.fallback_profile("Protocol docs timed out"),
-        )
-        history = await self._load_with_budget(
-            "history",
-            lambda: self._load_history_summary(candidate),
-            lambda: self.history.fallback_summary("Pool history timed out"),
+        docs, history = await asyncio.gather(
+            self._load_with_budget(
+                "docs",
+                lambda: self.docs.analyze(candidate.get("protocol_url"), candidate.get("docs_url")),
+                lambda: self.docs.fallback_profile("Protocol docs timed out"),
+            ),
+            self._load_with_budget(
+                "history",
+                lambda: self._load_history_summary(candidate),
+                lambda: self.history.fallback_summary("Pool history timed out"),
+            ),
         )
         return {
             **candidate,
@@ -68,10 +73,11 @@ class EnrichmentPipeline:
         try:
             payload = await asyncio.wait_for(loader(), timeout=self.provider_timeout_seconds)
         except TimeoutError:
+            logger.warning("%s enrichment timed out after %ss", label, self.provider_timeout_seconds)
             payload = fallback()
             return EnrichmentLoad(payload=payload, meta=build_evidence_source_metadata("fallback", payload, fallback_used=True))
         except Exception:
-            payload = fallback()
-            return EnrichmentLoad(payload=payload, meta=build_evidence_source_metadata("fallback", payload, fallback_used=True))
+            logger.exception("%s enrichment failed", label)
+            raise
 
         return EnrichmentLoad(payload=payload, meta=build_evidence_source_metadata("provider", payload))
