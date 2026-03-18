@@ -16,6 +16,22 @@ import aiohttp
 logger = logging.getLogger(__name__)
 
 
+def calculate_repeat_wallet_share(wallets: List[str]) -> float:
+    """Share of wallet observations belonging to wallets seen more than once."""
+    if not wallets:
+        return 0.0
+
+    counts: Dict[str, int] = {}
+    for wallet in wallets:
+        if not wallet:
+            continue
+        counts[wallet] = counts.get(wallet, 0) + 1
+
+    repeated_observations = sum(count for count in counts.values() if count > 1)
+    total_observations = sum(counts.values())
+    return repeated_observations / total_observations if total_observations else 0.0
+
+
 @dataclass
 class TimeSeriesDataPoint:
     """Single data point in token time series."""
@@ -85,22 +101,13 @@ class TimeSeriesStore:
 
     def get_behavior_summary(self, token_address: str) -> Dict[str, Any]:
         snapshots = self._behavior_snapshots.get(token_address, [])
-        wallet_counts: Dict[str, int] = {}
-        total_wallet_observations = 0
-        repeated_observations = 0
-
+        wallets: List[str] = []
         for snapshot in snapshots:
-            for wallet in snapshot.get("wallets", []):
-                total_wallet_observations += 1
-                wallet_counts[wallet] = wallet_counts.get(wallet, 0) + 1
-                if wallet_counts[wallet] > 1:
-                    repeated_observations += 1
+            wallets.extend([wallet for wallet in snapshot.get("wallets", []) if wallet])
 
         return {
             "snapshot_count": len(snapshots),
-            "repeat_wallet_share": (
-                repeated_observations / total_wallet_observations if total_wallet_observations else 0.0
-            ),
+            "repeat_wallet_share": calculate_repeat_wallet_share(wallets),
         }
 
 

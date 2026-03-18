@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.api.routes import whale
+from src.api.schemas.responses import WhaleActivityResponse
 
 
 @pytest.mark.asyncio
@@ -58,6 +59,22 @@ async def test_token_whale_route_includes_anomaly_flags_and_entity_heuristics(mo
 
     response = await whale.get_whale_activity_for_token(request)
     payload = json.loads(response.text)
+
+    assert payload["behavior"]["anomaly_flags"][0]["code"] == "liquidity_drain"
+    assert payload["behavior"]["entity_heuristics"][0]["code"] == "deployer_retained_supply"
+
+
+def test_whale_activity_response_schema_includes_behavior_payload():
+    payload = WhaleActivityResponse(
+        transactions=[],
+        behavior={
+            "whale_flow_direction": "accumulating",
+            "capital_concentration_score": 40,
+            "wallet_stickiness_score": 50,
+            "anomaly_flags": [{"code": "liquidity_drain", "severity": "high"}],
+            "entity_heuristics": [{"code": "deployer_retained_supply", "severity": "medium", "confidence": 0.8}],
+        },
+    ).model_dump(mode="json")
 
     assert payload["behavior"]["anomaly_flags"][0]["code"] == "liquidity_drain"
     assert payload["behavior"]["entity_heuristics"][0]["code"] == "deployer_retained_supply"

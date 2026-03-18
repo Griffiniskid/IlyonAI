@@ -16,7 +16,7 @@ from src.data.dexscreener import DexScreenerClient
 from src.analytics.behavior_adapters.evm import EVMBehaviorAdapter
 from src.analytics.behavior_signals import BehaviorSignalBuilder
 from src.api.schemas.responses import (
-    WhaleActivityResponse, WhaleTransactionResponse, WhaleProfileResponse,
+    WhaleActivityResponse, WhaleBehaviorResponse, WhaleTransactionResponse, WhaleProfileResponse,
     ErrorResponse
 )
 from src.config import settings
@@ -380,14 +380,16 @@ async def get_whale_activity_for_token(request: web.Request) -> web.Response:
                     transactions=trades,
                     updated_at=datetime.utcnow(),
                     filter_token=token_address,
-                    min_amount_usd=min_amount
+                    min_amount_usd=min_amount,
+                    behavior=WhaleBehaviorResponse.model_validate(
+                        _behavior_builder.build(
+                            whale_summary=behavior_inputs.get("whale_summary"),
+                            concentration=behavior_inputs.get("concentration"),
+                            anomalies=behavior_annotations.get("anomaly_flags"),
+                            heuristics=behavior_annotations.get("entity_heuristics"),
+                        ).to_dict()
+                    ),
                 ).model_dump(mode='json')
-                base_response["behavior"] = _behavior_builder.build(
-                    whale_summary=behavior_inputs.get("whale_summary"),
-                    concentration=behavior_inputs.get("concentration"),
-                    anomalies=behavior_annotations.get("anomaly_flags"),
-                    heuristics=behavior_annotations.get("entity_heuristics"),
-                ).to_dict()
 
                 _set_cached_data(cache_key, base_response)
 

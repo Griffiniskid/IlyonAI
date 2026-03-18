@@ -328,12 +328,36 @@ class WhaleTransactionResponse(BaseModel):
         }
 
 
+class WhaleBehaviorFlagResponse(BaseModel):
+    code: str
+    severity: str
+    description: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WhaleBehaviorHeuristicResponse(BaseModel):
+    code: str
+    severity: str
+    confidence: float = 0.0
+    description: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WhaleBehaviorResponse(BaseModel):
+    whale_flow_direction: str = "neutral"
+    capital_concentration_score: float = 0.0
+    wallet_stickiness_score: float = 0.0
+    anomaly_flags: List[WhaleBehaviorFlagResponse] = Field(default_factory=list)
+    entity_heuristics: List[WhaleBehaviorHeuristicResponse] = Field(default_factory=list)
+
+
 class WhaleActivityResponse(BaseModel):
     """Whale activity feed response"""
     transactions: List[WhaleTransactionResponse]
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     filter_token: Optional[str] = None
     min_amount_usd: float = 10000
+    behavior: Optional[WhaleBehaviorResponse] = None
 
     class Config:
         json_encoders = {

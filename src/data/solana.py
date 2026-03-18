@@ -12,6 +12,7 @@ Exclusively designed for Solana mainnet - no other chains supported.
 import logging
 import base64
 import asyncio
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 import aiohttp
@@ -20,6 +21,9 @@ from solana.rpc.commitment import Commitment
 from solders.pubkey import Pubkey
 from solders.transaction import VersionedTransaction
 
+from src.analytics.anomaly_detector import BehavioralAnomalyDetector
+from src.analytics.time_series import TimeSeriesDataPoint
+from src.analytics.wallet_forensics import WalletForensicsEngine, get_token_deployer
 from src.core.models import TokenInfo
 
 # Retry configuration for rate-limited RPC calls
@@ -79,6 +83,8 @@ class SolanaClient:
         self.rpc_url = rpc_url
         self.helius_api_key = helius_api_key
         self._client: Optional[AsyncClient] = None
+        self._anomaly_detector = BehavioralAnomalyDetector()
+        self._wallet_forensics = WalletForensicsEngine(solana_rpc_url=rpc_url)
 
     async def _ensure_connected(self):
         """Ensure RPC client is connected"""
@@ -1369,10 +1375,83 @@ class SolanaClient:
             token_name=token_name,
         )
         if transactions:
-            return transactions
+            return await self._annotate_behavior_transactions(token_address, transactions)
 
         fallback = await self._get_whale_transactions_from_trending(
             min_amount_usd=min_amount_usd,
             limit=limit,
         )
-        return [tx for tx in fallback if tx.get("token_address") == token_address][:limit]
+        token_transactions = [tx for tx in fallback if tx.get("token_address") == token_address][:limit]
+        return await self._annotate_behavior_transactions(token_address, token_transactions)
+
+    async def _annotate_behavior_transactions(self, token_address: str, transactions: List[Dict]) -> List[Dict]:
+        if not transactions:
+            return []
+
+        anomaly_flags = [flag.to_dict() for flag in self._anomaly_detector.detect_behavior_flags(self._build_behavior_time_series(transactions))]
+        entity_heuristics = [
+            heuristic.to_dict()
+            for heuristic in await self._detect_entity_heuristics(token_address, transactions)
+        ]
+
+        annotated = []
+        for tx in transactions:
+            enriched = dict(tx)
+            enriched["anomaly_flags"] = anomaly_flags
+            enriched["entity_heuristics"] = entity_heuristics
+            annotated.append(enriched)
+        return annotated
+
+    async def _detect_entity_heuristics(self, token_address: str, transactions: List[Dict]):
+        total_abs_amount = sum(abs(float(tx.get("amount_usd", 0) or 0)) for tx in transactions)
+        if total_abs_amount <= 0:
+            return []
+
+        wallet_totals: Dict[str, float] = {}
+        for tx in transactions:
+            wallet = str(tx.get("wallet_address") or "")
+            if not wallet:
+                continue
+            wallet_totals[wallet] = wallet_totals.get(wallet, 0.0) + abs(float(tx.get("amount_usd", 0) or 0))
+
+        top_holders = [
+            {"address": wallet, "share": amount / total_abs_amount}
+            for wallet, amount in sorted(wallet_totals.items(), key=lambda item: item[1], reverse=True)
+        ]
+        deployer_wallet = await get_token_deployer(token_address, self.rpc_url)
+        return self._wallet_forensics.detect_entity_heuristics(deployer_wallet, top_holders)
+
+    def _build_behavior_time_series(self, transactions: List[Dict]) -> List[TimeSeriesDataPoint]:
+        ordered = sorted(transactions, key=lambda tx: str(tx.get("timestamp") or ""))
+        max_amount = max(abs(float(tx.get("amount_usd", 0) or 0)) for tx in ordered) if ordered else 0.0
+        liquidity_proxy = sum(abs(float(tx.get("amount_usd", 0) or 0)) for tx in ordered) * 1.5
+        points: List[TimeSeriesDataPoint] = []
+
+        for tx in ordered:
+            amount = abs(float(tx.get("amount_usd", 0) or 0))
+            tx_type = str(tx.get("type") or "buy").lower()
+            if tx_type == "sell":
+                liquidity_proxy = max(1000.0, liquidity_proxy - amount)
+            else:
+                liquidity_proxy += amount * 0.05
+
+            timestamp_raw = tx.get("timestamp")
+            if isinstance(timestamp_raw, str):
+                timestamp = datetime.fromisoformat(timestamp_raw.replace("Z", "+00:00"))
+            elif isinstance(timestamp_raw, datetime):
+                timestamp = timestamp_raw
+            else:
+                timestamp = datetime.utcnow()
+
+            points.append(
+                TimeSeriesDataPoint(
+                    timestamp=timestamp,
+                    liquidity_usd=liquidity_proxy,
+                    buy_count=1 if tx_type != "sell" else 0,
+                    sell_count=1 if tx_type == "sell" else 0,
+                    large_sells=1 if tx_type == "sell" and amount >= max_amount * 0.5 else 0,
+                    whale_net_flow_usd=amount if tx_type != "sell" else -amount,
+                )
+            )
+
+        return points
