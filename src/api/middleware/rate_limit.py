@@ -17,6 +17,13 @@ from src.config import settings
 logger = logging.getLogger(__name__)
 
 
+def rate_limit_scope_for_path(path: str) -> str:
+    """Classify the request path for lightweight rate-limit observability."""
+    if path.startswith("/opportunities"):
+        return "opportunities"
+    return "default"
+
+
 class RateLimiter:
     """
     In-memory rate limiter with sliding window.
@@ -159,6 +166,8 @@ async def rate_limit_middleware(request: web.Request, handler):
     # Skip for health check
     if request.path == "/health":
         return await handler(request)
+
+    request["rate_limit_scope"] = rate_limit_scope_for_path(request.path)
 
     # Get client IP
     ip = request.remote or request.headers.get("X-Forwarded-For", "unknown")

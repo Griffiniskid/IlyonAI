@@ -32,6 +32,11 @@ _challenges: Dict[str, Dict] = {}
 CHALLENGE_TTL = 300  # 5 minutes
 
 
+def is_opportunity_route(path: str) -> bool:
+    """Return True when the request targets the opportunity API surface."""
+    return path.startswith("/opportunities")
+
+
 async def get_session_store():
     from src.storage.sessions import get_session_store as _get_session_store
 
@@ -419,6 +424,7 @@ async def auth_middleware(request: web.Request, handler):
     Sets request['user_wallet'] if authenticated.
     """
     auth_header = request.headers.get('Authorization', '')
+    request['is_opportunity_route'] = is_opportunity_route(request.path)
 
     if auth_header.startswith('Bearer '):
         token = auth_header[7:]

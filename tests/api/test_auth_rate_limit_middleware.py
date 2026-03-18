@@ -52,3 +52,49 @@ async def test_authenticated_wallet_key_is_available_before_rate_limiting(monkey
     response_two = await auth_middleware(request_two, lambda request: rate_limit_middleware(request, handler))
 
     assert response_two.status == 429
+
+
+@pytest.mark.asyncio
+async def test_auth_middleware_marks_opportunity_routes(monkeypatch):
+    class SessionStoreStub:
+        async def get_session(self, token):
+            assert token == "session-token"
+            return {"wallet": "wallet_123456789"}
+
+    async def get_session_store_stub():
+        return SessionStoreStub()
+
+    monkeypatch.setattr("src.api.routes.auth.get_session_store", get_session_store_stub, raising=False)
+
+    async def handler(request):
+        return web.json_response({"is_opportunity_route": request.get("is_opportunity_route", False)})
+
+    request = make_mocked_request(
+        "POST",
+        "/opportunities/analyses",
+        headers={"Authorization": "Bearer session-token"},
+    )
+    response = await auth_middleware(request, handler)
+
+    assert response.status == 200
+    assert request["user_wallet"] == "wallet_123456789"
+    assert request["is_opportunity_route"] is True
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_middleware_tags_opportunity_routes(monkeypatch):
+    monkeypatch.setattr(rate_limit_module, "_rate_limiter", RateLimiter(requests_per_minute=5, requests_per_hour=5))
+    monkeypatch.setattr(rate_limit_module, "_authenticated_rate_limiter", RateLimiter(requests_per_minute=5, requests_per_hour=5), raising=False)
+
+    async def handler(request):
+        return web.json_response({"scope": request.get("rate_limit_scope")})
+
+    request = make_mocked_request(
+        "GET",
+        "/opportunities/opp_123",
+        headers={"X-Forwarded-For": "127.0.0.1"},
+    )
+    response = await rate_limit_middleware(request, handler)
+
+    assert response.status == 200
+    assert request["rate_limit_scope"] == "opportunities"
