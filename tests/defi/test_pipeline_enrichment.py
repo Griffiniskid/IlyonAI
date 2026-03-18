@@ -11,7 +11,7 @@ from tests.defi_fixtures import CHAIN_MATRIX, SOLANA_FIXTURE, EVM_FIXTURE
 async def test_enrichment_marks_timeout_sources_as_fallbacks():
     pipeline = EnrichmentPipeline(provider_timeout_seconds=0)
 
-    enriched = await pipeline.enrich_candidate({"id": "opp_1", "protocol_slug": "aave-v3"})
+    enriched = await pipeline.enrich_candidate({"id": "opp_1", "protocol_slug": EVM_FIXTURE["protocol_slug"]})
 
     assert enriched["evidence_sources"]["docs"]["fallback_used"] is True
     assert enriched["evidence_sources"]["history"]["fallback_used"] is True
@@ -134,12 +134,14 @@ async def test_enrichment_supports_chain_matrix(chain):
             "id": f"opp_{chain}",
             "pool_id": "pool_1",
             "chain": chain,
-            "protocol_slug": "test-protocol",
+            "protocol_slug": f"test-protocol-{chain}",
         }
     )
 
     assert enriched["docs_profile"]["available"] is True
     assert enriched["history_summary"]["observations"] == 1
+    assert enriched["chain"] == chain
+    assert enriched["protocol_slug"] == f"test-protocol-{chain}"
 
 
 @pytest.mark.asyncio

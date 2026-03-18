@@ -161,7 +161,7 @@ describe("useOpportunityAnalysis Hook", () => {
     );
   });
 
-  it("shows the solana fixture provisional shortlist", async () => {
+  it("renders solana fixture properties in the provisional shortlist", async () => {
     const mockMutate = vi.fn();
     (hooks.useCreateOpportunityAnalysis as any).mockReturnValue({
       mutate: mockMutate,
@@ -169,7 +169,7 @@ describe("useOpportunityAnalysis Hook", () => {
       data: {
         opportunityId: "job-sol",
         provisional_shortlist: [
-          { id: "1", title: "Orca Pool", apy: 12.5, protocol: SOLANA_FIXTURE.protocol_slug, chain: SOLANA_FIXTURE.chain, kind: "pool" }
+          { id: "1", title: "Test Pool", apy: 12.5, protocol: SOLANA_FIXTURE.protocol_slug, chain: SOLANA_FIXTURE.chain, kind: "pool" }
         ]
       }
     });
@@ -180,10 +180,11 @@ describe("useOpportunityAnalysis Hook", () => {
     });
 
     render(<DiscoverClient />);
-    expect(await screen.findByText(/Orca Pool/i)).toBeInTheDocument();
+    expect(await screen.findByText(new RegExp(SOLANA_FIXTURE.protocol_slug, "i"))).toBeInTheDocument();
+    expect(await screen.findByText(new RegExp(SOLANA_FIXTURE.chain, "i"))).toBeInTheDocument();
   });
 
-  it("shows the evm fixture provisional shortlist", async () => {
+  it("renders evm fixture properties in the provisional shortlist", async () => {
     const mockMutate = vi.fn();
     (hooks.useCreateOpportunityAnalysis as any).mockReturnValue({
       mutate: mockMutate,
@@ -191,7 +192,7 @@ describe("useOpportunityAnalysis Hook", () => {
       data: {
         opportunityId: "job-evm",
         provisional_shortlist: [
-          { id: "2", title: "Aave Pool", apy: 5.5, protocol: EVM_FIXTURE.protocol_slug, chain: EVM_FIXTURE.chain, kind: "lending" }
+          { id: "2", title: "Test Pool", apy: 5.5, protocol: EVM_FIXTURE.protocol_slug, chain: EVM_FIXTURE.chain, kind: "lending" }
         ]
       }
     });
@@ -202,6 +203,7 @@ describe("useOpportunityAnalysis Hook", () => {
     });
 
     render(<DiscoverClient />);
-    expect(await screen.findByText(/Aave Pool/i)).toBeInTheDocument();
+    expect(await screen.findByText(new RegExp(EVM_FIXTURE.protocol_slug, "i"))).toBeInTheDocument();
+    expect(await screen.findByText(new RegExp(EVM_FIXTURE.chain, "i"))).toBeInTheDocument();
   });
 });

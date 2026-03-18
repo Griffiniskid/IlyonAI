@@ -66,7 +66,7 @@ describe("CompareClient", () => {
         <CompareClient asset="USDC" />
       </QueryClientProvider>
     )
-    expect(await screen.findByText(/comparison matrix/i)).toBeInTheDocument()
+    expect(await screen.findByText(new RegExp(SOLANA_FIXTURE.protocol_slug, "i"))).toBeInTheDocument()
   })
 
   it("renders comparison matrix with evm fixture", async () => {
@@ -84,6 +84,6 @@ describe("CompareClient", () => {
         <CompareClient asset="USDC" />
       </QueryClientProvider>
     )
-    expect(await screen.findByText(/comparison matrix/i)).toBeInTheDocument()
+    expect(await screen.findByText(new RegExp(EVM_FIXTURE.protocol_slug, "i"))).toBeInTheDocument()
   })
 })

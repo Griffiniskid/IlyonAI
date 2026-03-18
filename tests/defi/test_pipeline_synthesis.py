@@ -12,9 +12,9 @@ def test_synthesis_combines_deterministic_and_ai_scores_without_bypassing_caps()
     analysis = pipeline.combine(
         identity={
             "id": "opp_aave_base_supply",
-            "chain": "base",
+            "chain": EVM_FIXTURE["chain"],
             "kind": "lending",
-            "protocol_slug": "aave-v3",
+            "protocol_slug": EVM_FIXTURE["protocol_slug"],
             "protocol_name": "Aave V3",
             "category": "lending",
             "assets": ["USDC"],
@@ -53,7 +53,8 @@ def test_synthesis_combines_deterministic_and_ai_scores_without_bypassing_caps()
     assert analysis.scores.ai_judgment_score == 90
     assert analysis.scores.final_deployability_score <= 62
     assert analysis.recommendation.action == "avoid"
-    assert analysis.identity.protocol_slug == "aave-v3"
+    assert analysis.identity.protocol_slug == EVM_FIXTURE["protocol_slug"]
+    assert analysis.identity.chain == EVM_FIXTURE["chain"]
 
 
 def test_synthesis_honors_explicit_hard_cap_value_in_final_score():
@@ -116,7 +117,7 @@ def test_synthesis_emits_full_opportunity_analysis_contract():
     analysis = pipeline.combine(
         identity={
             "id": "opp_curve_eth_stables",
-            "chain": "ethereum",
+            "chain": CHAIN_MATRIX[1],
             "kind": "pool",
             "protocol_slug": "curve",
             "protocol_name": "Curve",
@@ -218,6 +219,7 @@ def test_synthesis_supports_chain_matrix(chain):
         ai={"judgment_score": 75}
     )
     assert analysis.identity.chain == chain
+    assert analysis.identity.id == f"opp_{chain}"
     assert analysis.scores.final_deployability_score == 75
 
 def test_synthesis_supports_solana_fixture():

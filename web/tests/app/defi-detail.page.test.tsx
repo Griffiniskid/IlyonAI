@@ -48,8 +48,8 @@ describe("DetailClient", () => {
     vi.mocked(useOpportunityAnalysis).mockReturnValue({
       data: {
         id: "opp_sol",
-        title: "Orca Pool Opportunity",
-        behavior: "solana behavior",
+        title: `${SOLANA_FIXTURE.protocol_slug} Opportunity`,
+        behavior: `${SOLANA_FIXTURE.chain} behavior`,
         evidence: [],
         scenarios: [],
         ai_analysis: { headline: "Solana Analyst", summary: "" } as any,
@@ -63,15 +63,16 @@ describe("DetailClient", () => {
         <DetailClient opportunityId="opp_sol" />
       </QueryClientProvider>
     );
-    expect(await screen.findByText("solana behavior")).toBeInTheDocument();
+    expect(await screen.findAllByText(new RegExp(SOLANA_FIXTURE.protocol_slug, "i"))).toHaveLength(1);
+    expect((await screen.findAllByText(new RegExp(SOLANA_FIXTURE.chain, "i"))).length).toBeGreaterThan(0);
   });
 
   it("renders evm fixture opportunity details", async () => {
     vi.mocked(useOpportunityAnalysis).mockReturnValue({
       data: {
         id: "opp_evm",
-        title: "Aave Pool Opportunity",
-        behavior: "evm behavior",
+        title: `${EVM_FIXTURE.protocol_slug} Opportunity`,
+        behavior: `${EVM_FIXTURE.chain} behavior`,
         evidence: [],
         scenarios: [],
         ai_analysis: { headline: "EVM Analyst", summary: "" } as any,
@@ -85,6 +86,7 @@ describe("DetailClient", () => {
         <DetailClient opportunityId="opp_evm" />
       </QueryClientProvider>
     );
-    expect(await screen.findByText("evm behavior")).toBeInTheDocument();
+    expect(await screen.findAllByText(new RegExp(EVM_FIXTURE.protocol_slug, "i"))).toHaveLength(1);
+    expect((await screen.findAllByText(new RegExp(EVM_FIXTURE.chain, "i"))).length).toBeGreaterThan(0);
   });
 })

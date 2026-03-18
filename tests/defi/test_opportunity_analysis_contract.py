@@ -1,5 +1,6 @@
 import pytest
 from pydantic import ValidationError
+from tests.defi_fixtures import SOLANA_FIXTURE
 
 from src.config import Settings
 from src.defi.entities import FactorObservation
@@ -22,9 +23,9 @@ def test_opportunity_analysis_exposes_behavior_and_recommendation_sections():
         {
             "identity": {
                 "id": "opp_1",
-                "chain": "solana",
+                "chain": SOLANA_FIXTURE["chain"],
                 "kind": "pool",
-                "protocol_slug": "orca",
+                "protocol_slug": SOLANA_FIXTURE["protocol_slug"],
                 "category": "dex",
                 "assets": ["SOL", "USDC"],
                 "strategy_family": "liquidity",
@@ -60,7 +61,7 @@ def test_opportunity_analysis_requires_all_top_level_sections():
     with pytest.raises(ValidationError):
         OpportunityAnalysis.model_validate(
             {
-                "identity": {"id": "opp_1", "chain": "solana", "kind": "pool", "protocol_slug": "orca"},
+                "identity": {"id": "opp_1", "chain": SOLANA_FIXTURE["chain"], "kind": "pool", "protocol_slug": SOLANA_FIXTURE["protocol_slug"]},
                 "scores": {
                     "deterministic_score": 72,
                     "ai_judgment_score": 68,
