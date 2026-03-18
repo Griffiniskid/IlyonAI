@@ -8,11 +8,13 @@ from src.defi.opportunity_engine import DefiOpportunityEngine
 class ScanStub:
     def __init__(self, provisional=None):
         self.provisional = provisional or [{"id": "opp_1"}]
+        self.metrics_seen = None
 
     def build_request_key(self, filters):
         return f"{filters.get('chain')}:{filters.get('limit')}"
 
     async def run(self, **filters):
+        self.metrics_seen = filters.get("metrics")
         return [{**item, "filters": filters} for item in self.provisional]
 
 
@@ -170,3 +172,29 @@ async def test_analyze_market_returns_failed_envelope_when_background_analysis_f
 
     assert result["status"] == "failed"
     assert result["error"] == "market synthesis failed"
+
+
+@pytest.mark.asyncio
+async def test_analyze_market_threads_observability_through_real_async_entrypoint():
+    scan = ScanStub()
+    engine = _make_intelligence_engine(scan_pipeline=scan)
+
+    async def fake_build_market_analysis(**filters):
+        metrics = filters["metrics"]
+        metrics.stage_latency_ms["synthesize"] = 12.5
+        metrics.factor_model_version = "defi-v2"
+        metrics.rank_change_reasons = ["market_repricing"]
+        metrics.finalize_total_latency()
+        return {
+            "top_opportunities": [],
+            "observability": metrics.to_payload(),
+        }
+
+    setattr(engine.engine, "_build_market_analysis", fake_build_market_analysis)
+
+    result = await engine.analyze_market(chain="solana", limit=5)
+
+    assert scan.metrics_seen is not None
+    assert result["observability"]["factor_model_version"] == "defi-v2"
+    assert result["observability"]["stage_latency_ms"]["synthesize"] == 12.5
+    assert result["observability"]["rank_change_reasons"] == ["market_repricing"]

@@ -29,8 +29,7 @@ class AnalysisMetrics:
             self.stage_latency_ms[stage] = round((perf_counter() - started) * 1000, 3)
 
     def finalize_total_latency(self) -> None:
-        if self.total_latency_ms is None:
-            self.total_latency_ms = round(sum(self.stage_latency_ms.values()), 3)
+        self.total_latency_ms = round(sum(self.stage_latency_ms.values()), 3)
 
     def record_provider(self, name: str, *, calls: int = 0, failures: int = 0, latency_ms: float | None = None) -> None:
         stats = self.provider_stats.setdefault(name, {"calls": 0, "failures": 0, "latency_ms": 0.0})

@@ -6,6 +6,7 @@ import asyncio
 import json
 import math
 from statistics import mean
+from time import perf_counter
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.config import settings
@@ -18,6 +19,7 @@ from src.defi.evidence import build_confidence_report, build_dependency_edges, p
 from src.defi.farm_analyzer import FarmAnalyzer
 from src.defi.history_store import DefiHistoryStore
 from src.defi.lending_analyzer import LENDING_PROTOCOLS, LendingAnalyzer
+from src.defi.observability import AnalysisMetrics
 from src.defi.opportunity_taxonomy import classify_defi_record
 from src.defi.pipeline.coalescing import CoalescedAnalysisRunner
 from src.defi.pipeline.scan import MarketScanPipeline
@@ -112,13 +114,26 @@ class _AsyncOpportunityScanPipeline:
         limit: int = 12,
         include_ai: bool = True,
         ranking_profile: Optional[str] = None,
+        metrics: AnalysisMetrics | None = None,
     ) -> List[Dict[str, Any]]:
         del include_ai, ranking_profile
-        pools_task = self.pool_analyzer.get_top_pools(chain=chain, min_tvl=min_tvl, min_apy=min_apy, limit=max(limit * 3, 36))
-        yields_task = self.farm_analyzer.get_yields(chain=chain, min_apy=min_apy, min_tvl=min_tvl, limit=max(limit * 3, 36))
-        lending_task = self.lending_analyzer.get_lending_markets(chain=chain, limit=max(limit * 3, 36))
+        pools_task = self._run_provider(
+            "pools",
+            self.pool_analyzer.get_top_pools(chain=chain, min_tvl=min_tvl, min_apy=min_apy, limit=max(limit * 3, 36)),
+            metrics,
+        )
+        yields_task = self._run_provider(
+            "yields",
+            self.farm_analyzer.get_yields(chain=chain, min_apy=min_apy, min_tvl=min_tvl, limit=max(limit * 3, 36)),
+            metrics,
+        )
+        lending_task = self._run_provider(
+            "lending_markets",
+            self.lending_analyzer.get_lending_markets(chain=chain, limit=max(limit * 3, 36)),
+            metrics,
+        )
         pools, yields, markets = await asyncio.gather(pools_task, yields_task, lending_task)
-        candidates = self.scan.normalize_candidates(pools=pools, yields=yields, markets=markets)
+        candidates = self.scan.normalize_candidates(pools=pools, yields=yields, markets=markets, metrics=metrics)
         if query:
             needle = query.lower()
             candidates = [
@@ -127,6 +142,18 @@ class _AsyncOpportunityScanPipeline:
             ]
         candidates.sort(key=lambda item: item.get("shortlist_score", 0), reverse=True)
         return candidates[:limit]
+
+    async def _run_provider(self, name: str, awaitable: Any, metrics: AnalysisMetrics | None) -> Any:
+        started = perf_counter()
+        try:
+            result = await awaitable
+        except Exception:
+            if metrics is not None:
+                metrics.record_provider(name, calls=1, failures=1, latency_ms=(perf_counter() - started) * 1000)
+            raise
+        if metrics is not None:
+            metrics.record_provider(name, calls=1, latency_ms=(perf_counter() - started) * 1000)
+        return result
 
 
 class DefiOpportunityEngine:
@@ -225,15 +252,17 @@ class DefiOpportunityEngine:
 
             analysis_id = self.analysis_store.new_id()
             await self.analysis_store.save_request_analysis(request_key, analysis_id)
-            provisional = await self.scan_pipeline.run(**filters)
+            metrics = AnalysisMetrics(factor_model_version=settings.defi_score_model_version)
+            provisional = await self.scan_pipeline.run(**filters, metrics=metrics)
             payload = {
                 "status": "running",
                 "score_model_version": settings.defi_score_model_version,
                 "provisional_shortlist": provisional,
                 "request_key": request_key,
+                "observability": metrics.to_payload(),
             }
             await self.analysis_store.save_status(analysis_id, payload)
-            task = asyncio.create_task(self._finish_analysis(analysis_id, filters, provisional, request_key))
+            task = asyncio.create_task(self._finish_analysis(analysis_id, filters, provisional, request_key, metrics))
             self._analysis_tasks[analysis_id] = task
             task.add_done_callback(lambda finished_task, current_id=analysis_id: self._clear_analysis_task(current_id, finished_task))
             return self._analysis_status_from_payload(analysis_id, payload)
@@ -266,6 +295,7 @@ class DefiOpportunityEngine:
             "score_model_version": status.get("score_model_version", settings.defi_score_model_version),
             "provisional_shortlist": status.get("provisional_shortlist") or [],
             "error": status.get("error"),
+            "observability": status.get("observability"),
         }
 
     async def _finish_analysis(
@@ -274,9 +304,10 @@ class DefiOpportunityEngine:
         filters: Dict[str, Any],
         provisional: List[Dict[str, Any]],
         request_key: str,
+        metrics: AnalysisMetrics,
     ) -> None:
         try:
-            result = await self._build_market_analysis(**filters)
+            result = await self._build_market_analysis(**filters, metrics=metrics)
         except Exception as exc:
             await self.analysis_store.save_status(
                 analysis_id,
@@ -286,9 +317,12 @@ class DefiOpportunityEngine:
                     "provisional_shortlist": provisional,
                     "request_key": request_key,
                     "error": str(exc),
+                    "observability": metrics.to_payload(),
                 },
             )
             return
+        if "observability" not in result:
+            result = {**result, "observability": metrics.to_payload()}
         await self.analysis_store.save_status(
             analysis_id,
             {
@@ -296,6 +330,7 @@ class DefiOpportunityEngine:
                 "score_model_version": settings.defi_score_model_version,
                 "provisional_shortlist": provisional,
                 "request_key": request_key,
+                "observability": result.get("observability"),
                 "result": result,
             },
         )
@@ -311,7 +346,8 @@ class DefiOpportunityEngine:
             return False
         return True
 
-    def _analysis_status_from_payload(self, analysis_id: str, payload: Dict[str, Any]) -> AnalysisStatus:
+    def _analysis_status_from_payload(self, analysis_id: str, payload: Optional[Dict[str, Any]]) -> AnalysisStatus:
+        payload = payload or {}
         return AnalysisStatus(
             analysis_id=analysis_id,
             status=payload.get("status", "running"),
@@ -329,6 +365,7 @@ class DefiOpportunityEngine:
         limit: int = 12,
         include_ai: bool = True,
         ranking_profile: Optional[str] = None,
+        metrics: AnalysisMetrics | None = None,
     ) -> Dict[str, Any]:
         ranking = ranking_profile or self.public_ranking_default
         pools_task = self.pool_analyzer.get_top_pools(chain=chain, min_tvl=min_tvl, min_apy=min_apy, limit=max(limit * 3, 36))
@@ -402,7 +439,7 @@ class DefiOpportunityEngine:
                 }
             )
 
-        return {
+        response = {
             "query": query or None,
             "chain": chain,
             "ranking_profile": ranking,
@@ -439,6 +476,10 @@ class DefiOpportunityEngine:
             },
             "data_source": "DefiLlama + internal incident/audit intelligence + optional DeFi AI synthesis",
         }
+        if metrics is not None:
+            metrics.finalize_total_latency()
+            response["observability"] = metrics.to_payload()
+        return response
 
     async def get_protocol_profile(self, slug: str, include_ai: bool = True, ranking_profile: Optional[str] = None) -> Optional[Dict[str, Any]]:
         ranking = ranking_profile or self.public_ranking_default
