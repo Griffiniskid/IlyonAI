@@ -279,6 +279,50 @@ class DefiOpportunityEngine:
             return None
         return {"analysis_id": analysis_id, **status}
 
+    async def get_opportunity(
+        self,
+        opportunity_id: str,
+        include_ai: bool = True,
+        ranking_profile: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        cached = await self.analysis_store.get_opportunity_document(opportunity_id)
+        if cached is not None:
+            return cached
+
+        detail = await self.get_opportunity_profile(
+            opportunity_id,
+            include_ai=include_ai,
+            ranking_profile=ranking_profile,
+        )
+        if detail is not None:
+            await self.analysis_store.save_opportunity_document(opportunity_id, detail)
+        return detail
+
+    async def compare_opportunities(self, items: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+        resolved_items: List[Dict[str, Any]] = []
+        matrix: List[Dict[str, Any]] = []
+
+        for item in items:
+            entry = dict(item)
+            document = await self._resolve_compare_document(entry)
+            if document is not None:
+                entry["document"] = document
+                identity = document.get("identity") or {}
+                summary = document.get("summary") or {}
+                scores = document.get("scores") or {}
+                matrix.append(
+                    {
+                        "opportunity_id": identity.get("id") or entry.get("opportunity_id"),
+                        "protocol_slug": identity.get("protocol_slug"),
+                        "chain": identity.get("chain"),
+                        "kind": identity.get("kind"),
+                        "final_score": summary.get("overall_score", scores.get("final_deployability_score")),
+                    }
+                )
+            resolved_items.append(entry)
+
+        return {"items": resolved_items, "matrix": matrix}
+
     async def get_completed_or_provisional_result(self, analysis_id: str) -> Dict[str, Any]:
         task = self._analysis_tasks.get(analysis_id)
         if task is not None:
@@ -301,6 +345,41 @@ class DefiOpportunityEngine:
             "observability": status.get("observability"),
             "error": status.get("error"),
         }
+
+    async def _resolve_compare_document(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        opportunity_id = item.get("opportunity_id")
+        if opportunity_id:
+            return await self.get_opportunity(str(opportunity_id), include_ai=False)
+
+        analysis_id = item.get("analysis_id")
+        if not analysis_id:
+            return None
+
+        status = await self.get_opportunity_analysis(str(analysis_id))
+        if status is None:
+            return None
+
+        inferred_opportunity_id = self._infer_opportunity_id_from_status(status)
+        if inferred_opportunity_id:
+            item["opportunity_id"] = inferred_opportunity_id
+            return await self.get_opportunity(inferred_opportunity_id, include_ai=False)
+        return None
+
+    def _infer_opportunity_id_from_status(self, status: Dict[str, Any]) -> Optional[str]:
+        result = status.get("result") or {}
+        top_opportunities = result.get("top_opportunities") or []
+        if top_opportunities:
+            inferred = top_opportunities[0].get("id")
+            if inferred:
+                return str(inferred)
+
+        provisional = status.get("provisional_shortlist") or []
+        if provisional:
+            inferred = provisional[0].get("id")
+            if inferred:
+                return str(inferred)
+
+        return None
 
     async def _finish_analysis(
         self,

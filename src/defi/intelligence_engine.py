@@ -74,6 +74,12 @@ class DefiIntelligenceEngine:
     async def get_completed_or_provisional_result(self, analysis_id: str) -> Dict[str, Any]:
         return await self.engine.get_completed_or_provisional_result(analysis_id)
 
+    async def get_opportunity(self, opportunity_id: str, include_ai: bool = True, ranking_profile: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        return await self.engine.get_opportunity(opportunity_id, include_ai=include_ai, ranking_profile=ranking_profile)
+
+    async def compare_opportunities(self, items: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+        return await self.engine.compare_opportunities(items)
+
     async def get_protocol_profile(self, slug: str, include_ai: bool = True, ranking_profile: Optional[str] = None) -> Optional[Dict[str, Any]]:
         return await self.engine.get_protocol_profile(slug, include_ai=include_ai, ranking_profile=ranking_profile)
 
