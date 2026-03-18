@@ -528,6 +528,7 @@ function normalizeOpportunity(raw: any, depth = 0): DefiOpportunityResponse {
     apy: Number(raw.apy ?? 0),
     tvl_usd: Number(raw.tvl_usd ?? raw.tvlUsd ?? 0),
     tags: normalizeStringArray(raw.tags),
+    behavior: raw.behavior && typeof raw.behavior === "object" ? raw.behavior : typeof raw.behavior === "string" ? raw.behavior : null,
     summary: {
       overall_score: raw.summary?.overall_score != null ? Number(raw.summary?.overall_score) : undefined,
       quality_score: raw.summary?.quality_score != null ? Number(raw.summary?.quality_score) : undefined,

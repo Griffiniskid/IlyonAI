@@ -14,7 +14,13 @@ export default function DetailClient({ opportunityId }: { opportunityId: string 
       <h1>{data.title}</h1>
       <section>
         <h2>Behavior</h2>
-        <p>Behavior info</p>
+        {typeof data.behavior === "string" ? (
+          <p>{data.behavior}</p>
+        ) : data.behavior ? (
+          <pre>{JSON.stringify(data.behavior, null, 2)}</pre>
+        ) : (
+          <p>No behavior data available</p>
+        )}
       </section>
       <section>
         <h2>Evidence</h2>

@@ -37,4 +37,5 @@ it("renders behavior, evidence, scenarios, and AI analyst on the detail page", a
   expect(await screen.findByRole("heading", { name: /evidence/i })).toBeInTheDocument()
   expect(await screen.findByRole("heading", { name: /scenarios/i })).toBeInTheDocument()
   expect(await screen.findByRole("heading", { name: /ai analyst/i })).toBeInTheDocument()
+  expect(await screen.findByText("some behavior")).toBeInTheDocument()
 })

@@ -628,6 +628,7 @@ export interface DefiOpportunityResponse {
   apy: number;
   tvl_usd: number;
   tags: string[];
+  behavior?: Record<string, unknown> | string | null;
   summary: DefiOpportunitySummary;
   dimensions: OpportunityDimension[];
   confidence?: DefiConfidenceReport | null;
