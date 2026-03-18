@@ -347,7 +347,7 @@ class CacheLayer:
         """Get cache statistics"""
         stats = {
             "memory_items": len(self._memory_cache),
-            "memory_maxsize": self._memory_cache.maxsize,
+            "memory_maxsize": self.max_memory_items,
             "redis_connected": self.redis_connected,
             "ttl": self.ttl
         }

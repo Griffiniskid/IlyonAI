@@ -64,6 +64,17 @@ async def test_analysis_store_ttl_override_survives_memory_fallback_default_ttl(
 
 
 @pytest.mark.asyncio
+async def test_cache_layer_stats_work_with_memory_fallback_store():
+    cache = CacheLayer(redis_url=None, ttl=60, max_memory_items=7)
+
+    await cache.set("defi:test", {"ok": True})
+    stats = await cache.get_stats()
+
+    assert stats["memory_items"] == 1
+    assert stats["memory_maxsize"] == 7
+
+
+@pytest.mark.asyncio
 async def test_analysis_store_round_trips_completed_opportunity_by_id():
     await get_cache().clear()
     writer = AnalysisStore()
