@@ -309,6 +309,7 @@ class DefiOpportunityEngine:
             status=payload.get("status", "running"),
             score_model_version=payload.get("score_model_version", settings.defi_score_model_version),
             provisional_shortlist=payload.get("provisional_shortlist") or [],
+            error=payload.get("error"),
         )
 
     async def _build_market_analysis(

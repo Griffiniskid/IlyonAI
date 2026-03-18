@@ -50,6 +50,7 @@ async def test_intelligence_engine_returns_async_analysis_status():
 
     assert first.status in {"queued", "running", "completed"}
     assert first.analysis_id.startswith("ana_")
+    assert first.error is None
     assert second.analysis_id == first.analysis_id
 
     task = engine.engine._analysis_tasks.get(first.analysis_id)
