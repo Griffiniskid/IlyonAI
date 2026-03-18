@@ -5,6 +5,9 @@ import pytest
 
 from src.defi.pipeline.enrich import EnrichmentPipeline
 
+SOLANA_FIXTURE = {"chain": "solana", "protocol_slug": "orca", "product_type": "stable_lp"}
+CHAIN_MATRIX = ["solana", "ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"]
+EVM_FIXTURE = {"chain": "base", "protocol_slug": "aave-v3", "product_type": "lending_supply_like"}
 
 @pytest.mark.asyncio
 async def test_enrichment_marks_timeout_sources_as_fallbacks():
@@ -110,3 +113,87 @@ async def test_enrichment_logs_and_reraises_unexpected_loader_exceptions(caplog)
             await pipeline.enrich_candidate({"id": "opp_1"})
 
     assert "docs enrichment failed" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("chain", CHAIN_MATRIX)
+async def test_enrichment_supports_chain_matrix(chain):
+    class DocsStub:
+        async def analyze(self, url, docs_url=None):
+            return {"available": True, "freshness_hours": 1.0}
+
+    class HistoryStub:
+        async def get_pool_history(self, pool_id):
+            return [{"apy": 7.2, "tvlUsd": 1000}]
+
+        def summarize_pool_history(self, history):
+            return {"available": True, "observations": 1, "freshness_hours": 1.0}
+
+    pipeline = EnrichmentPipeline(docs=DocsStub(), history=HistoryStub(), provider_timeout_seconds=1)
+
+    enriched = await pipeline.enrich_candidate(
+        {
+            "id": f"opp_{chain}",
+            "pool_id": "pool_1",
+            "chain": chain,
+            "protocol_slug": "test-protocol",
+        }
+    )
+
+    assert enriched["docs_profile"]["available"] is True
+    assert enriched["history_summary"]["observations"] == 1
+
+
+@pytest.mark.asyncio
+async def test_enrichment_supports_solana_fixture():
+    class DocsStub:
+        async def analyze(self, url, docs_url=None):
+            return {"available": True, "freshness_hours": 1.0}
+
+    class HistoryStub:
+        async def get_pool_history(self, pool_id):
+            return [{"apy": 7.2, "tvlUsd": 1000}]
+
+        def summarize_pool_history(self, history):
+            return {"available": True, "observations": 1, "freshness_hours": 1.0}
+
+    pipeline = EnrichmentPipeline(docs=DocsStub(), history=HistoryStub(), provider_timeout_seconds=1)
+
+    enriched = await pipeline.enrich_candidate(
+        {
+            "id": "opp_solana",
+            "pool_id": "pool_solana",
+            "chain": SOLANA_FIXTURE["chain"],
+            "protocol_slug": SOLANA_FIXTURE["protocol_slug"],
+        }
+    )
+
+    assert enriched["docs_profile"]["available"] is True
+
+
+@pytest.mark.asyncio
+async def test_enrichment_supports_evm_fixture():
+    class DocsStub:
+        async def analyze(self, url, docs_url=None):
+            return {"available": True, "freshness_hours": 1.0}
+
+    class HistoryStub:
+        async def get_pool_history(self, pool_id):
+            return [{"apy": 7.2, "tvlUsd": 1000}]
+
+        def summarize_pool_history(self, history):
+            return {"available": True, "observations": 1, "freshness_hours": 1.0}
+
+    pipeline = EnrichmentPipeline(docs=DocsStub(), history=HistoryStub(), provider_timeout_seconds=1)
+
+    enriched = await pipeline.enrich_candidate(
+        {
+            "id": "opp_evm",
+            "pool_id": "pool_evm",
+            "chain": EVM_FIXTURE["chain"],
+            "protocol_slug": EVM_FIXTURE["protocol_slug"],
+        }
+    )
+
+    assert enriched["docs_profile"]["available"] is True
+

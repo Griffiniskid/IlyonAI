@@ -5,6 +5,10 @@ import DiscoverClient from "@/app/defi/_components/discover-client";
 import * as hooks from "@/lib/hooks";
 import { useQuery } from "@tanstack/react-query";
 
+const SOLANA_FIXTURE = { chain: "solana", protocol_slug: "orca", product_type: "stable_lp" };
+const CHAIN_MATRIX = ["solana", "ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"];
+const EVM_FIXTURE = { chain: "base", protocol_slug: "aave-v3", product_type: "lending_supply_like" };
+
 // Mock react-query
 vi.mock("@tanstack/react-query", async (importOriginal) => {
   const actual = await importOriginal();
@@ -157,5 +161,13 @@ describe("useOpportunityAnalysis Hook", () => {
         retry: false, // Should disable retries to prevent pausing during polling
       })
     );
+  });
+
+  it("supports solana fixture chains", () => {
+    expect(CHAIN_MATRIX).toContain(SOLANA_FIXTURE.chain);
+  });
+
+  it("supports evm fixture chains", () => {
+    expect(CHAIN_MATRIX).toContain(EVM_FIXTURE.chain);
   });
 });

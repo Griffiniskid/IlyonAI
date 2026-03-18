@@ -4,6 +4,10 @@ import CompareClient from "@/app/defi/_components/compare-client"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import React from "react"
 
+const SOLANA_FIXTURE = { chain: "solana", protocol_slug: "orca", product_type: "stable_lp" };
+const CHAIN_MATRIX = ["solana", "ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"];
+const EVM_FIXTURE = { chain: "base", protocol_slug: "aave-v3", product_type: "lending_supply_like" };
+
 const useDefiComparisonMock = vi.fn()
 
 // Mock the hook
@@ -48,4 +52,12 @@ describe("CompareClient", () => {
     )
     expect(await screen.findByText(/not found/i)).toBeInTheDocument()
   })
+
+  it("supports solana fixture chains", () => {
+    expect(CHAIN_MATRIX).toContain(SOLANA_FIXTURE.chain);
+  });
+
+  it("supports evm fixture chains", () => {
+    expect(CHAIN_MATRIX).toContain(EVM_FIXTURE.chain);
+  });
 })

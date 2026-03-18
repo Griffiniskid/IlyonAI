@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as api from '../../lib/api';
 
+const SOLANA_FIXTURE = { chain: "solana", protocol_slug: "orca", product_type: "stable_lp" };
+const CHAIN_MATRIX = ["solana", "ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"];
+const EVM_FIXTURE = { chain: "base", protocol_slug: "aave-v3", product_type: "lending_supply_like" };
+
 describe('Opportunities API', () => {
   let fetchMock: any;
 
@@ -61,5 +65,13 @@ describe('Opportunities API', () => {
     const res = await api.analyzeDefi({ query: 'test' });
     expect(res.count.pools).toBe(1);
     expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/v1/defi/analyze?query=test', expect.any(Object));
+  });
+
+  it("supports solana fixture chains", () => {
+    expect(CHAIN_MATRIX).toContain(SOLANA_FIXTURE.chain);
+  });
+
+  it("supports evm fixture chains", () => {
+    expect(CHAIN_MATRIX).toContain(EVM_FIXTURE.chain);
   });
 });

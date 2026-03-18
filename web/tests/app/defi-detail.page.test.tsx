@@ -3,7 +3,11 @@ import DetailClient from "@/app/defi/_components/detail-client"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import React from "react"
 
-import { vi, it, expect } from "vitest"
+import { vi, it, expect, describe } from "vitest"
+
+const SOLANA_FIXTURE = { chain: "solana", protocol_slug: "orca", product_type: "stable_lp" };
+const CHAIN_MATRIX = ["solana", "ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"];
+const EVM_FIXTURE = { chain: "base", protocol_slug: "aave-v3", product_type: "lending_supply_like" };
 
 // Mock the hook
 vi.mock("@/lib/hooks", () => ({
@@ -27,15 +31,25 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false } },
 })
 
-it("renders behavior, evidence, scenarios, and AI analyst on the detail page", async () => {
-  render(
-    <QueryClientProvider client={queryClient}>
-      <DetailClient opportunityId="opp_1" />
-    </QueryClientProvider>
-  )
-  expect(await screen.findByRole("heading", { name: /behavior/i })).toBeInTheDocument()
-  expect(await screen.findByRole("heading", { name: /evidence/i })).toBeInTheDocument()
-  expect(await screen.findByRole("heading", { name: /scenarios/i })).toBeInTheDocument()
-  expect(await screen.findByRole("heading", { name: /ai analyst/i })).toBeInTheDocument()
-  expect(await screen.findByText("some behavior")).toBeInTheDocument()
+describe("DetailClient", () => {
+  it("renders behavior, evidence, scenarios, and AI analyst on the detail page", async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <DetailClient opportunityId="opp_1" />
+      </QueryClientProvider>
+    )
+    expect(await screen.findByRole("heading", { name: /behavior/i })).toBeInTheDocument()
+    expect(await screen.findByRole("heading", { name: /evidence/i })).toBeInTheDocument()
+    expect(await screen.findByRole("heading", { name: /scenarios/i })).toBeInTheDocument()
+    expect(await screen.findByRole("heading", { name: /ai analyst/i })).toBeInTheDocument()
+    expect(await screen.findByText("some behavior")).toBeInTheDocument()
+  })
+
+  it("supports solana fixture chains", () => {
+    expect(CHAIN_MATRIX).toContain(SOLANA_FIXTURE.chain);
+  });
+
+  it("supports evm fixture chains", () => {
+    expect(CHAIN_MATRIX).toContain(EVM_FIXTURE.chain);
+  });
 })

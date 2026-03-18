@@ -2,7 +2,11 @@ import json
 from pathlib import Path
 
 from src.defi.pipeline.synthesize import SynthesisPipeline
+import pytest
 
+SOLANA_FIXTURE = {"chain": "solana", "protocol_slug": "orca", "product_type": "stable_lp"}
+CHAIN_MATRIX = ["solana", "ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"]
+EVM_FIXTURE = {"chain": "base", "protocol_slug": "aave-v3", "product_type": "lending_supply_like"}
 
 def test_synthesis_combines_deterministic_and_ai_scores_without_bypassing_caps():
     pipeline = SynthesisPipeline()
@@ -197,6 +201,7 @@ def test_synthesis_emits_full_opportunity_analysis_contract():
         "factors",
         "identity",
         "market",
+        "observability",
         "recommendation",
         "scenarios",
         "scores",
@@ -204,3 +209,38 @@ def test_synthesis_emits_full_opportunity_analysis_contract():
     assert payload["scores"]["final_deployability_score"] == 74
     assert payload["recommendation"]["action"] == "deploy_small"
     assert payload["evidence"][0]["source"] == "defillama"
+
+@pytest.mark.parametrize("chain", CHAIN_MATRIX)
+def test_synthesis_supports_chain_matrix(chain):
+    pipeline = SynthesisPipeline()
+    analysis = pipeline.combine(
+        identity={"id": f"opp_{chain}", "chain": chain, "kind": "pool", "protocol_slug": "test", "protocol_name": "Test", "category": "dex", "assets": ["USDC"], "strategy_family": "carry"},
+        market={"apy": 5.0, "tvl_usd": 1000000, "liquidity_usd": 100000, "market_regime": "balanced"},
+        deterministic={"final_score": 75, "safety_score": 75, "apr_quality_score": 75, "exit_quality_score": 75, "resilience_score": 75, "confidence_score": 75, "gross_apr": 5.0, "haircut_apr": 4.5, "net_expected_apr": 4.0, "weighted_risk_burden": 10, "risk_to_apr_ratio": 2.0, "strategy_fit": "balanced", "headline": "Test", "hard_caps": [], "fragility_flags": [], "kill_switches": [], "confidence_reasoning": []},
+        ai={"judgment_score": 75}
+    )
+    assert analysis.identity.chain == chain
+    assert analysis.scores.final_deployability_score == 75
+
+def test_synthesis_supports_solana_fixture():
+    pipeline = SynthesisPipeline()
+    analysis = pipeline.combine(
+        identity={"id": "opp_sol", "chain": SOLANA_FIXTURE["chain"], "kind": "pool", "protocol_slug": SOLANA_FIXTURE["protocol_slug"], "protocol_name": "Orca", "category": "dex", "assets": ["SOL", "USDC"], "strategy_family": "carry"},
+        market={"apy": 5.0, "tvl_usd": 1000000, "liquidity_usd": 100000, "market_regime": "balanced"},
+        deterministic={"final_score": 75, "safety_score": 75, "apr_quality_score": 75, "exit_quality_score": 75, "resilience_score": 75, "confidence_score": 75, "gross_apr": 5.0, "haircut_apr": 4.5, "net_expected_apr": 4.0, "weighted_risk_burden": 10, "risk_to_apr_ratio": 2.0, "strategy_fit": "balanced", "headline": "Test", "hard_caps": [], "fragility_flags": [], "kill_switches": [], "confidence_reasoning": []},
+        ai={"judgment_score": 75}
+    )
+    assert analysis.identity.chain == "solana"
+    assert analysis.identity.protocol_slug == "orca"
+
+def test_synthesis_supports_evm_fixture():
+    pipeline = SynthesisPipeline()
+    analysis = pipeline.combine(
+        identity={"id": "opp_evm", "chain": EVM_FIXTURE["chain"], "kind": "lending", "protocol_slug": EVM_FIXTURE["protocol_slug"], "protocol_name": "Aave", "category": "lending", "assets": ["USDC"], "strategy_family": "carry"},
+        market={"apy": 5.0, "tvl_usd": 1000000, "liquidity_usd": 100000, "market_regime": "balanced"},
+        deterministic={"final_score": 75, "safety_score": 75, "apr_quality_score": 75, "exit_quality_score": 75, "resilience_score": 75, "confidence_score": 75, "gross_apr": 5.0, "haircut_apr": 4.5, "net_expected_apr": 4.0, "weighted_risk_burden": 10, "risk_to_apr_ratio": 2.0, "strategy_fit": "balanced", "headline": "Test", "hard_caps": [], "fragility_flags": [], "kill_switches": [], "confidence_reasoning": []},
+        ai={"judgment_score": 75}
+    )
+    assert analysis.identity.chain == "base"
+    assert analysis.identity.protocol_slug == "aave-v3"
+

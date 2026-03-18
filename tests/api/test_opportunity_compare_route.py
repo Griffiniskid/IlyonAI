@@ -5,6 +5,9 @@ from typing import Any, cast
 
 from src.defi.intelligence_engine import DefiIntelligenceEngine
 
+SOLANA_FIXTURE = {"chain": "solana", "protocol_slug": "orca", "product_type": "stable_lp"}
+CHAIN_MATRIX = ["solana", "ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"]
+EVM_FIXTURE = {"chain": "base", "protocol_slug": "aave-v3", "product_type": "lending_supply_like"}
 
 class FakeOpportunityService:
     def __init__(self):
@@ -73,3 +76,34 @@ async def test_real_backend_service_implements_compare_opportunities():
         {"opportunity_id": "opp_1"},
         {"analysis_id": "ana_2", "opportunity_id": "opp_2"},
     ]]
+
+@pytest.mark.asyncio
+async def test_compare_accepts_solana_and_evm_fixtures():
+    app = web.Application()
+    service = FakeOpportunityService()
+    app["opportunity_service"] = service
+
+    from src.api.routes.opportunities import setup_opportunity_routes
+    setup_opportunity_routes(app)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+
+    try:
+        response = await client.post(
+            "/opportunities/compare",
+            json={
+                "items": [
+                    {"opportunity_id": f"opp_{SOLANA_FIXTURE['chain']}"},
+                    {"analysis_id": "ana_evm", "opportunity_id": f"opp_{EVM_FIXTURE['chain']}"},
+                ]
+            },
+        )
+        payload = await response.json()
+    finally:
+        await client.close()
+
+    assert response.status == 200
+    assert payload["items"][0]["opportunity_id"] == "opp_solana"
+    assert payload["items"][1]["opportunity_id"] == "opp_base"
+

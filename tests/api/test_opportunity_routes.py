@@ -4,6 +4,9 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
+SOLANA_FIXTURE = {"chain": "solana", "protocol_slug": "orca", "product_type": "stable_lp"}
+CHAIN_MATRIX = ["solana", "ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"]
+EVM_FIXTURE = {"chain": "base", "protocol_slug": "aave-v3", "product_type": "lending_supply_like"}
 
 class FakeOpportunityService:
     def __init__(self):
@@ -88,3 +91,23 @@ async def test_get_opportunity_analysis_returns_completed_result():
         assert payload["progress"]["percent"] == 100
         assert payload["metrics"] == {"requests": 2}
         assert payload["result"]["identity"]["id"] == "opp_1"
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("chain", CHAIN_MATRIX)
+async def test_create_opportunity_analysis_accepts_chain_matrix(chain):
+    async with opportunity_client() as client:
+        response = await client.post("/opportunities/analyses", json={"chain": chain, "limit": 5})
+        assert response.status == 202
+
+@pytest.mark.asyncio
+async def test_create_opportunity_analysis_accepts_solana_fixture():
+    async with opportunity_client() as client:
+        response = await client.post("/opportunities/analyses", json={"chain": SOLANA_FIXTURE["chain"], "protocol": SOLANA_FIXTURE["protocol_slug"], "limit": 5})
+        assert response.status == 202
+
+@pytest.mark.asyncio
+async def test_create_opportunity_analysis_accepts_evm_fixture():
+    async with opportunity_client() as client:
+        response = await client.post("/opportunities/analyses", json={"chain": EVM_FIXTURE["chain"], "protocol": EVM_FIXTURE["protocol_slug"], "limit": 5})
+        assert response.status == 202
+
