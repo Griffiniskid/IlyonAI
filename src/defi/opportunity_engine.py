@@ -213,14 +213,14 @@ class DefiOpportunityEngine:
         existing_analysis_id = await self.analysis_store.get_request_analysis(request_key)
         if existing_analysis_id:
             existing_status = await self.analysis_store.get_status(existing_analysis_id)
-            if existing_status and existing_status.get("status") != "failed":
+            if self._can_reuse_analysis(existing_analysis_id, existing_status):
                 return self._analysis_status_from_payload(existing_analysis_id, existing_status)
 
         async def _start_new_analysis() -> AnalysisStatus:
             linked_analysis_id = await self.analysis_store.get_request_analysis(request_key)
             if linked_analysis_id:
                 linked_status = await self.analysis_store.get_status(linked_analysis_id)
-                if linked_status and linked_status.get("status") != "failed":
+                if self._can_reuse_analysis(linked_analysis_id, linked_status):
                     return self._analysis_status_from_payload(linked_analysis_id, linked_status)
 
             analysis_id = self.analysis_store.new_id()
@@ -265,6 +265,7 @@ class DefiOpportunityEngine:
             "status": status.get("status", "running"),
             "score_model_version": status.get("score_model_version", settings.defi_score_model_version),
             "provisional_shortlist": status.get("provisional_shortlist") or [],
+            "error": status.get("error"),
         }
 
     async def _finish_analysis(
@@ -287,7 +288,7 @@ class DefiOpportunityEngine:
                     "error": str(exc),
                 },
             )
-            raise
+            return
         await self.analysis_store.save_status(
             analysis_id,
             {
@@ -302,6 +303,13 @@ class DefiOpportunityEngine:
     def _clear_analysis_task(self, analysis_id: str, task: asyncio.Task[Any]) -> None:
         if self._analysis_tasks.get(analysis_id) is task:
             self._analysis_tasks.pop(analysis_id, None)
+
+    def _can_reuse_analysis(self, analysis_id: str, status: Optional[Dict[str, Any]]) -> bool:
+        if not status or status.get("status") == "failed":
+            return False
+        if status.get("status") == "running" and analysis_id not in self._analysis_tasks:
+            return False
+        return True
 
     def _analysis_status_from_payload(self, analysis_id: str, payload: Dict[str, Any]) -> AnalysisStatus:
         return AnalysisStatus(
