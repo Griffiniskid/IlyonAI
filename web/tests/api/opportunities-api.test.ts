@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as api from '../../lib/api';
 
-const SOLANA_FIXTURE = { chain: "solana", protocol_slug: "orca", product_type: "stable_lp" };
-const CHAIN_MATRIX = ["solana", "ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"];
-const EVM_FIXTURE = { chain: "base", protocol_slug: "aave-v3", product_type: "lending_supply_like" };
+import { CHAIN_MATRIX, SOLANA_FIXTURE, EVM_FIXTURE } from '../fixtures/defi';
 
 describe('Opportunities API', () => {
   let fetchMock: any;
@@ -67,11 +65,23 @@ describe('Opportunities API', () => {
     expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/v1/defi/analyze?query=test', expect.any(Object));
   });
 
-  it("supports solana fixture chains", () => {
-    expect(CHAIN_MATRIX).toContain(SOLANA_FIXTURE.chain);
+  it("supports solana fixture chains in getDefiOpportunities", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => Promise.resolve({ opportunities: [], count: 0 }),
+    });
+    await api.getDefiOpportunities({ chain: SOLANA_FIXTURE.chain });
+    expect(fetchMock).toHaveBeenCalledWith(`http://localhost:8080/api/v1/defi/opportunities?chain=${SOLANA_FIXTURE.chain}`, expect.any(Object));
   });
 
-  it("supports evm fixture chains", () => {
-    expect(CHAIN_MATRIX).toContain(EVM_FIXTURE.chain);
+  it("supports evm fixture chains in analyzeDefi", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => Promise.resolve({ count: { pools: 0 } }),
+    });
+    await api.analyzeDefi({ chain: EVM_FIXTURE.chain });
+    expect(fetchMock).toHaveBeenCalledWith(`http://localhost:8080/api/v1/defi/analyze?chain=${EVM_FIXTURE.chain}`, expect.any(Object));
   });
 });

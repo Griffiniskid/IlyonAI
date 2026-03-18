@@ -1,9 +1,7 @@
 import pytest
 from src.defi.pipeline.scan import MarketScanPipeline
 
-SOLANA_FIXTURE = {"chain": "solana", "protocol_slug": "orca", "product_type": "stable_lp"}
-CHAIN_MATRIX = ["solana", "ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"]
-EVM_FIXTURE = {"chain": "base", "protocol_slug": "aave-v3", "product_type": "lending_supply_like"}
+from tests.defi_fixtures import CHAIN_MATRIX, SOLANA_FIXTURE, EVM_FIXTURE
 
 def test_market_scan_normalizes_pool_farm_and_lending_candidates():
     pipeline = MarketScanPipeline()
@@ -41,8 +39,7 @@ def test_market_scan_keeps_lending_supply_product_type_for_protocol_shaped_marke
     assert normalized[0]["product_type"] == "lending_supply_like"
 
 
-@pytest.mark.parametrize("chain", CHAIN_MATRIX)
-def test_market_scan_excludes_unsupported_chain_candidates(chain):
+def test_market_scan_excludes_unsupported_chain_candidates():
     pipeline = MarketScanPipeline()
 
     normalized = pipeline.normalize_candidates(
@@ -52,6 +49,18 @@ def test_market_scan_excludes_unsupported_chain_candidates(chain):
     )
 
     assert normalized == []
+
+@pytest.mark.parametrize("chain", CHAIN_MATRIX)
+def test_market_scan_includes_supported_chains(chain):
+    pipeline = MarketScanPipeline()
+
+    normalized = pipeline.normalize_candidates(
+        pools=[{"project": "orca-dex", "symbol": "SOL-USDC", "chain": chain, "apy": 12.5}],
+        yields=[],
+        markets=[],
+    )
+
+    assert len(normalized) == 1
 
 def test_market_scan_accepts_solana_fixture():
     pipeline = MarketScanPipeline()

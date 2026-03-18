@@ -4,9 +4,7 @@ from pathlib import Path
 from src.defi.pipeline.synthesize import SynthesisPipeline
 import pytest
 
-SOLANA_FIXTURE = {"chain": "solana", "protocol_slug": "orca", "product_type": "stable_lp"}
-CHAIN_MATRIX = ["solana", "ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"]
-EVM_FIXTURE = {"chain": "base", "protocol_slug": "aave-v3", "product_type": "lending_supply_like"}
+from tests.defi_fixtures import CHAIN_MATRIX, SOLANA_FIXTURE, EVM_FIXTURE
 
 def test_synthesis_combines_deterministic_and_ai_scores_without_bypassing_caps():
     pipeline = SynthesisPipeline()

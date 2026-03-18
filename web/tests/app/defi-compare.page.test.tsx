@@ -4,9 +4,7 @@ import CompareClient from "@/app/defi/_components/compare-client"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import React from "react"
 
-const SOLANA_FIXTURE = { chain: "solana", protocol_slug: "orca", product_type: "stable_lp" };
-const CHAIN_MATRIX = ["solana", "ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"];
-const EVM_FIXTURE = { chain: "base", protocol_slug: "aave-v3", product_type: "lending_supply_like" };
+import { CHAIN_MATRIX, SOLANA_FIXTURE, EVM_FIXTURE } from '../fixtures/defi';
 
 const useDefiComparisonMock = vi.fn()
 
@@ -53,11 +51,39 @@ describe("CompareClient", () => {
     expect(await screen.findByText(/not found/i)).toBeInTheDocument()
   })
 
-  it("supports solana fixture chains", () => {
-    expect(CHAIN_MATRIX).toContain(SOLANA_FIXTURE.chain);
-  });
+  it("renders comparison matrix with solana fixture", async () => {
+    useDefiComparisonMock.mockReturnValue({
+      data: {
+        matrix: [
+          { opportunity_id: "opp_1", protocol: SOLANA_FIXTURE.protocol_slug, chain: SOLANA_FIXTURE.chain, apy: 10 },
+        ]
+      },
+      isLoading: false,
+    })
 
-  it("supports evm fixture chains", () => {
-    expect(CHAIN_MATRIX).toContain(EVM_FIXTURE.chain);
-  });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <CompareClient asset="USDC" />
+      </QueryClientProvider>
+    )
+    expect(await screen.findByText(/comparison matrix/i)).toBeInTheDocument()
+  })
+
+  it("renders comparison matrix with evm fixture", async () => {
+    useDefiComparisonMock.mockReturnValue({
+      data: {
+        matrix: [
+          { opportunity_id: "opp_2", protocol: EVM_FIXTURE.protocol_slug, chain: EVM_FIXTURE.chain, apy: 12 },
+        ]
+      },
+      isLoading: false,
+    })
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <CompareClient asset="USDC" />
+      </QueryClientProvider>
+    )
+    expect(await screen.findByText(/comparison matrix/i)).toBeInTheDocument()
+  })
 })

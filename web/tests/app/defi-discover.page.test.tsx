@@ -5,9 +5,7 @@ import DiscoverClient from "@/app/defi/_components/discover-client";
 import * as hooks from "@/lib/hooks";
 import { useQuery } from "@tanstack/react-query";
 
-const SOLANA_FIXTURE = { chain: "solana", protocol_slug: "orca", product_type: "stable_lp" };
-const CHAIN_MATRIX = ["solana", "ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"];
-const EVM_FIXTURE = { chain: "base", protocol_slug: "aave-v3", product_type: "lending_supply_like" };
+import { CHAIN_MATRIX, SOLANA_FIXTURE, EVM_FIXTURE } from '../fixtures/defi';
 
 // Mock react-query
 vi.mock("@tanstack/react-query", async (importOriginal) => {
@@ -163,11 +161,47 @@ describe("useOpportunityAnalysis Hook", () => {
     );
   });
 
-  it("supports solana fixture chains", () => {
-    expect(CHAIN_MATRIX).toContain(SOLANA_FIXTURE.chain);
+  it("shows the solana fixture provisional shortlist", async () => {
+    const mockMutate = vi.fn();
+    (hooks.useCreateOpportunityAnalysis as any).mockReturnValue({
+      mutate: mockMutate,
+      isPending: true,
+      data: {
+        opportunityId: "job-sol",
+        provisional_shortlist: [
+          { id: "1", title: "Orca Pool", apy: 12.5, protocol: SOLANA_FIXTURE.protocol_slug, chain: SOLANA_FIXTURE.chain, kind: "pool" }
+        ]
+      }
+    });
+
+    (hooks.useOpportunityAnalysis as any).mockReturnValue({
+      data: null,
+      isLoading: true,
+    });
+
+    render(<DiscoverClient />);
+    expect(await screen.findByText(/Orca Pool/i)).toBeInTheDocument();
   });
 
-  it("supports evm fixture chains", () => {
-    expect(CHAIN_MATRIX).toContain(EVM_FIXTURE.chain);
+  it("shows the evm fixture provisional shortlist", async () => {
+    const mockMutate = vi.fn();
+    (hooks.useCreateOpportunityAnalysis as any).mockReturnValue({
+      mutate: mockMutate,
+      isPending: true,
+      data: {
+        opportunityId: "job-evm",
+        provisional_shortlist: [
+          { id: "2", title: "Aave Pool", apy: 5.5, protocol: EVM_FIXTURE.protocol_slug, chain: EVM_FIXTURE.chain, kind: "lending" }
+        ]
+      }
+    });
+
+    (hooks.useOpportunityAnalysis as any).mockReturnValue({
+      data: null,
+      isLoading: true,
+    });
+
+    render(<DiscoverClient />);
+    expect(await screen.findByText(/Aave Pool/i)).toBeInTheDocument();
   });
 });

@@ -4,10 +4,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import React from "react"
 
 import { vi, it, expect, describe } from "vitest"
+import { useOpportunityAnalysis } from "@/lib/hooks"
 
-const SOLANA_FIXTURE = { chain: "solana", protocol_slug: "orca", product_type: "stable_lp" };
-const CHAIN_MATRIX = ["solana", "ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"];
-const EVM_FIXTURE = { chain: "base", protocol_slug: "aave-v3", product_type: "lending_supply_like" };
+import { CHAIN_MATRIX, SOLANA_FIXTURE, EVM_FIXTURE } from '../fixtures/defi';
 
 // Mock the hook
 vi.mock("@/lib/hooks", () => ({
@@ -45,11 +44,47 @@ describe("DetailClient", () => {
     expect(await screen.findByText("some behavior")).toBeInTheDocument()
   })
 
-  it("supports solana fixture chains", () => {
-    expect(CHAIN_MATRIX).toContain(SOLANA_FIXTURE.chain);
+  it("renders solana fixture opportunity details", async () => {
+    vi.mocked(useOpportunityAnalysis).mockReturnValue({
+      data: {
+        id: "opp_sol",
+        title: "Orca Pool Opportunity",
+        behavior: "solana behavior",
+        evidence: [],
+        scenarios: [],
+        ai_analysis: { headline: "Solana Analyst", summary: "" } as any,
+        chain: SOLANA_FIXTURE.chain,
+        protocol: SOLANA_FIXTURE.protocol_slug
+      } as any,
+      isLoading: false,
+    } as any);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <DetailClient opportunityId="opp_sol" />
+      </QueryClientProvider>
+    );
+    expect(await screen.findByText("solana behavior")).toBeInTheDocument();
   });
 
-  it("supports evm fixture chains", () => {
-    expect(CHAIN_MATRIX).toContain(EVM_FIXTURE.chain);
+  it("renders evm fixture opportunity details", async () => {
+    vi.mocked(useOpportunityAnalysis).mockReturnValue({
+      data: {
+        id: "opp_evm",
+        title: "Aave Pool Opportunity",
+        behavior: "evm behavior",
+        evidence: [],
+        scenarios: [],
+        ai_analysis: { headline: "EVM Analyst", summary: "" } as any,
+        chain: EVM_FIXTURE.chain,
+        protocol: EVM_FIXTURE.protocol_slug
+      } as any,
+      isLoading: false,
+    } as any);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <DetailClient opportunityId="opp_evm" />
+      </QueryClientProvider>
+    );
+    expect(await screen.findByText("evm behavior")).toBeInTheDocument();
   });
 })
