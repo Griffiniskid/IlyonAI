@@ -10,7 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from src.data.defillama import DefiLlamaClient
-from src.defi.opportunity_taxonomy import PHASE_1_CHAINS
+from src.defi.opportunity_taxonomy import PHASE_1_CHAINS, normalize_chain_name
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,10 @@ class FarmAnalyzer:
     """
 
     SUPPORTED_CHAINS = PHASE_1_CHAINS
+
+    @classmethod
+    def normalize_chain_name(cls, chain: Any) -> Optional[str]:
+        return normalize_chain_name(chain)
 
     def __init__(self):
         self._llama = DefiLlamaClient()
@@ -153,6 +157,10 @@ class FarmAnalyzer:
         """
         Fetch and filter yield farming opportunities.
         """
+        normalized_chain = self.normalize_chain_name(chain)
+        if chain is not None and normalized_chain is None:
+            return []
+
         try:
             raw = await self._llama.get_pools()
         except Exception as e:
@@ -167,13 +175,15 @@ class FarmAnalyzer:
                 continue
             pool_apy = _pool_value(pool, "apy", default=0) or 0
             pool_tvl = _pool_value(pool, "tvl_usd", "tvlUsd", 0) or 0
-            pool_chain = (_pool_value(pool, "chain", default="") or "").lower()
+            pool_chain = self.normalize_chain_name(_pool_value(pool, "chain", default=""))
 
             if pool_apy < min_apy:
                 continue
             if pool_tvl < min_tvl:
                 continue
-            if chain and pool_chain != chain.lower():
+            if pool_chain is None:
+                continue
+            if normalized_chain and pool_chain != normalized_chain:
                 continue
             if max_apy is not None and pool_apy > max_apy:
                 continue

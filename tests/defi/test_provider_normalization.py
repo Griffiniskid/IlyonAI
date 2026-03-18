@@ -16,3 +16,9 @@ def test_provider_normalization_maps_common_aliases_to_phase1_chains():
     assert pipeline.normalize_chain_name("eth") == "ethereum"
     assert pipeline.normalize_chain_name("avax") == "avalanche"
     assert pipeline.normalize_chain_name("bnb chain") == "bsc"
+
+
+def test_provider_normalization_rejects_unsupported_chains():
+    pipeline = MarketScanPipeline()
+
+    assert pipeline.normalize_chain_name("fantom") is None

@@ -30,32 +30,40 @@ class MarketScanPipeline:
         markets: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         candidates: List[Dict[str, Any]] = []
-        candidates.extend(self._normalize_pool(pool) for pool in pools)
-        candidates.extend(self._normalize_yield(item) for item in yields)
-        candidates.extend(self._normalize_lending_supply(item) for item in markets)
+        candidates.extend(candidate for candidate in (self._normalize_pool(pool) for pool in pools) if candidate is not None)
+        candidates.extend(candidate for candidate in (self._normalize_yield(item) for item in yields) if candidate is not None)
+        candidates.extend(candidate for candidate in (self._normalize_lending_supply(item) for item in markets) if candidate is not None)
         return candidates
 
-    def _normalize_pool(self, pool: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_pool(self, pool: Dict[str, Any]) -> Dict[str, Any] | None:
         normalized = self._normalize_candidate(pool, apy_key="apy")
+        if normalized is None:
+            return None
         normalized["candidate_kind"] = "pool"
         return normalized
 
-    def _normalize_yield(self, item: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_yield(self, item: Dict[str, Any]) -> Dict[str, Any] | None:
         normalized = self._normalize_candidate(item, apy_key="apy")
+        if normalized is None:
+            return None
         normalized["candidate_kind"] = "yield"
         return normalized
 
-    def _normalize_lending_supply(self, item: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_lending_supply(self, item: Dict[str, Any]) -> Dict[str, Any] | None:
         normalized = self._normalize_candidate(item, apy_key="apy_supply")
+        if normalized is None:
+            return None
         normalized["candidate_kind"] = "lending_supply"
-        normalized.setdefault("product_type", "lending_supply_like")
+        normalized["product_type"] = "lending_supply_like"
         return normalized
 
-    def _normalize_candidate(self, item: Dict[str, Any], *, apy_key: str) -> Dict[str, Any]:
+    def _normalize_candidate(self, item: Dict[str, Any], *, apy_key: str) -> Dict[str, Any] | None:
         classification = classify_defi_record(item)
         apy = _safe_float(item.get(apy_key) if apy_key in item else item.get("apy"))
         tvl = _safe_float(item.get("tvlUsd", item.get("tvl_usd", 0)))
         chain = self.normalize_chain_name(item.get("chain"))
+        if item.get("chain") is not None and chain is None:
+            return None
         project = item.get("project") or item.get("protocol") or "unknown"
         normalized = {
             **item,

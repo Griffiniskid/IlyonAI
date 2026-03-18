@@ -10,3 +10,9 @@ def test_phase1_chain_support_matrix_is_consistent():
     assert FarmAnalyzer.SUPPORTED_CHAINS == PHASE_1_CHAINS
     assert LendingAnalyzer.SUPPORTED_CHAINS == PHASE_1_CHAINS
     assert MarketScanPipeline.SUPPORTED_CHAINS == PHASE_1_CHAINS
+
+
+def test_analyzers_reject_unsupported_chain_filters():
+    assert PoolAnalyzer.normalize_chain_name("fantom") is None
+    assert FarmAnalyzer.normalize_chain_name("fantom") is None
+    assert LendingAnalyzer.normalize_chain_name("fantom") is None

@@ -60,7 +60,7 @@ def _symbol_parts(symbol: str) -> List[str]:
 def _category_haystack(pool: Dict[str, Any]) -> str:
     return " ".join(
         str(pool.get(key) or "")
-        for key in ("category", "project", "pool_meta", "symbol", "url")
+        for key in ("category", "project", "protocol", "pool_meta", "symbol", "url")
     ).lower()
 
 
@@ -71,7 +71,9 @@ def normalize_chain_name(chain: Any) -> Optional[str]:
     if not normalized:
         return None
     normalized = CHAIN_ALIASES.get(normalized, normalized)
-    return normalized if normalized in PHASE_1_CHAINS else normalized
+    if normalized not in PHASE_1_CHAINS:
+        return None
+    return normalized
 
 
 def _normalized_exposure(pool: Dict[str, Any], asset_count: int, symbol_parts: Iterable[str]) -> str:
@@ -110,6 +112,8 @@ def classify_defi_record(pool: Dict[str, Any]) -> Dict[str, Any]:
         total_supply > 0
         or total_borrow > 0
         or utilization > 0
+        or _safe_float(_pool_value(pool, "apy_supply", "apySupply", 0)) > 0
+        or _safe_float(_pool_value(pool, "apy_borrow", "apyBorrow", 0)) > 0
         or any(marker in category_text for marker in ("lending", "borrow", "money market", "cdp", "loan", "supply"))
     )
     staking_markers = any(marker in category_text for marker in ("staking", "staked", "restaking", "validator", "liquid staking"))

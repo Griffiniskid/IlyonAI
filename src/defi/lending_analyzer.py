@@ -16,7 +16,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from src.data.defillama import DefiLlamaClient
-from src.defi.opportunity_taxonomy import PHASE_1_CHAINS
+from src.defi.opportunity_taxonomy import PHASE_1_CHAINS, normalize_chain_name
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +137,10 @@ class LendingAnalyzer:
     """
 
     SUPPORTED_CHAINS = PHASE_1_CHAINS
+
+    @classmethod
+    def normalize_chain_name(cls, chain: Any) -> Optional[str]:
+        return normalize_chain_name(chain)
 
     def __init__(self):
         self._llama = DefiLlamaClient()
@@ -313,6 +317,10 @@ class LendingAnalyzer:
 
         Returns supply APY, borrow APY, utilization, TVL, and risk scores.
         """
+        normalized_chain = self.normalize_chain_name(chain)
+        if chain is not None and normalized_chain is None:
+            return []
+
         try:
             raw = await self._llama.get_pools()
         except Exception as e:
@@ -326,7 +334,7 @@ class LendingAnalyzer:
         for pool in raw:
             category = (_pool_value(pool, "category", default="") or "").lower()
             project = (_pool_value(pool, "project", default="") or "").lower()
-            pool_chain = (_pool_value(pool, "chain", default="") or "").lower()
+            pool_chain = self.normalize_chain_name(_pool_value(pool, "chain", default=""))
             symbol = (_pool_value(pool, "symbol", default="") or "").lower()
 
             # Filter to lending pools
@@ -340,7 +348,9 @@ class LendingAnalyzer:
             if not is_lending:
                 continue
 
-            if chain and pool_chain != chain.lower():
+            if pool_chain is None:
+                continue
+            if normalized_chain and pool_chain != normalized_chain:
                 continue
             if protocol and protocol.lower() not in project:
                 continue

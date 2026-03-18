@@ -23,3 +23,27 @@ def test_market_scan_assigns_shortlist_scores():
     )
 
     assert normalized[0]["shortlist_score"] > 0
+
+
+def test_market_scan_keeps_lending_supply_product_type_for_protocol_shaped_markets():
+    pipeline = MarketScanPipeline()
+
+    normalized = pipeline.normalize_candidates(
+        pools=[],
+        yields=[],
+        markets=[{"protocol": "aave-v3", "symbol": "USDC", "apy_supply": 4.2}],
+    )
+
+    assert normalized[0]["product_type"] == "lending_supply_like"
+
+
+def test_market_scan_excludes_unsupported_chain_candidates():
+    pipeline = MarketScanPipeline()
+
+    normalized = pipeline.normalize_candidates(
+        pools=[{"project": "orca-dex", "symbol": "SOL-USDC", "chain": "fantom", "apy": 12.5}],
+        yields=[],
+        markets=[],
+    )
+
+    assert normalized == []
