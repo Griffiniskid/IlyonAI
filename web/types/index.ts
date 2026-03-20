@@ -269,6 +269,18 @@ export interface PortfolioResponse {
   last_updated: string;
 }
 
+export type PortfolioCapabilityState = "available" | "degraded";
+
+export interface PortfolioCapabilityCell {
+  state: PortfolioCapabilityState;
+  reason: string | null;
+}
+
+export interface PortfolioChainMatrixResponse {
+  chains: Record<string, Record<string, PortfolioCapabilityCell>>;
+  capabilities: string[];
+}
+
 export interface TrackedWalletResponse {
   address: string;
   label: string | null;
@@ -286,6 +298,7 @@ export interface WhaleTransactionResponse {
   signature: string;
   wallet_address: string;
   wallet_label: string | null;
+  chain?: string;
   token_address: string;
   token_symbol: string;
   token_name: string;
@@ -301,7 +314,44 @@ export interface WhaleActivityResponse {
   transactions: WhaleTransactionResponse[];
   updated_at: string;
   filter_token: string | null;
+  filter_chain?: ChainName | null;
   min_amount_usd: number;
+  entity_confidence?: number | null;
+}
+
+export interface SmartMoneyParticipant {
+  wallet_address: string;
+  label: string | null;
+  amount_usd: number;
+}
+
+export interface SmartMoneyOverviewResponse {
+  net_flow_usd: number;
+  inflow_usd: number;
+  outflow_usd: number;
+  top_buyers: SmartMoneyParticipant[];
+  top_sellers: SmartMoneyParticipant[];
+  updated_at: string;
+}
+
+export type AlertSeverity = "low" | "medium" | "high" | "critical";
+export type AlertState = "new" | "seen" | "acknowledged";
+
+export interface AlertRecordResponse {
+  id: string;
+  state: AlertState;
+  severity: AlertSeverity;
+  title: string;
+  user_id?: string | null;
+  rule_id?: string | null;
+  subject_id?: string | null;
+  kind?: string | null;
+}
+
+export interface AlertRuleResponse {
+  id: string;
+  name: string;
+  severity: AlertSeverity[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -338,6 +388,16 @@ export interface ErrorResponse {
   error: string;
   code: string;
   details?: Record<string, unknown>;
+}
+
+export interface ApiResponseMeta {
+  trace_id?: string | null;
+  freshness: Record<string, unknown>;
+}
+
+export interface ApiResponseEnvelope<T = Record<string, unknown>> {
+  data: T;
+  meta: ApiResponseMeta;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -896,6 +956,16 @@ export interface RektIncident {
   post_mortem_url: string;
   funds_recovered: boolean;
   severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+}
+
+export interface RektListResponse {
+  incidents: RektIncident[];
+  count: number;
+  total_stolen_usd: number;
+  meta: {
+    cursor: string | null;
+    freshness: string;
+  };
 }
 
 export interface AuditRecord {

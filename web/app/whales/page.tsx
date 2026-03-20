@@ -27,15 +27,23 @@ import {
   truncateAddress,
   cn,
 } from "@/lib/utils";
+import type { ChainName } from "@/types";
+
+const WHALE_CHAINS: ChainName[] = ["solana", "ethereum", "base", "arbitrum"];
 
 export default function WhalesPage() {
   const [minAmount, setMinAmount] = useState(1000);
+  const [chainFilter, setChainFilter] = useState<"all" | ChainName>("all");
   const [typeFilter, setTypeFilter] = useState<"buy" | "sell" | undefined>();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const queryClient = useQueryClient();
 
-  const params = { minAmountUsd: minAmount, type: typeFilter };
+  const params = {
+    minAmountUsd: minAmount,
+    chain: chainFilter === "all" ? undefined : chainFilter,
+    type: typeFilter,
+  };
   const { data, isLoading, isFetching } = useWhaleActivity(params, hasSearched);
 
   const handleSearch = () => {
@@ -73,7 +81,7 @@ export default function WhalesPage() {
             Whale Tracker
           </h1>
           <p className="text-muted-foreground">
-            Monitor large transactions on Solana
+            Monitor large transactions across major chains
           </p>
         </div>
         <Button
@@ -102,6 +110,25 @@ export default function WhalesPage() {
               min={1000}
               step={1000}
             />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant={chainFilter === "all" ? "default" : "outline"}
+              onClick={() => setChainFilter("all")}
+              className="flex-1 md:flex-initial"
+            >
+              All Chains
+            </Button>
+            {WHALE_CHAINS.map((chain) => (
+              <Button
+                key={chain}
+                variant={chainFilter === chain ? "default" : "outline"}
+                onClick={() => setChainFilter(chain)}
+                className="flex-1 md:flex-initial"
+              >
+                {chain}
+              </Button>
+            ))}
           </div>
           <div className="flex gap-2">
             <Button
@@ -137,6 +164,9 @@ export default function WhalesPage() {
             Search Transactions
           </Button>
         </div>
+        <p className="text-xs text-muted-foreground mt-4">
+          Entity confidence: {api.normalizeConfidencePercent(data?.entity_confidence)}%
+        </p>
       </GlassCard>
 
       {/* Initial prompt — before first search */}

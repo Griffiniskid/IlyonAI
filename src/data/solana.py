@@ -25,10 +25,18 @@ from src.analytics.anomaly_detector import BehavioralAnomalyDetector
 from src.analytics.time_series import TimeSeriesDataPoint
 from src.analytics.wallet_forensics import WalletForensicsEngine, get_token_deployer
 from src.core.models import TokenInfo
+from src.smart_money.models import CanonicalFlowEvent
+from src.smart_money.normalizer import normalize_event
 
 # Retry configuration for rate-limited RPC calls
 MAX_RETRIES = 3
 RETRY_DELAYS = [1.0, 2.0, 4.0]  # Exponential backoff delays in seconds
+
+
+def to_canonical_flow_event(raw_event: Dict[str, Any]) -> CanonicalFlowEvent:
+    canonical_raw = dict(raw_event)
+    canonical_raw.setdefault("chain", "solana")
+    return normalize_event(canonical_raw)
 
 
 @dataclass

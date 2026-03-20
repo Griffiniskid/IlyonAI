@@ -11,11 +11,28 @@ from typing import Dict, List, Optional
 import csv
 import io
 
-from src.api.schemas.responses import ErrorResponse
-from src.api.routes.auth import require_auth
-from src.config import settings
+from src.api.response_envelope import envelope_error_response, envelope_response
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_LIMIT = 50
+MIN_LIMIT = 1
+MAX_LIMIT = 500
+
+
+def _parse_limit(raw_limit: str | None) -> int | None:
+    if raw_limit is None:
+        return DEFAULT_LIMIT
+
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        return None
+
+    if limit < MIN_LIMIT or limit > MAX_LIMIT:
+        return None
+
+    return limit
 
 async def get_transactions(request: web.Request) -> web.Response:
     """
@@ -25,21 +42,30 @@ async def get_transactions(request: web.Request) -> web.Response:
     """
     wallet_address = request.match_info.get('wallet')
     chain = request.query.get('chain', 'all')
-    limit = int(request.query.get('limit', '50'))
+    limit = _parse_limit(request.query.get('limit'))
     
     if not wallet_address:
-        return web.json_response(
-            ErrorResponse(error="Wallet address required", code="MISSING_WALLET").model_dump(mode='json'),
-            status=400
+        return envelope_error_response(
+            "Wallet address required",
+            code="MISSING_WALLET",
+            http_status=400,
+        )
+
+    if limit is None:
+        return envelope_error_response(
+            f"limit must be an integer between {MIN_LIMIT} and {MAX_LIMIT}",
+            code="INVALID_REQUEST",
+            http_status=400,
         )
         
     # Placeholder for transaction fetching logic
     # Real implementation would call Moralis or Helius depending on chain
     transactions = []
     
-    return web.json_response({
+    return envelope_response({
         "wallet": wallet_address,
         "chain": chain,
+        "limit": limit,
         "transactions": transactions,
         "total": len(transactions)
     })
@@ -51,11 +77,12 @@ async def export_transactions_csv(request: web.Request) -> web.Response:
     Export transaction history to CSV.
     """
     wallet_address = request.match_info.get('wallet')
-    
+
     if not wallet_address:
-        return web.json_response(
-            ErrorResponse(error="Wallet address required", code="MISSING_WALLET").model_dump(mode='json'),
-            status=400
+        return envelope_error_response(
+            "Wallet address required",
+            code="MISSING_WALLET",
+            http_status=400,
         )
         
     # Fetch transactions (placeholder)

@@ -20,6 +20,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
+from src.alerts.orchestrator import AlertOrchestrator
+from src.alerts.store import InMemoryAlertStore
+from src.api.routes.alerts import ALERT_STORE_KEY
+from src.config import settings
+
 logger = logging.getLogger(__name__)
 
 # How often to check each user (seconds). Active users checked more frequently.
@@ -271,6 +276,7 @@ class SentinelAgent:
 
 # Module-level singleton for app-wide use
 _sentinel: Optional[SentinelAgent] = None
+_alert_bridge_registered = False
 
 
 def get_sentinel() -> SentinelAgent:
@@ -281,9 +287,39 @@ def get_sentinel() -> SentinelAgent:
     return _sentinel
 
 
+def create_alert_orchestrator(store: InMemoryAlertStore | None = None) -> AlertOrchestrator:
+    alert_store = store or InMemoryAlertStore()
+    return AlertOrchestrator(
+        store=alert_store,
+        dedupe_window_seconds=settings.alert_dedupe_window_seconds,
+    )
+
+
+def _to_orchestrator_event(alert: SentinelAlert) -> dict[str, str]:
+    subject_id = alert.token_address or alert.wallet_address or alert.chain or "global"
+    return {
+        "user_id": alert.wallet_address or "sentinel",
+        "rule_id": alert.alert_type,
+        "subject_id": subject_id,
+        "severity": alert.severity.lower(),
+        "kind": alert.alert_type,
+    }
+
+
 async def start_sentinel(app):
     """aiohttp startup hook."""
+    global _alert_bridge_registered
     sentinel = get_sentinel()
+
+    if app is not None and ALERT_STORE_KEY in app and not _alert_bridge_registered:
+        orchestrator = create_alert_orchestrator(store=app[ALERT_STORE_KEY])
+
+        def _bridge_handler(alert: SentinelAlert) -> None:
+            orchestrator.ingest(_to_orchestrator_event(alert))
+
+        sentinel.add_alert_handler(_bridge_handler)
+        _alert_bridge_registered = True
+
     await sentinel.start()
     logger.info("Sentinel agent registered")
 

@@ -53,8 +53,8 @@ async def test_compare_accepts_opportunity_ids_and_analysis_ids():
         await client.close()
 
     assert response.status == 200
-    assert payload["items"][0]["opportunity_id"] == "opp_1"
-    assert payload["items"][1]["analysis_id"] == "ana_2"
+    assert payload["data"]["items"][0]["opportunity_id"] == "opp_1"
+    assert payload["data"]["items"][1]["analysis_id"] == "ana_2"
     assert service.compare_calls == [[{"opportunity_id": "opp_1"}, {"analysis_id": "ana_2", "opportunity_id": "opp_2"}]]
 
 
@@ -102,6 +102,5 @@ async def test_compare_accepts_solana_and_evm_fixtures():
         await client.close()
 
     assert response.status == 200
-    assert payload["items"][0]["opportunity_id"] == "opp_solana"
-    assert payload["items"][1]["opportunity_id"] == "opp_base"
-
+    assert payload["data"]["items"][0]["opportunity_id"] == "opp_solana"
+    assert payload["data"]["items"][1]["opportunity_id"] == "opp_base"

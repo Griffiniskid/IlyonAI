@@ -17,8 +17,12 @@ from src.config import settings
 logger = logging.getLogger(__name__)
 
 
-def rate_limit_scope_for_path(path: str) -> str:
+def rate_limit_scope_for_path(path: str, method: str) -> str:
     """Classify the request path for lightweight rate-limit observability."""
+    if path.startswith("/api/v1/alerts/rules") and method in {"POST", "PUT", "DELETE"}:
+        return "alerts_rules_mutation"
+    if path.startswith("/api/v1/stream/"):
+        return "stream"
     if path.startswith("/opportunities"):
         return "opportunities"
     return "default"
@@ -79,7 +83,7 @@ class RateLimiter:
 
         self._last_cleanup = now
 
-    def check_rate_limit(self, ip: str) -> Tuple[bool, str]:
+    def check_rate_limit(self, ip: str) -> Tuple[bool, str, Optional[int]]:
         """
         Check if request should be allowed.
 
@@ -87,7 +91,7 @@ class RateLimiter:
             ip: Client IP address
 
         Returns:
-            Tuple of (allowed, reason)
+            Tuple of (allowed, reason, reset_epoch_seconds)
         """
         self._cleanup_old_requests()
 
@@ -107,16 +111,20 @@ class RateLimiter:
 
         # Check limits
         if minute_count >= self.requests_per_minute:
-            return False, f"Rate limit exceeded: {self.requests_per_minute}/minute"
+            minute_timestamps = [ts for ts in self._minute_requests[ip_hash] if ts > minute_ago]
+            reset_at = int(min(minute_timestamps) + 60) if minute_timestamps else int(now + 60)
+            return False, f"Rate limit exceeded: {self.requests_per_minute}/minute", reset_at
 
         if hour_count >= self.requests_per_hour:
-            return False, f"Rate limit exceeded: {self.requests_per_hour}/hour"
+            hour_timestamps = [ts for ts in self._hour_requests[ip_hash] if ts > hour_ago]
+            reset_at = int(min(hour_timestamps) + 3600) if hour_timestamps else int(now + 3600)
+            return False, f"Rate limit exceeded: {self.requests_per_hour}/hour", reset_at
 
         # Record this request
         self._minute_requests[ip_hash].append(now)
         self._hour_requests[ip_hash].append(now)
 
-        return True, ""
+        return True, "", None
 
     def get_ip_hash(self, ip: str) -> str:
         """Get hashed IP for analytics"""
@@ -126,6 +134,26 @@ class RateLimiter:
 # Global rate limiter instance
 _rate_limiter: RateLimiter | None = None
 _authenticated_rate_limiter: RateLimiter | None = None
+_scope_burst_limit_per_minute = settings.scope_burst_limit_per_minute
+_scope_burst_requests: Dict[str, list[float]] = defaultdict(list)
+
+
+def _check_scope_burst_limit(scope: str, key: str) -> Tuple[bool, Optional[int]]:
+    if scope == "default":
+        return True, None
+
+    now = time.time()
+    minute_ago = now - 60
+    bucket_key = f"{scope}:{key}"
+    timestamps = [ts for ts in _scope_burst_requests[bucket_key] if ts > minute_ago]
+    _scope_burst_requests[bucket_key] = timestamps
+
+    if len(timestamps) >= _scope_burst_limit_per_minute:
+        reset_at = int(min(timestamps) + 60) if timestamps else int(now + 60)
+        return False, reset_at
+
+    _scope_burst_requests[bucket_key].append(now)
+    return True, None
 
 
 def get_rate_limiter() -> RateLimiter:
@@ -167,10 +195,10 @@ async def rate_limit_middleware(request: web.Request, handler):
     if request.path == "/health":
         return await handler(request)
 
-    request["rate_limit_scope"] = rate_limit_scope_for_path(request.path)
+    request["rate_limit_scope"] = rate_limit_scope_for_path(request.path, request.method)
 
     # Get client IP
-    ip = request.remote or request.headers.get("X-Forwarded-For", "unknown")
+    ip = request.headers.get("X-Forwarded-For") or request.remote or "unknown"
     if "," in ip:
         ip = ip.split(",")[0].strip()
 
@@ -183,21 +211,36 @@ async def rate_limit_middleware(request: web.Request, handler):
     
     if user_wallet:
         auth_limiter = get_authenticated_rate_limiter()
-        allowed, reason = auth_limiter.check_rate_limit(user_wallet)
+        allowed, reason, reset_at = auth_limiter.check_rate_limit(user_wallet)
         request["rate_limit_key"] = f"wallet:{user_wallet[:8]}"
     else:
         # For anonymous users, use IP
-        allowed, reason = limiter.check_rate_limit(ip)
+        allowed, reason, reset_at = limiter.check_rate_limit(ip)
         request["rate_limit_key"] = f"ip:{limiter.get_ip_hash(ip)}"
 
+    scope_allowed, scope_reset_at = _check_scope_burst_limit(
+        request.get("rate_limit_scope", "default"),
+        request.get("rate_limit_key", "unknown"),
+    )
+    if not scope_allowed:
+        allowed = False
+        reason = (
+            f"Scope burst rate limit exceeded: "
+            f"{_scope_burst_limit_per_minute}/minute for {request.get('rate_limit_scope', 'default')}"
+        )
+        reset_at = scope_reset_at
+
     if not allowed:
+        reset_at = reset_at or int(time.time() + 60)
+        retry_after = max(1, reset_at - int(time.time()))
         logger.warning(f"Rate limit exceeded for {request.get('rate_limit_key', 'unknown')}: {reason}")
         return web.json_response(
             {"error": reason, "code": "RATE_LIMIT_EXCEEDED"},
             status=429,
             headers={
                 "Access-Control-Allow-Origin": "*",
-                "Retry-After": "60",
+                "Retry-After": str(retry_after),
+                "X-RateLimit-Reset": str(reset_at),
             },
         )
 

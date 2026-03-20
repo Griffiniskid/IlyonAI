@@ -13,6 +13,7 @@ from src.chains.address import AddressResolver
 from src.chains.base import ChainType
 from src.api.schemas.requests import ContractScanRequest
 from src.api.schemas.responses import ContractScanResponse, VulnerabilityItem, ErrorResponse
+from src.api.response_envelope import envelope_error_response, envelope_response
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +116,7 @@ async def scan_contract(request: web.Request) -> web.Response:
 
         cache_key = f"{chain_type.value}:{req.address}"
         if cache_key in _scan_cache:
-            return web.json_response(_scan_cache[cache_key])
+            return envelope_response(_scan_cache[cache_key])
 
         # Run scanner
         scanner = ContractScanner()
@@ -176,7 +177,7 @@ async def scan_contract(request: web.Request) -> web.Response:
             ).model_dump(mode='json')
 
             _scan_cache[cache_key] = response
-            return web.json_response(response)
+            return envelope_response(response)
 
         finally:
             await scanner.close()
@@ -201,21 +202,20 @@ async def get_contract_scan(request: web.Request) -> web.Response:
 
     chain_type = _resolver.parse_chain_from_string(chain_name)
     if not chain_type:
-        return web.json_response(
-            ErrorResponse(error=f"Unknown chain: {chain_name}", code="UNKNOWN_CHAIN").model_dump(mode='json'),
-            status=404
+        return envelope_error_response(
+            f"Unknown chain: {chain_name}",
+            code="UNKNOWN_CHAIN",
+            http_status=404,
         )
 
     cache_key = f"{chain_type.value}:{address}"
     if cache_key in _scan_cache:
-        return web.json_response(_scan_cache[cache_key])
+        return envelope_response(_scan_cache[cache_key])
 
-    return web.json_response(
-        ErrorResponse(
-            error="No cached scan. Use POST /api/v1/contract/scan first.",
-            code="NOT_FOUND"
-        ).model_dump(mode='json'),
-        status=404
+    return envelope_error_response(
+        "No cached scan. Use POST /api/v1/contract/scan first.",
+        code="NOT_FOUND",
+        http_status=404,
     )
 
 

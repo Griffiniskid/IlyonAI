@@ -10,6 +10,7 @@ from aiohttp import web
 
 from src.chains.base import ChainType, EVM_CHAIN_CONFIGS
 from src.api.schemas.responses import ChainInfoResponse, ChainsListResponse
+from src.api.response_envelope import envelope_error_response, envelope_response
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ async def list_chains(request: web.Request) -> web.Response:
             primary_dex=evm_config.get("primary_dex") if evm_config else ("Jupiter" if chain_type == ChainType.SOLANA else None),
         ).model_dump())
 
-    return web.json_response({
+    return envelope_response({
         "chains": chains,
         "total": len(chains),
         "count": len(chains),
@@ -82,9 +83,10 @@ async def get_chain_detail(request: web.Request) -> web.Response:
             break
 
     if not chain_type:
-        return web.json_response(
-            {"error": f"Unknown chain: {chain_name}", "code": "UNKNOWN_CHAIN"},
-            status=404
+        return envelope_error_response(
+            f"Unknown chain: {chain_name}",
+            code="UNKNOWN_CHAIN",
+            http_status=404,
         )
 
     # Get config if EVM
@@ -107,7 +109,7 @@ async def get_chain_detail(request: web.Request) -> web.Response:
         detail["explorer_url"] = evm_config.get("explorer_url", EXPLORER_URLS.get(chain_type.value, ""))
         detail["block_time_seconds"] = evm_config.get("block_time_seconds", 0)
 
-    return web.json_response(detail)
+    return envelope_response(detail)
 
 
 def setup_chains_routes(app: web.Application):

@@ -30,6 +30,7 @@ from src.defi.risk_engine import DefiRiskEngine, MAJOR_SYMBOLS, STABLE_SYMBOLS
 from src.defi.scenario_engine import DefiScenarioEngine
 from src.defi.stores.analysis_store import AnalysisStore
 from src.intel.rekt_database import AuditDatabase, RektDatabase
+from src.platform.precompute import build_fast_lane_snapshot
 
 
 SUPPORTED_TOKEN_CHAINS = {"solana", "ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"}
@@ -278,6 +279,12 @@ class DefiOpportunityEngine:
         if status is None:
             return None
         return {"analysis_id": analysis_id, **status}
+
+    async def get_fast_lane_snapshot(self, analysis_id: str) -> Optional[Dict[str, Any]]:
+        payload = await self.get_opportunity_analysis(analysis_id)
+        if payload is None:
+            return None
+        return build_fast_lane_snapshot(payload)
 
     async def get_opportunity(
         self,

@@ -13,6 +13,8 @@ from typing import Optional
 
 from aiohttp import web
 
+from src.api.response_envelope import make_envelope
+from src.api.response_envelope import envelope_error_response, envelope_response
 from src.intel.rekt_database import RektDatabase, AuditDatabase
 
 logger = logging.getLogger(__name__)
@@ -51,7 +53,11 @@ async def list_rekt(request: web.Request) -> web.Response:
       limit       - Max results (default: 50)
     """
     if _rekt is None:
-        return web.json_response({"error": "Intel database not available"}, status=503)
+        return envelope_error_response(
+            "Intel database not available",
+            code="SERVICE_UNAVAILABLE",
+            http_status=503,
+        )
 
     q = request.rel_url.query
     chain = q.get("chain")
@@ -61,7 +67,16 @@ async def list_rekt(request: web.Request) -> web.Response:
         min_amount = float(q.get("min_amount", "0"))
         limit = min(int(q.get("limit", "50")), 500)
     except (ValueError, TypeError):
-        return web.json_response({"error": "Invalid numeric query parameter"}, status=400)
+        return envelope_error_response(
+            "Invalid numeric query parameter",
+            code="INVALID_QUERY",
+            http_status=400,
+        )
+
+    if min_amount < 0:
+        return envelope_error_response("min_amount must be >= 0", code="INVALID_QUERY", http_status=400)
+    if limit < 0:
+        return envelope_error_response("limit must be >= 0", code="INVALID_QUERY", http_status=400)
 
     try:
         incidents = await _rekt.get_incidents(
@@ -73,21 +88,32 @@ async def list_rekt(request: web.Request) -> web.Response:
         )
     except Exception as e:
         logger.error(f"REKT query error: {e}")
-        return web.json_response({"error": "Failed to query incident database"}, status=500)
+        return envelope_error_response(
+            "Failed to query incident database",
+            code="QUERY_FAILED",
+            http_status=500,
+        )
 
     total_stolen = sum(i.get("amount_usd") or 0 for i in incidents)
 
-    return web.json_response({
-        "incidents": incidents,
-        "count": len(incidents),
-        "total_stolen_usd": total_stolen,
-        "filters": {
-            "chain": chain,
-            "attack_type": attack_type,
-            "min_amount": min_amount,
-            "search": search,
+    return envelope_response(
+        data={
+            "incidents": incidents,
+            "count": len(incidents),
+            "total_stolen_usd": total_stolen,
+            "filters": {
+                "chain": chain,
+                "attack_type": attack_type,
+                "min_amount": min_amount,
+                "search": search,
+            },
         },
-    })
+        meta={
+            "cursor": None,
+            "freshness": "warm",
+        },
+        freshness="warm",
+    )
 
 
 async def get_rekt_incident(request: web.Request) -> web.Response:
@@ -112,7 +138,13 @@ async def get_rekt_incident(request: web.Request) -> web.Response:
     if not incident:
         return web.json_response({"error": f"Incident '{incident_id}' not found"}, status=404)
 
-    return web.json_response(incident)
+    return web.json_response(make_envelope(
+        data=incident,
+        meta={
+            "freshness": "warm",
+        },
+        freshness="warm",
+    ))
 
 
 async def list_audits(request: web.Request) -> web.Response:

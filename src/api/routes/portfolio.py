@@ -11,6 +11,10 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from src.data.solana import SolanaClient
+from src.data.moralis import MoralisClient
+from src.api.response_envelope import make_envelope
+from src.api.response_envelope import envelope_error_response, envelope_response
+from src.portfolio.multichain_aggregator import MultiChainPortfolioAggregator
 from src.api.schemas.responses import (
     PortfolioResponse, PortfolioTokenResponse,
     TrackedWalletsResponse, TrackedWalletResponse,
@@ -158,9 +162,10 @@ async def get_portfolio(request: web.Request) -> web.Response:
     user_wallet = get_user_wallet(request)
 
     if not user_wallet:
-        return web.json_response(
-            ErrorResponse(error="Authentication required", code="AUTH_REQUIRED").model_dump(mode='json'),
-            status=401
+        return envelope_error_response(
+            "Authentication required",
+            code="AUTH_REQUIRED",
+            http_status=401,
         )
 
     # Get tracked wallets from database
@@ -174,7 +179,7 @@ async def get_portfolio(request: web.Request) -> web.Response:
         logger.warning(f"Failed to get tracked wallets: {e}")
 
     if not wallets:
-        return web.json_response(
+        return envelope_response(
             PortfolioResponse(
                 wallet_address="aggregate",
                 total_value_usd=0,
@@ -222,7 +227,7 @@ async def get_portfolio(request: web.Request) -> web.Response:
         last_updated=datetime.utcnow()
     ).model_dump(mode='json')
 
-    return web.json_response(response)
+    return envelope_response(response)
 
 
 async def get_wallet_portfolio(request: web.Request) -> web.Response:
@@ -289,6 +294,32 @@ async def get_wallet_portfolio(request: web.Request) -> web.Response:
     ).model_dump(mode='json')
 
     return web.json_response(response)
+
+
+async def get_chain_parity_matrix(request: web.Request) -> web.Response:
+    """GET /api/v1/portfolio/chains - return chain capability parity matrix."""
+    del request
+
+    class SolanaCapabilitiesProvider:
+        def capability_overrides(self):
+            reason = "Solana position providers are not wired in this endpoint yet"
+            return {
+                "solana": {
+                    "spot_holdings": {"supported": True, "reason": None},
+                    "lp_positions": {"supported": False, "reason": reason},
+                    "lending_positions": {"supported": False, "reason": reason},
+                    "vault_positions": {"supported": False, "reason": reason},
+                    "risk_decomposition": {"supported": False, "reason": reason},
+                    "alert_coverage": {"supported": False, "reason": reason},
+                }
+            }
+
+    aggregator = MultiChainPortfolioAggregator(
+        position_providers=[SolanaCapabilitiesProvider(), MoralisClient()]
+    )
+    snapshot = aggregator.aggregate([])
+    payload = make_envelope(snapshot, meta={"matrix": "chain_parity_v1"})
+    return web.json_response(payload)
 
 
 async def get_tracked_wallets(request: web.Request) -> web.Response:
@@ -512,6 +543,7 @@ def setup_portfolio_routes(app: web.Application):
     app.router.add_post('/api/v1/portfolio/wallets', track_wallet)
     app.router.add_delete('/api/v1/portfolio/wallets/{address}', untrack_wallet)
     app.router.add_post('/api/v1/portfolio/wallets/{address}/sync', sync_wallet)
+    app.router.add_get('/api/v1/portfolio/chains', get_chain_parity_matrix)
     app.router.add_get('/api/v1/portfolio/{wallet}', get_wallet_portfolio)
 
     logger.info("Portfolio routes registered with Helius integration")

@@ -10,6 +10,11 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
 
+from src.api.response_envelope import ApiResponseEnvelope, ApiResponseMeta
+
+ResponseMeta = ApiResponseMeta
+ResponseEnvelope = ApiResponseEnvelope
+
 
 class VerdictType(str, Enum):
     """AI verdict classification"""
@@ -375,6 +380,11 @@ class WhaleProfileResponse(BaseModel):
     win_rate: Optional[float] = None
     avg_holding_time: Optional[str] = None
     recent_transactions: List[WhaleTransactionResponse] = []
+
+
+class SmartMoneyOverviewResponse(BaseModel):
+    entities: List[Dict[str, Any]] = Field(default_factory=list)
+    flows: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

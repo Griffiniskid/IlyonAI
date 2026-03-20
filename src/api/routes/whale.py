@@ -20,6 +20,7 @@ from src.api.schemas.responses import (
     WhaleActivityResponse, WhaleBehaviorResponse, WhaleTransactionResponse, WhaleProfileResponse,
     ErrorResponse
 )
+from src.api.response_envelope import envelope_error_response, envelope_response
 from src.config import settings
 
 logger = logging.getLogger(__name__)
@@ -139,31 +140,25 @@ async def get_whale_activity(request: web.Request) -> web.Response:
         min_amount = float(raw_min_amount)
         limit = max(1, min(int(raw_limit), 200))
     except ValueError:
-        return web.json_response(
-            ErrorResponse(
-                error="Invalid query parameters",
-                code="INVALID_PARAMS",
-                details={"min_amount_usd": raw_min_amount, "limit": raw_limit}
-            ).model_dump(mode='json'),
-            status=400
+        return envelope_error_response(
+            "Invalid query parameters",
+            code="INVALID_PARAMS",
+            details={"min_amount_usd": raw_min_amount, "limit": raw_limit},
+            http_status=400,
         )
 
     if min_amount < 0:
-        return web.json_response(
-            ErrorResponse(
-                error="min_amount_usd must be non-negative",
-                code="INVALID_PARAMS"
-            ).model_dump(mode='json'),
-            status=400
+        return envelope_error_response(
+            "min_amount_usd must be non-negative",
+            code="INVALID_PARAMS",
+            http_status=400,
         )
 
     if type_filter and type_filter not in {'buy', 'sell'}:
-        return web.json_response(
-            ErrorResponse(
-                error="type must be 'buy' or 'sell'",
-                code="INVALID_PARAMS"
-            ).model_dump(mode='json'),
-            status=400
+        return envelope_error_response(
+            "type must be 'buy' or 'sell'",
+            code="INVALID_PARAMS",
+            http_status=400,
         )
 
     # Cache all transaction types together and apply filters in-memory.
@@ -253,17 +248,15 @@ async def get_whale_activity(request: web.Request) -> web.Response:
 
             response = _build_filtered_response(base_response, type_filter, limit)
 
-        return web.json_response(response)
+        return envelope_response(response)
 
     except Exception as e:
         logger.error(f"Whale activity error: {e}", exc_info=True)
-        return web.json_response(
-            ErrorResponse(
-                error="Failed to fetch whale activity",
-                code="WHALE_FAILED",
-                details={"message": str(e)}
-            ).model_dump(mode='json'),
-            status=500
+        return envelope_error_response(
+            "Failed to fetch whale activity",
+            code="WHALE_FAILED",
+            details={"message": str(e)},
+            http_status=500,
         )
 
 

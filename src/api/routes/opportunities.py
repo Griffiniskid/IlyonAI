@@ -9,6 +9,8 @@ from aiohttp import web
 
 from src.api.schemas.requests import OpportunityAnalysisCreateRequest, OpportunityCompareRequest
 from src.api.schemas.responses import ErrorResponse, OpportunityAnalysisStatusResponse, OpportunityCompareResponse
+from src.api.response_envelope import envelope_error_response, envelope_response
+from src.platform.precompute import build_fast_lane_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +20,7 @@ def _get_opportunity_service(request: web.Request) -> Any:
 
 
 def _json_error(error: str, code: str, status: int) -> web.Response:
-    return web.json_response(ErrorResponse(error=error, code=code).model_dump(mode="json"), status=status)
+    return envelope_error_response(error, code=code, http_status=status)
 
 
 def _normalize_analysis_status(payload: dict[str, Any]) -> dict[str, Any]:
@@ -41,7 +43,7 @@ async def create_opportunity_analysis(request: web.Request) -> web.Response:
         return _json_error("Invalid request", "INVALID_REQUEST", 400)
 
     status = await service.start_opportunity_analysis(**payload)
-    return web.json_response(_normalize_analysis_status(status), status=202)
+    return envelope_response(_normalize_analysis_status(status), http_status=202)
 
 
 async def get_opportunity_analysis(request: web.Request) -> web.Response:
@@ -54,7 +56,11 @@ async def get_opportunity_analysis(request: web.Request) -> web.Response:
     if status is None:
         return _json_error("Opportunity analysis not found", "NOT_FOUND", 404)
 
-    return web.json_response(_normalize_analysis_status(status))
+    normalized = _normalize_analysis_status(status)
+    fast_lane = build_fast_lane_snapshot(normalized)
+    data = dict(fast_lane["data"])
+    data["analysis"] = normalized
+    return envelope_response({**normalized, "status": fast_lane["status"], "data": data})
 
 
 async def get_opportunity(request: web.Request) -> web.Response:
@@ -73,7 +79,7 @@ async def get_opportunity(request: web.Request) -> web.Response:
     if payload is None:
         return _json_error("Opportunity not found", "NOT_FOUND", 404)
 
-    return web.json_response(payload)
+    return envelope_response(payload)
 
 
 async def compare_opportunities(request: web.Request) -> web.Response:
@@ -89,7 +95,7 @@ async def compare_opportunities(request: web.Request) -> web.Response:
     result = await service.compare_opportunities([
         item.model_dump(exclude_none=True) for item in payload.items
     ])
-    return web.json_response(OpportunityCompareResponse.model_validate(result).model_dump(mode="json"))
+    return envelope_response(OpportunityCompareResponse.model_validate(result).model_dump(mode="json"))
 
 
 def setup_opportunity_routes(app: web.Application):

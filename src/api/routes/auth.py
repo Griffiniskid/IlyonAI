@@ -143,6 +143,38 @@ def require_auth(handler: Callable) -> Callable:
     return wrapper
 
 
+def require_scope(required_scope: str) -> Callable:
+    """Decorator to enforce a required auth scope."""
+
+    def decorator(handler: Callable) -> Callable:
+        @functools.wraps(handler)
+        async def wrapper(request: web.Request) -> web.Response:
+            if 'user_wallet' not in request:
+                return web.json_response(
+                    ErrorResponse(
+                        error="Authentication required",
+                        code="AUTH_REQUIRED"
+                    ).model_dump(mode='json'),
+                    status=401
+                )
+
+            scopes = request.get("auth_scopes", [])
+            if required_scope not in scopes:
+                return web.json_response(
+                    ErrorResponse(
+                        error=f"Missing required scope: {required_scope}",
+                        code="SCOPE_REQUIRED"
+                    ).model_dump(mode='json'),
+                    status=403
+                )
+
+            return await handler(request)
+
+        return wrapper
+
+    return decorator
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # AUTH ENDPOINTS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -434,6 +466,7 @@ async def auth_middleware(request: web.Request, handler):
             
             if session:
                 request['user_wallet'] = session['wallet']
+                request['auth_scopes'] = session.get('scopes', [])
         except Exception as e:
             logger.debug(f"Auth middleware error: {e}")
 

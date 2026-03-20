@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useCallback, useState } from "react";
 import * as api from "./api";
-import type { AnalysisMode, AnalysisResponse, ChainName } from "@/types";
+import type { AlertRecordResponse, AnalysisMode, AnalysisResponse, ChainName, SmartMoneyOverviewResponse } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ANALYSIS HOOKS
@@ -134,6 +134,14 @@ export function useWalletPortfolio(wallet: string | null) {
   });
 }
 
+export function usePortfolioChainMatrix() {
+  return useQuery({
+    queryKey: ["portfolio", "chains"],
+    queryFn: api.getPortfolioChainMatrix,
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useTrackedWallets() {
   return useQuery({
     queryKey: ["trackedWallets"],
@@ -175,6 +183,7 @@ export function useUntrackWallet() {
 export function useWhaleActivity(
   params?: {
     token?: string;
+    chain?: ChainName;
     minAmountUsd?: number;
     type?: "buy" | "sell";
     limit?: number;
@@ -187,6 +196,29 @@ export function useWhaleActivity(
     enabled,
     staleTime: 5 * 60 * 1000, // 5 minutes (matches backend cache)
   });
+}
+
+export function useSmartMoneyOverview() {
+  return useQuery<SmartMoneyOverviewResponse>({
+    queryKey: ["smartMoney", "overview"],
+    queryFn: api.getSmartMoneyOverview,
+    staleTime: 60 * 1000,
+    refetchInterval: 60 * 1000,
+  });
+}
+
+export function useAlerts(severity?: string) {
+  return useQuery<AlertRecordResponse[]>({
+    queryKey: ["alerts", severity ?? "all"],
+    queryFn: () => api.getAlerts(severity),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useAlertSummary() {
+  const { data = [] } = useAlerts();
+  const unreadCount = data.filter((alert) => alert.state === "new").length;
+  return { unreadCount, alerts: data };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

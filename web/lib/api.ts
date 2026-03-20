@@ -6,6 +6,7 @@ import type {
   AnalysisResponse,
   TrendingResponse,
   PortfolioResponse,
+  PortfolioChainMatrixResponse,
   WhaleActivityResponse,
   TrackedWalletResponse,
   AuthChallengeResponse,
@@ -22,6 +23,7 @@ import type {
   PoolResponse,
   YieldOpportunityResponse,
   RektIncident,
+  RektListResponse,
   AuditRecord,
   IntelStatsResponse,
   VulnerabilityItem,
@@ -39,6 +41,9 @@ import type {
   DefiSimulationResponse,
   PoolAnalysisResponse,
   SearchResponse,
+  SmartMoneyOverviewResponse,
+  AlertRecordResponse,
+  AlertRuleResponse,
 } from "@/types";
 
 export interface BlinkResponse {
@@ -160,6 +165,37 @@ function normalizeExposureType(value: unknown): "stable-stable" | "crypto-stable
   const normalized = normalizeText(value, "crypto-crypto").toLowerCase();
   if (normalized === "stable-stable" || normalized === "crypto-stable" || normalized === "crypto-crypto") return normalized;
   return "crypto-crypto";
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value !== "number") return null;
+  if (!Number.isFinite(value)) return null;
+  return value;
+}
+
+export function normalizeConfidencePercent(value: unknown): number {
+  const numeric = toFiniteNumber(value);
+  if (numeric == null) return 0;
+
+  const normalized = numeric >= -1 && numeric <= 1
+    ? numeric * 100
+    : numeric;
+
+  return Math.round(Math.min(100, Math.max(0, normalized)));
+}
+
+export function deriveSmartMoneyEntityConfidencePercent(
+  overview: Pick<SmartMoneyOverviewResponse, "net_flow_usd" | "inflow_usd" | "outflow_usd"> | null | undefined
+): number {
+  if (!overview) return 0;
+
+  const inflow = Math.max(0, toFiniteNumber(overview.inflow_usd) ?? 0);
+  const outflow = Math.max(0, toFiniteNumber(overview.outflow_usd) ?? 0);
+  const netFlow = Math.abs(toFiniteNumber(overview.net_flow_usd) ?? 0);
+  const totalFlow = inflow + outflow;
+
+  if (totalFlow <= 0) return 0;
+  return normalizeConfidencePercent(netFlow / totalFlow);
 }
 
 function normalizeChainInfo(raw: any): ChainInfo {
@@ -961,6 +997,16 @@ export async function getWalletPortfolio(wallet: string): Promise<PortfolioRespo
   return fetchAPI<PortfolioResponse>(`/api/v1/portfolio/${wallet}`);
 }
 
+export async function getPortfolioChainMatrix(): Promise<PortfolioChainMatrixResponse> {
+  const raw = await fetchAPI<any>("/api/v1/portfolio/chains");
+  const payload = raw?.data ?? raw;
+
+  return {
+    chains: payload?.chains ?? {},
+    capabilities: Array.isArray(payload?.capabilities) ? payload.capabilities : [],
+  };
+}
+
 export async function getTrackedWallets(): Promise<{ wallets: TrackedWalletResponse[] }> {
   return fetchAPI("/api/v1/portfolio/wallets");
 }
@@ -987,6 +1033,7 @@ export async function untrackWallet(address: string): Promise<void> {
 
 export async function getWhaleActivity(params?: {
   token?: string;
+  chain?: ChainName;
   minAmountUsd?: number;
   type?: "buy" | "sell";
   limit?: number;
@@ -994,6 +1041,7 @@ export async function getWhaleActivity(params?: {
 }): Promise<WhaleActivityResponse> {
   const searchParams = new URLSearchParams();
   if (params?.token) searchParams.set("token", params.token);
+  if (params?.chain) searchParams.set("chain", params.chain);
   if (params?.minAmountUsd) searchParams.set("min_amount_usd", params.minAmountUsd.toString());
   if (params?.type) searchParams.set("type", params.type);
   if (params?.limit) searchParams.set("limit", params.limit.toString());
@@ -1010,6 +1058,48 @@ export async function getWhaleActivityForToken(
   return fetchAPI<WhaleActivityResponse>(
     `/api/v1/whales/token/${tokenAddress}?limit=${limit}`
   );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SMART MONEY API
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function getSmartMoneyOverview(options?: RequestInit): Promise<SmartMoneyOverviewResponse> {
+  return fetchAPI<SmartMoneyOverviewResponse>("/api/v1/smart-money/overview", options);
+}
+
+export async function getAlerts(severity?: string): Promise<AlertRecordResponse[]> {
+  const params = new URLSearchParams();
+  if (severity) params.set("severity", severity);
+  return fetchAPI<AlertRecordResponse[]>(`/api/v1/alerts${params.toString() ? `?${params.toString()}` : ""}`);
+}
+
+export async function getAlertRules(): Promise<AlertRuleResponse[]> {
+  return fetchAPI<AlertRuleResponse[]>("/api/v1/alerts/rules");
+}
+
+export async function createAlertRule(payload: {
+  name: string;
+  severity: string[];
+}): Promise<AlertRuleResponse> {
+  return fetchAPI<AlertRuleResponse>("/api/v1/alerts/rules", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAlertRule(
+  ruleId: string,
+  payload: { name?: string; severity?: string[] }
+): Promise<AlertRuleResponse> {
+  return fetchAPI<AlertRuleResponse>(`/api/v1/alerts/rules/${ruleId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteAlertRule(ruleId: string): Promise<void> {
+  await fetchAPI(`/api/v1/alerts/rules/${ruleId}`, { method: "DELETE" });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1429,7 +1519,7 @@ export async function getRektIncidents(params?: {
   minAmount?: number;
   search?: string;
   limit?: number;
-}): Promise<{ incidents: RektIncident[]; count: number; total_stolen_usd: number }> {
+}): Promise<RektListResponse> {
   const p = new URLSearchParams();
   if (params?.chain) p.set("chain", params.chain);
   if (params?.attackType) p.set("attack_type", params.attackType);
@@ -1437,7 +1527,29 @@ export async function getRektIncidents(params?: {
   if (params?.search) p.set("search", params.search);
   if (params?.limit != null) p.set("limit", params.limit.toString());
   const query = p.toString();
-  return fetchAPI(`/api/v1/intel/rekt${query ? `?${query}` : ""}`);
+  const raw = await fetchAPI<any>(`/api/v1/intel/rekt${query ? `?${query}` : ""}`);
+  const payload = raw?.data ?? raw;
+  const incidents = Array.isArray(payload?.incidents) ? payload.incidents : [];
+  const meta = raw?.meta ?? {};
+
+  return {
+    incidents: incidents as RektIncident[],
+    count: Number(payload?.count ?? incidents.length),
+    total_stolen_usd: Number(payload?.total_stolen_usd ?? 0),
+    meta: {
+      cursor: typeof meta.cursor === "string" ? meta.cursor : null,
+      freshness: typeof meta.freshness === "string" ? meta.freshness : "unknown",
+    },
+  };
+}
+
+export async function getRektIncident(id: string): Promise<RektIncident | null> {
+  const raw = await fetchAPI<any>(`/api/v1/intel/rekt/${id}`);
+  const payload = raw?.data ?? raw;
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  return payload as RektIncident;
 }
 
 export async function getAudits(params?: {

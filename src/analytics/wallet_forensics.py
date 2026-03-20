@@ -11,13 +11,14 @@ DeFi ecosystem (Solana + EVM) that benefits all traders.
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Set, Tuple
+from typing import Any, List, Dict, Optional, Set, Tuple
 import asyncio
 from enum import Enum
 
 import aiohttp
 
 from src.analytics.signal_models import EntityHeuristic
+from src.storage.database import load_token_deployments
 
 logger = logging.getLogger(__name__)
 
@@ -340,53 +341,29 @@ class WalletForensicsEngine:
         self,
         wallet_address: str,
     ) -> List[TokenDeploymentRecord]:
-        """
-        Get history of tokens deployed by this wallet.
+        rows = await load_token_deployments(wallet_address)
+        deployments: List[TokenDeploymentRecord] = []
 
-        Uses Solana RPC to find token mint transactions where
-        this wallet was the mint authority or fee payer.
+        for row in rows:
+            row_data: Any = row
+            token_address = getattr(row_data, "token_address", None)
+            if not token_address:
+                continue
 
-        Note: This is a simplified implementation. Production would
-        use indexed data from Helius or similar.
-        """
-        deployments = []
-
-        try:
-            session = await self._get_session()
-
-            # Query recent signatures for the wallet
-            payload = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "getSignaturesForAddress",
-                "params": [
-                    wallet_address,
-                    {"limit": 100}
-                ]
-            }
-
-            async with session.post(
-                self.solana_rpc_url,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=15)
-            ) as resp:
-                if resp.status != 200:
-                    return deployments
-
-                data = await resp.json()
-                signatures = data.get("result", [])
-
-                # In production, we would analyze each transaction to find:
-                # 1. Token mint creation (InitializeMint instruction)
-                # 2. Initial liquidity provision
-                # 3. Track token lifecycle
-
-                # For now, return empty list - this would be populated
-                # from a database of tracked deployments
-                logger.debug(f"Found {len(signatures)} signatures for {wallet_address}")
-
-        except Exception as e:
-            logger.warning(f"Error getting deployments for {wallet_address}: {e}")
+            deployments.append(
+                TokenDeploymentRecord(
+                    token_address=token_address,
+                    token_symbol=getattr(row_data, "token_symbol", None) or "",
+                    chain=getattr(row_data, "chain", None) or "solana",
+                    deployed_at=getattr(row_data, "deployed_at", None) or datetime.utcnow(),
+                    status=getattr(row_data, "status", None) or "active",
+                    peak_liquidity_usd=float(getattr(row_data, "peak_liquidity_usd", 0) or 0),
+                    final_liquidity_usd=float(getattr(row_data, "final_liquidity_usd", 0) or 0),
+                    liquidity_removal_pct=float(getattr(row_data, "liquidity_removal_pct", 0) or 0),
+                    lifespan_hours=float(getattr(row_data, "lifespan_hours", 0) or 0),
+                    rugged_at=getattr(row_data, "rugged_at", None),
+                )
+            )
 
         return deployments
 

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { useAnalyzeToken, useRefreshAnalysis } from "@/lib/hooks";
+import { useAnalyzeToken, useRefreshAnalysis, useWhaleActivity } from "@/lib/hooks";
 import { GlassCard } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,9 +35,9 @@ import {
   copyToClipboard,
   cn,
 } from "@/lib/utils";
-import { createBlink } from "@/lib/api";
+import { createBlink, getRektIncidents, normalizeConfidencePercent } from "@/lib/api";
 import { useToast } from "@/components/ui/toaster";
-import type { ChainName } from "@/types";
+import type { ChainName, RektIncident } from "@/types";
 
 const SUPPORTED_CHAINS: ChainName[] = [
   "solana",
@@ -67,6 +67,7 @@ export default function TokenAnalysisPage() {
   const [copied, setCopied] = useState(false);
   const [isCreatingBlink, setIsCreatingBlink] = useState(false);
   const [analysisStage, setAnalysisStage] = useState(0);
+  const [rektIncidents, setRektIncidents] = useState<RektIncident[]>([]);
 
   const {
     mutate: analyze,
@@ -76,6 +77,14 @@ export default function TokenAnalysisPage() {
   } = useAnalyzeToken();
 
   const { mutate: refresh, isPending: isRefreshing } = useRefreshAnalysis();
+  const { data: whaleActivity } = useWhaleActivity(
+    {
+      token: address || undefined,
+      chain,
+      limit: 25,
+    },
+    Boolean(address)
+  );
 
   // Start analysis on mount
   useEffect(() => {
@@ -97,6 +106,27 @@ export default function TokenAnalysisPage() {
       return () => clearInterval(interval);
     }
   }, [isAnalyzing]);
+
+  useEffect(() => {
+    if (!analysis?.token?.name) return;
+
+    let active = true;
+    getRektIncidents({ search: analysis.token.name, limit: 3 })
+      .then((result) => {
+        if (active) {
+          setRektIncidents(result.incidents);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setRektIncidents([]);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [analysis?.token?.name]);
 
   const handleCopyAddress = async () => {
     await copyToClipboard(address);
@@ -207,6 +237,7 @@ export default function TokenAnalysisPage() {
   const { token, scores, market, security, holders, ai, socials, deployer, website } = analysis;
   const tokenChain = token.chain ?? chain;
   const canShareBlink = tokenChain === "solana";
+  const entityConfidence = normalizeConfidencePercent(whaleActivity?.entity_confidence);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -344,6 +375,28 @@ export default function TokenAnalysisPage() {
       <div className="mt-6">
         <AIAnalysis ai={ai} />
       </div>
+
+      <section aria-label="smart-money-overlay" className="mt-6">
+        <GlassCard>
+          <h3 className="font-semibold">Smart Money</h3>
+          <p className="text-sm text-muted-foreground mt-2">
+            Entity confidence: {entityConfidence}%
+          </p>
+        </GlassCard>
+      </section>
+
+      <section aria-label="rekt-risk-context" className="mt-6">
+        <GlassCard>
+          <h3 className="font-semibold">Risk Context: Hacks & Exploits</h3>
+          <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+            {rektIncidents.length === 0 ? (
+              <li>No related incidents found.</li>
+            ) : (
+              rektIncidents.map((incident) => <li key={incident.id}>{incident.name}</li>)
+            )}
+          </ul>
+        </GlassCard>
+      </section>
 
       {/* Additional info row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">

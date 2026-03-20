@@ -13,6 +13,7 @@ from aiohttp import web
 
 from src.api.schemas.responses import ErrorResponse, TrendingResponse, TrendingTokenResponse
 from src.data.dexscreener import DexScreenerClient
+from src.api.response_envelope import envelope_error_response, envelope_response
 
 logger = logging.getLogger(__name__)
 
@@ -128,13 +129,11 @@ async def get_trending_tokens(request: web.Request) -> web.Response:
     raw_chain = request.query.get("chain")
     chain = _parse_chain(raw_chain)
     if raw_chain and chain is None:
-        return web.json_response(
-            ErrorResponse(
-                error="Unsupported chain filter",
-                code="INVALID_CHAIN",
-                details={"supported": sorted(SUPPORTED_CHAINS)},
-            ).model_dump(mode="json"),
-            status=400,
+        return envelope_error_response(
+            "Unsupported chain filter",
+            code="INVALID_CHAIN",
+            details={"supported": sorted(SUPPORTED_CHAINS)},
+            http_status=400,
         )
 
     force_refresh = request.query.get("force_refresh", "").lower() in ("1", "true")
@@ -146,16 +145,14 @@ async def get_trending_tokens(request: web.Request) -> web.Response:
             chain=chain,
             force_refresh=force_refresh,
         )
-        return web.json_response(response)
+        return envelope_response(response)
     except Exception as e:
         logger.error(f"Trending endpoint error: {e}", exc_info=True)
-        return web.json_response(
-            ErrorResponse(
-                error="Failed to fetch trending tokens",
-                code="TRENDING_FAILED",
-                details={"message": str(e)},
-            ).model_dump(mode="json"),
-            status=500,
+        return envelope_error_response(
+            "Failed to fetch trending tokens",
+            code="TRENDING_FAILED",
+            details={"message": str(e)},
+            http_status=500,
         )
 
 

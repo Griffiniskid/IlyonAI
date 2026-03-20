@@ -62,17 +62,18 @@ async def test_create_opportunity_analysis_returns_analysis_id():
         payload = await response.json()
 
         assert response.status == 202
-        assert payload["analysis_id"] == "ana_123"
-        assert payload["score_model_version"] == "defi-v2"
-        assert payload["freshness"]["generated_at"] == "2026-03-17T00:00:00Z"
-        assert payload["provisional_shortlist"] == []
-        assert payload["progress"]["stage"] == "scan"
-        assert payload["metrics"] == {"requests": 1}
+        data = payload["data"]
+        assert data["analysis_id"] == "ana_123"
+        assert data["score_model_version"] == "defi-v2"
+        assert data["freshness"]["generated_at"] == "2026-03-17T00:00:00Z"
+        assert data["provisional_shortlist"] == []
+        assert data["progress"]["stage"] == "scan"
+        assert data["metrics"] == {"requests": 1}
 
         second = await client.post("/opportunities/analyses", json={"chain": "solana", "limit": 5})
         second_payload = await second.json()
 
-        assert second_payload["analysis_id"] == payload["analysis_id"]
+        assert second_payload["data"]["analysis_id"] == data["analysis_id"]
 
 
 @pytest.mark.asyncio
@@ -82,13 +83,14 @@ async def test_get_opportunity_analysis_returns_completed_result():
         payload = await response.json()
 
         assert response.status == 200
-        assert payload["analysis_id"] == "ana_123"
-        assert payload["status"] == "completed"
-        assert payload["score_model_version"] == "defi-v2"
-        assert payload["freshness"]["generated_at"] == "2026-03-17T00:00:10Z"
-        assert payload["progress"]["percent"] == 100
-        assert payload["metrics"] == {"requests": 2}
-        assert payload["result"]["identity"]["id"] == "opp_1"
+        data = payload["data"]
+        assert data["analysis_id"] == "ana_123"
+        assert data["status"] == "completed"
+        assert data["score_model_version"] == "defi-v2"
+        assert data["freshness"]["generated_at"] == "2026-03-17T00:00:10Z"
+        assert data["progress"]["percent"] == 100
+        assert data["metrics"] == {"requests": 2}
+        assert data["result"]["identity"]["id"] == "opp_1"
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("chain", CHAIN_MATRIX)
@@ -108,4 +110,3 @@ async def test_create_opportunity_analysis_accepts_evm_fixture():
     async with opportunity_client() as client:
         response = await client.post("/opportunities/analyses", json={"chain": EVM_FIXTURE["chain"], "protocol": EVM_FIXTURE["protocol_slug"], "limit": 5})
         assert response.status == 202
-

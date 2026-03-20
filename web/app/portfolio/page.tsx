@@ -5,6 +5,8 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useToast } from "@/components/ui/toaster";
+import { ChainExposureTable } from "@/components/portfolio/chain-exposure-table";
+import { RiskBreakdown } from "@/components/portfolio/risk-breakdown";
 
 // Dynamically import WalletMultiButton with SSR disabled to prevent hydration mismatch
 const WalletMultiButton = dynamic(
@@ -12,8 +14,15 @@ const WalletMultiButton = dynamic(
   { ssr: false }
 );
 import Image from "next/image";
-import { usePortfolio, useWalletPortfolio, useTrackedWallets, useTrackWallet, useAuth } from "@/lib/hooks";
-import { APIError } from "@/lib/api";
+import {
+  usePortfolio,
+  useWalletPortfolio,
+  useTrackedWallets,
+  useTrackWallet,
+  useAuth,
+  usePortfolioChainMatrix,
+} from "@/lib/hooks";
+import { APIError, getRektIncidents } from "@/lib/api";
 import { GlassCard } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +45,7 @@ import {
   isValidSolanaAddress,
   cn,
 } from "@/lib/utils";
+import type { RektIncident } from "@/types";
 
 export default function PortfolioPage() {
   const { connected, publicKey } = useWallet();
@@ -43,12 +53,44 @@ export default function PortfolioPage() {
   const [inputError, setInputError] = useState<string | null>(null);
   const [trackedAddress, setTrackedAddress] = useState<string | null>(null);
   const { addToast } = useToast();
+  const [rektIncidents, setRektIncidents] = useState<RektIncident[]>([]);
 
   const { data: portfolio, isLoading: portfolioLoading, refetch } = useWalletPortfolio(
     publicKey?.toBase58() || null
   );
+  const { data: chainMatrix } = usePortfolioChainMatrix();
   const { data: trackedPortfolio, isLoading: trackedLoading } = useWalletPortfolio(trackedAddress);
   const trackWallet = useTrackWallet();
+
+  useEffect(() => {
+    if (!portfolio?.tokens?.length) {
+      setRektIncidents([]);
+      return;
+    }
+
+    const search = portfolio.tokens.slice(0, 3).map((token) => token.symbol).filter(Boolean).join(" ");
+    if (!search) {
+      setRektIncidents([]);
+      return;
+    }
+
+    let active = true;
+    getRektIncidents({ search, limit: 3 })
+      .then((result) => {
+        if (active) {
+          setRektIncidents(result.incidents);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setRektIncidents([]);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [portfolio?.tokens]);
 
   const handleAddWallet = () => {
     setInputError(null);
@@ -110,7 +152,7 @@ export default function PortfolioPage() {
         <div>
           <h1 className="text-3xl font-bold mb-2">Portfolio</h1>
           <p className="text-muted-foreground">
-            Track your Solana holdings and their security status
+            Track your multi-chain holdings and their security status
           </p>
         </div>
         <Button
@@ -201,6 +243,27 @@ export default function PortfolioPage() {
         {inputError && (
           <p className="text-red-400 text-sm mt-2">{inputError}</p>
         )}
+      </GlassCard>
+
+      <GlassCard className="mb-8">
+        <h3 className="font-semibold">Risk Context: Hacks & Exploits</h3>
+        <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+          {rektIncidents.length === 0 ? (
+            <li>No related incidents found.</li>
+          ) : (
+            rektIncidents.map((incident) => <li key={incident.id}>{incident.name}</li>)
+          )}
+        </ul>
+      </GlassCard>
+
+      <GlassCard className="mb-8">
+        <h3 className="font-semibold mb-4">Multi-Chain Exposure</h3>
+        <ChainExposureTable matrix={chainMatrix} />
+      </GlassCard>
+
+      <GlassCard className="mb-8">
+        <h3 className="font-semibold mb-4">Capability Risk Breakdown</h3>
+        <RiskBreakdown matrix={chainMatrix} />
       </GlassCard>
 
       {/* Loading state */}

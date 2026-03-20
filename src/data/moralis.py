@@ -22,6 +22,8 @@ CHAIN_MAPPING = {
     "avalanche": "avalanche"
 }
 
+SUPPORTED_EVM_CHAINS = tuple(CHAIN_MAPPING.keys())
+
 class MoralisClient:
     """Client for Moralis Web3 API."""
 
@@ -74,3 +76,18 @@ class MoralisClient:
         except Exception as e:
             logger.error(f"Error fetching Moralis wallet balances: {e}")
             return []
+
+    def capability_overrides(self) -> Dict[str, Dict[str, Dict[str, object]]]:
+        """Return parity matrix overrides for Moralis-backed EVM chains."""
+        reason = "Moralis wallet endpoint currently provides spot holdings only"
+        overrides: Dict[str, Dict[str, Dict[str, object]]] = {}
+        for chain in SUPPORTED_EVM_CHAINS:
+            overrides[chain] = {
+                "spot_holdings": {"supported": True, "reason": None},
+                "lp_positions": {"supported": False, "reason": reason},
+                "lending_positions": {"supported": False, "reason": reason},
+                "vault_positions": {"supported": False, "reason": reason},
+                "risk_decomposition": {"supported": False, "reason": reason},
+                "alert_coverage": {"supported": False, "reason": reason},
+            }
+        return overrides

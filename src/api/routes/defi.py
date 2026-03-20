@@ -29,6 +29,7 @@ from src.defi.farm_analyzer import FarmAnalyzer
 from src.defi.lending_analyzer import LendingAnalyzer
 from src.defi.intelligence_engine import DefiIntelligenceEngine
 from src.data.defillama import DefiLlamaClient
+from src.api.response_envelope import envelope_error_response, envelope_response
 
 logger = logging.getLogger(__name__)
 
@@ -433,7 +434,11 @@ async def analyze_defi(request: web.Request) -> web.Response:
     Combined DeFi analyzer workflow for pools, yields, lending, and protocols.
     """
     if _intelligence_engine is None:
-        return web.json_response({"error": "DeFi analyzer not available"}, status=503)
+        return envelope_error_response(
+            "DeFi analyzer not available",
+            code="SERVICE_UNAVAILABLE",
+            http_status=503,
+        )
 
     q = request.rel_url.query
     chain = q.get("chain")
@@ -446,7 +451,11 @@ async def analyze_defi(request: web.Request) -> web.Response:
         min_apy = float(q.get("min_apy") or "3")
         limit = min(int(q.get("limit") or "10"), 25)
     except (ValueError, TypeError):
-        return web.json_response({"error": "Invalid numeric query parameter"}, status=400)
+        return envelope_error_response(
+            "Invalid numeric query parameter",
+            code="INVALID_QUERY",
+            http_status=400,
+        )
 
     try:
         analysis = await _intelligence_engine.analyze_market(
@@ -460,9 +469,13 @@ async def analyze_defi(request: web.Request) -> web.Response:
         )
     except Exception as e:
         logger.error(f"DeFi analyzer error: {e}")
-        return web.json_response({"error": "Failed to analyze DeFi opportunities"}, status=500)
+        return envelope_error_response(
+            "Failed to analyze DeFi opportunities",
+            code="DEFI_ANALYSIS_FAILED",
+            http_status=500,
+        )
 
-    return web.json_response(analysis)
+    return envelope_response(analysis)
 
 
 async def analyze_pool(request: web.Request) -> web.Response:

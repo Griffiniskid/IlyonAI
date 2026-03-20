@@ -248,6 +248,10 @@ class CacheLayer:
         """Generate cache key for token analysis"""
         return f"analysis:{token_address[:16]}"
 
+    def _fast_lane_key(self, analysis_id: str) -> str:
+        """Generate cache key for fast-lane opportunity snapshots."""
+        return f"opportunity:fast_lane:{analysis_id}"
+
     async def get_analysis(self, token_address: str) -> Optional[Dict]:
         """
         Get cached token analysis result.
@@ -307,6 +311,20 @@ class CacheLayer:
         await self.delete(key)
         logger.debug(f"Cache invalidated: {token_address[:8]}...")
         return True
+
+    async def get_fast_lane_snapshot(self, analysis_id: str) -> Optional[Dict[str, Any]]:
+        """Get cached fast-lane snapshot for an analysis id."""
+        value = await self.get(self._fast_lane_key(analysis_id))
+        return value if isinstance(value, dict) else None
+
+    async def set_fast_lane_snapshot(
+        self,
+        analysis_id: str,
+        payload: Dict[str, Any],
+        ttl: Optional[int] = None,
+    ) -> bool:
+        """Cache fast-lane snapshot for an analysis id."""
+        return await self.set(self._fast_lane_key(analysis_id), payload, ttl)
 
     # ═══════════════════════════════════════════════════════════════════════════
     # RATE LIMITING SUPPORT

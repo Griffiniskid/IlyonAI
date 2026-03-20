@@ -64,9 +64,9 @@ async def test_get_opportunity_reads_latest_completed_document():
         await client.close()
 
     assert response.status == 200
-    assert payload["identity"]["id"] == "opp_1"
-    assert payload["scores"]["final_deployability_score"] == 72
-    assert payload["evidence"]["freshness"]["generated_at"] == "2026-03-17T00:00:20Z"
+    assert payload["data"]["identity"]["id"] == "opp_1"
+    assert payload["data"]["scores"]["final_deployability_score"] == 72
+    assert payload["data"]["evidence"]["freshness"]["generated_at"] == "2026-03-17T00:00:20Z"
 
 
 @pytest.mark.asyncio

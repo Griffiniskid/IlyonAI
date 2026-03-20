@@ -22,6 +22,7 @@ from src.api.schemas.responses import (
     MarketDistributionItem,
     ErrorResponse
 )
+from src.api.response_envelope import envelope_error_response, envelope_response
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +215,7 @@ async def get_dashboard_stats(request: web.Request) -> web.Response:
     if cache_key in _stats_cache:
         cached = _stats_cache[cache_key]
         if (datetime.utcnow() - cached['time']).seconds < _cache_ttl:
-            return web.json_response(cached['data'])
+            return envelope_response(cached['data'])
 
     try:
         # Fetch aggregate Solana DEX volume from DefiLlama (real billions data)
@@ -388,17 +389,15 @@ async def get_dashboard_stats(request: web.Request) -> web.Response:
             'time': datetime.utcnow()
         }
 
-        return web.json_response(response)
+        return envelope_response(response)
 
     except Exception as e:
         logger.error(f"Stats endpoint error: {e}", exc_info=True)
-        return web.json_response(
-            ErrorResponse(
-                error="Failed to fetch dashboard stats",
-                code="STATS_FAILED",
-                details={"message": str(e)}
-            ).model_dump(mode='json'),
-            status=500
+        return envelope_error_response(
+            "Failed to fetch dashboard stats",
+            code="STATS_FAILED",
+            details={"message": str(e)},
+            http_status=500,
         )
 
 

@@ -102,6 +102,19 @@ class Settings(BaseSettings):
 
     # Portfolio / Wallet Indexer
     moralis_api_key: Optional[str] = Field(None, env="MORALIS_API_KEY", description="Moralis API key for EVM portfolio tracking")
+    portfolio_required_chains: list[str] = Field(
+        default_factory=lambda: [
+            "solana",
+            "ethereum",
+            "base",
+            "arbitrum",
+            "bsc",
+            "polygon",
+            "optimism",
+            "avalanche",
+        ],
+        description="Required chain matrix for portfolio parity responses",
+    )
 
     # Default chain for analysis
     default_chain: str = Field("solana", env="DEFAULT_CHAIN", description="Default blockchain for analysis")
@@ -151,6 +164,7 @@ class Settings(BaseSettings):
     defi_provider_concurrency_limit: int = Field(4, ge=1, env="DEFI_PROVIDER_CONCURRENCY_LIMIT")
     defi_analysis_ttl_seconds: int = Field(300, ge=1, env="DEFI_ANALYSIS_TTL_SECONDS")
     defi_score_model_version: str = Field("defi-v2", env="DEFI_SCORE_MODEL_VERSION")
+    alert_dedupe_window_seconds: int = Field(300, env="ALERT_DEDUPE_WINDOW_SECONDS")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # AFFILIATE CONFIGURATION - TROJAN BOT ONLY
@@ -223,6 +237,12 @@ class Settings(BaseSettings):
     # Web API rate limiting
     web_api_rate_limit_per_minute: int = Field(60, env="WEB_API_RATE_LIMIT_PER_MINUTE")
     web_api_rate_limit_per_hour: int = Field(500, env="WEB_API_RATE_LIMIT_PER_HOUR")
+    scope_burst_limit_per_minute: int = Field(6, env="SCOPE_BURST_LIMIT_PER_MINUTE")
+
+    # Webhook/replay security settings
+    webhook_signing_secret: str = Field("", env="WEBHOOK_SIGNING_SECRET")
+    replay_guard_ttl_seconds: int = Field(60, env="REPLAY_GUARD_TTL_SECONDS")
+    replay_guard_max_skew_seconds: int = Field(30, env="REPLAY_GUARD_MAX_SKEW_SECONDS")
 
     # Session settings
     session_secret: str = Field(

@@ -14,6 +14,7 @@ from aiohttp import web
 
 from src.chains.base import ChainType
 from src.shield.approval_scanner import ApprovalScanner, encode_revoke_calldata
+from src.api.response_envelope import envelope_error_response, envelope_response
 
 logger = logging.getLogger(__name__)
 
@@ -80,9 +81,10 @@ async def scan_wallet_approvals(request: web.Request) -> web.Response:
     """
     wallet = request.match_info.get("wallet", "").strip()
     if not wallet or not wallet.startswith("0x") or len(wallet) != 42:
-        return web.json_response(
-            {"error": "Invalid EVM wallet address. Must be 0x-prefixed, 42 chars."},
-            status=400,
+        return envelope_error_response(
+            "Invalid EVM wallet address. Must be 0x-prefixed, 42 chars.",
+            code="INVALID_ADDRESS",
+            http_status=400,
         )
 
     chain_param = request.rel_url.query.get("chain")
@@ -96,20 +98,29 @@ async def scan_wallet_approvals(request: web.Request) -> web.Response:
     if chain_param:
         ct = _parse_chain(chain_param)
         if ct is None:
-            return web.json_response(
-                {"error": f"Unknown chain: {chain_param}"},
-                status=400,
+            return envelope_error_response(
+                f"Unknown chain: {chain_param}",
+                code="UNKNOWN_CHAIN",
+                http_status=400,
             )
         chains = [ct]
 
     if _scanner is None:
-        return web.json_response({"error": "Shield scanner not available"}, status=503)
+        return envelope_error_response(
+            "Shield scanner not available",
+            code="SERVICE_UNAVAILABLE",
+            http_status=503,
+        )
 
     try:
         approvals = await _scanner.scan_wallet(wallet, chains=chains)
     except Exception as e:
         logger.error(f"Approval scan error for {wallet}: {e}")
-        return web.json_response({"error": "Approval scan failed"}, status=500)
+        return envelope_error_response(
+            "Approval scan failed",
+            code="SCAN_FAILED",
+            http_status=500,
+        )
 
     if min_risk > 0:
         approvals = [a for a in approvals if a.get("risk_score", 0) >= min_risk]
@@ -124,7 +135,7 @@ async def scan_wallet_approvals(request: web.Request) -> web.Response:
         ChainType.AVALANCHE,
     ]
 
-    return web.json_response({
+    return envelope_response({
         "wallet": wallet,
         "wallet_address": wallet,
         "chains_scanned": [c.value for c in scanned_chains],

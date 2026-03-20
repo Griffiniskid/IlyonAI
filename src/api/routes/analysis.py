@@ -26,6 +26,7 @@ from src.api.schemas.requests import AnalyzeTokenRequest, AnalysisModeType
 from src.defi.opportunity_taxonomy import classify_defi_record
 from src.storage.cache import CacheLayer
 from src.storage.database import get_database
+from src.api.response_envelope import envelope_error_response, envelope_response
 
 logger = logging.getLogger(__name__)
 
@@ -586,15 +587,17 @@ async def search_tokens(request: web.Request) -> web.Response:
     try:
         limit = min(int(request.query.get('limit', 10)), 50)
     except (TypeError, ValueError):
-        return web.json_response(
-            ErrorResponse(error="Invalid limit parameter", code="INVALID_QUERY").model_dump(mode='json'),
-            status=400,
+        return envelope_error_response(
+            "Invalid limit parameter",
+            code="INVALID_QUERY",
+            http_status=400,
         )
 
     if not query or len(query) < 2:
-        return web.json_response(
-            ErrorResponse(error="Query must be at least 2 characters", code="INVALID_QUERY").model_dump(mode='json'),
-            status=400
+        return envelope_error_response(
+            "Query must be at least 2 characters",
+            code="INVALID_QUERY",
+            http_status=400,
         )
 
     resolver = AddressResolver()
@@ -757,7 +760,7 @@ async def search_tokens(request: web.Request) -> web.Response:
         results.sort(key=lambda item: float(item.get("score") or 0), reverse=True)
         results = results[:limit]
 
-        return web.json_response({
+        return envelope_response({
             "query": query,
             "input_type": input_type,
             "results": results,
@@ -767,9 +770,10 @@ async def search_tokens(request: web.Request) -> web.Response:
 
     except Exception as e:
         logger.error(f"Search error: {e}")
-        return web.json_response(
-            ErrorResponse(error="Search failed", code="SEARCH_FAILED").model_dump(mode='json'),
-            status=500
+        return envelope_error_response(
+            "Search failed",
+            code="SEARCH_FAILED",
+            http_status=500,
         )
 
 

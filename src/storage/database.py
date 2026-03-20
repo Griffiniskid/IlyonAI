@@ -321,6 +321,19 @@ class BlinkAnalytics(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class AlertAuditRecord(Base):
+    """Persistent audit records for alert rule mutations."""
+
+    __tablename__ = "alert_audit_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_type = Column(String(64), nullable=False, index=True)
+    actor_id = Column(String(128), nullable=False, index=True)
+    trace_id = Column(String(128), nullable=False, index=True)
+    payload = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # WEB AUTHENTICATION MODELS (Wallet-based auth for web frontend)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1456,6 +1469,51 @@ class Database:
                 "last_verified_at": blink.last_verified_at.isoformat() if blink.last_verified_at else None,
             }
 
+    async def write_alert_audit_record(
+        self,
+        event_type: str,
+        actor_id: str,
+        trace_id: str,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Write an alert audit record to persistent storage."""
+        if not self._initialized:
+            return False
+
+        async with self.async_session() as session:
+            record = AlertAuditRecord(
+                event_type=event_type,
+                actor_id=actor_id,
+                trace_id=trace_id,
+                payload=payload or {},
+            )
+            session.add(record)
+            await session.commit()
+            return True
+
+    async def fetch_latest_alert_audit_record(self, event_type: str) -> Optional[Dict[str, Any]]:
+        """Fetch the latest alert audit record for the event type."""
+        if not self._initialized:
+            return None
+
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(AlertAuditRecord)
+                .where(AlertAuditRecord.event_type == event_type)
+                .order_by(AlertAuditRecord.created_at.desc())
+                .limit(1)
+            )
+            record = result.scalar_one_or_none()
+            if record is None:
+                return None
+            return {
+                "event_type": record.event_type,
+                "actor_id": record.actor_id,
+                "trace_id": record.trace_id,
+                "payload": record.payload or {},
+                "created_at": record.created_at.isoformat() if record.created_at else None,
+            }
+
     # ═══════════════════════════════════════════════════════════════════════════
     # WEB USER MANAGEMENT
     # ═══════════════════════════════════════════════════════════════════════════
@@ -1779,3 +1837,9 @@ async def init_database():
     """Initialize database at startup"""
     db = await get_database()
     return db
+
+
+async def load_token_deployments(wallet_address: str) -> List[TokenDeployment]:
+    """Load recent token deployments for a deployer wallet."""
+    db = await get_database()
+    return await db.get_wallet_deployments(wallet_address, limit=100)

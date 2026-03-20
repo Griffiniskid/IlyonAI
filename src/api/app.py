@@ -27,6 +27,9 @@ from src.api.routes.shield import setup_shield_routes
 from src.api.routes.defi import setup_defi_routes
 from src.api.routes.intel import setup_intel_routes
 from src.api.routes.opportunities import setup_opportunity_routes
+from src.api.routes.smart_money import setup_smart_money_routes
+from src.api.routes.stream import setup_stream_routes
+from src.api.routes.alerts import setup_alert_routes
 from src.agents.sentinel import start_sentinel, stop_sentinel
 from src.config import settings
 
@@ -108,6 +111,13 @@ async def api_docs(request: web.Request) -> web.Response:
                 "GET /api/v1/search?query=...&chain=...",
                 "GET /api/v1/chains",
                 "GET /api/v1/chains/{chain}",
+                "GET /api/v2/defi/discover",
+            ],
+            "smart_money": [
+                "GET /api/v1/smart-money/overview",
+            ],
+            "alerts": [
+                "GET /api/v1/alerts",
             ],
             "security": [
                 "POST /api/v1/contract/scan",
@@ -182,6 +192,9 @@ def create_api_app() -> web.Application:
     setup_defi_routes(app)
     setup_intel_routes(app)
     setup_opportunity_routes(app)
+    setup_smart_money_routes(app)
+    setup_stream_routes(app)
+    setup_alert_routes(app)
     setup_public_api_routes(app)
 
     # Background sentinel agent
@@ -245,6 +258,9 @@ def setup_api_routes(app: web.Application):
     setup_defi_routes(app)
     setup_intel_routes(app)
     setup_opportunity_routes(app)
+    setup_smart_money_routes(app)
+    setup_stream_routes(app)
+    setup_alert_routes(app)
     setup_public_api_routes(app)
 
     logger.info("All API routes added to existing application")
