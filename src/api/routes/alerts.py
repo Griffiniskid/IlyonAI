@@ -1,8 +1,12 @@
+import asyncio
+import logging
+
 from aiohttp import web
 import json
 import uuid
 
 from src.alerts.audit_log import write_audit_record
+from src.alerts.producer import AlertProducer
 from src.alerts.store import InMemoryAlertStore
 from src.api.middleware.webhook_signature import verify_webhook_signature
 from src.api.routes.auth import require_auth, require_scope
@@ -174,6 +178,50 @@ async def list_alerts(request: web.Request):
     return envelope_response(alerts)
 
 
+async def update_alert(request: web.Request):
+    store = _get_store(request)
+    alert_id = request.match_info["alert_id"]
+
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        return envelope_error_response(
+            "Invalid JSON payload",
+            code="INVALID_REQUEST",
+            http_status=400,
+        )
+
+    if not isinstance(payload, dict):
+        return envelope_error_response("payload must be object", code="INVALID_REQUEST", http_status=400)
+
+    action = payload.get("action")
+    allowed_actions = {"seen", "acknowledge", "snooze", "unsnooze", "resolve"}
+    if not isinstance(action, str) or action not in allowed_actions:
+        return envelope_error_response("invalid action", code="INVALID_REQUEST", http_status=400)
+
+    try:
+        updated = store.apply_alert_action(alert_id, action, payload.get("snoozed_until"))
+    except ValueError as exc:
+        return envelope_error_response(str(exc), code="INVALID_REQUEST", http_status=400)
+
+    if updated is None:
+        return envelope_error_response("not found", code="NOT_FOUND", http_status=404)
+
+    return envelope_response(updated.model_dump())
+
+
+async def _run_alert_producer(app: web.Application):
+    """Background task that runs the alert producer every 5 minutes."""
+    store = app[ALERT_STORE_KEY]
+    producer = AlertProducer(store=store)
+    while True:
+        try:
+            await producer.run_cycle()
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"Alert producer cycle failed: {e}")
+        await asyncio.sleep(300)  # 5 minutes
+
+
 def setup_alert_routes(app: web.Application, store: InMemoryAlertStore | None = None):
     app[ALERT_STORE_KEY] = store or InMemoryAlertStore()
     app.router.add_post("/api/v1/alerts/rules", create_alert_rule)
@@ -182,3 +230,15 @@ def setup_alert_routes(app: web.Application, store: InMemoryAlertStore | None = 
     app.router.add_put("/api/v1/alerts/rules/{rule_id}", update_alert_rule)
     app.router.add_delete("/api/v1/alerts/rules/{rule_id}", delete_alert_rule)
     app.router.add_get("/api/v1/alerts", list_alerts)
+    app.router.add_patch("/api/v1/alerts/{alert_id}", update_alert)
+
+    async def start_producer(app_ref: web.Application):
+        app_ref["_alert_producer_task"] = asyncio.create_task(_run_alert_producer(app_ref))
+
+    async def stop_producer(app_ref: web.Application):
+        task = app_ref.get("_alert_producer_task")
+        if task:
+            task.cancel()
+
+    app.on_startup.append(start_producer)
+    app.on_cleanup.append(stop_producer)
