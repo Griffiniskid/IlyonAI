@@ -304,27 +304,84 @@ class AuditDatabase:
     """
     Database of smart contract security audits.
 
-    Combines curated seed data with live data from DefiLlama.
+    Combines curated seed data with live data from DefiLlama protocols endpoint.
     """
 
     def __init__(self):
         self._session: Optional[aiohttp.ClientSession] = None
+        self._live_cache: Optional[List[Dict[str, Any]]] = None
+        self._cache_ts: float = 0
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if not self._session or self._session.closed:
             self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
         return self._session
 
+    async def _fetch_defillama_audits(self) -> List[Dict[str, Any]]:
+        """Fetch protocol audit metadata from DefiLlama."""
+        import time
+        now = time.time()
+        if self._live_cache is not None and (now - self._cache_ts) < 3600:
+            return self._live_cache
+
+        try:
+            session = await self._get_session()
+            async with session.get("https://api.llama.fi/protocols") as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    audited = []
+                    if isinstance(data, list):
+                        for proto in data:
+                            audit_links = proto.get("audit_links") or []
+                            audits_count = proto.get("audits")
+                            if not audit_links and not audits_count:
+                                continue
+                            auditor = "Unknown"
+                            audit_note = proto.get("audit_note") or ""
+                            if audit_note:
+                                for firm in ["Trail of Bits", "OpenZeppelin", "PeckShield",
+                                             "ChainSecurity", "Quantstamp", "CertiK", "Halborn",
+                                             "Consensys Diligence", "Sherlock", "Code4rena",
+                                             "Spearbit", "Cyfrin", "MixBytes"]:
+                                    if firm.lower() in audit_note.lower():
+                                        auditor = firm
+                                        break
+                            audited.append({
+                                "id": f"llama-{proto.get('name', '').lower().replace(' ', '-')}",
+                                "protocol": proto.get("name", "Unknown"),
+                                "auditor": auditor,
+                                "date": "",
+                                "report_url": audit_links[0] if audit_links else "",
+                                "severity_findings": {},
+                                "verdict": "PASS" if audits_count and str(audits_count) != "0" else "UNKNOWN",
+                                "chains": proto.get("chains") or [],
+                                "source": "DefiLlama",
+                            })
+                    self._live_cache = audited
+                    self._cache_ts = now
+                    return self._live_cache
+        except Exception as e:
+            logger.warning(f"Failed to fetch DefiLlama audit data: {e}")
+
+        return []
+
     async def get_audits(
         self,
         protocol: Optional[str] = None,
         auditor: Optional[str] = None,
         chain: Optional[str] = None,
-        verdict: Optional[str] = None,  # PASS | FAIL
+        verdict: Optional[str] = None,
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """Query audit records with optional filters."""
         audits: List[Dict[str, Any]] = [dict(a) for a in KNOWN_AUDITS]
+
+        # Supplement with live DefiLlama data
+        live = await self._fetch_defillama_audits()
+        seed_protocols = {a["protocol"].lower() for a in audits}
+        for audit in live:
+            if audit["protocol"].lower() not in seed_protocols:
+                audits.append(audit)
 
         if protocol:
             audits = [
@@ -347,7 +404,6 @@ class AuditDatabase:
                 if (a.get("verdict") or "").upper() == verdict.upper()
             ]
 
-        # Sort by date descending
         audits.sort(key=lambda a: a.get("date") or "", reverse=True)
         return audits[:limit]
 
