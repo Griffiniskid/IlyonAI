@@ -217,11 +217,19 @@ async def get_portfolio(request: web.Request) -> web.Response:
 
     health_score = _calculate_health_score(all_tokens, total_value)
 
+    # Estimate 24h PnL from token price changes
+    total_pnl_usd = sum(
+        t.balance_usd * (t.price_change_24h / 100)
+        for t in all_tokens
+        if t.price_change_24h and t.balance_usd
+    )
+    total_pnl_percent = (total_pnl_usd / total_value * 100) if total_value > 0 else 0
+
     response = PortfolioResponse(
         wallet_address="aggregate",
         total_value_usd=total_value,
-        total_pnl_usd=0,
-        total_pnl_percent=0,
+        total_pnl_usd=total_pnl_usd,
+        total_pnl_percent=total_pnl_percent,
         tokens=all_tokens,
         health_score=health_score,
         last_updated=datetime.utcnow()
@@ -283,11 +291,19 @@ async def get_wallet_portfolio(request: web.Request) -> web.Response:
 
     health_score = _calculate_health_score(tokens, total_value)
 
+    # Estimate 24h PnL from token price changes
+    total_pnl_usd = sum(
+        t.balance_usd * (t.price_change_24h / 100)
+        for t in tokens
+        if t.price_change_24h and t.balance_usd
+    )
+    total_pnl_percent = (total_pnl_usd / total_value * 100) if total_value > 0 else 0
+
     response = PortfolioResponse(
         wallet_address=wallet_address,
         total_value_usd=total_value,
-        total_pnl_usd=0,
-        total_pnl_percent=0,
+        total_pnl_usd=total_pnl_usd,
+        total_pnl_percent=total_pnl_percent,
         tokens=tokens,
         health_score=health_score,
         last_updated=datetime.utcnow()
@@ -302,15 +318,14 @@ async def get_chain_parity_matrix(request: web.Request) -> web.Response:
 
     class SolanaCapabilitiesProvider:
         def capability_overrides(self):
-            reason = "Solana position providers are not wired in this endpoint yet"
             return {
                 "solana": {
                     "spot_holdings": {"supported": True, "reason": None},
-                    "lp_positions": {"supported": False, "reason": reason},
-                    "lending_positions": {"supported": False, "reason": reason},
-                    "vault_positions": {"supported": False, "reason": reason},
-                    "risk_decomposition": {"supported": False, "reason": reason},
-                    "alert_coverage": {"supported": False, "reason": reason},
+                    "lp_positions": {"supported": False, "reason": "LP position tracking requires dedicated Solana DEX integrations"},
+                    "lending_positions": {"supported": False, "reason": "Lending protocol integrations not yet available"},
+                    "vault_positions": {"supported": False, "reason": "Vault integrations not yet available"},
+                    "risk_decomposition": {"supported": False, "reason": "Requires position-level risk modeling"},
+                    "alert_coverage": {"supported": False, "reason": "Alert system integration pending"},
                 }
             }
 

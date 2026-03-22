@@ -79,15 +79,14 @@ class MoralisClient:
 
     def capability_overrides(self) -> Dict[str, Dict[str, Dict[str, object]]]:
         """Return parity matrix overrides for Moralis-backed EVM chains."""
-        reason = "Moralis wallet endpoint currently provides spot holdings only"
         overrides: Dict[str, Dict[str, Dict[str, object]]] = {}
         for chain in SUPPORTED_EVM_CHAINS:
             overrides[chain] = {
                 "spot_holdings": {"supported": True, "reason": None},
-                "lp_positions": {"supported": False, "reason": reason},
-                "lending_positions": {"supported": False, "reason": reason},
-                "vault_positions": {"supported": False, "reason": reason},
-                "risk_decomposition": {"supported": False, "reason": reason},
-                "alert_coverage": {"supported": False, "reason": reason},
+                "lp_positions": {"supported": False, "reason": "LP tracking requires protocol-specific integrations"},
+                "lending_positions": {"supported": False, "reason": "Lending protocol integrations not yet available"},
+                "vault_positions": {"supported": False, "reason": "Vault integrations not yet available"},
+                "risk_decomposition": {"supported": False, "reason": "Requires position-level risk modeling"},
+                "alert_coverage": {"supported": False, "reason": "Alert system integration pending"},
             }
         return overrides
