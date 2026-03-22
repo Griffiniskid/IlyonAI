@@ -65,6 +65,7 @@ describe("Portfolio multi-chain", () => {
           },
           ethereum: {
             spot_holdings: { state: "available", reason: null },
+            lp_positions: { state: "degraded", reason: "LP tracking requires protocol-specific integrations" },
           },
         },
       },
@@ -75,13 +76,13 @@ describe("Portfolio multi-chain", () => {
 
   it("renders exposure rows for all supported chains", async () => {
     render(<PortfolioPage />);
-    expect(await screen.findByText(/ethereum/i)).toBeInTheDocument();
-    expect(await screen.findByText(/solana/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Ethereum/)).toBeInTheDocument();
+    expect(await screen.findByText(/Solana/)).toBeInTheDocument();
   });
 
   it("shows explicit degraded status when a chain capability is missing", async () => {
     render(<PortfolioPage />);
-    expect(await screen.findByText(/degraded capability/i)).toBeInTheDocument();
-    expect(await screen.findByText(/missing capability data/i)).toBeInTheDocument();
+    expect(await screen.findByText(/capabilities degraded/i)).toBeInTheDocument();
+    expect(await screen.findByText(/chains active/i)).toBeInTheDocument();
   });
 });
