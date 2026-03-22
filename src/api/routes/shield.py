@@ -13,6 +13,7 @@ from typing import Optional
 from aiohttp import web
 
 from src.chains.base import ChainType
+from src.config import settings
 from src.shield.approval_scanner import ApprovalScanner, encode_revoke_calldata
 from src.api.response_envelope import envelope_error_response, envelope_response
 
@@ -263,11 +264,33 @@ async def prepare_revoke(request: web.Request) -> web.Response:
     })
 
 
+async def get_shield_status(request: web.Request) -> web.Response:
+    """GET /api/v1/shield/status — report per-chain API key availability."""
+    chain_keys = {
+        "ethereum": settings.etherscan_api_key,
+        "bsc": settings.bscscan_api_key,
+        "polygon": settings.polygonscan_api_key,
+        "arbitrum": settings.arbiscan_api_key,
+        "base": settings.basescan_api_key,
+        "optimism": settings.optimism_etherscan_api_key,
+        "avalanche": settings.snowtrace_api_key,
+    }
+    chains = {}
+    for chain_name, key in chain_keys.items():
+        available = bool(key and key.strip())
+        chains[chain_name] = {
+            "available": available,
+            "reason": None if available else "API key not configured",
+        }
+    return envelope_response({"chains": chains}, meta={"surface": "shield_status"})
+
+
 def setup_shield_routes(app: web.Application):
     """Register Shield routes and lifecycle hooks."""
     app.on_startup.append(init_shield)
     app.on_cleanup.append(cleanup_shield)
 
+    app.router.add_get("/api/v1/shield/status", get_shield_status)
     app.router.add_get("/api/v1/shield/{wallet}", scan_wallet_approvals)
     app.router.add_get("/api/v1/shield/{wallet}/{chain}", scan_wallet_chain)
     app.router.add_post("/api/v1/shield/revoke", prepare_revoke)

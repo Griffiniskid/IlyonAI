@@ -97,6 +97,10 @@ class ApprovalScanner:
         if not api_url:
             return []
 
+        if not api_key:
+            logger.info(f"No API key configured for {chain.display_name}, skipping scan")
+            return []
+
         session = await self._get_session()
 
         # Keccak256 of Approval(address,address,uint256)
@@ -111,7 +115,7 @@ class ApprovalScanner:
             "toBlock": "latest",
             "topic0": approval_topic,
             "topic1": wallet_topic,
-            "apikey": api_key or "YourApiKeyToken",
+            "apikey": api_key,
         }
 
         try:
