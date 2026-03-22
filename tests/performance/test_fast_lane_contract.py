@@ -97,11 +97,15 @@ def run_failed_fast_lane_analysis_request():
 
 def test_opportunity_analysis_returns_fast_lane_snapshot_before_deep_completion():
     response = run_fast_lane_analysis_request()
-    assert response["status"] in {"scanning", "enriching", "completed"}
-    assert "quick_view" in response["data"]
+    assert response["status"] == "ok"
+    data = response["data"]
+    assert data["status"] in {"scanning", "enriching", "completed"}
+    assert "quick_view" in data["data"]
 
 
 def test_opportunity_analysis_preserves_failed_status_for_fast_lane_snapshot():
     response = run_failed_fast_lane_analysis_request()
-    assert response["status"] == "failed"
-    assert "quick_view" in response["data"]
+    assert response["status"] == "ok"
+    data = response["data"]
+    assert data["status"] == "failed"
+    assert "quick_view" in data["data"]

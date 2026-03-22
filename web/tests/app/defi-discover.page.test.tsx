@@ -70,18 +70,18 @@ describe("Defi Discover Flow", () => {
       data: { opportunityId: "job-123" }
     });
 
-    // Return partial cached data (missing title, so it's not complete)
+    // Return partial cached data with no id or title — not enough to mark done
     (hooks.useOpportunityAnalysis as any).mockReturnValue({
-      data: { id: "job-123" },
+      data: { status: "running" },
       isLoading: false,
     });
 
     render(<DiscoverClient />);
 
-    // Should continue polling because it's not a fully populated analysis object
-    // Wait for any effects to settle
+    // Should continue polling because analysisData has neither title nor id
     expect(hooks.useOpportunityAnalysis).toHaveBeenLastCalledWith("job-123", {
-      pollInterval: 3000,
+      includeAi: false,
+      pollInterval: 5000,
     });
   });
 
@@ -103,6 +103,7 @@ describe("Defi Discover Flow", () => {
 
     // Check what was passed to useOpportunityAnalysis
     expect(hooks.useOpportunityAnalysis).toHaveBeenLastCalledWith("job-123", {
+      includeAi: false,
       pollInterval: undefined,
     });
   });

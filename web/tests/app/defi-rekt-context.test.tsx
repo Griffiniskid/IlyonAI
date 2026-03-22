@@ -52,6 +52,6 @@ describe("Defi rekt context", () => {
 
     expect(await screen.findByText(/risk context: hacks & exploits/i)).toBeInTheDocument();
     expect(await screen.findByText(/defi exploit/i)).toBeInTheDocument();
-    expect(getRektIncidents).toHaveBeenCalledWith({ limit: 3 });
+    expect(getRektIncidents).toHaveBeenCalledWith({ limit: 5 });
   });
 });

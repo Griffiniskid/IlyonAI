@@ -8,6 +8,8 @@ import asyncio
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -22,6 +24,7 @@ BONK = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
 SOL = "So11111111111111111111111111111111111111112"
 
 
+@pytest.mark.asyncio
 async def test_config():
     """Test configuration loading"""
     print("\n" + "=" * 70)
@@ -34,6 +37,7 @@ async def test_config():
     print("PASSED ✓\n")
 
 
+@pytest.mark.asyncio
 async def test_affiliates():
     """Test affiliate system"""
     print("=" * 70)
@@ -61,6 +65,7 @@ async def test_affiliates():
         print("SKIPPED\n")
 
 
+@pytest.mark.asyncio
 async def test_dexscreener():
     """Test DexScreener API client"""
     print("=" * 70)
@@ -88,6 +93,7 @@ async def test_dexscreener():
         print("FAILED ✗\n")
 
 
+@pytest.mark.asyncio
 async def test_solana_client():
     """Test Solana RPC client"""
     print("=" * 70)
@@ -114,6 +120,7 @@ async def test_solana_client():
         print("FAILED ✗\n")
 
 
+@pytest.mark.asyncio
 async def test_analyzer_init():
     """Test analyzer initialization"""
     print("=" * 70)
@@ -137,6 +144,7 @@ async def test_analyzer_init():
         print("FAILED ✗\n")
 
 
+@pytest.mark.asyncio
 async def test_quick_analysis():
     """Test quick analysis (requires OpenAI API key)"""
     print("=" * 70)
