@@ -167,10 +167,33 @@ function normalizeExposureType(value: unknown): "stable-stable" | "crypto-stable
   return "crypto-crypto";
 }
 
+function unwrapEnvelope<T>(raw: unknown): T | undefined;
+function unwrapEnvelope<T>(raw: unknown, fallback: T): T;
+function unwrapEnvelope<T>(raw: unknown, fallback?: T): T | undefined {
+  const payload = raw && typeof raw === "object" && !Array.isArray(raw) && "data" in (raw as Record<string, unknown>)
+    ? ((raw as Record<string, unknown>).data ?? raw)
+    : raw;
+
+  if (payload == null) return fallback;
+  return payload as T;
+}
+
 function toFiniteNumber(value: unknown): number | null {
-  if (typeof value !== "number") return null;
-  if (!Number.isFinite(value)) return null;
-  return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    const numeric = Number(trimmed);
+    if (!Number.isFinite(numeric)) return null;
+    return numeric;
+  }
+
+  return null;
 }
 
 export function normalizeConfidencePercent(value: unknown): number {
@@ -340,6 +363,102 @@ function normalizeTrendingResponse(raw: any): TrendingResponse {
     updated_at: raw.updated_at ?? new Date().toISOString(),
     category: raw.category ?? "trending",
     filter_chain: normalizeChainName(raw.filter_chain) ?? null,
+  };
+}
+
+function normalizeWhaleTransaction(raw: any): WhaleActivityResponse["transactions"][number] {
+  return {
+    signature: normalizeText(raw.signature),
+    wallet_address: normalizeText(raw.wallet_address),
+    wallet_label: raw.wallet_label != null ? normalizeText(raw.wallet_label) : null,
+    chain: raw.chain != null ? normalizeText(raw.chain) : undefined,
+    token_address: normalizeText(raw.token_address),
+    token_symbol: normalizeText(raw.token_symbol),
+    token_name: normalizeText(raw.token_name),
+    type: raw.type === "sell" ? "sell" : "buy",
+    amount_tokens: Number(raw.amount_tokens ?? 0),
+    amount_usd: Number(raw.amount_usd ?? 0),
+    price_usd: Number(raw.price_usd ?? 0),
+    timestamp: normalizeText(raw.timestamp),
+    dex_name: normalizeText(raw.dex_name),
+  };
+}
+
+function normalizeWhaleActivityResponse(raw: any): WhaleActivityResponse {
+  const payload = unwrapEnvelope<Record<string, unknown>>(raw, {});
+
+  return {
+    transactions: Array.isArray(payload.transactions) ? payload.transactions.map(normalizeWhaleTransaction) : [],
+    updated_at: normalizeText(payload.updated_at, new Date().toISOString()),
+    filter_token: payload.filter_token != null ? normalizeText(payload.filter_token) : null,
+    filter_chain: normalizeChainName(payload.filter_chain ?? payload.chain) ?? null,
+    min_amount_usd: Number(payload.min_amount_usd ?? payload.minAmountUsd ?? 0),
+    entity_confidence: payload.entity_confidence == null ? null : normalizeConfidencePercent(payload.entity_confidence),
+  };
+}
+
+function normalizeSmartMoneyEntity(raw: any): NonNullable<SmartMoneyOverviewResponse["entities"]>[number] {
+  return {
+    wallet_address: normalizeText(raw?.wallet_address),
+    label: raw?.label != null ? normalizeText(raw.label) : null,
+    side: normalizeText(raw?.side),
+    amount_usd: toFiniteNumber(raw?.amount_usd) ?? 0,
+  };
+}
+
+function normalizeSmartMoneyFlow(raw: any): NonNullable<SmartMoneyOverviewResponse["flows"]>[number] {
+  return {
+    direction: normalizeText(raw?.direction),
+    amount_usd: toFiniteNumber(raw?.amount_usd) ?? 0,
+  };
+}
+
+function normalizeSmartMoneyParticipant(raw: any): SmartMoneyOverviewResponse["top_buyers"][number] {
+  return {
+    wallet_address: normalizeText(raw.wallet_address),
+    label: raw.label != null ? normalizeText(raw.label) : null,
+    amount_usd: Number(raw.amount_usd ?? 0),
+  };
+}
+
+function normalizeSmartMoneyOverviewResponse(raw: any): SmartMoneyOverviewResponse {
+  const payload = unwrapEnvelope<Record<string, unknown>>(raw, {});
+  const entities = Array.isArray(payload.entities) ? payload.entities.map(normalizeSmartMoneyEntity) : [];
+  const flows = Array.isArray(payload.flows) ? payload.flows.map(normalizeSmartMoneyFlow) : [];
+
+  const topBuyers = Array.isArray(payload.top_buyers)
+    ? payload.top_buyers.map(normalizeSmartMoneyParticipant)
+    : entities
+      .filter((entity: any) => String(entity?.side ?? "").toLowerCase() === "buy")
+      .map(normalizeSmartMoneyParticipant);
+
+  const topSellers = Array.isArray(payload.top_sellers)
+    ? payload.top_sellers.map(normalizeSmartMoneyParticipant)
+    : entities
+      .filter((entity: any) => String(entity?.side ?? "").toLowerCase() === "sell")
+      .map(normalizeSmartMoneyParticipant);
+
+  const inflow = toFiniteNumber(payload.inflow_usd)
+    ?? flows
+      .filter((flow: any) => String(flow?.direction ?? "").toLowerCase() === "inflow")
+      .reduce((sum: number, flow: any) => sum + Number(flow?.amount_usd ?? 0), 0);
+
+  const outflow = toFiniteNumber(payload.outflow_usd)
+    ?? flows
+      .filter((flow: any) => String(flow?.direction ?? "").toLowerCase() === "outflow")
+      .reduce((sum: number, flow: any) => sum + Number(flow?.amount_usd ?? 0), 0);
+
+  const netFlow = toFiniteNumber(payload.net_flow_usd) ?? (inflow - outflow);
+
+  return {
+    net_flow_usd: netFlow,
+    inflow_usd: inflow,
+    outflow_usd: outflow,
+    top_buyers: topBuyers,
+    top_sellers: topSellers,
+    entities,
+    flows,
+    updated_at: normalizeText(payload.updated_at, new Date().toISOString()),
   };
 }
 
@@ -897,11 +1016,12 @@ export async function searchTokens(
   const params = new URLSearchParams({ query, limit: String(limit) });
   if (chain) params.set("chain", chain);
   const raw = await fetchAPI<any>(`/api/v1/search?${params.toString()}`);
+  const payload = unwrapEnvelope<Record<string, unknown>>(raw, {});
   return {
-    query: normalizeText(raw.query, query),
-    input_type: normalizeText(raw.input_type, "search_query"),
-    results: Array.isArray(raw.results)
-      ? raw.results.map((item: any) => ({
+    query: normalizeText(payload.query, query),
+    input_type: normalizeText(payload.input_type, "search_query"),
+    results: Array.isArray(payload.results)
+      ? payload.results.map((item: any) => ({
           type: normalizeText(item.type, "token"),
           product_type: item.product_type != null ? normalizeText(item.product_type) : null,
           title: normalizeText(item.title),
@@ -913,8 +1033,8 @@ export async function searchTokens(
           logo: item.logo != null ? normalizeText(item.logo) : null,
         }))
       : [],
-    count: Number(raw.count ?? 0),
-    total: Number(raw.total ?? 0),
+    count: Number(payload.count ?? 0),
+    total: Number(payload.total ?? 0),
   };
 }
 
@@ -961,28 +1081,28 @@ export async function getTrendingTokens(
   if (forceRefresh) params.set("force_refresh", "1");
   if (chain) params.set("chain", chain);
   const data = await fetchAPI<any>(`/api/v1/trending?${params}`);
-  return normalizeTrendingResponse(data);
+  return normalizeTrendingResponse(unwrapEnvelope(data, {}));
 }
 
 export async function getNewPairs(limit = 20, chain?: ChainName): Promise<TrendingResponse> {
   const params = new URLSearchParams({ limit: limit.toString() });
   if (chain) params.set("chain", chain);
   const data = await fetchAPI<any>(`/api/v1/trending/new?${params}`);
-  return normalizeTrendingResponse(data);
+  return normalizeTrendingResponse(unwrapEnvelope(data, {}));
 }
 
 export async function getGainers(limit = 20, chain?: ChainName): Promise<TrendingResponse> {
   const params = new URLSearchParams({ limit: limit.toString() });
   if (chain) params.set("chain", chain);
   const data = await fetchAPI<any>(`/api/v1/trending/gainers?${params}`);
-  return normalizeTrendingResponse(data);
+  return normalizeTrendingResponse(unwrapEnvelope(data, {}));
 }
 
 export async function getLosers(limit = 20, chain?: ChainName): Promise<TrendingResponse> {
   const params = new URLSearchParams({ limit: limit.toString() });
   if (chain) params.set("chain", chain);
   const data = await fetchAPI<any>(`/api/v1/trending/losers?${params}`);
-  return normalizeTrendingResponse(data);
+  return normalizeTrendingResponse(unwrapEnvelope(data, {}));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -990,7 +1110,8 @@ export async function getLosers(limit = 20, chain?: ChainName): Promise<Trending
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function getPortfolio(): Promise<PortfolioResponse> {
-  return fetchAPI<PortfolioResponse>("/api/v1/portfolio");
+  const raw = await fetchAPI<any>("/api/v1/portfolio");
+  return unwrapEnvelope<PortfolioResponse>(raw) as PortfolioResponse;
 }
 
 export async function getWalletPortfolio(wallet: string): Promise<PortfolioResponse> {
@@ -999,10 +1120,11 @@ export async function getWalletPortfolio(wallet: string): Promise<PortfolioRespo
 
 export async function getPortfolioChainMatrix(): Promise<PortfolioChainMatrixResponse> {
   const raw = await fetchAPI<any>("/api/v1/portfolio/chains");
-  const payload = raw?.data ?? raw;
+  const payload = unwrapEnvelope<Record<string, unknown>>(raw, {});
+  const chains = payload.chains;
 
   return {
-    chains: payload?.chains ?? {},
+    chains: chains && typeof chains === "object" ? (chains as PortfolioChainMatrixResponse["chains"]) : {},
     capabilities: Array.isArray(payload?.capabilities) ? payload.capabilities : [],
   };
 }
@@ -1048,16 +1170,16 @@ export async function getWhaleActivity(params?: {
   if (params?.forceRefresh) searchParams.set("force_refresh", "1");
 
   const query = searchParams.toString();
-  return fetchAPI<WhaleActivityResponse>(`/api/v1/whales${query ? `?${query}` : ""}`);
+  const raw = await fetchAPI<any>(`/api/v1/whales${query ? `?${query}` : ""}`);
+  return normalizeWhaleActivityResponse(raw);
 }
 
 export async function getWhaleActivityForToken(
   tokenAddress: string,
   limit = 50
 ): Promise<WhaleActivityResponse> {
-  return fetchAPI<WhaleActivityResponse>(
-    `/api/v1/whales/token/${tokenAddress}?limit=${limit}`
-  );
+  const raw = await fetchAPI<any>(`/api/v1/whales/token/${tokenAddress}?limit=${limit}`);
+  return normalizeWhaleActivityResponse(raw);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1065,37 +1187,55 @@ export async function getWhaleActivityForToken(
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function getSmartMoneyOverview(options?: RequestInit): Promise<SmartMoneyOverviewResponse> {
-  return fetchAPI<SmartMoneyOverviewResponse>("/api/v1/smart-money/overview", options);
+  const raw = await fetchAPI<any>("/api/v1/smart-money/overview", options);
+  return normalizeSmartMoneyOverviewResponse(raw);
 }
 
 export async function getAlerts(severity?: string): Promise<AlertRecordResponse[]> {
   const params = new URLSearchParams();
   if (severity) params.set("severity", severity);
-  return fetchAPI<AlertRecordResponse[]>(`/api/v1/alerts${params.toString() ? `?${params.toString()}` : ""}`);
+  const raw = await fetchAPI<any>(`/api/v1/alerts${params.toString() ? `?${params.toString()}` : ""}`);
+  const payload = unwrapEnvelope<unknown>(raw);
+  return Array.isArray(payload) ? (payload as AlertRecordResponse[]) : [];
 }
 
 export async function getAlertRules(): Promise<AlertRuleResponse[]> {
-  return fetchAPI<AlertRuleResponse[]>("/api/v1/alerts/rules");
+  const raw = await fetchAPI<any>("/api/v1/alerts/rules");
+  const payload = unwrapEnvelope<unknown>(raw);
+  return Array.isArray(payload) ? (payload as AlertRuleResponse[]) : [];
+}
+
+export async function updateAlertRecord(
+  alertId: string,
+  payload: { action: "seen" | "acknowledge" | "snooze" | "unsnooze" | "resolve"; snoozed_until?: string }
+): Promise<AlertRecordResponse> {
+  const raw = await fetchAPI<any>(`/api/v1/alerts/${alertId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  return unwrapEnvelope<AlertRecordResponse>(raw) as AlertRecordResponse;
 }
 
 export async function createAlertRule(payload: {
   name: string;
   severity: string[];
 }): Promise<AlertRuleResponse> {
-  return fetchAPI<AlertRuleResponse>("/api/v1/alerts/rules", {
+  const raw = await fetchAPI<any>("/api/v1/alerts/rules", {
     method: "POST",
     body: JSON.stringify(payload),
   });
+  return unwrapEnvelope<AlertRuleResponse>(raw) as AlertRuleResponse;
 }
 
 export async function updateAlertRule(
   ruleId: string,
   payload: { name?: string; severity?: string[] }
 ): Promise<AlertRuleResponse> {
-  return fetchAPI<AlertRuleResponse>(`/api/v1/alerts/rules/${ruleId}`, {
+  const raw = await fetchAPI<any>(`/api/v1/alerts/rules/${ruleId}`, {
     method: "PUT",
     body: JSON.stringify(payload),
   });
+  return unwrapEnvelope<AlertRuleResponse>(raw) as AlertRuleResponse;
 }
 
 export async function deleteAlertRule(ruleId: string): Promise<void> {
@@ -1144,7 +1284,8 @@ export async function getMe(): Promise<UserProfileResponse> {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function getDashboardStats(): Promise<DashboardStatsResponse> {
-  return fetchAPI<DashboardStatsResponse>("/api/v1/stats");
+  const raw = await fetchAPI<any>("/api/v1/stats");
+  return unwrapEnvelope<DashboardStatsResponse>(raw) as DashboardStatsResponse;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1334,10 +1475,11 @@ export async function getDefiOpportunity(
 export async function createOpportunityAnalysis(
   payload: import("../types").DefiDiscoverRequest
 ): Promise<import("../types").DefiDiscoverResponse> {
-  return fetchAPI<import("../types").DefiDiscoverResponse>("/api/v1/defi/discover", {
+  const raw = await fetchAPI<any>("/api/v1/defi/discover", {
     method: "POST",
     body: JSON.stringify(payload),
   });
+  return unwrapEnvelope<import("../types").DefiDiscoverResponse>(raw) as import("../types").DefiDiscoverResponse;
 }
 
 export async function getDefiProtocolProfile(
@@ -1528,7 +1670,7 @@ export async function getRektIncidents(params?: {
   if (params?.limit != null) p.set("limit", params.limit.toString());
   const query = p.toString();
   const raw = await fetchAPI<any>(`/api/v1/intel/rekt${query ? `?${query}` : ""}`);
-  const payload = raw?.data ?? raw;
+  const payload = unwrapEnvelope<Record<string, unknown>>(raw, {});
   const incidents = Array.isArray(payload?.incidents) ? payload.incidents : [];
   const meta = raw?.meta ?? {};
 
@@ -1545,7 +1687,7 @@ export async function getRektIncidents(params?: {
 
 export async function getRektIncident(id: string): Promise<RektIncident | null> {
   const raw = await fetchAPI<any>(`/api/v1/intel/rekt/${id}`);
-  const payload = raw?.data ?? raw;
+  const payload = unwrapEnvelope<unknown>(raw);
   if (!payload || typeof payload !== "object") {
     return null;
   }

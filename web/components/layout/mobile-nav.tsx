@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { navGroups } from "@/components/layout/nav-config";
 import { Menu, X } from "lucide-react";
 import Link from "next/link";
@@ -10,31 +10,69 @@ import { cn } from "@/lib/utils";
 export function MobileNav() {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
+  const [locationHash, setLocationHash] = useState("");
+  const coreDomains = ["Discover", "Smart Money", "Protect", "Portfolio"];
+
+  useEffect(() => {
+    const syncHash = () => {
+      setLocationHash(window.location.hash || "");
+    };
+
+    syncHash();
+    window.addEventListener("hashchange", syncHash);
+    return () => window.removeEventListener("hashchange", syncHash);
+  }, [pathname]);
+
+  const isItemActive = (itemHref: string, groupItems: { href: string }[]): boolean => {
+    const itemBaseHref = itemHref.split("#")[0] || "/";
+    const itemHash = itemHref.includes("#") ? `#${itemHref.split("#")[1]}` : "";
+
+    const hashLinkIsActive = itemHash !== "" && pathname === itemBaseHref && locationHash === itemHash;
+
+    const siblingHashIsActive = groupItems.some((candidate) => {
+      const candidateBaseHref = candidate.href.split("#")[0] || "/";
+      const candidateHash = candidate.href.includes("#") ? `#${candidate.href.split("#")[1]}` : "";
+      return candidateHash !== "" && candidateBaseHref === itemBaseHref && locationHash === candidateHash;
+    });
+
+    const baseLinkIsActive =
+      itemHash === "" &&
+      (pathname === itemBaseHref || (itemBaseHref !== "/" && pathname?.startsWith(itemBaseHref))) &&
+      !siblingHashIsActive;
+
+    return hashLinkIsActive || baseLinkIsActive;
+  };
+
+  const coreItems = coreDomains
+    .map((label) => navGroups.find((group) => group.label === label))
+    .filter((group): group is (typeof navGroups)[number] => Boolean(group))
+    .map((group) => ({
+      label: group.label,
+      item: group.items[0],
+      isActive: group.items.some((item) => isItemActive(item.href, group.items)),
+    }));
 
   return (
     <>
       <nav
         aria-label="Primary mobile"
-        className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between border-t border-border/50 bg-background/95 px-6 py-3 backdrop-blur md:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-1 border-t border-border/50 bg-background/95 px-2 py-3 backdrop-blur md:hidden"
       >
-        {/* Render bottom bar with main items - 1 from each group ideally, or just a menu button */}
-        {navGroups.slice(0, 4).map((group) => {
-          const firstItem = group.items[0];
-          const Icon = firstItem.icon;
-          const isActive = pathname === firstItem.href;
+        {coreItems.map(({ label, item, isActive }) => {
+          const Icon = item.icon;
           return (
             <Link
-              key={firstItem.href}
-              href={firstItem.href}
-              aria-label={group.label}
+              key={item.href}
+              href={item.href}
+              aria-label={label}
               className={cn(
-                "flex flex-col items-center gap-1 rounded-md p-1 transition-colors",
+                "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-md p-1 transition-colors",
                 isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
               )}
               onClick={() => setIsOpen(false)}
             >
               <Icon className="h-5 w-5" />
-              <span className="text-[10px] font-medium">{group.label}</span>
+              <span className="truncate text-[9px] font-medium leading-none">{label}</span>
             </Link>
           );
         })}
@@ -62,7 +100,7 @@ export function MobileNav() {
                 </h4>
                 <div className="flex flex-col gap-1">
                   {group.items.map((item) => {
-                    const isActive = pathname === item.href;
+                    const isActive = isItemActive(item.href, group.items);
                     const Icon = item.icon;
                     return (
                       <Link

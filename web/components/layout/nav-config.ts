@@ -9,7 +9,6 @@ import {
   Bell,
   Settings,
   PieChart,
-  Search,
   Droplets,
   Zap,
   Briefcase,
@@ -32,15 +31,9 @@ export const navGroups: NavGroup[] = [
     label: "Discover",
     items: [
       { label: "Overview", href: "/", icon: Compass },
+      { label: "Dashboard", href: "/dashboard", icon: LineChart },
       { label: "Trending", href: "/trending", icon: Flame },
       { label: "DeFi", href: "/defi", icon: Activity },
-    ],
-  },
-  {
-    label: "Analyze",
-    items: [
-      { label: "Dashboard", href: "/dashboard", icon: LineChart },
-      { label: "Token Search", href: "/token/search", icon: Search },
     ],
   },
   {
@@ -49,26 +42,29 @@ export const navGroups: NavGroup[] = [
       { label: "Hub", href: "/smart-money", icon: Radar },
       { label: "Whales", href: "/whales", icon: Droplets },
       { label: "Flows", href: "/flows", icon: Zap },
+      { label: "Wallet", href: "/wallet", icon: Wallet },
+      { label: "Entity", href: "/entity", icon: Briefcase },
     ],
   },
   {
     label: "Protect",
     items: [
       { label: "Shield", href: "/shield", icon: Shield },
+      { label: "Audits", href: "/audits", icon: Briefcase },
+      { label: "Rekt", href: "/rekt", icon: Flame },
       { label: "Alerts", href: "/alerts", icon: Bell },
     ],
   },
   {
     label: "Portfolio",
     items: [
-      { label: "Overview", href: "/portfolio", icon: PieChart },
-      { label: "Wallet", href: "/wallet", icon: Wallet },
+      { label: "Portfolio", href: "/portfolio", icon: PieChart },
     ],
   },
   {
     label: "Settings",
     items: [
-      { label: "Preferences", href: "/settings", icon: Settings },
+      { label: "Settings", href: "/settings", icon: Settings },
     ],
   },
 ];
