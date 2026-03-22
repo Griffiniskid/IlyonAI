@@ -106,6 +106,12 @@ class SolanaClient:
             await self._client.close()
             self._client = None
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close()
+
     async def _get_holders_via_helius(self, address: str, limit: int = 20) -> List[Dict]:
         """
         Fetch token holders using Helius API (more reliable than standard RPC).
@@ -1257,6 +1263,17 @@ class SolanaClient:
         
         logger.info(f"✅ Generated {len(transactions)} whale transactions from volume data")
         return transactions
+
+    async def get_whale_transactions(
+        self,
+        min_amount_usd: float = 5000,
+        limit: int = 50,
+    ) -> List[Dict]:
+        """Get global whale transactions using trending token volume data."""
+        return await self._get_whale_transactions_from_trending(
+            min_amount_usd=min_amount_usd,
+            limit=limit,
+        )
 
     async def get_token_whale_transactions(
         self,
