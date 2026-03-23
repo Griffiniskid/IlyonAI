@@ -183,41 +183,45 @@ function formatRelativeTime(timestamp: string): string {
 function SmartMoneyAlert({
   type,
   wallet,
+  walletAddress,
   token,
   amount,
   timestamp,
 }: {
   type: "buy" | "sell";
   wallet: string;
+  walletAddress: string;
   token: string;
   amount: number;
   timestamp: string;
 }) {
   return (
-    <div className="flex items-center gap-4 p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors">
-      <div
-        className={cn(
-          "w-10 h-10 rounded-full flex items-center justify-center",
-          type === "buy" ? "bg-emerald-500/20" : "bg-red-500/20"
-        )}
-      >
-        {type === "buy" ? (
-          <ArrowUpRight className="w-5 h-5 text-emerald-400" />
-        ) : (
-          <ArrowDownRight className="w-5 h-5 text-red-400" />
-        )}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-semibold">{wallet}</span>
-          <span className="text-muted-foreground">{type === "buy" ? "bought" : "sold"}</span>
-          <span className="text-emerald-400">{token}</span>
+    <Link href={`/wallet/${walletAddress}`} className="block">
+      <div className="flex items-center gap-4 p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors cursor-pointer">
+        <div
+          className={cn(
+            "w-10 h-10 rounded-full flex items-center justify-center",
+            type === "buy" ? "bg-emerald-500/20" : "bg-red-500/20"
+          )}
+        >
+          {type === "buy" ? (
+            <ArrowUpRight className="w-5 h-5 text-emerald-400" />
+          ) : (
+            <ArrowDownRight className="w-5 h-5 text-red-400" />
+          )}
         </div>
-        <div className="text-sm text-muted-foreground">
-          {formatUSD(amount)} · {formatRelativeTime(timestamp)}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold">{wallet}</span>
+            <span className="text-muted-foreground">{type === "buy" ? "bought" : "sold"}</span>
+            <span className="text-emerald-400">{token}</span>
+          </div>
+          <div className="text-sm text-muted-foreground">
+            {formatUSD(amount)} · {formatRelativeTime(timestamp)}
+          </div>
         </div>
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -270,7 +274,7 @@ export default function DashboardPage() {
   const totalMarketItems = marketDistributionData.reduce((sum: number, item: { value: number }) => sum + item.value, 0);
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div id="market-overviews" className="container mx-auto px-4 py-8">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
@@ -571,6 +575,7 @@ export default function DashboardPage() {
               key={tx.signature || i}
               type={tx.type as "buy" | "sell"}
               wallet={tx.wallet_label || `${tx.wallet_address.slice(0, 4)}...${tx.wallet_address.slice(-4)}`}
+              walletAddress={tx.wallet_address}
               token={tx.token_symbol}
               amount={tx.amount_usd}
               timestamp={tx.timestamp}
@@ -584,6 +589,11 @@ export default function DashboardPage() {
           )}
         </div>
       </GlassCard>
+
+      {/* Last updated */}
+      <p className="text-xs text-muted-foreground text-center mt-8">
+        Last updated: {new Date().toLocaleTimeString()}
+      </p>
     </div>
   );
 }
