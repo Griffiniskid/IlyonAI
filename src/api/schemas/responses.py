@@ -383,8 +383,23 @@ class WhaleProfileResponse(BaseModel):
 
 
 class SmartMoneyOverviewResponse(BaseModel):
+    """Smart money overview response with flow metrics and participant data."""
+    net_flow_usd: float = 0
+    inflow_usd: float = 0
+    outflow_usd: float = 0
+    top_buyers: List[Dict[str, Any]] = Field(default_factory=list)
+    top_sellers: List[Dict[str, Any]] = Field(default_factory=list)
     entities: List[Dict[str, Any]] = Field(default_factory=list)
     flows: List[Dict[str, Any]] = Field(default_factory=list)
+    flow_direction: str = "neutral"
+    sell_volume_percent: float = 0
+    recent_transactions: List[Dict[str, Any]] = Field(default_factory=list)
+    updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
 
 # ═══════════════════════════════════════════════════════════════════════════
