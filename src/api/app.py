@@ -28,6 +28,7 @@ from src.api.routes.defi import setup_defi_routes
 from src.api.routes.intel import setup_intel_routes
 from src.api.routes.opportunities import setup_opportunity_routes
 from src.api.routes.smart_money import setup_smart_money_routes
+from src.api.routes.wallet_intel import setup_wallet_intel_routes
 from src.api.routes.entity import setup_entity_routes
 from src.api.routes.stream import setup_stream_routes
 from src.api.routes.alerts import setup_alert_routes
@@ -194,6 +195,7 @@ def create_api_app() -> web.Application:
     setup_intel_routes(app)
     setup_opportunity_routes(app)
     setup_smart_money_routes(app)
+    setup_wallet_intel_routes(app)
     setup_entity_routes(app)
     setup_stream_routes(app)
     setup_alert_routes(app)
@@ -261,6 +263,7 @@ def setup_api_routes(app: web.Application):
     setup_intel_routes(app)
     setup_opportunity_routes(app)
     setup_smart_money_routes(app)
+    setup_wallet_intel_routes(app)
     setup_entity_routes(app)
     setup_stream_routes(app)
     setup_alert_routes(app)
