@@ -323,15 +323,72 @@ export interface SmartMoneyParticipant {
   wallet_address: string;
   label: string | null;
   amount_usd: number;
+  tx_count: number;
+  last_seen: string;
+  token_symbol: string;
+  dex_name: string;
+}
+
+export interface SmartMoneyEntity {
+  wallet_address: string;
+  label: string | null;
+  side: string;
+  amount_usd: number;
+}
+
+export interface SmartMoneyFlow {
+  direction: string;
+  wallet_address: string;
+  wallet_label: string | null;
+  token_symbol: string;
+  token_name: string;
+  token_address: string;
+  amount_tokens: number;
+  amount_usd: number;
+  dex_name: string;
+  signature: string;
+  timestamp: string;
+  chain: string;
 }
 
 export interface SmartMoneyOverviewResponse {
   net_flow_usd: number;
   inflow_usd: number;
   outflow_usd: number;
+  flow_direction: string;
+  sell_volume_percent: number;
   top_buyers: SmartMoneyParticipant[];
   top_sellers: SmartMoneyParticipant[];
+  recent_transactions: SmartMoneyFlow[];
+  entities?: SmartMoneyEntity[];
+  flows?: SmartMoneyFlow[];
   updated_at: string;
+}
+
+export interface WalletProfileResponse {
+  wallet: string;
+  label: string | null;
+  volume_usd: number;
+  transaction_count: number;
+  entity_id: string | null;
+  linked_wallets: string[];
+  link_reason: string | null;
+  recent_transactions: SmartMoneyFlow[];
+}
+
+export interface WalletForensicsResponse {
+  wallet: string;
+  risk_level: string;
+  reputation_score: number;
+  tokens_deployed: number;
+  rugged_tokens: number;
+  active_tokens: number;
+  rug_percentage: number;
+  patterns_detected: string[];
+  pattern_severity: string;
+  funding_risk: number;
+  confidence: number;
+  evidence_summary: string;
 }
 
 export type AlertSeverity = "low" | "medium" | "high" | "critical";
@@ -346,6 +403,8 @@ export interface AlertRecordResponse {
   rule_id?: string | null;
   subject_id?: string | null;
   kind?: string | null;
+  snoozed_until?: string | null;
+  resolved_at?: string | null;
 }
 
 export interface AlertRuleResponse {
@@ -392,12 +451,23 @@ export interface ErrorResponse {
 
 export interface ApiResponseMeta {
   trace_id?: string | null;
-  freshness: Record<string, unknown>;
+  freshness?: Record<string, unknown> | string | null;
+}
+
+export interface ApiEnvelopeError {
+  code?: string;
+  message?: string;
+  details?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 export interface ApiResponseEnvelope<T = Record<string, unknown>> {
+  status?: string;
   data: T;
-  meta: ApiResponseMeta;
+  meta?: ApiResponseMeta | Record<string, unknown> | null;
+  errors?: ApiEnvelopeError[];
+  trace_id?: string | null;
+  freshness?: Record<string, unknown> | string | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -953,7 +1023,7 @@ export interface RektIncident {
   chains: string[];
   attack_type: string;
   description: string;
-  post_mortem_url: string;
+  post_mortem_url: string | null;
   funds_recovered: boolean;
   severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 }

@@ -42,6 +42,8 @@ import type {
   PoolAnalysisResponse,
   SearchResponse,
   SmartMoneyOverviewResponse,
+  WalletProfileResponse,
+  WalletForensicsResponse,
   AlertRecordResponse,
   AlertRuleResponse,
 } from "@/types";
@@ -409,7 +411,17 @@ function normalizeSmartMoneyEntity(raw: any): NonNullable<SmartMoneyOverviewResp
 function normalizeSmartMoneyFlow(raw: any): NonNullable<SmartMoneyOverviewResponse["flows"]>[number] {
   return {
     direction: normalizeText(raw?.direction),
+    wallet_address: normalizeText(raw?.wallet_address),
+    wallet_label: raw?.wallet_label != null ? normalizeText(raw.wallet_label) : null,
+    token_symbol: normalizeText(raw?.token_symbol),
+    token_name: normalizeText(raw?.token_name),
+    token_address: normalizeText(raw?.token_address),
+    amount_tokens: toFiniteNumber(raw?.amount_tokens) ?? 0,
     amount_usd: toFiniteNumber(raw?.amount_usd) ?? 0,
+    dex_name: normalizeText(raw?.dex_name),
+    signature: normalizeText(raw?.signature),
+    timestamp: normalizeText(raw?.timestamp),
+    chain: normalizeText(raw?.chain),
   };
 }
 
@@ -418,6 +430,10 @@ function normalizeSmartMoneyParticipant(raw: any): SmartMoneyOverviewResponse["t
     wallet_address: normalizeText(raw.wallet_address),
     label: raw.label != null ? normalizeText(raw.label) : null,
     amount_usd: Number(raw.amount_usd ?? 0),
+    tx_count: Number(raw.tx_count ?? 0),
+    last_seen: normalizeText(raw.last_seen),
+    token_symbol: normalizeText(raw.token_symbol),
+    dex_name: normalizeText(raw.dex_name),
   };
 }
 
@@ -450,12 +466,19 @@ function normalizeSmartMoneyOverviewResponse(raw: any): SmartMoneyOverviewRespon
 
   const netFlow = toFiniteNumber(payload.net_flow_usd) ?? (inflow - outflow);
 
+  const recentTransactions = Array.isArray(payload.recent_transactions)
+    ? payload.recent_transactions.map(normalizeSmartMoneyFlow)
+    : [];
+
   return {
     net_flow_usd: netFlow,
     inflow_usd: inflow,
     outflow_usd: outflow,
+    flow_direction: normalizeText(payload.flow_direction, "neutral"),
+    sell_volume_percent: toFiniteNumber(payload.sell_volume_percent) ?? 0,
     top_buyers: topBuyers,
     top_sellers: topSellers,
+    recent_transactions: recentTransactions,
     entities,
     flows,
     updated_at: normalizeText(payload.updated_at, new Date().toISOString()),
@@ -1189,6 +1212,40 @@ export async function getWhaleActivityForToken(
 export async function getSmartMoneyOverview(options?: RequestInit): Promise<SmartMoneyOverviewResponse> {
   const raw = await fetchAPI<any>("/api/v1/smart-money/overview", options);
   return normalizeSmartMoneyOverviewResponse(raw);
+}
+
+export async function getWalletProfile(address: string): Promise<WalletProfileResponse> {
+  const raw = await fetchAPI<any>(`/api/v1/wallets/${address}/profile`);
+  const data = unwrapEnvelope<any>(raw, {});
+  return {
+    wallet: data.wallet ?? address,
+    label: data.label ?? null,
+    volume_usd: Number(data.volume_usd ?? 0),
+    transaction_count: Number(data.transaction_count ?? 0),
+    entity_id: data.entity_id ?? null,
+    linked_wallets: Array.isArray(data.linked_wallets) ? data.linked_wallets : [],
+    link_reason: data.link_reason ?? null,
+    recent_transactions: Array.isArray(data.recent_transactions) ? data.recent_transactions : [],
+  };
+}
+
+export async function getWalletForensics(address: string): Promise<WalletForensicsResponse> {
+  const raw = await fetchAPI<any>(`/api/v1/wallets/${address}/forensics`);
+  const data = unwrapEnvelope<any>(raw, {});
+  return {
+    wallet: data.wallet ?? address,
+    risk_level: data.risk_level ?? "UNKNOWN",
+    reputation_score: Number(data.reputation_score ?? 0),
+    tokens_deployed: Number(data.tokens_deployed ?? 0),
+    rugged_tokens: Number(data.rugged_tokens ?? 0),
+    active_tokens: Number(data.active_tokens ?? 0),
+    rug_percentage: Number(data.rug_percentage ?? 0),
+    patterns_detected: Array.isArray(data.patterns_detected) ? data.patterns_detected : [],
+    pattern_severity: data.pattern_severity ?? "NONE",
+    funding_risk: Number(data.funding_risk ?? 0),
+    confidence: Number(data.confidence ?? 0),
+    evidence_summary: data.evidence_summary ?? "",
+  };
 }
 
 export async function getAlerts(severity?: string): Promise<AlertRecordResponse[]> {

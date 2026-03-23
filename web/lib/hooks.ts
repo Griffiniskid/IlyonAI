@@ -207,11 +207,55 @@ export function useSmartMoneyOverview() {
   });
 }
 
+export function useWalletProfile(address: string | null) {
+  return useQuery({
+    queryKey: ["wallet-profile", address],
+    queryFn: () => api.getWalletProfile(address!),
+    enabled: !!address,
+    staleTime: 60_000,
+  });
+}
+
+export function useWalletForensics(address: string | null) {
+  return useQuery({
+    queryKey: ["wallet-forensics", address],
+    queryFn: () => api.getWalletForensics(address!),
+    enabled: !!address,
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useAlerts(severity?: string) {
   return useQuery<AlertRecordResponse[]>({
     queryKey: ["alerts", severity ?? "all"],
     queryFn: () => api.getAlerts(severity),
     staleTime: 30 * 1000,
+  });
+}
+
+export function useAlertRules() {
+  return useQuery({
+    queryKey: ["alertRules"],
+    queryFn: api.getAlertRules,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useUpdateAlert() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      alertId,
+      action,
+      snoozed_until,
+    }: {
+      alertId: string;
+      action: "seen" | "acknowledge" | "snooze" | "unsnooze" | "resolve";
+      snoozed_until?: string;
+    }) => api.updateAlertRecord(alertId, { action, snoozed_until }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["alerts"] });
+    },
   });
 }
 
