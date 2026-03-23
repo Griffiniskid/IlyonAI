@@ -427,21 +427,66 @@ async def get_whale_profile(request: web.Request) -> web.Response:
         )
 
     try:
-        # Get label if known
         label = KNOWN_WHALES.get(wallet_address)
 
-        # In production, would fetch from Helius/indexer
-        # For now, return basic profile
+        # Fetch real whale transactions and filter to this wallet
+        solana = SolanaClient(
+            rpc_url=settings.solana_rpc_url,
+            helius_api_key=settings.helius_api_key,
+        )
+        try:
+            all_txs = await solana.get_recent_large_transactions(
+                min_amount_usd=1000, limit=200
+            )
+        finally:
+            await solana.close()
+
+        wallet_txs = [
+            tx for tx in all_txs
+            if tx.get("wallet_address") == wallet_address
+        ]
+
+        total_volume = sum(float(tx.get("amount_usd", 0)) for tx in wallet_txs)
+        tokens_traded = len({tx.get("token_address") for tx in wallet_txs if tx.get("token_address")})
+
+        recent = []
+        for tx in wallet_txs[:20]:
+            ts = tx.get("timestamp")
+            if isinstance(ts, str):
+                try:
+                    timestamp = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                except Exception:
+                    timestamp = datetime.utcnow()
+            elif isinstance(ts, datetime):
+                timestamp = ts
+            else:
+                timestamp = datetime.utcnow()
+
+            recent.append(WhaleTransactionResponse(
+                signature=tx.get("signature", ""),
+                wallet_address=tx.get("wallet_address", ""),
+                wallet_label=tx.get("wallet_label") or label,
+                token_address=tx.get("token_address", ""),
+                token_symbol=tx.get("token_symbol", "???"),
+                token_name=tx.get("token_name", "Unknown"),
+                type=tx.get("type", "buy"),
+                amount_tokens=float(tx.get("amount_tokens", 0)),
+                amount_usd=float(tx.get("amount_usd", 0)),
+                price_usd=float(tx.get("price_usd", 0)),
+                timestamp=timestamp,
+                dex_name=tx.get("dex_name", "Unknown"),
+            ))
+
         profile = WhaleProfileResponse(
             address=wallet_address,
             label=label,
-            total_volume_usd=0,
-            transaction_count=0,
-            tokens_traded=0,
+            total_volume_usd=total_volume,
+            transaction_count=len(wallet_txs),
+            tokens_traded=tokens_traded,
             win_rate=None,
             avg_holding_time=None,
-            recent_transactions=[]
-        ).model_dump(mode='json')
+            recent_transactions=recent,
+        ).model_dump(mode="json")
 
         return web.json_response(profile)
 

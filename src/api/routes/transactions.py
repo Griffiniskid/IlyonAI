@@ -11,7 +11,10 @@ from typing import Dict, List, Optional
 import csv
 import io
 
+import aiohttp as _aiohttp
+
 from src.api.response_envelope import envelope_error_response, envelope_response
+from src.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -58,16 +61,43 @@ async def get_transactions(request: web.Request) -> web.Response:
             http_status=400,
         )
         
-    # Placeholder for transaction fetching logic
-    # Real implementation would call Moralis or Helius depending on chain
-    transactions = []
-    
+    transactions: List[Dict] = []
+
+    if chain in ("all", "solana") and settings.helius_api_key:
+        try:
+            url = (
+                f"https://api.helius.xyz/v0/addresses/{wallet_address}/transactions"
+                f"?api-key={settings.helius_api_key}&limit={min(limit, 100)}"
+            )
+            async with _aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status == 200:
+                        raw = await resp.json()
+                        for tx in (raw if isinstance(raw, list) else []):
+                            sig = tx.get("signature", "")
+                            ts = tx.get("timestamp", 0)
+                            tx_type = tx.get("type", "UNKNOWN")
+                            desc = tx.get("description", "")
+                            fee = tx.get("fee", 0)
+
+                            transactions.append({
+                                "hash": sig,
+                                "chain": "solana",
+                                "type": tx_type,
+                                "description": desc,
+                                "fee_lamports": fee,
+                                "timestamp": ts,
+                                "status": "confirmed",
+                            })
+        except Exception as exc:
+            logger.warning("Failed to fetch transactions from Helius: %s", exc)
+
     return envelope_response({
         "wallet": wallet_address,
         "chain": chain,
         "limit": limit,
-        "transactions": transactions,
-        "total": len(transactions)
+        "transactions": transactions[:limit],
+        "total": len(transactions),
     })
 
 async def export_transactions_csv(request: web.Request) -> web.Response:
@@ -85,8 +115,30 @@ async def export_transactions_csv(request: web.Request) -> web.Response:
             http_status=400,
         )
         
-    # Fetch transactions (placeholder)
-    transactions = []
+    transactions: List[Dict] = []
+    if settings.helius_api_key:
+        try:
+            url = (
+                f"https://api.helius.xyz/v0/addresses/{wallet_address}/transactions"
+                f"?api-key={settings.helius_api_key}&limit=100"
+            )
+            async with _aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status == 200:
+                        raw = await resp.json()
+                        for tx in (raw if isinstance(raw, list) else []):
+                            transactions.append({
+                                "date": tx.get("timestamp", ""),
+                                "chain": "solana",
+                                "type": tx.get("type", "UNKNOWN"),
+                                "hash": tx.get("signature", ""),
+                                "status": "confirmed",
+                                "amount": "",
+                                "symbol": "",
+                                "usd_value": "",
+                            })
+        except Exception as exc:
+            logger.warning("Failed to fetch transactions for CSV export: %s", exc)
     
     # Generate CSV
     output = io.StringIO()

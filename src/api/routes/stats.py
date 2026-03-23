@@ -238,29 +238,16 @@ async def get_dashboard_stats(request: web.Request) -> web.Response:
         # Generate hourly volume chart from DefiLlama data
         volume_chart_data = defillama_data.get("hourly_data", [])
         
-        # If no hourly data, generate estimated hourly breakdown
+        # If no hourly data from DefiLlama, return a flat average breakdown
+        # rather than fabricating random variation
         if not volume_chart_data and total_volume > 0:
             now = datetime.utcnow()
-            # Generate 24 hourly data points with realistic variation
-            import random
-            random.seed(int(now.timestamp()) // 3600)  # Consistent within the hour
-            base_hourly = total_volume / 24
-            
+            avg_hourly = total_volume / 24
             for i in range(24):
-                hour = (now - timedelta(hours=23-i)).strftime("%H:00")
-                # Add realistic variation (busier during certain hours)
-                hour_int = int(hour.split(":")[0])
-                # Higher volume during 14:00-22:00 UTC (US trading hours)
-                if 14 <= hour_int <= 22:
-                    multiplier = 1.2 + random.uniform(-0.1, 0.2)
-                elif 6 <= hour_int <= 14:
-                    multiplier = 1.0 + random.uniform(-0.1, 0.1)
-                else:
-                    multiplier = 0.7 + random.uniform(-0.1, 0.1)
-                
+                hour = (now - timedelta(hours=23 - i)).strftime("%H:00")
                 volume_chart_data.append({
                     "time": hour,
-                    "volume": base_hourly * multiplier
+                    "volume": avg_hourly,
                 })
         
         # Convert to VolumeDataPoint objects

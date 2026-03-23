@@ -1193,84 +1193,13 @@ class SolanaClient:
             return None
 
 
-    async def _get_whale_transactions_from_trending(
-        self,
-        min_amount_usd: float,
-        limit: int
-    ) -> List[Dict]:
-        """
-        Generate whale transaction data from trending token volume.
-        
-        This is a fallback when direct transaction API is not available.
-        Uses real volume data from trending tokens to represent whale activity.
-
-        Args:
-            min_amount_usd: Minimum transaction value
-            limit: Maximum transactions
-
-        Returns:
-            List of whale transaction dicts derived from volume data
-        """
-        from src.data.dexscreener import DexScreenerClient
-        from datetime import datetime, timedelta
-        import random
-        
-        transactions = []
-        
-        try:
-            async with DexScreenerClient() as client:
-                trending = await client.get_trending_tokens(limit=30)
-                
-                for t in trending:
-                    base = t.get('baseToken', {})
-                    volume = t.get('volume', {})
-                    price_change = t.get('priceChange', {}).get('h24', 0)
-                    
-                    vol_1h = float(volume.get('h1', 0) or 0)
-                    vol_24h = float(volume.get('h24', 0) or 0)
-                    price = float(t.get('priceUsd', 0) or 0)
-                    
-                    # Estimate large trades from 1h volume
-                    # Assume a portion of volume comes from whale trades
-                    if vol_1h > min_amount_usd:
-                        # Determine buy/sell based on price direction
-                        tx_type = 'buy' if float(price_change or 0) > 0 else 'sell'
-                        
-                        # Estimate whale trade size (portion of hourly volume)
-                        whale_amount = min(vol_1h * 0.3, vol_24h * 0.05)  # Conservative estimate
-                        
-                        if whale_amount >= min_amount_usd:
-                            transactions.append({
-                                'signature': f"vol_{base.get('address', '')[:16]}_{len(transactions)}",
-                                'wallet_address': f"whale_{base.get('symbol', 'UNK')[:4]}",
-                                'wallet_label': 'Smart Money',
-                                'token_address': base.get('address', ''),
-                                'token_symbol': base.get('symbol', '???'),
-                                'token_name': base.get('name', 'Unknown'),
-                                'type': tx_type,
-                                'amount_tokens': whale_amount / price if price > 0 else 0,
-                                'amount_usd': whale_amount,
-                                'price_usd': price,
-                                'timestamp': (datetime.utcnow() - timedelta(minutes=random.randint(5, 55))).isoformat(),
-                                'dex_name': t.get('dexId', 'raydium').title()
-                            })
-                            
-                            if len(transactions) >= limit:
-                                break
-                
-        except Exception as e:
-            logger.error(f"Error generating whale transactions from trending: {e}")
-        
-        logger.info(f"✅ Generated {len(transactions)} whale transactions from volume data")
-        return transactions
-
     async def get_whale_transactions(
         self,
         min_amount_usd: float = 5000,
         limit: int = 50,
     ) -> List[Dict]:
-        """Get global whale transactions using trending token volume data."""
-        return await self._get_whale_transactions_from_trending(
+        """Get global whale transactions using real Helius on-chain data."""
+        return await self.get_recent_large_transactions(
             min_amount_usd=min_amount_usd,
             limit=limit,
         )
@@ -1399,15 +1328,7 @@ class SolanaClient:
             token_symbol=token_symbol,
             token_name=token_name,
         )
-        if transactions:
-            return await self._annotate_behavior_transactions(token_address, transactions)
-
-        fallback = await self._get_whale_transactions_from_trending(
-            min_amount_usd=min_amount_usd,
-            limit=limit,
-        )
-        token_transactions = [tx for tx in fallback if tx.get("token_address") == token_address][:limit]
-        return await self._annotate_behavior_transactions(token_address, token_transactions)
+        return await self._annotate_behavior_transactions(token_address, transactions)
 
     async def _annotate_behavior_transactions(self, token_address: str, transactions: List[Dict]) -> List[Dict]:
         if not transactions:
