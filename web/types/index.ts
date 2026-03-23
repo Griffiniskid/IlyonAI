@@ -1053,6 +1053,7 @@ export interface AuditRecord {
   };
   verdict: "PASS" | "FAIL";
   chains: string[];
+  findings_source?: "verified" | "estimated";
 }
 
 export interface IntelStatsResponse {

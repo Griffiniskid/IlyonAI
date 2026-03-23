@@ -229,6 +229,11 @@ export default function AuditsPage() {
                   <div className="flex items-center gap-3 mb-1">
                     <span className="font-semibold">{audit.protocol}</span>
                     <VerdictBadge verdict={audit.verdict} />
+                    {audit.findings_source === "estimated" && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium text-muted-foreground bg-white/5 border border-white/10">
+                        Estimated
+                      </span>
+                    )}
                     <span className="text-xs text-muted-foreground">{audit.date}</span>
                   </div>
 
