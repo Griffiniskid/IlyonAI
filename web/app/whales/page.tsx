@@ -229,6 +229,9 @@ export default function WhalesPage() {
                       {formatRelativeTime(tx.timestamp)}
                       <span>•</span>
                       {tx.dex_name}
+                      <Badge variant="outline" className="text-xs">
+                        {tx.chain || "SOL"}
+                      </Badge>
                     </div>
                   </div>
                 </div>
@@ -250,19 +253,25 @@ export default function WhalesPage() {
                     </div>
                   </div>
 
-                  {/* Wallet */}
-                  <div className="text-right min-w-[80px] sm:min-w-[100px]">
-                    <div className="text-xs sm:text-sm">
-                      {tx.wallet_label || (
-                        <span className="font-mono text-muted-foreground">
-                          {truncateAddress(tx.wallet_address, 4)}
-                        </span>
-                      )}
-                    </div>
+                {/* Wallet */}
+                <div className="text-right min-w-[80px] sm:min-w-[100px]">
+                  <Link
+                    href={`/wallet/${tx.wallet_address}`}
+                    className="text-xs sm:text-sm hover:text-primary transition font-mono text-muted-foreground"
+                  >
+                    {truncateAddress(tx.wallet_address, 4)}
+                  </Link>
+                  <div className="flex items-center justify-end gap-1 mt-1">
+                    {tx.wallet_label && (
+                      <Badge variant="secondary" className="text-xs">
+                        {tx.wallet_label}
+                      </Badge>
+                    )}
                     <Badge variant="outline" className="text-xs">
                       Whale
                     </Badge>
                   </div>
+                </div>
 
                   {/* External link */}
                   <a
