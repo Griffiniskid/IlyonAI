@@ -399,8 +399,8 @@ class RektDatabase:
         """Fetch live hacks data from DefiLlama."""
         import time
         now = time.time()
-        # Cache for 1 hour
-        if self._live_cache is not None and (now - self._cache_ts) < 3600:
+        # Cache for 30 minutes
+        if self._live_cache is not None and (now - self._cache_ts) < 1800:
             return self._live_cache
 
         try:
