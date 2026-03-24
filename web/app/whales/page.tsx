@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-
+import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { useWhaleActivity } from "@/lib/hooks";
 import * as api from "@/lib/api";
