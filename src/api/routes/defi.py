@@ -600,6 +600,9 @@ async def get_opportunity_detail(request: web.Request) -> web.Response:
 
     Detailed opportunity analysis with dimensions, evidence, history, and
     optional AI explanation.
+
+    Also handles UUID-style analysis IDs from the discover flow by checking
+    the analysis store and returning status/partial results.
     """
     if _intelligence_engine is None:
         return web.json_response({"error": "DeFi analyzer not available"}, status=503)
@@ -610,6 +613,50 @@ async def get_opportunity_detail(request: web.Request) -> web.Response:
 
     include_ai = request.rel_url.query.get("include_ai", "true").lower() != "false"
     ranking_profile = (request.rel_url.query.get("ranking_profile") or request.rel_url.query.get("ranking") or "balanced").strip().lower()
+
+    # UUID-style analysis IDs from the discover flow (don't start with kind-- prefix)
+    is_analysis_id = not any(opportunity_id.startswith(p) for p in ("pool--", "yield--", "lending--"))
+    if is_analysis_id:
+        try:
+            analysis = await _intelligence_engine.get_opportunity_analysis(opportunity_id)
+        except Exception as e:
+            logger.error(f"Analysis status lookup error for {opportunity_id}: {e}")
+            return web.json_response({"error": "Failed to fetch analysis status"}, status=500)
+
+        if analysis is None:
+            return web.json_response({"error": f"Analysis '{opportunity_id}' not found"}, status=404)
+
+        provisional = analysis.get("provisional_shortlist") or []
+        status = analysis.get("status", "running")
+
+        if not provisional:
+            # Still scanning — return status so frontend keeps polling
+            return web.json_response({"analysis_id": opportunity_id, "status": status, "provisional_shortlist": []})
+
+        # Provisional results available — return first opportunity's detail
+        first = provisional[0]
+        first_opportunity_id = first.get("id") or first.get("opportunity_id")
+        if first_opportunity_id and not any(first_opportunity_id.startswith(p) for p in ("pool--", "yield--", "lending--")):
+            first_opportunity_id = None
+
+        if first_opportunity_id:
+            try:
+                detail = await _intelligence_engine.get_opportunity_profile(
+                    first_opportunity_id, include_ai=include_ai, ranking_profile=ranking_profile
+                )
+                if detail:
+                    return web.json_response(detail)
+            except Exception as e:
+                logger.warning(f"Could not load first opportunity profile {first_opportunity_id}: {e}")
+
+        # Fall back to returning provisional list as the response
+        return web.json_response({
+            "analysis_id": opportunity_id,
+            "status": status,
+            "provisional_shortlist": provisional,
+            "id": first_opportunity_id or "",
+            "title": first.get("title") or first.get("symbol") or "DeFi Opportunities",
+        })
 
     try:
         detail = await _intelligence_engine.get_opportunity_profile(opportunity_id, include_ai=include_ai, ranking_profile=ranking_profile)
@@ -931,6 +978,88 @@ async def analyze_position_v2(request: web.Request) -> web.Response:
     return web.json_response(result)
 
 
+async def create_discovery_analysis(request: web.Request) -> web.Response:
+    """POST /api/v1/defi/discover - create a new DeFi discovery analysis."""
+    import uuid
+    from datetime import datetime
+    
+    if _intelligence_engine is None:
+        return envelope_error_response(
+            "DeFi analyzer not available",
+            code="SERVICE_UNAVAILABLE",
+            http_status=503,
+        )
+    
+    try:
+        payload = await request.json()
+    except Exception:
+        return envelope_error_response(
+            "Invalid JSON body",
+            code="INVALID_REQUEST",
+            http_status=400,
+        )
+    
+    query = payload.get("query", "discover")
+    chain = payload.get("chain")
+    _ = payload.get("riskLevel", "medium")
+    
+    try:
+        status = await _intelligence_engine.start_opportunity_analysis(
+            chain=chain,
+            query=query,
+            min_tvl=10000,
+            min_apy=3,
+            limit=10,
+            include_ai=False,
+            ranking_profile="balanced",
+        )
+    except Exception as e:
+        logger.error(f"DeFi discovery error: {e}")
+        return envelope_error_response(
+            "Failed to analyze DeFi opportunities",
+            code="DEFI_ANALYSIS_FAILED",
+            http_status=500,
+        )
+
+    provisional_shortlist = []
+    for candidate in status.provisional_shortlist or []:
+        item = dict(candidate)
+        kind = str(item.get("candidate_kind") or item.get("default_kind") or "").strip().lower()
+        if kind not in {"pool", "yield", "lending"}:
+            product_type = str(item.get("product_type") or "").lower()
+            if "lending" in product_type:
+                kind = "lending"
+            elif bool(item.get("is_incentivized")):
+                kind = "yield"
+            else:
+                kind = "pool"
+
+        existing_id = item.get("id") or item.get("opportunity_id")
+        raw_id = item.get("pool_id") or item.get("pool") or item.get("symbol") or item.get("project")
+        if existing_id:
+            item["id"] = str(existing_id)
+        elif raw_id:
+            item["id"] = f"{kind}--{raw_id}"
+
+        provisional_shortlist.append(item)
+
+    first_id = None
+    if provisional_shortlist:
+        first_candidate = provisional_shortlist[0]
+        first_id = first_candidate.get("id") or first_candidate.get("opportunity_id")
+
+    opportunity_id = str(first_id) if first_id else status.analysis_id
+    response = {
+        "opportunityId": opportunity_id,
+        "analysis_id": status.analysis_id,
+        "status": status.status,
+        "provisional_shortlist": provisional_shortlist,
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    
+    return envelope_response(response, http_status=202)
+
+
 def setup_defi_routes(app: web.Application):
     """Register DeFi routes and lifecycle hooks."""
     app.on_startup.append(init_defi)
@@ -943,6 +1072,7 @@ def setup_defi_routes(app: web.Application):
     app.router.add_get("/api/v1/defi/yields", get_yields)
     app.router.add_get("/api/v1/defi/opportunities/{opportunity_id}", get_opportunity_detail)
     app.router.add_get("/api/v1/defi/opportunities", get_opportunities)
+    app.router.add_post("/api/v1/defi/discover", create_discovery_analysis)
     # Lending routes — order matters: specific paths before parameterized ones
     app.router.add_get("/api/v1/defi/lending/rates/{asset}", compare_lending_rates)
     app.router.add_get("/api/v1/defi/lending/{protocol}", get_lending_protocol)

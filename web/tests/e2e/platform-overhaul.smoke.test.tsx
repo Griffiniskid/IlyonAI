@@ -3,11 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "@/components/layout/app-shell";
 
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/",
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
 vi.mock("@/lib/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/hooks")>();
   return {
     ...actual,
     useAlertSummary: () => ({ unreadCount: 0, alerts: [] }),
+    useUpdateAlert: () => ({ mutateAsync: vi.fn() }),
   };
 });
 
@@ -25,7 +31,7 @@ describe("Platform overhaul smoke journey", () => {
       </AppShell>
     );
 
-    expectLinkPath("Discover", "/defi");
+    expectLinkPath("Discover", "/");
     expectLinkPath("Smart Money", "/smart-money");
     expectLinkPath("Alerts", "/alerts");
   });

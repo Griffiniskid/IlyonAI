@@ -376,14 +376,25 @@ export default function TokenAnalysisPage() {
         <AIAnalysis ai={ai} />
       </div>
 
-      <section aria-label="smart-money-overlay" className="mt-6">
-        <GlassCard>
-          <h3 className="font-semibold">Smart Money</h3>
-          <p className="text-sm text-muted-foreground mt-2">
-            Entity confidence: {entityConfidence}%
-          </p>
-        </GlassCard>
-      </section>
+<section aria-label="smart-money-overlay" className="mt-6">
+  <GlassCard>
+    <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+      <h3 className="font-semibold">Smart Money</h3>
+      <Badge variant="outline">Entity confidence: {entityConfidence}%</Badge>
+    </div>
+    <p className="text-sm text-muted-foreground mb-3">
+      Wallets tracked via capital-flow clustering and entity-aware whale detection.
+    </p>
+    <div className="flex flex-wrap gap-2">
+      <Button asChild size="sm" variant="outline">
+        <a href={`/smart-money`}>Open Smart Money Hub</a>
+      </Button>
+      <Button asChild size="sm" variant="outline">
+        <a href={`/whales?token=${address}`}>View Whale Feed</a>
+      </Button>
+    </div>
+  </GlassCard>
+</section>
 
       <section aria-label="rekt-risk-context" className="mt-6">
         <GlassCard>

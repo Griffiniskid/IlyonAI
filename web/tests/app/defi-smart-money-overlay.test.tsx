@@ -33,19 +33,21 @@ describe("Defi smart-money overlays", () => {
     });
   });
 
-  it("renders smart money panel on defi discover", async () => {
+it("renders smart money panel on defi discover", async () => {
     const page = await DefiDiscoverPage();
     render(page);
-    expect(await screen.findByText(/smart money/i)).toBeInTheDocument();
-    expect(await screen.findByText(/entity confidence:\s*50%/i)).toBeInTheDocument();
+    const overlay = await screen.findByLabelText("smart-money-overlay");
+    expect(overlay).toHaveTextContent(/Smart Money/);
+    expect(overlay).toHaveTextContent(/Entity confidence.*50%/);
     expect(getSmartMoneyOverview).toHaveBeenCalledWith({ cache: "no-store" });
   });
 
   it("renders smart money panel on defi detail", async () => {
     const page = await DefiDetailPage({ params: Promise.resolve({ id: "opp_1" }) });
     render(page);
-    expect(await screen.findByText(/smart money/i)).toBeInTheDocument();
-    expect(await screen.findByText(/entity confidence:\s*50%/i)).toBeInTheDocument();
+    const overlay = await screen.findByLabelText("smart-money-overlay");
+    expect(overlay).toHaveTextContent(/Smart Money/);
+    expect(overlay).toHaveTextContent(/Entity confidence.*50%/);
     expect(getSmartMoneyOverview).toHaveBeenCalledWith({ cache: "no-store" });
   });
 
@@ -62,6 +64,7 @@ describe("Defi smart-money overlays", () => {
     const page = await DefiDiscoverPage();
     render(page);
 
-    expect(await screen.findByText(/entity confidence:\s*0%/i)).toBeInTheDocument();
+    const overlay = await screen.findByLabelText("smart-money-overlay");
+    expect(overlay).toHaveTextContent(/Entity confidence.*0%/);
   });
 });

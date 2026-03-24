@@ -1,8 +1,27 @@
 /** @type {import('next').NextConfig} */
+const fs = require("fs");
+const path = require("path");
+
+const preferredDistDir = process.env.NEXT_DIST_DIR || ".next-local";
+let safeDistDir = preferredDistDir;
+
+try {
+  const preferredDistPath = path.join(__dirname, preferredDistDir);
+  fs.mkdirSync(preferredDistPath, { recursive: true });
+  fs.accessSync(preferredDistPath, fs.constants.W_OK);
+
+  const preferredServerPath = path.join(preferredDistPath, "server");
+  if (fs.existsSync(preferredServerPath)) {
+    fs.accessSync(preferredServerPath, fs.constants.W_OK);
+  }
+} catch {
+  safeDistDir = ".next";
+}
+
 const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
-  distDir: process.env.NEXT_DIST_DIR || '.next-local',
+  distDir: safeDistDir,
   images: {
     remotePatterns: [
       {

@@ -99,9 +99,10 @@ describe("Token smart-money overlay", () => {
     useToastMock.mockReturnValue({ addToast: vi.fn() });
   });
 
-  it("renders smart money panel on token detail", async () => {
+it("renders smart money panel on token detail", async () => {
     render(<TokenAnalysisPage />);
-    expect(await screen.findByText(/smart money/i)).toBeInTheDocument();
-    expect(await screen.findByText(/entity confidence:\s*73%/i)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /smart money/i })).toBeInTheDocument();
+    const overlay = screen.getByLabelText("smart-money-overlay");
+    expect(overlay).toHaveTextContent(/Entity confidence.*73%/);
   });
 });

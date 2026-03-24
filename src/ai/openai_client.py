@@ -406,96 +406,119 @@ CRITICAL RULES:
                 headers["HTTP-Referer"] = "https://t.me/Ilyon_AI_Bot"
                 headers["X-Title"] = "Ilyon AI Bot"
 
-            payload = {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": self._get_system_prompt()},
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": 0.1,  # Low temperature for consistency
-                "max_tokens": 2000,  # Increased from 1200 to prevent truncated JSON
-                "top_p": 0.9
-            }
+            models_to_try = [self.model]
+            if self.use_openrouter:
+                for candidate in [
+                    settings.openai_model,
+                    settings.openai_mini_model,
+                    "deepseek/deepseek-v3.2-exp",
+                    "deepseek/deepseek-chat-v3-0324",
+                    "openai/gpt-4o-mini",
+                ]:
+                    if candidate and candidate not in models_to_try:
+                        models_to_try.append(candidate)
 
-            async with session.post(
-                self.base_url,
-                headers=headers,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=60)
-            ) as resp:
-                if resp.status != 200:
-                    error_text = await resp.text()
-                    logger.error(f"AI API error: {resp.status} - {error_text}")
+            last_error_message = "API error"
 
-                    # Log API error
-                    self.ai_logger.log_error(
-                        error=Exception(f"HTTP {resp.status}: {error_text[:100]}"),
-                        provider=self.provider.value,
-                        model=self.model,
-                        operation="analyze",
-                        context=context,
-                        exit_code=AILogger.EXIT_API_ERROR
-                    )
+            for model_name in models_to_try:
+                timeout_seconds = 20 if (self.use_openrouter and ":free" in model_name) else 30
+                payload = {
+                    "model": model_name,
+                    "messages": [
+                        {"role": "system", "content": self._get_system_prompt()},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.1,  # Low temperature for consistency
+                    "max_tokens": 2000,  # Increased from 1200 to prevent truncated JSON
+                    "top_p": 0.9
+                }
 
-                    return self._create_error_response("API error", start_time)
+                try:
+                    async with session.post(
+                        self.base_url,
+                        headers=headers,
+                        json=payload,
+                        timeout=aiohttp.ClientTimeout(total=timeout_seconds)
+                    ) as resp:
+                        if resp.status != 200:
+                            error_text = await resp.text()
+                            last_error_message = f"HTTP {resp.status}"
+                            logger.warning(f"AI API error ({model_name}): {resp.status} - {error_text[:200]}")
 
-                data = await resp.json()
-                content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+                            self.ai_logger.log_error(
+                                error=Exception(f"HTTP {resp.status}: {error_text[:100]}"),
+                                provider=self.provider.value,
+                                model=model_name,
+                                operation="analyze",
+                                context=context,
+                                exit_code=AILogger.EXIT_API_ERROR
+                            )
+                            continue
 
-                # Check for empty response
-                if not content:
-                    self.ai_logger.log_error(
-                        error=Exception("Empty response from AI"),
-                        provider=self.provider.value,
-                        model=self.model,
-                        operation="analyze",
-                        context=context,
-                        exit_code=AILogger.EXIT_EMPTY_RESPONSE
-                    )
-                    return self._create_error_response("Empty response", start_time)
+                        data = await resp.json()
+                        content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
 
-                # Parse and validate response
-                result = self._parse_ai_response(content)
+                        if not content:
+                            last_error_message = "Empty response"
+                            self.ai_logger.log_error(
+                                error=Exception("Empty response from AI"),
+                                provider=self.provider.value,
+                                model=model_name,
+                                operation="analyze",
+                                context=context,
+                                exit_code=AILogger.EXIT_EMPTY_RESPONSE
+                            )
+                            continue
 
-                # Extract token usage
-                usage = data.get('usage', {})
-                tokens_used = usage.get('total_tokens', 0)
-                tokens_prompt = usage.get('prompt_tokens', 0)
-                tokens_completion = usage.get('completion_tokens', 0)
-                latency_ms = int((time.time() - start_time) * 1000)
+                        result = self._parse_ai_response(content)
 
-                # Log successful response
-                self.ai_logger.log_response(
-                    success=True,
-                    provider=self.provider.value,
-                    model=self.model,
-                    operation="analyze",
-                    response_data=result,
-                    raw_response=content if settings.log_ai_full_responses else None,
-                    tokens_used=tokens_used,
-                    tokens_prompt=tokens_prompt,
-                    tokens_completion=tokens_completion,
-                    latency_ms=latency_ms,
-                    context=context,
-                    exit_code=AILogger.EXIT_SUCCESS
-                )
+                        usage = data.get('usage', {})
+                        tokens_used = usage.get('total_tokens', 0)
+                        tokens_prompt = usage.get('prompt_tokens', 0)
+                        tokens_completion = usage.get('completion_tokens', 0)
+                        latency_ms = int((time.time() - start_time) * 1000)
 
-                logger.info(
-                    f"AI Analysis complete: {request.symbol} | "
-                    f"Score: {result.get('ai_score', 'N/A')} | "
-                    f"Verdict: {result.get('ai_verdict', 'N/A')} | "
-                    f"Rug%: {result.get('ai_rug_probability', 'N/A')}"
-                )
+                        self.ai_logger.log_response(
+                            success=True,
+                            provider=self.provider.value,
+                            model=model_name,
+                            operation="analyze",
+                            response_data=result,
+                            raw_response=content if settings.log_ai_full_responses else None,
+                            tokens_used=tokens_used,
+                            tokens_prompt=tokens_prompt,
+                            tokens_completion=tokens_completion,
+                            latency_ms=latency_ms,
+                            context=context,
+                            exit_code=AILogger.EXIT_SUCCESS
+                        )
 
-                return AIResponse(
-                    success=True,
-                    provider=self.provider,
-                    content=result,
-                    raw_text=content,
-                    model=self.model,
-                    tokens_used=tokens_used,
-                    latency_ms=latency_ms
-                )
+                        logger.info(
+                            f"AI Analysis complete ({model_name}): {request.symbol} | "
+                            f"Score: {result.get('ai_score', 'N/A')} | "
+                            f"Verdict: {result.get('ai_verdict', 'N/A')} | "
+                            f"Rug%: {result.get('ai_rug_probability', 'N/A')}"
+                        )
+
+                        return AIResponse(
+                            success=True,
+                            provider=self.provider,
+                            content=result,
+                            raw_text=content,
+                            model=model_name,
+                            tokens_used=tokens_used,
+                            latency_ms=latency_ms
+                        )
+                except asyncio.TimeoutError:
+                    last_error_message = "Timeout"
+                    logger.warning(f"AI API timeout for model {model_name}")
+                    continue
+                except Exception as e:
+                    last_error_message = str(e) or "Unexpected error"
+                    logger.warning(f"AI API error for model {model_name}: {e}")
+                    continue
+
+            return self._create_error_response(last_error_message, start_time)
 
         except asyncio.TimeoutError as e:
             logger.error("AI API timeout")

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 from statistics import mean
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+logger = logging.getLogger(__name__)
 
 from src.config import settings
 from src.core.analyzer import TokenAnalyzer
@@ -258,16 +261,15 @@ class DefiOpportunityEngine:
             analysis_id = self.analysis_store.new_id()
             await self.analysis_store.save_request_analysis(request_key, analysis_id)
             metrics = AnalysisMetrics(factor_model_version=settings.defi_score_model_version)
-            provisional = await self.scan_pipeline.run(**filters, metrics=metrics)
             payload = {
                 "status": "running",
                 "score_model_version": settings.defi_score_model_version,
-                "provisional_shortlist": provisional,
+                "provisional_shortlist": [],
                 "request_key": request_key,
                 "observability": metrics.to_payload(),
             }
             await self.analysis_store.save_status(analysis_id, payload)
-            task = asyncio.create_task(self._finish_analysis(analysis_id, filters, provisional, request_key, metrics))
+            task = asyncio.create_task(self._run_scan_and_finish(analysis_id, filters, request_key, metrics))
             self._analysis_tasks[analysis_id] = task
             task.add_done_callback(lambda finished_task, current_id=analysis_id: self._clear_analysis_task(current_id, finished_task))
             return self._analysis_status_from_payload(analysis_id, payload)
@@ -387,6 +389,28 @@ class DefiOpportunityEngine:
                 return str(inferred)
 
         return None
+
+    async def _run_scan_and_finish(
+        self,
+        analysis_id: str,
+        filters: Dict[str, Any],
+        request_key: str,
+        metrics: AnalysisMetrics,
+    ) -> None:
+        """Run scan pipeline in background, then finish the analysis."""
+        try:
+            provisional = await self.scan_pipeline.run(**filters, metrics=metrics)
+            await self.analysis_store.save_status(analysis_id, {
+                "status": "running",
+                "score_model_version": settings.defi_score_model_version,
+                "provisional_shortlist": provisional,
+                "request_key": request_key,
+                "observability": metrics.to_payload(),
+            })
+        except Exception as exc:
+            logger.error(f"DeFi scan pipeline failed for {analysis_id}: {exc}")
+            provisional = []
+        await self._finish_analysis(analysis_id, filters, provisional, request_key, metrics)
 
     async def _finish_analysis(
         self,

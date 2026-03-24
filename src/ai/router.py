@@ -81,10 +81,11 @@ class AIRouter:
         has_openrouter = bool(settings.openrouter_api_key)
 
         if has_openrouter:
-            api_key_preview = settings.openrouter_api_key[:15] + "..." if len(settings.openrouter_api_key) > 15 else "***"
+            openrouter_key = settings.openrouter_api_key or ""
+            api_key_preview = openrouter_key[:15] + "..." if len(openrouter_key) > 15 else "***"
             logger.info(f"🔄 Using OpenRouter API for AI analysis (key: {api_key_preview})")
             self.openai = openai_client or OpenAIClient(model=settings.ai_model, use_openrouter=True)
-            self.openai_mini = OpenAIClient(model=settings.ai_model, use_openrouter=True)
+            self.openai_mini = OpenAIClient(model=settings.openai_mini_model, use_openrouter=True)
         else:
             logger.error("❌ No OpenRouter API key configured! Set OPENROUTER_API_KEY in .env for DeepSeek analysis")
             self.openai = None
@@ -192,18 +193,18 @@ class AIRouter:
             
             # Process OpenAI result (always first)
             openai_resp = responses[0]
-            if isinstance(openai_resp, Exception):
+            if isinstance(openai_resp, BaseException):
                 logger.error(f"OpenAI analysis failed: {openai_resp}")
-            else:
+            elif isinstance(openai_resp, AIResponse):
                 result.openai = openai_resp
-                logger.info(f"✅ DeepSeek technical analysis complete ({settings.ai_model})")
+                logger.info(f"✅ DeepSeek technical analysis complete ({openai_resp.model})")
 
             # Process Grok result (if it ran)
             if self.grok and len(responses) > 1:
                 grok_resp = responses[1]
-                if isinstance(grok_resp, Exception):
+                if isinstance(grok_resp, BaseException):
                     logger.error(f"Grok analysis failed: {grok_resp}")
-                else:
+                elif isinstance(grok_resp, AIResponse):
                     result.grok = grok_resp
                     logger.info("✅ Grok narrative analysis complete")
                     

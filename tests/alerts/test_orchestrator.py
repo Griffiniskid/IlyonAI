@@ -64,3 +64,13 @@ def test_orchestrator_prunes_expired_dedupe_entries():
     orchestrator.ingest(event)
 
     assert "old_key" not in orchestrator._seen
+
+
+def test_store_alert_actions_progress_state_and_resolution():
+    store = InMemoryAlertStore()
+    store.add_alert(AlertRecord(id="a-9", state="new", severity="high", title="Lifecycle"))
+
+    updated = store.apply_alert_action("a-9", "resolve")
+    assert updated is not None
+    assert updated.state == "acknowledged"
+    assert updated.resolved_at is not None

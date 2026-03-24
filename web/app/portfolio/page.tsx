@@ -256,15 +256,19 @@ export default function PortfolioPage() {
         </ul>
       </GlassCard>
 
-      <GlassCard className="mb-8">
+      <section id="exposures">
+        <GlassCard className="mb-8">
         <h3 className="font-semibold mb-4">Multi-Chain Exposure</h3>
         <ChainExposureTable matrix={chainMatrix} />
-      </GlassCard>
+        </GlassCard>
+      </section>
 
-      <GlassCard className="mb-8">
+      <section id="scenarios">
+        <GlassCard className="mb-8">
         <h3 className="font-semibold mb-4">Capability Risk Breakdown</h3>
         <RiskBreakdown matrix={chainMatrix} />
-      </GlassCard>
+        </GlassCard>
+      </section>
 
       {/* Loading state */}
       {portfolioLoading && (

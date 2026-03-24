@@ -5,10 +5,8 @@ import { useCreateOpportunityAnalysis, useOpportunityAnalysis } from "@/lib/hook
 
 export default function DiscoverClient() {
   const { mutate, data: createData, isPending: isCreating, isError, error } = useCreateOpportunityAnalysis();
-  
   const opportunityId = createData?.opportunityId || null;
 
-  // Start analysis on mount
   const hasTriggered = useRef(false);
   useEffect(() => {
     if (!hasTriggered.current) {
@@ -17,24 +15,20 @@ export default function DiscoverClient() {
     }
   }, [mutate]);
 
-  // Once we get a successful analysis result, we stop polling
-  // We cannot read analysisData before hook, but we can wrap it or just pass 
-  // pollInterval and the hook itself can disable it or we just check the output 
-  // Wait, if I use `const { data } = useOpportunityAnalysis()`, I can't pass `!data ? 3000 : undefined` as argument to itself in the first render. 
-  // On first render it will be undefined, so it uses 3000. 
-  // On subsequent renders, `data` is defined, so it uses `undefined`. This works perfectly fine in JS as long as we evaluate it on re-render.
-  // Wait, the hook `useOpportunityAnalysis` takes an object. 
-  // Let's use an inner hook or just state!
-
-  // The easiest is just a state:
   const [isDone, setIsDone] = React.useState(false);
 
-  const { data: analysisData, isLoading: isAnalyzing } = useOpportunityAnalysis(opportunityId, {
-    pollInterval: isDone ? undefined : 3000,
+  const {
+    data: analysisData,
+    isLoading: isAnalyzing,
+    isError: isAnalysisError,
+    error: analysisError,
+  } = useOpportunityAnalysis(opportunityId, {
+    includeAi: false,
+    pollInterval: isDone ? undefined : 5000,
   });
 
   useEffect(() => {
-    if (analysisData && analysisData.title) {
+    if (analysisData && (analysisData.title || analysisData.id)) {
       setIsDone(true);
     }
   }, [analysisData]);
@@ -48,6 +42,12 @@ export default function DiscoverClient() {
       {isError && (
         <div className="bg-red-50 p-4 rounded text-red-600">
           {error instanceof Error ? error.message : "An error occurred"}
+        </div>
+      )}
+
+      {isAnalysisError && (
+        <div className="bg-red-50 p-4 rounded text-red-600">
+          {analysisError instanceof Error ? analysisError.message : "Failed to fetch opportunity details"}
         </div>
       )}
 

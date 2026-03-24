@@ -16,3 +16,5 @@ class AlertRecord(BaseModel):
     rule_id: str | None = None
     subject_id: str | None = None
     kind: str | None = None
+    snoozed_until: str | None = None
+    resolved_at: str | None = None

@@ -622,7 +622,13 @@ async def search_tokens(request: web.Request) -> web.Response:
                 close_llama = True
 
             try:
-                pool_task = llama.get_pools(min_tvl=0, min_apy=0)
+                async def safe_get_pools():
+                    try:
+                        return await asyncio.wait_for(llama.get_pools(min_tvl=1000, min_apy=0), timeout=8.0)
+                    except (asyncio.TimeoutError, Exception):
+                        logger.warning("DefiLlama pool fetch timed out or failed, skipping pool results")
+                        return []
+                pool_task = safe_get_pools()
                 if pair_task:
                     dex_results, raw_pools, pair_match = await asyncio.gather(dex_task, pool_task, pair_task)
                 else:
