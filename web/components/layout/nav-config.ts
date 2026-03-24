@@ -4,13 +4,11 @@ import {
   Activity,
   Radar,
   Flame,
-  Wallet,
   Shield,
   Bell,
   Settings,
   PieChart,
   Droplets,
-  Zap,
   Briefcase,
   LucideIcon
 } from "lucide-react";
@@ -41,8 +39,6 @@ export const navGroups: NavGroup[] = [
     items: [
       { label: "Hub", href: "/smart-money", icon: Radar },
       { label: "Whales", href: "/whales", icon: Droplets },
-      { label: "Flows", href: "/flows", icon: Zap },
-      { label: "Wallet", href: "/wallet", icon: Wallet },
       { label: "Entity", href: "/entity", icon: Briefcase },
     ],
   },

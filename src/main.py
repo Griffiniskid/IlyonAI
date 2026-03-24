@@ -2,6 +2,7 @@
 Ilyon AI - Main entry point for the Web API.
 """
 
+import asyncio
 import logging
 import sys
 from aiohttp import web
@@ -37,12 +38,28 @@ async def on_startup(app: web.Application):
     except Exception as e:
         logger.warning(f"Cache initialization failed: {e}")
 
+    # Start whale transaction poller
+    try:
+        from src.storage.database import get_database
+        from src.services.whale_poller import WhaleTransactionPoller
+        from src.platform.stream_hub import get_stream_hub
+        db = await get_database()
+        poller = WhaleTransactionPoller(db=db, stream_hub=get_stream_hub())
+        app["_whale_poller_task"] = asyncio.create_task(poller.run_forever())
+    except Exception as e:
+        logger.warning(f"Whale poller startup failed: {e}")
+
     logger.info(f"✅ API Server ready on port {settings.web_api_port}")
 
 async def on_cleanup(app: web.Application):
     logger = logging.getLogger('Ilyon_AI')
     logger.info("🛡️  ILYON AI API - Shutting Down")
     
+    # Stop whale poller
+    poller_task = app.get("_whale_poller_task")
+    if poller_task:
+        poller_task.cancel()
+
     try:
         from src.storage.database import get_database
         db = await get_database()

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+
 import { useQueryClient } from "@tanstack/react-query";
 import { useWhaleActivity } from "@/lib/hooks";
 import * as api from "@/lib/api";
@@ -255,12 +255,14 @@ export default function WhalesPage() {
 
                 {/* Wallet */}
                 <div className="text-right min-w-[80px] sm:min-w-[100px]">
-                  <Link
-                    href={`/wallet/${tx.wallet_address}`}
+                  <a
+                    href={`https://solscan.io/account/${tx.wallet_address}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="text-xs sm:text-sm hover:text-primary transition font-mono text-muted-foreground"
                   >
                     {truncateAddress(tx.wallet_address, 4)}
-                  </Link>
+                  </a>
                   <div className="flex items-center justify-end gap-1 mt-1">
                     {tx.wallet_label && (
                       <Badge variant="secondary" className="text-xs">

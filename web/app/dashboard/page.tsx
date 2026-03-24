@@ -196,7 +196,7 @@ function SmartMoneyAlert({
   timestamp: string;
 }) {
   return (
-    <Link href={`/wallet/${walletAddress}`} className="block">
+    <a href={`https://solscan.io/account/${walletAddress}`} target="_blank" rel="noopener noreferrer" className="block">
       <div className="flex items-center gap-4 p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors cursor-pointer">
         <div
           className={cn(
@@ -221,7 +221,7 @@ function SmartMoneyAlert({
           </div>
         </div>
       </div>
-    </Link>
+    </a>
   );
 }
 

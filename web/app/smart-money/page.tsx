@@ -1,6 +1,7 @@
 "use client";
 
-import { useSmartMoneyOverview } from "@/lib/hooks";
+import { useState, useMemo } from "react";
+import { useWhaleStream } from "@/lib/hooks";
 import { GlassCard } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,10 +14,11 @@ import {
   RefreshCw,
   Activity,
   Users,
-  Wallet,
+  ExternalLink,
+  Radio,
 } from "lucide-react";
 import { cn, truncateAddress, formatUSD, formatRelativeTime } from "@/lib/utils";
-import type { SmartMoneyParticipant, SmartMoneyFlow } from "@/types";
+import type { SmartMoneyParticipant } from "@/types";
 
 function FlowDirectionLabel({ direction }: { direction: string }) {
   const normalized = direction?.toLowerCase() ?? "neutral";
@@ -27,6 +29,54 @@ function FlowDirectionLabel({ direction }: { direction: string }) {
     return <span className="text-2xl font-semibold text-red-400">Distributing</span>;
   }
   return <span className="text-2xl font-semibold text-muted-foreground">Neutral</span>;
+}
+
+function StreamStatusBadge({ status }: { status: string }) {
+  if (status === "live") {
+    return (
+      <Badge variant="outline" className="text-xs border-emerald-500/50 text-emerald-400 gap-1">
+        <Radio className="h-3 w-3 animate-pulse" />
+        Live
+      </Badge>
+    );
+  }
+  if (status === "reconnecting") {
+    return (
+      <Badge variant="outline" className="text-xs border-yellow-500/50 text-yellow-400 gap-1">
+        <Radio className="h-3 w-3" />
+        Reconnecting...
+      </Badge>
+    );
+  }
+  if (status === "polling") {
+    return (
+      <Badge variant="outline" className="text-xs border-blue-500/50 text-blue-400 gap-1">
+        <RefreshCw className="h-3 w-3" />
+        Polling
+      </Badge>
+    );
+  }
+  return null;
+}
+
+function SolscanWalletLink({
+  address,
+  chars = 4,
+}: {
+  address: string;
+  chars?: number;
+}) {
+  return (
+    <a
+      href={`https://solscan.io/account/${address}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-mono text-primary hover:underline inline-flex items-center gap-1"
+    >
+      {truncateAddress(address, chars)}
+      <ExternalLink className="h-3 w-3 opacity-50" />
+    </a>
+  );
 }
 
 function ParticipantTable({
@@ -58,12 +108,7 @@ function ParticipantTable({
             <tr key={p.wallet_address} className="border-b border-white/5">
               <td className="py-2">
                 <div className="flex items-center gap-2">
-                  <Link
-                    href={`/wallet/${p.wallet_address}`}
-                    className="font-mono text-primary hover:underline"
-                  >
-                    {truncateAddress(p.wallet_address, 4)}
-                  </Link>
+                  <SolscanWalletLink address={p.wallet_address} />
                   {p.label && (
                     <Badge variant="secondary" className="text-xs">
                       {p.label}
@@ -91,8 +136,12 @@ function isInflowDirection(direction: string): boolean {
   return d === "buy" || d === "inflow";
 }
 
+type DirectionFilter = "all" | "inflow" | "outflow";
+
 export default function SmartMoneyPage() {
-  const { data, isLoading, isFetching, refetch } = useSmartMoneyOverview();
+  const { data, isLoading, isFetching, streamStatus } = useWhaleStream();
+  const [directionFilter, setDirectionFilter] = useState<DirectionFilter>("all");
+  const [minUsd, setMinUsd] = useState(0);
 
   const netFlow = data?.net_flow_usd ?? 0;
   const inflow = data?.inflow_usd ?? 0;
@@ -100,7 +149,29 @@ export default function SmartMoneyPage() {
   const flowDirection = data?.flow_direction ?? "neutral";
   const updatedAt = data?.updated_at ? new Date(data.updated_at) : null;
   const hasValidUpdatedAt = Boolean(updatedAt && !Number.isNaN(updatedAt.getTime()));
-  const recentTxns = (data?.recent_transactions ?? []).slice(0, 10);
+
+  const filteredTxns = useMemo(() => {
+    let items = data?.recent_transactions ?? [];
+    if (directionFilter !== "all") {
+      items = items.filter((t) => t.direction === directionFilter);
+    }
+    if (minUsd > 0) {
+      items = items.filter((t) => Math.abs(t.amount_usd) >= minUsd);
+    }
+    return items.slice(0, 100);
+  }, [data, directionFilter, minUsd]);
+
+  const summary = useMemo(() => {
+    const txs = data?.recent_transactions ?? [];
+    const buys = txs.filter((t) => isInflowDirection(t.direction));
+    const sells = txs.filter((t) => !isInflowDirection(t.direction));
+    return {
+      buyCount: buys.length,
+      buyTotal: buys.reduce((s, t) => s + Math.abs(t.amount_usd), 0),
+      sellCount: sells.length,
+      sellTotal: sells.reduce((s, t) => s + Math.abs(t.amount_usd), 0),
+    };
+  }, [data]);
 
   return (
     <section className="container mx-auto max-w-6xl px-4 py-8">
@@ -109,14 +180,11 @@ export default function SmartMoneyPage() {
         <div>
           <h1 className="text-3xl font-bold">Smart Money</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Track coordinated flows and entity-level capital movements across chains.
+            Real-time whale transaction feed. $10K+ DEX swaps on Solana.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
-            <RefreshCw className={cn("h-4 w-4 mr-2", isFetching && "animate-spin")} />
-            Refresh
-          </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <StreamStatusBadge status={streamStatus} />
           <Button asChild size="sm" className="bg-emerald-600 hover:bg-emerald-500">
             <Link href="/whales">
               <Activity className="h-4 w-4 mr-2" />
@@ -175,7 +243,7 @@ export default function SmartMoneyPage() {
             </GlassCard>
           </div>
 
-          {/* Top Buyers Table */}
+          {/* Top Buyers / Top Sellers */}
           <div className="grid gap-6 lg:grid-cols-2 mb-8">
             <GlassCard className="p-4">
               <div className="flex items-center justify-between mb-3">
@@ -190,7 +258,6 @@ export default function SmartMoneyPage() {
               />
             </GlassCard>
 
-            {/* Top Sellers Table */}
             <GlassCard className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -205,31 +272,64 @@ export default function SmartMoneyPage() {
             </GlassCard>
           </div>
 
-          {/* Recent Transactions Feed */}
+          {/* Transaction Feed (merged from flows) */}
           <GlassCard className="p-4 mb-8">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-              Recent Transactions
-            </h2>
-            {recentTxns.length > 0 ? (
-              <div className="space-y-2">
-                {recentTxns.map((tx) => {
-                  const inflow = isInflowDirection(tx.direction);
+            {/* Summary bar */}
+            <div className="flex flex-wrap items-center gap-4 mb-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Transaction Feed
+              </h2>
+              <div className="flex items-center gap-3 text-xs ml-auto">
+                <span className="text-emerald-400">
+                  {summary.buyCount} buys ({formatUSD(summary.buyTotal)})
+                </span>
+                <span className="text-red-400">
+                  {summary.sellCount} sells ({formatUSD(summary.sellTotal)})
+                </span>
+              </div>
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              {(["all", "inflow", "outflow"] as const).map((opt) => (
+                <Button
+                  key={opt}
+                  variant={directionFilter === opt ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setDirectionFilter(opt)}
+                  className="text-xs capitalize"
+                >
+                  {opt === "all" ? "All" : opt === "inflow" ? "Buys" : "Sells"}
+                </Button>
+              ))}
+              <input
+                type="number"
+                placeholder="Min USD"
+                value={minUsd || ""}
+                onChange={(e) => setMinUsd(Number(e.target.value) || 0)}
+                className="px-2 py-1 text-xs rounded bg-white/5 border border-white/10 w-24"
+              />
+              <Badge variant="outline" className="text-xs">
+                Solana
+              </Badge>
+            </div>
+
+            {/* Transaction list */}
+            {filteredTxns.length > 0 ? (
+              <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                {filteredTxns.map((tx) => {
+                  const isInflow = isInflowDirection(tx.direction);
                   return (
                     <div
-                      key={tx.signature}
+                      key={tx.signature || `${tx.wallet_address}-${tx.timestamp}`}
                       className="flex flex-wrap items-center gap-3 text-sm border-b border-white/5 pb-2"
                     >
-                      {inflow ? (
+                      {isInflow ? (
                         <TrendingUp className="h-4 w-4 text-emerald-500 shrink-0" />
                       ) : (
                         <TrendingDown className="h-4 w-4 text-red-500 shrink-0" />
                       )}
-                      <Link
-                        href={`/wallet/${tx.wallet_address}`}
-                        className="font-mono text-primary hover:underline"
-                      >
-                        {truncateAddress(tx.wallet_address, 4)}
-                      </Link>
+                      <SolscanWalletLink address={tx.wallet_address} />
                       {tx.wallet_label && (
                         <Badge variant="secondary" className="text-xs">
                           {tx.wallet_label}
@@ -239,15 +339,22 @@ export default function SmartMoneyPage() {
                       <span
                         className={cn(
                           "font-mono",
-                          inflow ? "text-emerald-400" : "text-red-400",
+                          isInflow ? "text-emerald-400" : "text-red-400",
                         )}
                       >
                         {formatUSD(tx.amount_usd)}
                       </span>
                       <span className="text-muted-foreground">{tx.dex_name}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {tx.chain}
-                      </Badge>
+                      {tx.signature && (
+                        <a
+                          href={`https://solscan.io/tx/${tx.signature}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-muted-foreground hover:text-primary"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
                       <span className="text-muted-foreground ml-auto">
                         {formatRelativeTime(tx.timestamp)}
                       </span>
@@ -256,37 +363,26 @@ export default function SmartMoneyPage() {
                 })}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No recent transactions.</p>
+              <p className="text-sm text-muted-foreground py-4">
+                No transactions match your filters. Whale transactions ($10K+) are accumulated over 24 hours.
+              </p>
             )}
           </GlassCard>
 
           {/* Navigation Links */}
           <div className="flex flex-wrap gap-3 mb-6">
             <Button asChild variant="outline" size="sm">
-              <Link href="/flows">
-                <Activity className="h-4 w-4 mr-2" />
-                Explore Flows
-                <ArrowRight className="h-4 w-4 ml-2" />
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
               <Link href="/entity">
                 <Users className="h-4 w-4 mr-2" />
                 Entity Explorer
               </Link>
             </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/wallet">
-                <Wallet className="h-4 w-4 mr-2" />
-                Wallet Lookup
-              </Link>
-            </Button>
           </div>
 
-          {/* Last Updated */}
+          {/* Footer */}
           {hasValidUpdatedAt && updatedAt && (
             <p className="text-xs text-muted-foreground">
-              Last updated: {updatedAt.toLocaleTimeString()} - Flow data refreshes every minute.
+              Last updated: {updatedAt.toLocaleTimeString()} - Data streams in real-time via WebSocket.
             </p>
           )}
         </>

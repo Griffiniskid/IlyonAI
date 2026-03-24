@@ -400,6 +400,25 @@ class TrackedWallet(Base):
     )
 
 
+class WhaleTransaction(Base):
+    """Persisted whale transactions for the 24h rolling Smart Money feed."""
+    __tablename__ = "whale_transactions"
+
+    signature = Column(String(128), primary_key=True)
+    wallet_address = Column(String(44), nullable=False, index=True)
+    wallet_label = Column(String(128), nullable=True)
+    token_address = Column(String(44), nullable=False)
+    token_symbol = Column(String(32), nullable=False)
+    token_name = Column(String(128), nullable=False)
+    direction = Column(String(8), nullable=False, index=True)
+    amount_usd = Column(Float, nullable=False)
+    amount_tokens = Column(Float, nullable=False)
+    price_usd = Column(Float, nullable=False)
+    dex_name = Column(String(64), nullable=False)
+    tx_timestamp = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # DATABASE INTERFACE
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1815,6 +1834,106 @@ class Database:
             )
             await session.commit()
             return True
+
+    # ── Whale Transaction Methods ─────────────────────────────────────────────
+
+    async def insert_whale_transactions(self, transactions: list) -> list:
+        """Insert whale transactions, skipping duplicates. Returns list of new signatures."""
+        if not self._initialized:
+            return []
+        new_signatures = []
+        async with self.async_session() as session:
+            for tx in transactions:
+                try:
+                    ts = tx.get("timestamp")
+                    if isinstance(ts, datetime):
+                        tx_timestamp = ts
+                    elif isinstance(ts, (int, float)):
+                        tx_timestamp = datetime.utcfromtimestamp(ts)
+                    elif isinstance(ts, str):
+                        try:
+                            tx_timestamp = datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
+                        except Exception:
+                            tx_timestamp = datetime.utcnow()
+                    else:
+                        tx_timestamp = datetime.utcnow()
+
+                    stmt = insert(WhaleTransaction).values(
+                        signature=tx["signature"],
+                        wallet_address=tx.get("wallet_address", ""),
+                        wallet_label=tx.get("wallet_label"),
+                        token_address=tx.get("token_address", ""),
+                        token_symbol=tx.get("token_symbol", "???"),
+                        token_name=tx.get("token_name", "Unknown"),
+                        direction="buy" if tx.get("type", "buy") == "buy" else "sell",
+                        amount_usd=float(tx.get("amount_usd", 0)),
+                        amount_tokens=float(tx.get("amount_tokens", 0)),
+                        price_usd=float(tx.get("price_usd", 0)),
+                        dex_name=tx.get("dex_name", "Unknown"),
+                        tx_timestamp=tx_timestamp,
+                    ).on_conflict_do_nothing(index_elements=["signature"])
+                    result = await session.execute(stmt)
+                    if result.rowcount and result.rowcount > 0:
+                        new_signatures.append(tx["signature"])
+                except Exception as e:
+                    logger.debug(f"Failed to insert whale tx {tx.get('signature', '?')}: {e}")
+            await session.commit()
+        return new_signatures
+
+    async def get_whale_overview(self, hours: int = 24, limit: int = 200) -> dict:
+        """Query whale transactions for the smart money overview."""
+        if not self._initialized:
+            return {"transactions": [], "inflow_usd": 0, "outflow_usd": 0}
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        async with self.async_session() as session:
+            stmt = select(WhaleTransaction).where(
+                WhaleTransaction.created_at >= cutoff
+            ).order_by(WhaleTransaction.tx_timestamp.desc()).limit(limit)
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+
+            transactions = []
+            inflow_usd = 0.0
+            outflow_usd = 0.0
+            for row in rows:
+                tx_dict = {
+                    "signature": row.signature,
+                    "wallet_address": row.wallet_address,
+                    "wallet_label": row.wallet_label,
+                    "token_address": row.token_address,
+                    "token_symbol": row.token_symbol,
+                    "token_name": row.token_name,
+                    "direction": "inflow" if row.direction == "buy" else "outflow",
+                    "amount_usd": row.amount_usd,
+                    "amount_tokens": row.amount_tokens,
+                    "price_usd": row.price_usd,
+                    "dex_name": row.dex_name,
+                    "timestamp": row.tx_timestamp.isoformat() if row.tx_timestamp else "",
+                    "chain": "solana",
+                }
+                transactions.append(tx_dict)
+                if row.direction == "buy":
+                    inflow_usd += row.amount_usd
+                else:
+                    outflow_usd += row.amount_usd
+
+            return {
+                "transactions": transactions,
+                "inflow_usd": inflow_usd,
+                "outflow_usd": outflow_usd,
+            }
+
+    async def cleanup_old_whale_transactions(self, hours: int = 24) -> int:
+        """Delete whale transactions older than the given window. Returns count deleted."""
+        if not self._initialized:
+            return 0
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        async with self.async_session() as session:
+            from sqlalchemy import delete
+            stmt = delete(WhaleTransaction).where(WhaleTransaction.created_at < cutoff)
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount or 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

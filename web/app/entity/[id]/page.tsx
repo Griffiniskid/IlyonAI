@@ -77,9 +77,9 @@ export default function EntityPage() {
             <div className="space-y-2">
               {(data.wallets ?? []).map((wallet: string) => (
                 <div key={wallet} className="flex items-center justify-between text-sm">
-                  <Link href={`/wallet/${wallet}`} className="font-mono text-primary hover:underline">
+                  <a href={`https://solscan.io/account/${wallet}`} target="_blank" rel="noopener noreferrer" className="font-mono text-primary hover:underline">
                     {truncateAddress(wallet)}
-                  </Link>
+                  </a>
                   <Button variant="ghost" size="sm" onClick={() => handleCopy(wallet)}>
                     <Copy className="h-3 w-3 mr-1" />
                     {copied === wallet ? "Copied" : "Copy"}

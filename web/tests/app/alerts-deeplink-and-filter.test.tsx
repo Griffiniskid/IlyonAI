@@ -30,7 +30,7 @@ describe("Alerts Filtering and Deep Linking", () => {
     expect(screen.getByRole("link", { name: /open context for low wallet drift/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("link", { name: /open context for low wallet drift/i }));
-    expect(mockPush).toHaveBeenCalledWith("/wallet/wallet-low");
+    expect(mockPush).toHaveBeenCalledWith("https://solscan.io/account/wallet-low");
 
     fireEvent.click(screen.getByRole("button", { name: /^high/i }));
 

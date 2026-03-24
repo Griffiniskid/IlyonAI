@@ -2,7 +2,8 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { RealtimeClient, type StreamStatus } from "./realtime";
 import * as api from "./api";
 import type { AlertRecordResponse, AnalysisMode, AnalysisResponse, ChainName, SmartMoneyOverviewResponse } from "@/types";
 
@@ -205,6 +206,60 @@ export function useSmartMoneyOverview() {
     staleTime: 60 * 1000,
     refetchInterval: 60 * 1000,
   });
+}
+
+export function useWhaleStream() {
+  const queryClient = useQueryClient();
+  const { data, isLoading, error, isFetching } = useSmartMoneyOverview();
+  const [streamStatus, setStreamStatus] = useState<StreamStatus>("disconnected");
+  const clientRef = useRef<RealtimeClient | null>(null);
+
+  useEffect(() => {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+    const client = new RealtimeClient(apiBase);
+    clientRef.current = client;
+
+    client
+      .subscribe("whale-transactions", (event: unknown) => {
+        const tx = event as Record<string, unknown>;
+        if (!tx?.signature) return;
+
+        queryClient.setQueryData<SmartMoneyOverviewResponse>(
+          ["smartMoney", "overview"],
+          (old) => {
+            if (!old) return old;
+            const newTx =
+              tx as unknown as SmartMoneyOverviewResponse["recent_transactions"][number];
+            return {
+              ...old,
+              recent_transactions: [newTx, ...old.recent_transactions].slice(
+                0,
+                200,
+              ),
+            };
+          },
+        );
+      })
+      .then((mode) => {
+        setStreamStatus(mode === "websocket" ? "live" : "polling");
+      });
+
+    return () => {
+      client.close();
+    };
+  }, [queryClient]);
+
+  // Sync status from client on interval (for reconnection state changes)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (clientRef.current) {
+        setStreamStatus(clientRef.current.streamStatus);
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return { data, isLoading, isFetching, error, streamStatus };
 }
 
 export function useWalletProfile(address: string | null) {

@@ -33,8 +33,6 @@ describe("AppShell layout", () => {
       "/defi",
       "/smart-money",
       "/whales",
-      "/flows",
-      "/wallet",
       "/entity",
       "/shield",
       "/audits",
@@ -63,19 +61,19 @@ describe("AppShell layout", () => {
     expect(screen.getAllByRole("link", { name: "Settings" }).length).toBeGreaterThan(0);
   });
 
-  it("marks nested wallet routes active in mobile sheet", async () => {
-    mockPathname.mockReturnValue("/wallet/abc123");
+  it("marks nested smart money routes active in mobile sheet", async () => {
+    mockPathname.mockReturnValue("/smart-money");
     render(<AppShell>{<div>content</div>}</AppShell>);
 
     fireEvent.click(screen.getByRole("button", { name: /Menu/i }));
 
-    const walletLinks = screen.getAllByRole("link", { name: "Wallet" });
-    const activeWalletLink = walletLinks.find((link) => {
+    const hubLinks = screen.getAllByRole("link", { name: "Hub" });
+    const activeHubLink = hubLinks.find((link) => {
       const className = link.getAttribute("class") ?? "";
       return className.includes("bg-primary/10") && className.includes("text-primary");
     });
 
-    expect(activeWalletLink).toBeTruthy();
+    expect(activeHubLink).toBeTruthy();
   });
 
   it("marks settings link active for /settings route", async () => {
