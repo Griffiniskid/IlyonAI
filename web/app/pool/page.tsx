@@ -21,7 +21,16 @@ export default function PoolDiscoverPage() {
     }
 
     setError(null);
-    router.push(`/pool/${encodeURIComponent(trimmed)}`);
+
+    // Detect blockchain addresses (Solana base58 or EVM 0x) and route as DexScreener pair
+    const isSolanaAddress = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed);
+    const isEvmAddress = /^0x[a-fA-F0-9]{40}$/i.test(trimmed);
+
+    if (isSolanaAddress || isEvmAddress) {
+      router.push(`/pool/${encodeURIComponent(trimmed)}?source=dexpair&pair=${encodeURIComponent(trimmed)}`);
+    } else {
+      router.push(`/pool/${encodeURIComponent(trimmed)}`);
+    }
   };
 
   return (
@@ -44,7 +53,7 @@ export default function PoolDiscoverPage() {
             </label>
             <Input
               id="pool-id"
-              placeholder="sol-usdc-clmm-main"
+              placeholder="Paste DexScreener pair address or DeFi Llama pool ID"
               value={poolId}
               onChange={(event) => {
                 setPoolId(event.target.value);
