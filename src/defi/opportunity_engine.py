@@ -1027,11 +1027,13 @@ class DefiOpportunityEngine:
         symbol = str(item.get("symbol") or "")
         parts = _symbol_parts(symbol)
         assets: List[Dict[str, Any]] = []
+        # When source already provides rich data (DexScreener), skip heavy token analysis
+        skip_intel = bool(item.get("skip_token_intelligence"))
 
         for index, part in enumerate(parts[:4]):
             address = underlying[index] if index < len(underlying) else None
             role = "collateral" if kind == "lending" else "underlying"
-            assets.append(await self._resolve_asset_profile(part, address, chain, role, detail_mode))
+            assets.append(await self._resolve_asset_profile(part, address, chain, role, detail_mode and not skip_intel))
 
         for index, address in enumerate(reward_tokens[:2]):
             reward_symbol = f"REWARD-{index + 1}"

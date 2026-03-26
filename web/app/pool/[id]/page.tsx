@@ -147,7 +147,8 @@ export default function PoolAnalysisPage() {
         source: source || undefined,
       });
     }
-  }, [poolId, pairAddress, searchChain, source, analyzePool]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- analyzePool ref changes on re-render, causing duplicate calls
+  }, [poolId, pairAddress, searchChain, source]);
 
   useEffect(() => {
     if (!isPending) return;

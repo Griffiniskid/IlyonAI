@@ -219,6 +219,9 @@ async def _analyze_direct_pair(req: AnalyzePoolRequest) -> Optional[Dict[str, ob
         return None
 
     item = await _build_direct_pair_item(pair_address, str(pair.get("chainId") or req.chain or ""), pair)
+    # DexScreener already provides price/liquidity/volume — skip the heavyweight
+    # TokenAnalyzer (RugCheck + RPC + website scraping + honeypot + AI = 22-30s)
+    item["skip_token_intelligence"] = True
     protocol_index = _intelligence_engine.engine._build_protocol_index(await _llama.get_protocols())
     opportunity = await _intelligence_engine.engine._build_pool_or_yield_opportunity(
         item,
@@ -241,7 +244,17 @@ async def _analyze_direct_pair(req: AnalyzePoolRequest) -> Optional[Dict[str, ob
         include_ai=False,
         ranking_profile=req.ranking_profile,
     )
-    opportunity["ai_analysis"] = await _intelligence_engine.engine.ai.build_opportunity_analysis(opportunity) if req.include_ai else None
+    if req.include_ai:
+        try:
+            opportunity["ai_analysis"] = await asyncio.wait_for(
+                _intelligence_engine.engine.ai.build_opportunity_analysis(opportunity),
+                timeout=15.0,
+            )
+        except (asyncio.TimeoutError, Exception) as exc:
+            logger.warning(f"AI summary skipped for pair {pair_address}: {exc}")
+            opportunity["ai_analysis"] = None
+    else:
+        opportunity["ai_analysis"] = None
     return opportunity
 
 
