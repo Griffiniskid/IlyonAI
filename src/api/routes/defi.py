@@ -122,14 +122,42 @@ async def _fetch_pool_fee_tier_pct(chain_value: str, pair_address: str) -> Optio
     return round(fee_units / 10000.0, 4)
 
 
+# Known LP fee rates by DEX (percentage of volume paid to LPs).
+# Sources: official docs for each protocol.
+_DEX_LP_FEE_PCT: dict[str, float] = {
+    # Solana
+    "pumpswap": 0.20,
+    "raydium": 0.25,
+    "orca": 0.25,           # Whirlpools default; concentrated pools vary
+    "meteora": 0.20,
+    "lifinity": 0.20,
+    "phoenix": 0.10,
+    # EVM (fallbacks when on-chain call fails)
+    "uniswap": 0.30,
+    "pancakeswap": 0.25,
+    "sushiswap": 0.25,
+    "curve": 0.04,
+    "camelot": 0.30,
+    "aerodrome": 0.20,
+    "velodrome": 0.20,
+    "trader-joe": 0.20,
+    "quickswap": 0.25,
+}
+
+
 def _estimate_pair_apy(pair: dict, fee_tier_pct: Optional[float]) -> float:
-    if not fee_tier_pct:
-        return 0.0
+    effective_fee = fee_tier_pct
+    if not effective_fee:
+        dex = str(pair.get("dexId") or "").strip().lower()
+        effective_fee = _DEX_LP_FEE_PCT.get(dex)
+    if not effective_fee:
+        # Conservative default: 0.20% is the most common LP fee tier
+        effective_fee = 0.20
     volume_1d = _safe_float((pair.get("volume") or {}).get("h24"))
     liquidity = _safe_float((pair.get("liquidity") or {}).get("usd"))
     if volume_1d <= 0 or liquidity <= 0:
         return 0.0
-    daily_fees = volume_1d * (fee_tier_pct / 100.0)
+    daily_fees = volume_1d * (effective_fee / 100.0)
     return round((daily_fees * 365.0 / liquidity) * 100.0, 4)
 
 
