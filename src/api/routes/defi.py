@@ -222,7 +222,20 @@ async def _analyze_direct_pair(req: AnalyzePoolRequest) -> Optional[Dict[str, ob
     # DexScreener already provides price/liquidity/volume — skip the heavyweight
     # TokenAnalyzer (RugCheck + RPC + website scraping + honeypot + AI = 22-30s)
     item["skip_token_intelligence"] = True
-    protocol_index = _intelligence_engine.engine._build_protocol_index(await _llama.get_protocols())
+    # Build a minimal protocol index from the pair itself instead of
+    # fetching all ~4 500 DeFi Llama protocols (2-5 s network call).
+    # Omitting "url" intentionally: it prevents the docs analyzer from
+    # launching Playwright to scrape the DEX website (another 5-15 s).
+    _dex_slug = _pair_project_slug(pair)
+    _dex_name = str(pair.get("dexId") or _dex_slug).replace("-", " ").title()
+    protocol_index = {
+        _dex_slug: {
+            "slug": _dex_slug,
+            "name": _dex_name,
+            "category": "Dexes",
+            "chains": [str(pair.get("chainId") or "").capitalize()],
+        },
+    }
     opportunity = await _intelligence_engine.engine._build_pool_or_yield_opportunity(
         item,
         "pool",
@@ -239,20 +252,44 @@ async def _analyze_direct_pair(req: AnalyzePoolRequest) -> Optional[Dict[str, ob
         "source": "dexpair",
         "pool_url": pair.get("url"),
     }
-    opportunity["protocol_profile"] = await _intelligence_engine.get_protocol_profile(
-        opportunity["protocol_slug"],
-        include_ai=False,
-        ranking_profile=req.ranking_profile,
-    )
+    # Lightweight protocol stub — the full get_protocol_profile() fetches ALL
+    # DeFi Llama protocols, scrapes the DEX website, and builds 9 sub-
+    # opportunities (60-80 s).  For a DexScreener pair the pool is already
+    # fully scored above; we only need minimal protocol context for the UI.
+    dex_id = str(pair.get("dexId") or "unknown").strip()
+    opportunity["protocol_profile"] = {
+        "protocol": opportunity.get("protocol_slug") or dex_id.lower(),
+        "display_name": dex_id.replace("-", " ").title(),
+        "slug": opportunity.get("protocol_slug") or dex_id.lower(),
+        "category": "Dexes",
+        "url": pair.get("url"),
+        "logo": None,
+        "chains": [str(pair.get("chainId") or "").capitalize()],
+        "ranking_profile": req.ranking_profile or "balanced",
+        "summary": None,
+        "dimensions": None,
+        "confidence": None,
+        "chain_breakdown": [],
+        "deployments": [],
+        "top_markets": [],
+        "top_pools": [],
+        "top_opportunities": [],
+        "audits": [],
+        "incidents": [],
+        "evidence": [],
+        "scenarios": [],
+        "dependencies": [],
+        "assets": [],
+        "docs_profile": {},
+        "governance": {},
+        "methodology": {
+            "protocol_safety": "Lightweight profile — DexScreener pair analysis.",
+            "public_ranking_default": req.ranking_profile or "balanced",
+        },
+        "ai_analysis": None,
+    }
     if req.include_ai:
-        try:
-            opportunity["ai_analysis"] = await asyncio.wait_for(
-                _intelligence_engine.engine.ai.build_opportunity_analysis(opportunity),
-                timeout=15.0,
-            )
-        except (asyncio.TimeoutError, Exception) as exc:
-            logger.warning(f"AI summary skipped for pair {pair_address}: {exc}")
-            opportunity["ai_analysis"] = None
+        opportunity["ai_analysis"] = await _intelligence_engine.engine.ai.build_opportunity_analysis(opportunity)
     else:
         opportunity["ai_analysis"] = None
     return opportunity
