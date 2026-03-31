@@ -32,12 +32,12 @@ class Settings(BaseSettings):
 
     # OpenRouter (required for all non-Grok AI analysis)
     openrouter_api_key: Optional[str] = Field(None, env="OPENROUTER_API_KEY")
-    ai_model: str = Field("deepseek/deepseek-v3.2-exp", env="AI_MODEL", description="Default OpenRouter model for all non-Grok AI analysis")
+    ai_model: str = Field("nvidia/nemotron-3-super-120b-a12b:free", env="AI_MODEL", description="Default OpenRouter model for all non-Grok AI analysis")
 
     # Legacy OpenAI direct config (deprecated, kept for env compatibility only)
     openai_api_key: Optional[str] = Field(None, env="OPENAI_API_KEY")
-    openai_model: str = Field("deepseek/deepseek-v3.2-exp", env="OPENAI_MODEL")
-    openai_mini_model: str = Field("deepseek/deepseek-v3.2-exp", env="OPENAI_MINI_MODEL")
+    openai_model: str = Field("nvidia/nemotron-3-super-120b-a12b:free", env="OPENAI_MODEL")
+    openai_mini_model: str = Field("nvidia/nemotron-3-super-120b-a12b:free", env="OPENAI_MINI_MODEL")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # BLOCKCHAIN CONFIGURATION - MULTI-CHAIN
@@ -223,7 +223,7 @@ class Settings(BaseSettings):
 
     # CORS settings for web frontend
     cors_origins: str = Field(
-        "http://localhost:3000,http://localhost:3001,https://ilyonai.io,https://www.ilyonai.io",
+        "http://localhost:3000,http://localhost:3001,https://ilyonai.com,https://www.ilyonai.com,https://staging.ilyonai.com",
         env="CORS_ORIGINS",
         description="Comma-separated list of allowed CORS origins"
     )

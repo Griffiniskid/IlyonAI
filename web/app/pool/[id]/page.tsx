@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Area,
@@ -136,8 +136,11 @@ export default function PoolAnalysisPage() {
     error,
   } = useAnalyzePool();
 
+  // Guard against React StrictMode double-firing the effect in dev mode.
+  const analysisStarted = useRef(false);
   useEffect(() => {
-    if (poolId) {
+    if (poolId && !analysisStarted.current) {
+      analysisStarted.current = true;
       analyzePool({
         poolId,
         includeAi: true,
@@ -238,7 +241,7 @@ export default function PoolAnalysisPage() {
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Go Back
               </Button>
-              <Button onClick={() => analyzePool({ poolId, includeAi: true, rankingProfile: "balanced" })}>
+              <Button onClick={() => { analysisStarted.current = false; analyzePool({ poolId, includeAi: true, rankingProfile: "balanced", pairAddress: pairAddress || undefined, chain: searchChain || undefined, source: source || undefined }); }}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Try Again
               </Button>

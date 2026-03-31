@@ -19,7 +19,7 @@ try {
 }
 
 const nextConfig = {
-  reactStrictMode: true,
+  reactStrictMode: false,
   output: 'standalone',
   distDir: safeDistDir,
   images: {

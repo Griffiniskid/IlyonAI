@@ -14,9 +14,21 @@ GET /api/v1/defi/protocol/{slug}         - Protocol detail
 
 import asyncio
 import logging
+import time
 from typing import Dict, Optional
 
 from aiohttp import web
+
+# ---------------------------------------------------------------------------
+# In-flight request deduplication for pool analysis.
+# If the frontend fires the same analysis twice (React StrictMode, HMR, etc.)
+# the second request reuses the first request's Future instead of spawning a
+# parallel analysis.  Results are also cached for 60 s so instant re-requests
+# (e.g. page refresh) skip AI calls entirely.
+# ---------------------------------------------------------------------------
+_pool_inflight: Dict[str, asyncio.Future] = {}
+_pool_result_cache: Dict[str, tuple] = {}  # key → (timestamp, result_dict)
+_POOL_CACHE_TTL = 60  # seconds
 
 from src.api.schemas.requests import AnalyzePoolRequest
 from src.chains.base import ChainType
@@ -210,6 +222,8 @@ async def _build_direct_pair_item(pair_address: str, chain_value: str, pair: dic
 
 
 async def _analyze_direct_pair(req: AnalyzePoolRequest) -> Optional[Dict[str, object]]:
+    import time as _t
+    _t0 = _t.monotonic()
     if _intelligence_engine is None or _pair_client is None or _llama is None:
         return None
 
@@ -217,6 +231,7 @@ async def _analyze_direct_pair(req: AnalyzePoolRequest) -> Optional[Dict[str, ob
     pair = await _pair_client.find_pair(pair_address, chain=req.chain)
     if not pair:
         return None
+    logger.info("[pair-timing] find_pair %.1fs", _t.monotonic() - _t0)
 
     item = await _build_direct_pair_item(pair_address, str(pair.get("chainId") or req.chain or ""), pair)
     # DexScreener already provides price/liquidity/volume — skip the heavyweight
@@ -236,13 +251,19 @@ async def _analyze_direct_pair(req: AnalyzePoolRequest) -> Optional[Dict[str, ob
             "chains": [str(pair.get("chainId") or "").capitalize()],
         },
     }
+    # detail_mode=False: DexScreener already provides price/liquidity/volume.
+    # Skipping detail_mode avoids: DeFi Llama pool history lookup (30 s
+    # timeout for an unknown pair), external audit/incident fetches, and
+    # Playwright docs scraping — all of which we overwrite below anyway.
+    _t1 = _t.monotonic()
     opportunity = await _intelligence_engine.engine._build_pool_or_yield_opportunity(
         item,
         "pool",
         protocol_index,
-        detail_mode=True,
+        detail_mode=False,
         ranking_profile=req.ranking_profile,
     )
+    logger.info("[pair-timing] build_opportunity %.1fs", _t.monotonic() - _t1)
     opportunity["history"] = {"available": False, "points": []}
     opportunity["related_opportunities"] = []
     opportunity["safer_alternative"] = None
@@ -289,9 +310,12 @@ async def _analyze_direct_pair(req: AnalyzePoolRequest) -> Optional[Dict[str, ob
         "ai_analysis": None,
     }
     if req.include_ai:
+        _t2 = _t.monotonic()
         opportunity["ai_analysis"] = await _intelligence_engine.engine.ai.build_opportunity_analysis(opportunity)
+        logger.info("[pair-timing] ai_analysis %.1fs", _t.monotonic() - _t2)
     else:
         opportunity["ai_analysis"] = None
+    logger.info("[pair-timing] total %.1fs for %s", _t.monotonic() - _t0, pair_address)
     return opportunity
 
 
@@ -578,9 +602,50 @@ async def analyze_pool(request: web.Request) -> web.Response:
 
     try:
         if req.source == "dexpair" or req.pair_address:
-            detail = await _analyze_direct_pair(req)
+            dedup_key = f"pair:{req.pair_address or req.pool_id}"
+
+            # 1. Check result cache (instant replay for page refresh / HMR)
+            cached = _pool_result_cache.get(dedup_key)
+            if cached and (time.time() - cached[0]) < _POOL_CACHE_TTL:
+                logger.info("Pool result cache hit for %s", dedup_key)
+                return web.json_response(cached[1])
+
+            # 2. Join an in-flight analysis instead of starting a duplicate
+            if dedup_key in _pool_inflight:
+                logger.info("Joining in-flight analysis for %s", dedup_key)
+                try:
+                    detail = await asyncio.wait_for(
+                        asyncio.shield(_pool_inflight[dedup_key]),
+                        timeout=120,
+                    )
+                except (asyncio.TimeoutError, Exception) as exc:
+                    logger.warning("In-flight join failed for %s: %s", dedup_key, exc)
+                    return web.json_response({"error": "Pool analysis timed out"}, status=504)
+                if detail:
+                    return web.json_response(detail)
+                return web.json_response({"error": "Pool analysis returned no result"}, status=404)
+
+            # 3. First request — run the actual analysis
+            fut: asyncio.Future = asyncio.get_event_loop().create_future()
+            _pool_inflight[dedup_key] = fut
+            try:
+                detail = await asyncio.wait_for(_analyze_direct_pair(req), timeout=120)
+                if detail:
+                    _pool_result_cache[dedup_key] = (time.time(), detail)
+                fut.set_result(detail)
+            except asyncio.TimeoutError:
+                logger.error("DexScreener pair analysis timed out after 120 s for %s", req.pair_address or req.pool_id)
+                fut.set_exception(asyncio.TimeoutError())
+                return web.json_response({"error": "Pool analysis timed out"}, status=504)
+            except Exception as exc:
+                fut.set_exception(exc)
+                raise
+            finally:
+                _pool_inflight.pop(dedup_key, None)
+
             if not detail:
                 return web.json_response({"error": f"Pair '{req.pair_address or req.pool_id}' could not be analyzed"}, status=404)
+            logger.info("DexScreener pair analysis complete for %s — returning response", req.pair_address or req.pool_id)
             return web.json_response(detail)
 
         pools = await _llama.get_pools(min_tvl=0, min_apy=0)

@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
 import logging
+import time
 from typing import Any, Dict, Optional
 
 from src.ai.openai_client import OpenAIClient
 from src.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Simple TTL cache for AI analysis results to prevent duplicate calls.
+# Key: hash of (kind, payload), Value: (timestamp, result)
+_AI_CACHE: Dict[str, tuple[float, Dict[str, Any]]] = {}
+_AI_CACHE_TTL = 300  # 5 minutes
 
 
 def build_ai_judgment_payload(
@@ -157,32 +165,75 @@ class DefiAIRouter:
         }
         return await self._build_entity_analysis("opportunity", payload, fallback)
 
+    @staticmethod
+    def _trim_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Strip bulky nested objects the AI doesn't need.
+
+        The full opportunity/protocol object can contain related_opportunities
+        (6 nested objects), protocol_profile, raw history points, etc. that
+        push the token count from ~3K to 40K-70K without adding analytical
+        value.  Keep only the fields the specialist prompts actually use.
+        """
+        keep_keys = {
+            "id", "kind", "product_type", "score_family",
+            "title", "subtitle", "protocol", "protocol_name", "protocol_slug",
+            "project", "symbol", "chain",
+            "apy", "tvl_usd",
+            "summary", "dimensions", "confidence",
+            "evidence", "scenarios", "dependencies", "assets",
+            "deployment",
+            # protocol-level keys
+            "display_name", "slug", "category", "url", "chains",
+            "audits", "incidents", "docs_profile", "governance",
+        }
+        trimmed = {k: v for k, v in payload.items() if k in keep_keys}
+        # Cap list fields to avoid bloat from large audit/incident lists
+        for list_key in ("evidence", "assets", "dependencies", "audits", "incidents"):
+            val = trimmed.get(list_key)
+            if isinstance(val, list) and len(val) > 8:
+                trimmed[list_key] = val[:8]
+        return trimmed
+
     async def _build_entity_analysis(self, kind: str, payload: Dict[str, Any], fallback: Dict[str, Any]) -> Dict[str, Any]:
         if not self._client:
             return fallback
 
-        packet = json.dumps(payload, ensure_ascii=True)
-        technical = await self._ask_json(
-            "You are a strict DeFi technical risk analyst. Use only supplied evidence. Return JSON only.",
-            f"Analyze the {kind} for technical and governance risk. Return JSON with keys: headline, main_risks, safer_alternative.\nEvidence:\n{packet}",
+        trimmed = self._trim_payload(payload)
+        packet = json.dumps(trimmed, ensure_ascii=True)
+
+        # Cache check — avoid duplicate OpenRouter calls for the same pool/protocol
+        cache_key = hashlib.md5(f"{kind}:{packet}".encode()).hexdigest()
+        cached = _AI_CACHE.get(cache_key)
+        if cached and (time.time() - cached[0]) < _AI_CACHE_TTL:
+            logger.info("AI analysis cache hit for %s (key=%s)", kind, cache_key[:8])
+            return cached[1]
+
+        # Run the 3 independent analysis passes in parallel.
+        technical, sustainability, dependency = await asyncio.gather(
+            self._ask_json(
+                "You are a strict DeFi technical risk analyst. Use only supplied evidence. Return JSON only.",
+                f"Analyze the {kind} for technical and governance risk. Return JSON with keys: headline, main_risks, safer_alternative.\nEvidence:\n{packet}",
+            ),
+            self._ask_json(
+                "You are a strict DeFi yield sustainability analyst. Use only supplied evidence. Return JSON only.",
+                f"Explain why the yield exists and who it suits. Return JSON with keys: summary, why_it_exists, best_for.\nEvidence:\n{packet}",
+            ),
+            self._ask_json(
+                "You are a strict DeFi dependency and scenario analyst. Use only supplied evidence. Return JSON only.",
+                f"Explain what breaks first and what to monitor. Return JSON with keys: main_risks, monitor_triggers.\nEvidence:\n{packet}",
+            ),
         )
-        sustainability = await self._ask_json(
-            "You are a strict DeFi yield sustainability analyst. Use only supplied evidence. Return JSON only.",
-            f"Explain why the yield exists and who it suits. Return JSON with keys: summary, why_it_exists, best_for.\nEvidence:\n{packet}",
-        )
-        dependency = await self._ask_json(
-            "You are a strict DeFi dependency and scenario analyst. Use only supplied evidence. Return JSON only.",
-            f"Explain what breaks first and what to monitor. Return JSON with keys: main_risks, monitor_triggers.\nEvidence:\n{packet}",
-        )
+        # Judge consolidates all 3 — must wait for them to finish.
         judge = await self._ask_json(
             "You are a DeFi verifier. Reject unsupported claims. Use only supplied evidence and draft fields. Return JSON only.",
             "Return JSON with keys: headline, summary, best_for, why_it_exists, main_risks, monitor_triggers, safer_alternative.\n"
             f"Evidence:\n{packet}\nDraft technical:\n{json.dumps(technical, ensure_ascii=True)}\nDraft sustainability:\n{json.dumps(sustainability, ensure_ascii=True)}\nDraft dependency:\n{json.dumps(dependency, ensure_ascii=True)}",
+            max_tokens=1400,
         )
         if not judge:
             return fallback
 
-        return {
+        result = {
             "available": True,
             "headline": judge.get("headline") or technical.get("headline") or fallback["headline"],
             "summary": judge.get("summary") or sustainability.get("summary") or fallback["summary"],
@@ -192,12 +243,14 @@ class DefiAIRouter:
             "monitor_triggers": judge.get("monitor_triggers") or dependency.get("monitor_triggers") or fallback["monitor_triggers"],
             "safer_alternative": judge.get("safer_alternative") or technical.get("safer_alternative") or fallback["safer_alternative"],
         }
+        _AI_CACHE[cache_key] = (time.time(), result)
+        return result
 
-    async def _ask_json(self, system_prompt: str, message: str) -> Dict[str, Any]:
+    async def _ask_json(self, system_prompt: str, message: str, max_tokens: int = 900) -> Dict[str, Any]:
         if not self._client:
             return {}
         try:
-            raw = await self._client.chat_json(message, system_prompt=system_prompt, max_tokens=900, temperature=0.1)
+            raw = await self._client.chat_json(message, system_prompt=system_prompt, max_tokens=max_tokens, temperature=0.1)
         except Exception as exc:
             logger.warning("DeFi AI pass failed: %s", exc)
             return {}

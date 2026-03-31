@@ -1,7 +1,7 @@
 # Ilyon AI - Docker Compose Configuration
 # Supports side-by-side production and staging deployments.
 
-name: ${COMPOSE_PROJECT_NAME:-ilyonai-prod}
+name: ${COMPOSE_PROJECT_NAME:-ai-sentinel}
 
 services:
   # ═══════════════════════════════════════════════════════════════════════════

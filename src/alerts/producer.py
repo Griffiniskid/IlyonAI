@@ -5,9 +5,8 @@ from uuid import uuid4
 
 from src.alerts.models import AlertRecord
 from src.alerts.store import InMemoryAlertStore
-from src.config import settings
-from src.data.solana import SolanaClient
 from src.intel.rekt_database import RektDatabase
+from src.storage.database import get_database
 
 logger = logging.getLogger(__name__)
 
@@ -26,15 +25,17 @@ class AlertProducer:
         self._seen_rekt_ids: set[str] = set()
 
     async def check_whale_flows(self) -> None:
-        """Generate alerts for whale transactions above threshold."""
+        """Generate alerts for whale transactions above threshold.
+
+        Reads from the database (populated by WhaleTransactionPoller)
+        instead of making separate Helius API calls.
+        """
         try:
-            async with SolanaClient(
-                rpc_url=settings.solana_rpc_url,
-                helius_api_key=settings.helius_api_key,
-            ) as client:
-                txs = await client.get_whale_transactions(limit=20)
+            db = get_database()
+            overview = await db.get_whale_overview(hours=1, limit=20)
+            txs = overview.get("transactions", [])
         except Exception as e:
-            logger.warning(f"Alert producer: failed to fetch whale txs: {e}")
+            logger.warning(f"Alert producer: failed to fetch whale txs from DB: {e}")
             return
 
         for tx in txs:
@@ -42,13 +43,11 @@ class AlertProducer:
             if amount < self.whale_threshold_usd:
                 continue
             wallet = tx.get("wallet_address") or tx.get("wallet") or "unknown"
-            tx_type = str(tx.get("type", "")).lower()
-            dedup_key = f"{wallet}-{amount}-{tx_type}"
+            direction = tx.get("direction") or ("inflow" if str(tx.get("type", "")).lower() == "buy" else "outflow")
+            dedup_key = f"{wallet}-{amount}-{direction}"
             if dedup_key in self._seen_whale_keys:
                 continue
             self._seen_whale_keys.add(dedup_key)
-
-            direction = "inflow" if tx_type == "buy" else "outflow"
             self.store.add_alert(AlertRecord(
                 id=f"whale-{uuid4().hex[:8]}",
                 state="new",

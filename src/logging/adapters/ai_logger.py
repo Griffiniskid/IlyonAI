@@ -38,7 +38,7 @@ class AILogger:
     # Updated as of December 2025
     PRICING = {
         # OpenRouter
-        "deepseek/deepseek-v3.2-exp": {"input": 0.27, "output": 1.10},
+        "nvidia/nemotron-3-super-120b-a12b:free": {"input": 0.00, "output": 0.00},
         "anthropic/claude-3.5-sonnet": {"input": 3.00, "output": 15.00},
 
         # Google Gemini
@@ -273,7 +273,7 @@ class AILogger:
             Cost in USD
         """
         # Get pricing for model (default to DeepSeek if not found)
-        pricing = self.PRICING.get(model, self.PRICING.get("deepseek/deepseek-v3.2-exp", {"input": 0.27, "output": 1.10}))
+        pricing = self.PRICING.get(model, {"input": 0.00, "output": 0.00})
 
         # Calculate cost (pricing is per 1M tokens)
         input_cost = (tokens_prompt / 1_000_000) * pricing["input"]

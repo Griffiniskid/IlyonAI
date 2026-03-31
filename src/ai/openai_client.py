@@ -411,17 +411,23 @@ CRITICAL RULES:
                 for candidate in [
                     settings.openai_model,
                     settings.openai_mini_model,
-                    "deepseek/deepseek-v3.2-exp",
-                    "deepseek/deepseek-chat-v3-0324",
-                    "openai/gpt-4o-mini",
                 ]:
                     if candidate and candidate not in models_to_try:
                         models_to_try.append(candidate)
+                # Fallback free models in case primary is down/hanging
+                for fallback in [
+                    "google/gemma-3-12b-it:free",
+                    "arcee-ai/trinity-large-preview:free",
+                    "google/gemma-3-27b-it:free",
+                    "meta-llama/llama-3.3-70b-instruct:free",
+                ]:
+                    if fallback not in models_to_try:
+                        models_to_try.append(fallback)
 
             last_error_message = "API error"
 
             for model_name in models_to_try:
-                timeout_seconds = 20 if (self.use_openrouter and ":free" in model_name) else 30
+                timeout_seconds = 30  # Quick fail to fallbacks if primary hangs
                 payload = {
                     "model": model_name,
                     "messages": [
@@ -434,81 +440,94 @@ CRITICAL RULES:
                 }
 
                 try:
-                    async with session.post(
-                        self.base_url,
-                        headers=headers,
-                        json=payload,
-                        timeout=aiohttp.ClientTimeout(total=timeout_seconds)
-                    ) as resp:
-                        if resp.status != 200:
-                            error_text = await resp.text()
-                            last_error_message = f"HTTP {resp.status}"
-                            logger.warning(f"AI API error ({model_name}): {resp.status} - {error_text[:200]}")
+                    # Retry once on 429 with a short delay before moving to next model
+                    for attempt in range(2):
+                        async with session.post(
+                            self.base_url,
+                            headers=headers,
+                            json=payload,
+                            timeout=aiohttp.ClientTimeout(total=timeout_seconds)
+                        ) as resp:
+                            if resp.status == 429 and attempt == 0:
+                                logger.info(f"AI API 429 for {model_name}, retrying in 3s...")
+                                await asyncio.sleep(3)
+                                continue
+                            if resp.status != 200:
+                                error_text = await resp.text()
+                                last_error_message = f"HTTP {resp.status}"
+                                logger.warning(f"AI API error ({model_name}): {resp.status} - {error_text[:200]}")
 
-                            self.ai_logger.log_error(
-                                error=Exception(f"HTTP {resp.status}: {error_text[:100]}"),
-                                provider=self.provider.value,
-                                model=model_name,
-                                operation="analyze",
-                                context=context,
-                                exit_code=AILogger.EXIT_API_ERROR
-                            )
-                            continue
+                                self.ai_logger.log_error(
+                                    error=Exception(f"HTTP {resp.status}: {error_text[:100]}"),
+                                    provider=self.provider.value,
+                                    model=model_name,
+                                    operation="analyze",
+                                    context=context,
+                                    exit_code=AILogger.EXIT_API_ERROR
+                                )
+                                break  # Move to next model
 
-                        data = await resp.json()
-                        content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+                            data = await resp.json()
+                            break  # Success — exit retry loop
+                    else:
+                        continue  # All retries exhausted, next model
 
-                        if not content:
-                            last_error_message = "Empty response"
-                            self.ai_logger.log_error(
-                                error=Exception("Empty response from AI"),
-                                provider=self.provider.value,
-                                model=model_name,
-                                operation="analyze",
-                                context=context,
-                                exit_code=AILogger.EXIT_EMPTY_RESPONSE
-                            )
-                            continue
+                    if resp.status != 200:
+                        continue  # broke out of retry loop due to non-429 error
 
-                        result = self._parse_ai_response(content)
+                    content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
 
-                        usage = data.get('usage', {})
-                        tokens_used = usage.get('total_tokens', 0)
-                        tokens_prompt = usage.get('prompt_tokens', 0)
-                        tokens_completion = usage.get('completion_tokens', 0)
-                        latency_ms = int((time.time() - start_time) * 1000)
-
-                        self.ai_logger.log_response(
-                            success=True,
+                    if not content:
+                        last_error_message = "Empty response"
+                        self.ai_logger.log_error(
+                            error=Exception("Empty response from AI"),
                             provider=self.provider.value,
                             model=model_name,
                             operation="analyze",
-                            response_data=result,
-                            raw_response=content if settings.log_ai_full_responses else None,
-                            tokens_used=tokens_used,
-                            tokens_prompt=tokens_prompt,
-                            tokens_completion=tokens_completion,
-                            latency_ms=latency_ms,
                             context=context,
-                            exit_code=AILogger.EXIT_SUCCESS
+                            exit_code=AILogger.EXIT_EMPTY_RESPONSE
                         )
+                        continue
 
-                        logger.info(
-                            f"AI Analysis complete ({model_name}): {request.symbol} | "
-                            f"Score: {result.get('ai_score', 'N/A')} | "
-                            f"Verdict: {result.get('ai_verdict', 'N/A')} | "
-                            f"Rug%: {result.get('ai_rug_probability', 'N/A')}"
-                        )
+                    result = self._parse_ai_response(content)
 
-                        return AIResponse(
-                            success=True,
-                            provider=self.provider,
-                            content=result,
-                            raw_text=content,
-                            model=model_name,
-                            tokens_used=tokens_used,
-                            latency_ms=latency_ms
-                        )
+                    usage = data.get('usage', {})
+                    tokens_used = usage.get('total_tokens', 0)
+                    tokens_prompt = usage.get('prompt_tokens', 0)
+                    tokens_completion = usage.get('completion_tokens', 0)
+                    latency_ms = int((time.time() - start_time) * 1000)
+
+                    self.ai_logger.log_response(
+                        success=True,
+                        provider=self.provider.value,
+                        model=model_name,
+                        operation="analyze",
+                        response_data=result,
+                        raw_response=content if settings.log_ai_full_responses else None,
+                        tokens_used=tokens_used,
+                        tokens_prompt=tokens_prompt,
+                        tokens_completion=tokens_completion,
+                        latency_ms=latency_ms,
+                        context=context,
+                        exit_code=AILogger.EXIT_SUCCESS
+                    )
+
+                    logger.info(
+                        f"AI Analysis complete ({model_name}): {request.symbol} | "
+                        f"Score: {result.get('ai_score', 'N/A')} | "
+                        f"Verdict: {result.get('ai_verdict', 'N/A')} | "
+                        f"Rug%: {result.get('ai_rug_probability', 'N/A')}"
+                    )
+
+                    return AIResponse(
+                        success=True,
+                        provider=self.provider,
+                        content=result,
+                        raw_text=content,
+                        model=model_name,
+                        tokens_used=tokens_used,
+                        latency_ms=latency_ms
+                    )
                 except asyncio.TimeoutError:
                     last_error_message = "Timeout"
                     logger.warning(f"AI API timeout for model {model_name}")
@@ -840,33 +859,54 @@ If asked about a specific token, suggest sending the address for analysis."""
                 headers["HTTP-Referer"] = "https://t.me/Ilyon_AI_Bot"
                 headers["X-Title"] = "Ilyon AI Bot"
 
-            payload = {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": message},
-                ],
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "response_format": {"type": "json_object"},
-            }
+            models_to_try = [self.model]
+            if self.use_openrouter:
+                for fallback in [
+                    "google/gemma-3-12b-it:free",
+                    "arcee-ai/trinity-large-preview:free",
+                    "meta-llama/llama-3.3-70b-instruct:free",
+                ]:
+                    if fallback not in models_to_try:
+                        models_to_try.append(fallback)
 
-            async with session.post(
-                self.base_url,
-                headers=headers,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=45),
-            ) as resp:
-                if resp.status != 200:
-                    error_text = await resp.text()
-                    logger.warning("Structured chat API error: %s - %s", resp.status, error_text[:300])
-                    return {}
+            for model_name in models_to_try:
+                payload = {
+                    "model": model_name,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": message},
+                    ],
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "response_format": {"type": "json_object"},
+                }
 
-                data = await resp.json()
-                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                if not content:
-                    return {}
-                return self._extract_json_from_text(content)
+                try:
+                    async with session.post(
+                        self.base_url,
+                        headers=headers,
+                        json=payload,
+                        timeout=aiohttp.ClientTimeout(total=120),
+                    ) as resp:
+                        if resp.status != 200:
+                            error_text = await resp.text()
+                            logger.warning("Structured chat API error (%s): %s - %s", model_name, resp.status, error_text[:300])
+                            continue
+
+                        data = await resp.json()
+                        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        if not content:
+                            logger.warning("Structured chat empty response from %s", model_name)
+                            continue
+                        return self._extract_json_from_text(content)
+                except asyncio.TimeoutError:
+                    logger.warning("Structured chat timeout for %s", model_name)
+                    continue
+                except Exception as e:
+                    logger.warning("Structured chat error for %s: %s", model_name, e)
+                    continue
+
+            return {}
 
         except Exception as e:
             logger.warning("Structured chat error: %s", e)

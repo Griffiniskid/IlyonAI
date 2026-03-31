@@ -146,7 +146,7 @@ class AIContractAuditor:
                 "Content-Type": "application/json",
             }
             payload = {
-                "model": settings.ai_model or "deepseek/deepseek-v3.2-exp",
+                "model": settings.ai_model,
                 "messages": [
                     {"role": "system", "content": AUDIT_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},

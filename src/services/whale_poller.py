@@ -12,8 +12,8 @@ from src.storage.database import Database
 logger = logging.getLogger(__name__)
 
 TOPIC = "whale-transactions"
-DEFAULT_INTERVAL = 15  # seconds
-BACKOFF_INTERVAL = 60  # seconds after circuit break
+DEFAULT_INTERVAL = 300  # 5 minutes — prevents Helius credit drain (~40K calls/day at 15s)
+BACKOFF_INTERVAL = 600  # 10 minutes after circuit break
 MAX_CONSECUTIVE_FAILURES = 5
 
 
