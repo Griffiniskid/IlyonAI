@@ -370,6 +370,26 @@ class TokenAnalyzer:
             token.mint_authority_enabled = bool(data.get('is_mintable'))
             token.freeze_authority_enabled = bool(data.get('can_pause_transfer'))
 
+            # Extract LP lock status from GoPlus lp_holders data
+            lp_holders = data.get('lp_holders', [])
+            if lp_holders:
+                total_locked_pct = 0.0
+                for lp in lp_holders:
+                    is_locked = lp.get('is_locked') in (1, '1', True)
+                    pct = float(lp.get('percent', 0) or 0) * 100  # GoPlus returns 0-1
+                    if is_locked:
+                        total_locked_pct += pct
+
+                token.liquidity_lock_source = "GoPlus"
+                if total_locked_pct > 0:
+                    token.liquidity_locked = True
+                    token.lp_lock_percent = min(total_locked_pct, 100.0)
+                    token.liquidity_lock_note = f"LP lock verified via GoPlus ({token.lp_lock_percent:.0f}% locked)."
+                else:
+                    token.liquidity_locked = False
+                    token.lp_lock_percent = 0
+                    token.liquidity_lock_note = "GoPlus did not detect a verified LP lock."
+
             logger.info(f"GoPlus data applied for {token.address[:8]} on {chain_type.display_name}")
 
         except Exception as e:

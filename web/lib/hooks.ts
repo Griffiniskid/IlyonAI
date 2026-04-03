@@ -311,6 +311,9 @@ export function useUpdateAlert() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["alerts"] });
     },
+    onError: (err) => {
+      console.error("Alert update failed:", err);
+    },
   });
 }
 

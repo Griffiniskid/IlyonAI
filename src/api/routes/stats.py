@@ -96,29 +96,22 @@ async def fetch_defillama_solana_volume() -> Dict[str, Any]:
                 # Get total DEXes count (approximate active tokens)
                 total_dexes = len(data.get("protocols", []))
                 
-                # Extract hourly data from totalDataChart if available
-                # Note: DefiLlama returns daily data in totalDataChart, not hourly.
-                # We'll leave this empty to trigger the hourly simulation in the main handler
-                # until we have a source for real hourly volume data.
-                hourly_data = []
-                
-                # chart_data = data.get("totalDataChart", [])
-                
-                # if chart_data and len(chart_data) > 0:
-                #     # Get last 24 data points (each is typically 1 hour)
-                #     recent_data = chart_data[-24:] if len(chart_data) >= 24 else chart_data
-                    
-                #     for point in recent_data:
-                #         if isinstance(point, list) and len(point) >= 2:
-                #             timestamp = point[0]
-                #             volume = point[1]
-                #             # Convert timestamp to hour label
-                #             dt = datetime.utcfromtimestamp(timestamp)
-                #             hour_label = dt.strftime("%H:%M")
-                #             hourly_data.append({
-                #                 "time": hour_label,
-                #                 "volume": float(volume or 0)
-                #             })
+                # Extract daily volume data from totalDataChart (DefiLlama provides daily, not hourly)
+                daily_data = []
+                chart_data = data.get("totalDataChart", [])
+                if chart_data and len(chart_data) > 0:
+                    recent_data = chart_data[-14:]  # Last 14 days
+                    for point in recent_data:
+                        if isinstance(point, list) and len(point) >= 2:
+                            timestamp = point[0]
+                            volume = point[1]
+                            dt = datetime.utcfromtimestamp(timestamp)
+                            day_label = dt.strftime("%b %d")
+                            daily_data.append({
+                                "time": day_label,
+                                "volume": float(volume or 0)
+                            })
+                hourly_data = daily_data
                 
                 return {
                     "total_24h": total_24h,

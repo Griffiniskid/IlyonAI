@@ -335,7 +335,7 @@ export default function DashboardPage() {
         {/* Volume Chart - Now with proper hourly data */}
         <GlassCard className="lg:col-span-2">
           <div className="flex items-center justify-between mb-4 md:mb-6">
-            <h3 className="text-base md:text-lg font-semibold">Trading Volume (24h)</h3>
+            <h3 className="text-base md:text-lg font-semibold">Trading Volume (14d)</h3>
             <Badge variant="outline">Live</Badge>
           </div>
           <div className="h-48 md:h-64">

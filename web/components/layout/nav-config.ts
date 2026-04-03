@@ -1,7 +1,7 @@
 import {
   Compass,
   LineChart,
-  Activity,
+
   Radar,
   Flame,
   Shield,
@@ -31,7 +31,6 @@ export const navGroups: NavGroup[] = [
       { label: "Overview", href: "/", icon: Compass },
       { label: "Dashboard", href: "/dashboard", icon: LineChart },
       { label: "Trending", href: "/trending", icon: Flame },
-      { label: "DeFi", href: "/defi", icon: Activity },
     ],
   },
   {

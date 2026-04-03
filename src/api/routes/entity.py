@@ -29,14 +29,26 @@ async def list_entities(request: web.Request) -> web.Response:
 
 
 async def get_entity(request: web.Request) -> web.Response:
-    """GET /api/v1/entities/{id} — get entity profile."""
-    entity_id = request.match_info["id"]
+    """GET /api/v1/entities/{id} — get entity profile.
+
+    Accepts either an entity ID or a wallet address.  When a wallet
+    address is provided, it is resolved to the owning entity first.
+    """
+    lookup = request.match_info["id"]
     graph: GraphStore = request.app[GRAPH_STORE_KEY]
 
+    # Try as entity ID first, then resolve as wallet address
+    entity_id = lookup
     wallets = graph.get_wallets_for_entity(entity_id)
     if not wallets:
+        resolved = graph.get_entity_id_for_wallet(lookup)
+        if resolved:
+            entity_id = resolved
+            wallets = graph.get_wallets_for_entity(entity_id)
+
+    if not wallets:
         return envelope_error_response(
-            f"Entity {entity_id} not found",
+            f"Entity {lookup} not found",
             code="ENTITY_NOT_FOUND",
             http_status=404,
         )

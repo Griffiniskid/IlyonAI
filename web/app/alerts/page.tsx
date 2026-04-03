@@ -60,12 +60,12 @@ export default function AlertsPage() {
     router.push(href);
   };
 
-  const handleAlertAction = async (
+  const handleAlertAction = (
     alertId: string,
     action: "seen" | "acknowledge" | "snooze" | "unsnooze" | "resolve",
   ) => {
     const snoozed_until = action === "snooze" ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : undefined;
-    await updateAlert.mutateAsync({ alertId, action, snoozed_until });
+    updateAlert.mutate({ alertId, action, snoozed_until });
   };
 
   return (
@@ -167,22 +167,22 @@ export default function AlertsPage() {
                         <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                       </a>
                     ) : null}
-                    <Button size="sm" variant="outline" onClick={() => void handleAlertAction(alert.id, "seen")}>
+                    <Button size="sm" variant="outline" onClick={() => handleAlertAction(alert.id, "seen")}>
                       Mark seen
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => void handleAlertAction(alert.id, "acknowledge")}>
+                    <Button size="sm" variant="outline" onClick={() => handleAlertAction(alert.id, "acknowledge")}>
                       Acknowledge
                     </Button>
                     {alert.snoozed_until ? (
-                      <Button size="sm" variant="outline" onClick={() => void handleAlertAction(alert.id, "unsnooze")}>
+                      <Button size="sm" variant="outline" onClick={() => handleAlertAction(alert.id, "unsnooze")}>
                         Unsnooze
                       </Button>
                     ) : (
-                      <Button size="sm" variant="outline" onClick={() => void handleAlertAction(alert.id, "snooze")}>
+                      <Button size="sm" variant="outline" onClick={() => handleAlertAction(alert.id, "snooze")}>
                         Snooze 1h
                       </Button>
                     )}
-                    <Button size="sm" variant="outline" onClick={() => void handleAlertAction(alert.id, "resolve")}>
+                    <Button size="sm" variant="outline" onClick={() => handleAlertAction(alert.id, "resolve")}>
                       Resolve
                     </Button>
                   </div>
