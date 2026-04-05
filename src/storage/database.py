@@ -1946,6 +1946,41 @@ class Database:
             await session.commit()
             return result.rowcount or 0
 
+    async def get_whale_transactions_for_wallet(self, wallet_address: str, hours: int = 24, limit: int = 50) -> list[dict]:
+        """Query whale transactions for a specific wallet address."""
+        if not self._initialized:
+            return []
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        async with self.async_session() as session:
+            stmt = (
+                select(WhaleTransaction)
+                .where(
+                    WhaleTransaction.wallet_address == wallet_address,
+                    WhaleTransaction.created_at >= cutoff,
+                )
+                .order_by(WhaleTransaction.tx_timestamp.desc())
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+            transactions = []
+            for row in rows:
+                transactions.append({
+                    "signature": row.signature,
+                    "wallet_address": row.wallet_address,
+                    "wallet_label": row.wallet_label,
+                    "token_address": row.token_address,
+                    "token_symbol": row.token_symbol,
+                    "token_name": row.token_name,
+                    "direction": "inflow" if row.direction == "buy" else "outflow",
+                    "amount_usd": row.amount_usd,
+                    "amount_tokens": row.amount_tokens,
+                    "price_usd": row.price_usd,
+                    "dex_name": row.dex_name,
+                    "timestamp": row.tx_timestamp.isoformat() if row.tx_timestamp else "",
+                })
+            return transactions
+
     async def get_cached_transactions(self, wallet_address: str, chain: str = "solana", max_age_seconds: int = 300) -> Optional[list]:
         """Return cached transactions if fresh enough, else None."""
         if not self._initialized:

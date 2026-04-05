@@ -117,146 +117,90 @@ def _collect_behavior_annotations(raw_transactions: List[Dict[str, Any]]) -> Dic
 
 
 async def get_whale_activity(request: web.Request) -> web.Response:
-    """
-    GET /api/v1/whales
-
-    Get recent whale transactions on Solana using real on-chain data.
-
-    Query params:
-        - min_amount_usd: Minimum transaction value (default 10000)
-        - token: Filter by token address
-        - type: Filter by "buy" or "sell"
-        - limit: Max transactions (default 50, max 200)
-    """
+    """GET /api/v1/whales — Get recent whale transactions from DB (populated by poller)."""
     raw_min_amount = request.query.get('min_amount_usd', '1000')
     raw_limit = request.query.get('limit', '50')
     token_filter = request.query.get('token')
     type_filter = request.query.get('type')
     if type_filter:
         type_filter = type_filter.lower()
-    force_refresh = request.query.get('force_refresh', '').lower() in ('1', 'true')
 
     try:
         min_amount = float(raw_min_amount)
         limit = max(1, min(int(raw_limit), 200))
     except ValueError:
         return envelope_error_response(
-            "Invalid query parameters",
-            code="INVALID_PARAMS",
+            "Invalid query parameters", code="INVALID_PARAMS",
             details={"min_amount_usd": raw_min_amount, "limit": raw_limit},
             http_status=400,
         )
 
     if min_amount < 0:
-        return envelope_error_response(
-            "min_amount_usd must be non-negative",
-            code="INVALID_PARAMS",
-            http_status=400,
-        )
-
+        return envelope_error_response("min_amount_usd must be non-negative", code="INVALID_PARAMS", http_status=400)
     if type_filter and type_filter not in {'buy', 'sell'}:
-        return envelope_error_response(
-            "type must be 'buy' or 'sell'",
-            code="INVALID_PARAMS",
-            http_status=400,
-        )
-
-    # Cache all transaction types together and apply filters in-memory.
-    cache_key = f"whales:{min_amount}:{token_filter or 'all'}"
-    cache_lock = _get_or_create_lock(cache_key)
+        return envelope_error_response("type must be 'buy' or 'sell'", code="INVALID_PARAMS", http_status=400)
 
     try:
-        async with cache_lock:
-            base_response = None
-            if not force_refresh:
-                base_response = _get_cached_data(cache_key, _cache_ttl)
+        from src.storage.database import get_database
+        db = await get_database()
+        overview = await db.get_whale_overview(hours=24, limit=200)
+        raw_txs = overview.get("transactions", [])
 
-            if base_response is None:
-                # Fetch a larger canonical set once, then filter/slice from cache.
-                fetch_limit = 200
+        trades = []
+        for tx in raw_txs:
+            amount_usd = float(tx.get("amount_usd", 0))
+            if amount_usd < min_amount:
+                continue
 
-                solana = SolanaClient(
-                    rpc_url=settings.solana_rpc_url,
-                    helius_api_key=settings.helius_api_key
-                )
+            direction = tx.get("direction", "inflow")
+            tx_type = "buy" if direction == "inflow" else "sell"
 
-                try:
-                    if token_filter:
-                        raw_transactions = await solana.get_token_whale_transactions(
-                            token_address=token_filter,
-                            min_amount_usd=min_amount,
-                            limit=fetch_limit
-                        )
-                    else:
-                        raw_transactions = await solana.get_recent_large_transactions(
-                            min_amount_usd=min_amount,
-                            limit=fetch_limit
-                        )
-                finally:
-                    await solana.close()
+            if token_filter and tx.get("token_address") != token_filter:
+                continue
+            if type_filter and tx_type != type_filter:
+                continue
 
-                trades = []
-                seen_signatures = set()
-                for tx in raw_transactions:
-                    try:
-                        signature = tx.get('signature', '')
-                        if signature and signature in seen_signatures:
-                            continue
-                        if signature:
-                            seen_signatures.add(signature)
+            wallet_addr = tx.get("wallet_address", "")
+            wallet_label = tx.get("wallet_label") or KNOWN_WHALES.get(wallet_addr)
 
-                        wallet_addr = tx.get('wallet_address', '')
-                        wallet_label = tx.get('wallet_label') or KNOWN_WHALES.get(wallet_addr)
+            ts_str = tx.get("timestamp", "")
+            try:
+                timestamp = datetime.fromisoformat(ts_str) if ts_str else datetime.utcnow()
+            except Exception:
+                timestamp = datetime.utcnow()
 
-                        ts = tx.get('timestamp')
-                        if isinstance(ts, str):
-                            try:
-                                timestamp = datetime.fromisoformat(ts.replace('Z', '+00:00'))
-                            except Exception:
-                                timestamp = datetime.utcnow()
-                        elif isinstance(ts, datetime):
-                            timestamp = ts
-                        else:
-                            timestamp = datetime.utcnow()
+            trades.append(WhaleTransactionResponse(
+                signature=tx.get("signature", ""),
+                wallet_address=wallet_addr,
+                wallet_label=wallet_label,
+                token_address=tx.get("token_address", ""),
+                token_symbol=tx.get("token_symbol", "???"),
+                token_name=tx.get("token_name", "Unknown"),
+                type=tx_type,
+                amount_tokens=float(tx.get("amount_tokens", 0)),
+                amount_usd=amount_usd,
+                price_usd=float(tx.get("price_usd", 0)),
+                timestamp=timestamp,
+                dex_name=tx.get("dex_name", "Unknown"),
+            ))
 
-                        trades.append(WhaleTransactionResponse(
-                            signature=signature,
-                            wallet_address=wallet_addr,
-                            wallet_label=wallet_label,
-                            token_address=tx.get('token_address', ''),
-                            token_symbol=tx.get('token_symbol', '???'),
-                            token_name=tx.get('token_name', 'Unknown'),
-                            type=tx.get('type', 'buy'),
-                            amount_tokens=float(tx.get('amount_tokens', 0)),
-                            amount_usd=float(tx.get('amount_usd', 0)),
-                            price_usd=float(tx.get('price_usd', 0)),
-                            timestamp=timestamp,
-                            dex_name=tx.get('dex_name', 'Unknown')
-                        ))
-                    except Exception as e:
-                        logger.debug(f"Error converting whale tx: {e}")
-                        continue
+        trades.sort(key=lambda t: t.timestamp, reverse=True)
+        trades = trades[:limit]
 
-                base_response = WhaleActivityResponse(
-                    transactions=trades,
-                    updated_at=datetime.utcnow(),
-                    filter_token=token_filter,
-                    min_amount_usd=min_amount
-                ).model_dump(mode='json')
-
-                _set_cached_data(cache_key, base_response)
-
-            response = _build_filtered_response(base_response, type_filter, limit)
+        response = WhaleActivityResponse(
+            transactions=trades,
+            updated_at=datetime.utcnow(),
+            filter_token=token_filter,
+            min_amount_usd=min_amount,
+        ).model_dump(mode='json')
 
         return envelope_response(response)
 
     except Exception as e:
         logger.error(f"Whale activity error: {e}", exc_info=True)
         return envelope_error_response(
-            "Failed to fetch whale activity",
-            code="WHALE_FAILED",
-            details={"message": str(e)},
-            http_status=500,
+            "Failed to fetch whale activity", code="WHALE_FAILED",
+            details={"message": str(e)}, http_status=500,
         )
 
 
@@ -413,55 +357,36 @@ async def get_whale_activity_for_token(request: web.Request) -> web.Response:
 
 
 async def get_whale_profile(request: web.Request) -> web.Response:
-    """
-    GET /api/v1/whales/wallet/{address}
-
-    Get profile and activity for a whale wallet.
-    """
+    """GET /api/v1/whales/wallet/{address} — Whale profile from DB data."""
     wallet_address = request.match_info.get('address')
-
     if not wallet_address:
         return web.json_response(
             ErrorResponse(error="Wallet address required", code="MISSING_ADDRESS").model_dump(mode='json'),
-            status=400
+            status=400,
         )
 
     try:
         label = KNOWN_WHALES.get(wallet_address)
 
-        # Fetch real whale transactions and filter to this wallet
-        solana = SolanaClient(
-            rpc_url=settings.solana_rpc_url,
-            helius_api_key=settings.helius_api_key,
-        )
-        try:
-            all_txs = await solana.get_recent_large_transactions(
-                min_amount_usd=1000, limit=200
-            )
-        finally:
-            await solana.close()
+        from src.storage.database import get_database
+        db = await get_database()
+        wallet_txs = await db.get_whale_transactions_for_wallet(wallet_address, hours=24, limit=50)
 
-        wallet_txs = [
-            tx for tx in all_txs
-            if tx.get("wallet_address") == wallet_address
-        ]
+        if not label and wallet_txs:
+            label = wallet_txs[0].get("wallet_label") or label
 
         total_volume = sum(float(tx.get("amount_usd", 0)) for tx in wallet_txs)
         tokens_traded = len({tx.get("token_address") for tx in wallet_txs if tx.get("token_address")})
 
         recent = []
         for tx in wallet_txs[:20]:
-            ts = tx.get("timestamp")
-            if isinstance(ts, str):
-                try:
-                    timestamp = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-                except Exception:
-                    timestamp = datetime.utcnow()
-            elif isinstance(ts, datetime):
-                timestamp = ts
-            else:
+            ts_str = tx.get("timestamp", "")
+            try:
+                timestamp = datetime.fromisoformat(ts_str) if ts_str else datetime.utcnow()
+            except Exception:
                 timestamp = datetime.utcnow()
 
+            direction = tx.get("direction", "inflow")
             recent.append(WhaleTransactionResponse(
                 signature=tx.get("signature", ""),
                 wallet_address=tx.get("wallet_address", ""),
@@ -469,7 +394,7 @@ async def get_whale_profile(request: web.Request) -> web.Response:
                 token_address=tx.get("token_address", ""),
                 token_symbol=tx.get("token_symbol", "???"),
                 token_name=tx.get("token_name", "Unknown"),
-                type=tx.get("type", "buy"),
+                type="buy" if direction == "inflow" else "sell",
                 amount_tokens=float(tx.get("amount_tokens", 0)),
                 amount_usd=float(tx.get("amount_usd", 0)),
                 price_usd=float(tx.get("price_usd", 0)),
@@ -494,7 +419,7 @@ async def get_whale_profile(request: web.Request) -> web.Response:
         logger.error(f"Whale profile error: {e}")
         return web.json_response(
             ErrorResponse(error="Failed to fetch whale profile", code="PROFILE_FAILED").model_dump(mode='json'),
-            status=500
+            status=500,
         )
 
 
