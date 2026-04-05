@@ -10,8 +10,6 @@ from typing import Any, Dict, List
 from aiohttp import web
 
 from src.api.response_envelope import envelope_response, envelope_error_response
-from src.config import settings
-from src.data.solana import SolanaClient
 
 logger = logging.getLogger(__name__)
 
@@ -34,31 +32,23 @@ async def get_wallet_profile(request: web.Request) -> web.Response:
     address = request.match_info["address"]
     label = KNOWN_WHALES.get(address)
 
-    # Fetch whale transactions and filter to this wallet
     volume_usd = 0.0
     tx_count = 0
     recent_transactions: List[Dict[str, Any]] = []
 
     try:
-        solana = SolanaClient(
-            rpc_url=settings.solana_rpc_url,
-            helius_api_key=settings.helius_api_key,
-        )
-        try:
-            all_txs = await solana.get_whale_transactions(limit=100)
-        finally:
-            await solana.close()
-
-        for tx in all_txs:
-            wallet = tx.get("wallet_address", "")
-            if wallet != address:
-                continue
+        from src.storage.database import get_database
+        db = await get_database()
+        txs = await db.get_whale_transactions_for_wallet(address, hours=24, limit=50)
+        for tx in txs:
             amount = float(tx.get("amount_usd", 0))
             volume_usd += amount
             tx_count += 1
             recent_transactions.append(tx)
+            if not label and tx.get("wallet_label"):
+                label = tx["wallet_label"]
     except Exception as exc:
-        logger.warning("Failed to fetch whale transactions for profile: %s", exc)
+        logger.warning("Failed to fetch wallet profile from DB: %s", exc)
 
     # Entity graph lookup (best-effort)
     entity_id = None
@@ -117,19 +107,12 @@ async def get_wallet_forensics(request: web.Request) -> web.Response:
         })
     except Exception as exc:
         logger.error("Forensics analysis failed for %s: %s", address, exc, exc_info=True)
-        return envelope_response({
-            "risk_level": "UNKNOWN",
-            "reputation_score": 0,
-            "tokens_deployed": 0,
-            "rugged_tokens": 0,
-            "active_tokens": 0,
-            "rug_percentage": 0.0,
-            "patterns_detected": [],
-            "pattern_severity": "NONE",
-            "funding_risk": 0.0,
-            "confidence": 0,
-            "evidence_summary": "Forensics analysis unavailable",
-        })
+        return envelope_error_response(
+            "Forensics analysis failed",
+            code="FORENSICS_FAILED",
+            details={"message": str(exc)},
+            http_status=503,
+        )
 
 
 def setup_wallet_intel_routes(app: web.Application):
