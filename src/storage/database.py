@@ -419,6 +419,17 @@ class WhaleTransaction(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
 
 
+class TransactionCache(Base):
+    """Cached parsed transaction history per wallet. TTL-based to reduce Helius calls."""
+    __tablename__ = "transaction_cache"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    wallet_address = Column(String(64), index=True, nullable=False)
+    chain = Column(String(16), nullable=False, default="solana")
+    transactions_json = Column(JSON, nullable=False, default=list)
+    fetched_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # DATABASE INTERFACE
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1934,6 +1945,47 @@ class Database:
             result = await session.execute(stmt)
             await session.commit()
             return result.rowcount or 0
+
+    async def get_cached_transactions(self, wallet_address: str, chain: str = "solana", max_age_seconds: int = 300) -> Optional[list]:
+        """Return cached transactions if fresh enough, else None."""
+        if not self._initialized:
+            return None
+        cutoff = datetime.utcnow() - timedelta(seconds=max_age_seconds)
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(TransactionCache)
+                .where(
+                    TransactionCache.wallet_address == wallet_address,
+                    TransactionCache.chain == chain,
+                    TransactionCache.fetched_at >= cutoff,
+                )
+                .order_by(TransactionCache.fetched_at.desc())
+                .limit(1)
+            )
+            row = result.scalar_one_or_none()
+            if row:
+                return row.transactions_json
+        return None
+
+    async def set_cached_transactions(self, wallet_address: str, chain: str, transactions: list) -> None:
+        """Upsert transaction cache for a wallet."""
+        if not self._initialized:
+            return
+        async with self.async_session() as session:
+            from sqlalchemy import delete
+            await session.execute(
+                delete(TransactionCache).where(
+                    TransactionCache.wallet_address == wallet_address,
+                    TransactionCache.chain == chain,
+                )
+            )
+            session.add(TransactionCache(
+                wallet_address=wallet_address,
+                chain=chain,
+                transactions_json=transactions,
+                fetched_at=datetime.utcnow(),
+            ))
+            await session.commit()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

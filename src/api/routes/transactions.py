@@ -40,57 +40,55 @@ def _parse_limit(raw_limit: str | None) -> int | None:
 async def get_transactions(request: web.Request) -> web.Response:
     """
     GET /api/v1/transactions/{wallet}
-    
+
     Get transaction history for a wallet across multiple chains.
     """
     wallet_address = request.match_info.get('wallet')
     chain = request.query.get('chain', 'all')
     limit = _parse_limit(request.query.get('limit'))
-    
-    if not wallet_address:
-        return envelope_error_response(
-            "Wallet address required",
-            code="MISSING_WALLET",
-            http_status=400,
-        )
 
+    if not wallet_address:
+        return envelope_error_response("Wallet address required", code="MISSING_WALLET", http_status=400)
     if limit is None:
         return envelope_error_response(
             f"limit must be an integer between {MIN_LIMIT} and {MAX_LIMIT}",
-            code="INVALID_REQUEST",
-            http_status=400,
+            code="INVALID_REQUEST", http_status=400,
         )
-        
+
     transactions: List[Dict] = []
 
     if chain in ("all", "solana") and settings.helius_api_key:
-        try:
-            url = (
-                f"https://api.helius.xyz/v0/addresses/{wallet_address}/transactions"
-                f"?api-key={settings.helius_api_key}&limit={min(limit, 100)}"
-            )
-            async with _aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
-                    if resp.status == 200:
-                        raw = await resp.json()
-                        for tx in (raw if isinstance(raw, list) else []):
-                            sig = tx.get("signature", "")
-                            ts = tx.get("timestamp", 0)
-                            tx_type = tx.get("type", "UNKNOWN")
-                            desc = tx.get("description", "")
-                            fee = tx.get("fee", 0)
+        # Check DB cache first (5-minute TTL)
+        from src.storage.database import get_database
+        db = await get_database()
+        cached = await db.get_cached_transactions(wallet_address, "solana", max_age_seconds=300)
 
-                            transactions.append({
-                                "hash": sig,
-                                "chain": "solana",
-                                "type": tx_type,
-                                "description": desc,
-                                "fee_lamports": fee,
-                                "timestamp": ts,
-                                "status": "confirmed",
-                            })
-        except Exception as exc:
-            logger.warning("Failed to fetch transactions from Helius: %s", exc)
+        if cached is not None:
+            transactions = cached
+        else:
+            try:
+                url = (
+                    f"https://api.helius.xyz/v0/addresses/{wallet_address}/transactions"
+                    f"?api-key={settings.helius_api_key}&limit={min(limit, 100)}"
+                )
+                async with _aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
+                        if resp.status == 200:
+                            raw = await resp.json()
+                            for tx in (raw if isinstance(raw, list) else []):
+                                transactions.append({
+                                    "hash": tx.get("signature", ""),
+                                    "chain": "solana",
+                                    "type": tx.get("type", "UNKNOWN"),
+                                    "description": tx.get("description", ""),
+                                    "fee_lamports": tx.get("fee", 0),
+                                    "timestamp": tx.get("timestamp", 0),
+                                    "status": "confirmed",
+                                })
+                # Cache the result
+                await db.set_cached_transactions(wallet_address, "solana", transactions)
+            except Exception as exc:
+                logger.warning("Failed to fetch transactions from Helius: %s", exc)
 
     return envelope_response({
         "wallet": wallet_address,
@@ -103,69 +101,59 @@ async def get_transactions(request: web.Request) -> web.Response:
 async def export_transactions_csv(request: web.Request) -> web.Response:
     """
     GET /api/v1/transactions/{wallet}/export
-    
+
     Export transaction history to CSV.
     """
     wallet_address = request.match_info.get('wallet')
-
     if not wallet_address:
-        return envelope_error_response(
-            "Wallet address required",
-            code="MISSING_WALLET",
-            http_status=400,
-        )
-        
+        return envelope_error_response("Wallet address required", code="MISSING_WALLET", http_status=400)
+
     transactions: List[Dict] = []
     if settings.helius_api_key:
-        try:
-            url = (
-                f"https://api.helius.xyz/v0/addresses/{wallet_address}/transactions"
-                f"?api-key={settings.helius_api_key}&limit=100"
-            )
-            async with _aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
-                    if resp.status == 200:
-                        raw = await resp.json()
-                        for tx in (raw if isinstance(raw, list) else []):
-                            transactions.append({
-                                "date": tx.get("timestamp", ""),
-                                "chain": "solana",
-                                "type": tx.get("type", "UNKNOWN"),
-                                "hash": tx.get("signature", ""),
-                                "status": "confirmed",
-                                "amount": "",
-                                "symbol": "",
-                                "usd_value": "",
-                            })
-        except Exception as exc:
-            logger.warning("Failed to fetch transactions for CSV export: %s", exc)
-    
-    # Generate CSV
+        from src.storage.database import get_database
+        db = await get_database()
+        cached = await db.get_cached_transactions(wallet_address, "solana", max_age_seconds=300)
+        if cached is not None:
+            transactions = cached
+        else:
+            try:
+                url = (
+                    f"https://api.helius.xyz/v0/addresses/{wallet_address}/transactions"
+                    f"?api-key={settings.helius_api_key}&limit=100"
+                )
+                async with _aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
+                        if resp.status == 200:
+                            raw = await resp.json()
+                            for tx in (raw if isinstance(raw, list) else []):
+                                transactions.append({
+                                    "hash": tx.get("signature", ""),
+                                    "chain": "solana",
+                                    "type": tx.get("type", "UNKNOWN"),
+                                    "description": tx.get("description", ""),
+                                    "fee_lamports": tx.get("fee", 0),
+                                    "timestamp": tx.get("timestamp", 0),
+                                    "status": "confirmed",
+                                })
+                await db.set_cached_transactions(wallet_address, "solana", transactions)
+            except Exception as exc:
+                logger.warning("Failed to fetch transactions for CSV export: %s", exc)
+
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['Date', 'Chain', 'Type', 'Hash', 'Status', 'Amount', 'Symbol', 'USD Value'])
-    
+    writer.writerow(['Date', 'Chain', 'Type', 'Hash', 'Status', 'Description', 'Fee'])
     for tx in transactions:
         writer.writerow([
-            tx.get('date', ''),
-            tx.get('chain', ''),
-            tx.get('type', ''),
-            tx.get('hash', ''),
-            tx.get('status', ''),
-            tx.get('amount', ''),
-            tx.get('symbol', ''),
-            tx.get('usd_value', '')
+            tx.get('timestamp', ''), tx.get('chain', ''), tx.get('type', ''),
+            tx.get('hash', ''), tx.get('status', ''), tx.get('description', ''),
+            tx.get('fee_lamports', ''),
         ])
-        
     csv_data = output.getvalue()
     output.close()
-    
+
     return web.Response(
-        text=csv_data,
-        content_type='text/csv',
-        headers={
-            'Content-Disposition': f'attachment; filename="{wallet_address}_transactions.csv"'
-        }
+        text=csv_data, content_type='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{wallet_address}_transactions.csv"'},
     )
 
 def setup_transactions_routes(app: web.Application):
