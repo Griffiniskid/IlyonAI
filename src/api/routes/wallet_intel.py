@@ -82,7 +82,7 @@ async def get_wallet_forensics(request: web.Request) -> web.Response:
     GET /api/v1/wallets/{address}/forensics
 
     Return risk analysis produced by the WalletForensicsEngine.
-    Falls back to a degraded response if the engine is unavailable.
+    Returns HTTP 503 if the engine fails or is unavailable.
     """
     address = request.match_info["address"]
 
