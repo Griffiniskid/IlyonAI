@@ -7,17 +7,17 @@ import uuid
 
 from src.alerts.audit_log import write_audit_record
 from src.alerts.producer import AlertProducer
-from src.alerts.store import InMemoryAlertStore
+from src.alerts.db_store import DatabaseAlertStore
 from src.api.middleware.webhook_signature import verify_webhook_signature
 from src.api.routes.auth import require_auth, require_scope
 from src.api.response_envelope import envelope_error_response, envelope_response
 from src.config import settings
 
 
-ALERT_STORE_KEY = web.AppKey("alert_store", InMemoryAlertStore)
+ALERT_STORE_KEY = web.AppKey("alert_store", DatabaseAlertStore)
 
 
-def _get_store(request: web.Request) -> InMemoryAlertStore:
+def _get_store(request: web.Request) -> DatabaseAlertStore:
     return request.app[ALERT_STORE_KEY]
 
 
@@ -85,7 +85,7 @@ async def create_alert_rule(request: web.Request):
     valid, error = _validate_rule_payload(payload, partial=False)
     if not valid:
         return envelope_error_response(error or "Invalid payload", code="INVALID_REQUEST", http_status=400)
-    rule = store.create_rule(payload)
+    rule = await store.create_rule(payload)
     actor_id = request.get("user_wallet", "anonymous")
     trace_id = request.headers.get("X-Trace-Id") or request.get("trace_id") or uuid.uuid4().hex
     await write_audit_record(
@@ -99,14 +99,14 @@ async def create_alert_rule(request: web.Request):
 
 async def list_alert_rules(request: web.Request):
     store = _get_store(request)
-    rules = [rule.model_dump() for rule in store.list_rules()]
+    rules = [rule.model_dump() for rule in await store.list_rules()]
     return envelope_response(rules)
 
 
 async def get_alert_rule(request: web.Request):
     store = _get_store(request)
     rule_id = request.match_info["rule_id"]
-    rule = store.get_rule(rule_id)
+    rule = await store.get_rule(rule_id)
     if rule is None:
         return envelope_error_response("not found", code="NOT_FOUND", http_status=404)
     return envelope_response(rule.model_dump())
@@ -131,7 +131,7 @@ async def update_alert_rule(request: web.Request):
     valid, error = _validate_rule_payload(payload, partial=True)
     if not valid:
         return envelope_error_response(error or "Invalid payload", code="INVALID_REQUEST", http_status=400)
-    updated = store.update_rule(rule_id, payload)
+    updated = await store.update_rule(rule_id, payload)
     if updated is None:
         return envelope_error_response("not found", code="NOT_FOUND", http_status=404)
     actor_id = request.get("user_wallet", "anonymous")
@@ -153,7 +153,7 @@ async def delete_alert_rule(request: web.Request):
     if signature_error is not None:
         return signature_error
 
-    deleted = store.delete_rule(rule_id)
+    deleted = await store.delete_rule(rule_id)
     if not deleted:
         return envelope_error_response("not found", code="NOT_FOUND", http_status=404)
     actor_id = request.get("user_wallet", "anonymous")
@@ -174,7 +174,7 @@ delete_alert_rule = require_auth(require_scope("alerts:write")(delete_alert_rule
 async def list_alerts(request: web.Request):
     store = _get_store(request)
     severity = request.query.get("severity")
-    alerts = [record.model_dump() for record in store.list_alerts(severity=severity)]
+    alerts = [record.model_dump() for record in await store.list_alerts(severity=severity)]
     return envelope_response(alerts)
 
 
@@ -200,7 +200,7 @@ async def update_alert(request: web.Request):
         return envelope_error_response("invalid action", code="INVALID_REQUEST", http_status=400)
 
     try:
-        updated = store.apply_alert_action(alert_id, action, payload.get("snoozed_until"))
+        updated = await store.apply_alert_action(alert_id, action, payload.get("snoozed_until"))
     except ValueError as exc:
         return envelope_error_response(str(exc), code="INVALID_REQUEST", http_status=400)
 
@@ -222,8 +222,8 @@ async def _run_alert_producer(app: web.Application):
         await asyncio.sleep(300)  # 5 minutes
 
 
-def setup_alert_routes(app: web.Application, store: InMemoryAlertStore | None = None):
-    app[ALERT_STORE_KEY] = store or InMemoryAlertStore()
+def setup_alert_routes(app: web.Application, store: DatabaseAlertStore | None = None):
+    app[ALERT_STORE_KEY] = store or DatabaseAlertStore()
     app.router.add_post("/api/v1/alerts/rules", create_alert_rule)
     app.router.add_get("/api/v1/alerts/rules", list_alert_rules)
     app.router.add_get("/api/v1/alerts/rules/{rule_id}", get_alert_rule)

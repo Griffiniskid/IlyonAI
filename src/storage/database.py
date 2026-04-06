@@ -334,6 +334,35 @@ class AlertAuditRecord(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class AlertRuleRow(Base):
+    """Persistent alert rules."""
+    __tablename__ = "alert_rules"
+
+    id = Column(String(32), primary_key=True)
+    name = Column(String(256), nullable=False)
+    severity = Column(JSON, nullable=False, default=list)  # list of severity strings
+    user_id = Column(String(64), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AlertRecordRow(Base):
+    """Persistent alert records."""
+    __tablename__ = "alert_records"
+
+    id = Column(String(64), primary_key=True)
+    state = Column(String(32), nullable=False, default="new")
+    severity = Column(String(32), nullable=False)
+    title = Column(String(512), nullable=False)
+    user_id = Column(String(64), nullable=True, index=True)
+    rule_id = Column(String(32), nullable=True, index=True)
+    subject_id = Column(String(128), nullable=True)
+    kind = Column(String(64), nullable=True)
+    snoozed_until = Column(String(64), nullable=True)
+    resolved_at = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # WEB AUTHENTICATION MODELS (Wallet-based auth for web frontend)
 # ═══════════════════════════════════════════════════════════════════════════════

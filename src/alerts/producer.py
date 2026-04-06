@@ -4,7 +4,7 @@ import logging
 from uuid import uuid4
 
 from src.alerts.models import AlertRecord
-from src.alerts.store import InMemoryAlertStore
+from typing import Any
 from src.intel.rekt_database import RektDatabase
 from src.storage.database import get_database
 
@@ -16,7 +16,7 @@ class AlertProducer:
 
     def __init__(
         self,
-        store: InMemoryAlertStore,
+        store: Any,
         whale_threshold_usd: float = 100_000,
     ):
         self.store = store
@@ -31,7 +31,7 @@ class AlertProducer:
         instead of making separate Helius API calls.
         """
         try:
-            db = get_database()
+            db = await get_database()
             overview = await db.get_whale_overview(hours=1, limit=20)
             txs = overview.get("transactions", [])
         except Exception as e:
@@ -48,7 +48,7 @@ class AlertProducer:
             if dedup_key in self._seen_whale_keys:
                 continue
             self._seen_whale_keys.add(dedup_key)
-            self.store.add_alert(AlertRecord(
+            await self.store.add_alert(AlertRecord(
                 id=f"whale-{uuid4().hex[:8]}",
                 state="new",
                 severity="high" if amount >= 500_000 else "medium",
@@ -76,7 +76,7 @@ class AlertProducer:
 
             amount = incident.get("amount_usd", 0)
             name = incident.get("name", "Unknown")
-            self.store.add_alert(AlertRecord(
+            await self.store.add_alert(AlertRecord(
                 id=f"rekt-{uuid4().hex[:8]}",
                 state="new",
                 severity=incident.get("severity", "medium").lower(),

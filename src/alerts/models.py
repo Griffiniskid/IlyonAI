@@ -18,3 +18,4 @@ class AlertRecord(BaseModel):
     kind: str | None = None
     snoozed_until: str | None = None
     resolved_at: str | None = None
+    created_at: str | None = None
