@@ -98,6 +98,18 @@ class DatabaseAlertStore:
                 snoozed_until=alert.snoozed_until, resolved_at=alert.resolved_at,
             ))
             await session.commit()
+
+        # Publish to stream for real-time notifications
+        try:
+            from src.platform.stream_hub import get_stream_hub
+            hub = get_stream_hub()
+            await hub.publish("alerts", {
+                "type": "alert_created",
+                "alert": alert.model_dump(),
+            })
+        except Exception as e:
+            logger.warning(f"Failed to publish alert event: {e}")
+
         return alert
 
     async def list_alerts(self, severity: str | None = None) -> list[AlertRecord]:
