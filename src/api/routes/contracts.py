@@ -115,6 +115,12 @@ async def scan_contract(request: web.Request) -> web.Response:
             )
 
         cache_key = f"{chain_type.value}:{req.address}"
+        # Check DB cache first, then in-memory
+        from src.storage.database import get_database
+        db = await get_database()
+        cached = await db.get_cached_contract_scan(chain_type.value, req.address)
+        if cached is not None:
+            return envelope_response(cached)
         if cache_key in _scan_cache:
             return envelope_response(_scan_cache[cache_key])
 
@@ -177,6 +183,7 @@ async def scan_contract(request: web.Request) -> web.Response:
             ).model_dump(mode='json')
 
             _scan_cache[cache_key] = response
+            await db.set_cached_contract_scan(chain_type.value, req.address, response)
             return envelope_response(response)
 
         finally:
@@ -211,6 +218,14 @@ async def get_contract_scan(request: web.Request) -> web.Response:
     cache_key = f"{chain_type.value}:{address}"
     if cache_key in _scan_cache:
         return envelope_response(_scan_cache[cache_key])
+
+    # Check DB
+    from src.storage.database import get_database
+    db = await get_database()
+    cached = await db.get_cached_contract_scan(chain_type.value, address)
+    if cached is not None:
+        _scan_cache[cache_key] = cached  # warm in-memory cache
+        return envelope_response(cached)
 
     return envelope_error_response(
         "No cached scan. Use POST /api/v1/contract/scan first.",

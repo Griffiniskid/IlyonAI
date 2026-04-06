@@ -17,7 +17,7 @@ from typing import Optional, Dict, Any, List
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, Integer, BigInteger, String, Float, Boolean, DateTime, ForeignKey, JSON, Text
+from sqlalchemy import Column, Integer, BigInteger, String, Float, Boolean, DateTime, ForeignKey, JSON, Text, UniqueConstraint
 from sqlalchemy import select, update, func
 from sqlalchemy.dialects.postgresql import insert
 
@@ -361,6 +361,21 @@ class AlertRecordRow(Base):
     snoozed_until = Column(String(64), nullable=True)
     resolved_at = Column(String(64), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ContractScanCache(Base):
+    """Cached contract scan results."""
+    __tablename__ = "contract_scan_cache"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    chain = Column(String(32), nullable=False)
+    address = Column(String(64), nullable=False, index=True)
+    result_json = Column(JSON, nullable=False)
+    scanned_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        UniqueConstraint('chain', 'address', name='uq_contract_scan_chain_address'),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2048,6 +2063,36 @@ class Database:
                 chain=chain,
                 transactions_json=transactions,
                 fetched_at=datetime.utcnow(),
+            ))
+            await session.commit()
+
+    async def get_cached_contract_scan(self, chain: str, address: str) -> Optional[dict]:
+        if not self._initialized:
+            return None
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(ContractScanCache.result_json)
+                .where(ContractScanCache.chain == chain, ContractScanCache.address == address)
+                .order_by(ContractScanCache.scanned_at.desc())
+                .limit(1)
+            )
+            row = result.scalar_one_or_none()
+            return row
+
+    async def set_cached_contract_scan(self, chain: str, address: str, result: dict) -> None:
+        if not self._initialized:
+            return
+        async with self.async_session() as session:
+            from sqlalchemy import delete
+            await session.execute(
+                delete(ContractScanCache).where(
+                    ContractScanCache.chain == chain,
+                    ContractScanCache.address == address,
+                )
+            )
+            session.add(ContractScanCache(
+                chain=chain, address=address, result_json=result,
+                scanned_at=datetime.utcnow(),
             ))
             await session.commit()
 
