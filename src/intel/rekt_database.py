@@ -497,6 +497,18 @@ class RektDatabase:
                 return i
         return None
 
+    def get_freshness(self) -> dict:
+        """Return metadata about data freshness."""
+        import time
+        now = time.time()
+        has_live = self._live_cache is not None
+        age_seconds = int(now - self._cache_ts) if self._cache_ts > 0 else None
+        return {
+            "has_live_data": has_live,
+            "cache_age_seconds": age_seconds,
+            "source": "defillama+seed" if has_live else "seed_only",
+        }
+
     async def close(self):
         if self._session and not self._session.closed:
             await self._session.close()
@@ -640,6 +652,18 @@ class AuditDatabase:
             if a.get("id") == audit_id:
                 return a
         return None
+
+    def get_freshness(self) -> dict:
+        """Return metadata about data freshness."""
+        import time
+        now = time.time()
+        has_live = self._live_cache is not None
+        age_seconds = int(now - self._cache_ts) if self._cache_ts > 0 else None
+        return {
+            "has_live_data": has_live,
+            "cache_age_seconds": age_seconds,
+            "source": "defillama+seed" if has_live else "seed_only",
+        }
 
     async def close(self):
         if self._session and not self._session.closed:

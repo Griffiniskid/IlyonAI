@@ -95,6 +95,7 @@ async def list_rekt(request: web.Request) -> web.Response:
         )
 
     total_stolen = sum(i.get("amount_usd") or 0 for i in incidents)
+    freshness_info = _rekt.get_freshness()
 
     return envelope_response(
         data={
@@ -110,9 +111,10 @@ async def list_rekt(request: web.Request) -> web.Response:
         },
         meta={
             "cursor": None,
-            "freshness": "warm",
+            "freshness": freshness_info.get("source", "unknown"),
+            "data_freshness": freshness_info,
         },
-        freshness="warm",
+        freshness=freshness_info.get("source", "unknown"),
     )
 
 
@@ -188,6 +190,7 @@ async def list_audits(request: web.Request) -> web.Response:
         logger.error(f"Audit query error: {e}")
         return web.json_response({"error": "Failed to query audit database"}, status=500)
 
+    audit_freshness = _audits.get_freshness()
     return web.json_response({
         "audits": audit_list,
         "count": len(audit_list),
@@ -197,6 +200,7 @@ async def list_audits(request: web.Request) -> web.Response:
             "chain": chain,
             "verdict": verdict,
         },
+        "data_freshness": audit_freshness,
     })
 
 
