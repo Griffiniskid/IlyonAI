@@ -27,6 +27,18 @@ from src.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _score_to_risk_level(score: int | None) -> str:
+    if score is None:
+        return "UNKNOWN"
+    if score >= 80:
+        return "LOW"
+    if score >= 60:
+        return "MEDIUM"
+    if score >= 40:
+        return "HIGH"
+    return "CRITICAL"
+
+
 def get_user_wallet(request: web.Request) -> Optional[str]:
     """Extract authenticated user wallet from request."""
     return request.get('user_wallet')
@@ -215,6 +227,20 @@ async def get_portfolio(request: web.Request) -> web.Response:
             ))
             total_value += value_usd
 
+    # Enrich with safety scores from analysis DB
+    try:
+        from src.storage.database import get_database
+        db = await get_database()
+        addresses = [t.address for t in all_tokens if t.address]
+        scores = await db.get_token_safety_scores(addresses)
+        for token in all_tokens:
+            info = scores.get(token.address)
+            if info:
+                token.safety_score = info["score"]
+                token.risk_level = _score_to_risk_level(info["score"])
+    except Exception as e:
+        logger.warning(f"Failed to enrich portfolio safety scores: {e}")
+
     health_score = _calculate_health_score(all_tokens, total_value)
 
     # Estimate 24h PnL from token price changes
@@ -288,6 +314,20 @@ async def get_wallet_portfolio(request: web.Request) -> web.Response:
             risk_level="UNKNOWN"
         ))
         total_value += value
+
+    # Enrich with safety scores from analysis DB
+    try:
+        from src.storage.database import get_database
+        db = await get_database()
+        addresses = [t.address for t in tokens if t.address]
+        scores = await db.get_token_safety_scores(addresses)
+        for token in tokens:
+            info = scores.get(token.address)
+            if info:
+                token.safety_score = info["score"]
+                token.risk_level = _score_to_risk_level(info["score"])
+    except Exception as e:
+        logger.warning(f"Failed to enrich portfolio safety scores: {e}")
 
     health_score = _calculate_health_score(tokens, total_value)
 

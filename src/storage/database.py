@@ -2051,6 +2051,56 @@ class Database:
             ))
             await session.commit()
 
+    async def get_token_safety_scores(self, token_addresses: list[str]) -> dict[str, dict]:
+        """Batch lookup of most recent analysis scores for tokens.
+        Returns {token_address: {"score": int, "grade": str}} for found tokens.
+        """
+        if not self._initialized or not token_addresses:
+            return {}
+
+        result = {}
+        async with self.async_session() as session:
+            from sqlalchemy import func as sqla_func
+            # Batch query Blinks
+            blink_subq = (
+                select(
+                    Blink.token_address,
+                    sqla_func.max(Blink.created_at).label("latest"),
+                )
+                .where(Blink.token_address.in_(token_addresses), Blink.overall_score.isnot(None))
+                .group_by(Blink.token_address)
+                .subquery()
+            )
+            blink_rows = await session.execute(
+                select(Blink.token_address, Blink.overall_score, Blink.grade)
+                .join(blink_subq, (Blink.token_address == blink_subq.c.token_address) & (Blink.created_at == blink_subq.c.latest))
+            )
+            for addr, score, grade in blink_rows:
+                if score is not None:
+                    result[addr] = {"score": score, "grade": grade}
+
+            # Fill gaps from WebAnalysis
+            missing = [a for a in token_addresses if a not in result]
+            if missing:
+                web_subq = (
+                    select(
+                        WebAnalysis.token_address,
+                        sqla_func.max(WebAnalysis.analyzed_at).label("latest"),
+                    )
+                    .where(WebAnalysis.token_address.in_(missing), WebAnalysis.overall_score.isnot(None))
+                    .group_by(WebAnalysis.token_address)
+                    .subquery()
+                )
+                web_rows = await session.execute(
+                    select(WebAnalysis.token_address, WebAnalysis.overall_score, WebAnalysis.grade)
+                    .join(web_subq, (WebAnalysis.token_address == web_subq.c.token_address) & (WebAnalysis.analyzed_at == web_subq.c.latest))
+                )
+                for addr, score, grade in web_rows:
+                    if score is not None:
+                        result[addr] = {"score": score, "grade": grade}
+
+        return result
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # GLOBAL DATABASE INSTANCE
