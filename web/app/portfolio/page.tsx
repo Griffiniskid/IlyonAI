@@ -418,18 +418,35 @@ export default function PortfolioPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="font-mono text-sm font-semibold">
-                        {formatUSD(token.balance_usd)}
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <div className="font-mono text-sm font-semibold">
+                          {formatUSD(token.balance_usd)}
+                        </div>
+                        <div
+                          className={cn(
+                            "text-xs font-mono",
+                            token.price_change_24h >= 0 ? "text-emerald-400" : "text-red-400"
+                          )}
+                        >
+                          {formatPercentage(token.price_change_24h)}
+                        </div>
                       </div>
-                      <div
-                        className={cn(
-                          "text-xs font-mono",
-                          token.price_change_24h >= 0 ? "text-emerald-400" : "text-red-400"
-                        )}
-                      >
-                        {formatPercentage(token.price_change_24h)}
-                      </div>
+
+                      {token.safety_score !== null && token.safety_score !== undefined && (
+                        <Badge
+                          variant={
+                            token.safety_score >= 70
+                              ? "safe"
+                              : token.safety_score >= 40
+                              ? "caution"
+                              : "danger"
+                          }
+                        >
+                          <Shield className="h-3 w-3 mr-1" />
+                          {token.safety_score}
+                        </Badge>
+                      )}
                     </div>
                   </Link>
                 ))}

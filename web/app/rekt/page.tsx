@@ -7,10 +7,12 @@ import RektIncidentList from "./_components/rekt-incident-list";
 export default async function RektPage() {
   let incidents: Awaited<ReturnType<typeof getRektIncidents>>["incidents"] = [];
   let fetchedAt = "";
+  let freshness = "unknown";
   try {
     const data = await getRektIncidents({ limit: 50 });
     incidents = data.incidents;
     fetchedAt = new Date().toLocaleString();
+    freshness = data.meta?.freshness ?? "unknown";
   } catch {
     incidents = [];
     fetchedAt = "Failed to fetch";
@@ -25,9 +27,16 @@ export default async function RektPage() {
         <Flame className="h-8 w-8 text-red-500" />
         <h1 className="text-3xl font-bold">REKT Database</h1>
       </div>
-      <p className="text-sm text-muted-foreground mb-6">
+      <p className="text-sm text-muted-foreground mb-4">
         Hacks, exploits, and security incidents across DeFi protocols. Click any incident for details.
       </p>
+
+      {freshness === "seed_only" && (
+        <div className="text-xs text-amber-400 mb-4 flex items-center gap-1">
+          <AlertTriangle className="h-3 w-3" />
+          Live data unavailable — showing cached incident database
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2 mb-6">
         {chains.map((chain) => (
