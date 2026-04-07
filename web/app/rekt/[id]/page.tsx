@@ -1,3 +1,5 @@
+import { COMING_SOON } from "@/lib/feature-flags";
+import { ComingSoon } from "@/components/coming-soon";
 import Link from "next/link";
 import { getRektIncident } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +16,10 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 export default async function RektIncidentPage({ params }: { params: Promise<{ id: string }> }) {
+  if (COMING_SOON) {
+    return <ComingSoon title="REKT Database" description="Hacks, exploits, and security incidents across DeFi protocols — coming soon." icon="flame" />;
+  }
+
   const { id } = await params;
   const incident = await getRektIncident(id);
 

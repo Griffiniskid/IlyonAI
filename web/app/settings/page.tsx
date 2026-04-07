@@ -13,83 +13,17 @@ const WalletMultiButton = dynamic(
 );
 import { GlassCard } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  Settings,
   Wallet,
   Bell,
   Shield,
-  Moon,
-  Sun,
   Loader2,
   Check,
   ExternalLink,
   LogOut,
 } from "lucide-react";
-import { truncateAddress, cn } from "@/lib/utils";
-
-const INTEGRATION_KEYS = [
-  { key: "helius_api_key", label: "Helius API Key", description: "Solana RPC and DAS API" },
-  { key: "moralis_api_key", label: "Moralis API Key", description: "EVM token and NFT data" },
-  { key: "etherscan_api_key", label: "Etherscan API Key", description: "Ethereum explorer" },
-  { key: "bscscan_api_key", label: "BscScan API Key", description: "BSC explorer" },
-  { key: "polygonscan_api_key", label: "PolygonScan API Key", description: "Polygon explorer" },
-  { key: "arbiscan_api_key", label: "Arbiscan API Key", description: "Arbitrum explorer" },
-  { key: "basescan_api_key", label: "BaseScan API Key", description: "Base explorer" },
-] as const;
-
-function IntegrationKeys() {
-  const [keys, setKeys] = useState<Record<string, string>>(() => {
-    if (typeof window === "undefined") return {};
-    try {
-      return JSON.parse(localStorage.getItem("ilyon_api_keys") || "{}");
-    } catch {
-      return {};
-    }
-  });
-
-  const handleChange = (key: string, value: string) => {
-    const updated = { ...keys, [key]: value };
-    setKeys(updated);
-    localStorage.setItem("ilyon_api_keys", JSON.stringify(updated));
-  };
-
-  return (
-    <div className="space-y-3">
-      {INTEGRATION_KEYS.map((item) => (
-        <div key={item.key}>
-          <label className="text-sm font-medium block mb-1">{item.label}</label>
-          <p className="text-xs text-muted-foreground mb-1">{item.description}</p>
-          <div className="flex gap-2">
-            <Input
-              type="password"
-              value={keys[item.key] || ""}
-              onChange={(e) => handleChange(item.key, e.target.value)}
-              placeholder="Enter API key..."
-              className="font-mono text-sm"
-            />
-            {keys[item.key] ? (
-              <Badge variant="safe" className="shrink-0 self-center">
-                <Check className="h-3 w-3 mr-1" />
-                Set
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="shrink-0 self-center text-muted-foreground">
-                Not set
-              </Badge>
-            )}
-          </div>
-        </div>
-      ))}
-      <div className="mt-3 p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
-        <p className="text-xs text-yellow-400">
-          Keys are stored in your browser only. Server-side key management will be available in a future update.
-        </p>
-      </div>
-    </div>
-  );
-}
+import { truncateAddress } from "@/lib/utils";
 
 export default function SettingsPage() {
   const { connected, publicKey, disconnect, signMessage } = useWallet();
@@ -298,20 +232,6 @@ export default function SettingsPage() {
             Browser notifications require permission. Coming soon!
           </div>
         </div>
-        </GlassCard>
-      </section>
-
-      {/* API Integrations */}
-      <section id="integrations">
-        <GlassCard className="mb-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Shield className="h-5 w-5 text-emerald-500" />
-            <h2 className="font-semibold">API Integrations</h2>
-          </div>
-          <p className="text-sm text-muted-foreground mb-4">
-            Configure API keys to enable full functionality. Keys are stored locally in your browser.
-          </p>
-          <IntegrationKeys />
         </GlassCard>
       </section>
 

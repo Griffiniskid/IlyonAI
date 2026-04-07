@@ -524,25 +524,25 @@ export default function HomePage() {
         <div className="container mx-auto max-w-6xl">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             <StatCard
-              value={statsData ? statsData.total_tokens_analyzed.toLocaleString() : "0"}
+              value={statsData ? (statsData.total_tokens_analyzed ?? 0).toLocaleString() : "0"}
               label="Tokens Analyzed"
               icon={Search}
               loading={statsLoading}
             />
             <StatCard
-              value={statsData ? formatCompact(statsData.total_volume_24h) : "$0"}
+              value={statsData ? formatCompact(statsData.total_volume_24h ?? 0) : "$0"}
               label="24h Trading Volume"
               icon={BarChart3}
               loading={statsLoading}
             />
             <StatCard
-              value={statsData ? formatCompact(statsData.solana_tvl || 0) : "$0"}
+              value={statsData ? formatCompact(statsData.solana_tvl ?? 0) : "$0"}
               label="Multi-Chain TVL"
               icon={Activity}
               loading={statsLoading}
             />
             <StatCard
-              value={statsData ? `${statsData.safe_tokens_percent.toFixed(1)}%` : "0%"}
+              value={statsData ? `${(statsData.safe_tokens_percent ?? 0).toFixed(1)}%` : "0%"}
               label="Safe Tokens"
               icon={Shield}
               loading={statsLoading}

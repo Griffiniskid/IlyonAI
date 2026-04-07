@@ -1,5 +1,7 @@
 "use client";
 
+import { COMING_SOON } from "@/lib/feature-flags";
+import { ComingSoon } from "@/components/coming-soon";
 import { useMemo, useState, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ExternalLink, Loader2 } from "lucide-react";
@@ -28,6 +30,13 @@ const severityVariant: Record<AlertSeverity, "secondary" | "danger" | "risky" | 
 };
 
 export default function AlertsPage() {
+  if (COMING_SOON) {
+    return <ComingSoon title="Alerts" description="Real-time alerts for whale activity, rekt incidents, and watchlist events — coming soon." icon="bell" />;
+  }
+  return <AlertsPageContent />;
+}
+
+function AlertsPageContent() {
   const router = useRouter();
   const [severityFilter, setSeverityFilter] = useState<"all" | AlertSeverity>("all");
   const [permissionResult, setPermissionResult] = useState<string>("unknown");

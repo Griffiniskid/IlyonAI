@@ -1,5 +1,7 @@
 "use client";
 
+import { COMING_SOON } from "@/lib/feature-flags";
+import { ComingSoon } from "@/components/coming-soon";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
@@ -21,6 +23,13 @@ function truncateAddress(addr: string) {
 }
 
 export default function EntityPage() {
+  if (COMING_SOON) {
+    return <ComingSoon title="Entity Explorer" description="Wallet cluster analysis and entity profiling — coming soon." icon="users" />;
+  }
+  return <EntityPageContent />;
+}
+
+function EntityPageContent() {
   const params = useParams();
   const id = Array.isArray(params.id) ? params.id[0] : params.id ?? "";
   const { data, isLoading, error } = useQuery({

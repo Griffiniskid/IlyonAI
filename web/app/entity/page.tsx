@@ -1,5 +1,7 @@
 "use client";
 
+import { COMING_SOON } from "@/lib/feature-flags";
+import { ComingSoon } from "@/components/coming-soon";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -22,6 +24,13 @@ function truncateAddress(addr: string) {
 }
 
 export default function EntityListPage() {
+  if (COMING_SOON) {
+    return <ComingSoon title="Entity Explorer" description="Wallet cluster analysis and entity profiling — coming soon." icon="users" />;
+  }
+  return <EntityListPageContent />;
+}
+
+function EntityListPageContent() {
   const router = useRouter();
   const [entityId, setEntityId] = useState("");
   const { data: entities, isLoading, error } = useQuery({

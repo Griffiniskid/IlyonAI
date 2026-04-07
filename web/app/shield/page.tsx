@@ -1,5 +1,7 @@
 "use client";
 
+import { COMING_SOON } from "@/lib/feature-flags";
+import { ComingSoon } from "@/components/coming-soon";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { GlassCard } from "@/components/ui/card";
@@ -214,6 +216,13 @@ function SummaryBar({ data }: { data: ShieldScanResponse }) {
 }
 
 export default function ShieldPage() {
+  if (COMING_SOON) {
+    return <ComingSoon title="Shield" description="Scan your wallet for risky token approvals across all EVM chains and revoke them in one click — coming soon." icon="shield" />;
+  }
+  return <ShieldPageContent />;
+}
+
+function ShieldPageContent() {
   const [wallet, setWallet] = useState("");
   const [inputWallet, setInputWallet] = useState("");
   const [chainFilter, setChainFilter] = useState("all");

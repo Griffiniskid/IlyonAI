@@ -1,3 +1,5 @@
+import { COMING_SOON } from "@/lib/feature-flags";
+import { ComingSoon } from "@/components/coming-soon";
 import { getRektIncidents } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { GlassCard } from "@/components/ui/card";
@@ -5,6 +7,10 @@ import { Flame, AlertTriangle } from "lucide-react";
 import RektIncidentList from "./_components/rekt-incident-list";
 
 export default async function RektPage() {
+  if (COMING_SOON) {
+    return <ComingSoon title="REKT Database" description="Hacks, exploits, and security incidents across DeFi protocols — coming soon." icon="flame" />;
+  }
+
   let incidents: Awaited<ReturnType<typeof getRektIncidents>>["incidents"] = [];
   let fetchedAt = "";
   let freshness = "unknown";

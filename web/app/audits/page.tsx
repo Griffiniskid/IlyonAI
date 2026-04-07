@@ -1,5 +1,7 @@
 "use client";
 
+import { COMING_SOON } from "@/lib/feature-flags";
+import { ComingSoon } from "@/components/coming-soon";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -81,6 +83,13 @@ function SeverityBar({
 }
 
 export default function AuditsPage() {
+  if (COMING_SOON) {
+    return <ComingSoon title="Audit Database" description="Smart contract audit records from leading security firms — coming soon." icon="file-search" />;
+  }
+  return <AuditsPageContent />;
+}
+
+function AuditsPageContent() {
   const [auditor, setAuditor] = useState("All");
   const [chain, setChain] = useState("All");
   const [search, setSearch] = useState("");
