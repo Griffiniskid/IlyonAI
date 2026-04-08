@@ -32,12 +32,12 @@ class Settings(BaseSettings):
 
     # OpenRouter (required for all non-Grok AI analysis)
     openrouter_api_key: Optional[str] = Field(None, env="OPENROUTER_API_KEY")
-    ai_model: str = Field("nvidia/nemotron-3-super-120b-a12b:free", env="AI_MODEL", description="Default OpenRouter model for all non-Grok AI analysis")
+    ai_model: str = Field("openai/gpt-oss-120b:nitro", env="AI_MODEL", description="Default OpenRouter model for all non-Grok AI analysis")
 
     # Legacy OpenAI direct config (deprecated, kept for env compatibility only)
     openai_api_key: Optional[str] = Field(None, env="OPENAI_API_KEY")
-    openai_model: str = Field("nvidia/nemotron-3-super-120b-a12b:free", env="OPENAI_MODEL")
-    openai_mini_model: str = Field("nvidia/nemotron-3-super-120b-a12b:free", env="OPENAI_MINI_MODEL")
+    openai_model: str = Field("openai/gpt-oss-120b:nitro", env="OPENAI_MODEL")
+    openai_mini_model: str = Field("openai/gpt-oss-120b:nitro", env="OPENAI_MINI_MODEL")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # BLOCKCHAIN CONFIGURATION - MULTI-CHAIN

@@ -420,6 +420,10 @@ CRITICAL RULES:
                 "top_p": 0.9
             }
 
+            # Prevent OpenRouter from silently falling back to other models
+            if self.use_openrouter:
+                payload["provider"] = {"allow_fallbacks": False}
+
             try:
                 async with session.post(
                     self.base_url,
@@ -785,6 +789,10 @@ If asked about a specific token, suggest sending the address for analysis."""
                 "max_tokens": 300
             }
 
+            # Prevent OpenRouter from silently falling back to other models
+            if self.use_openrouter:
+                payload["provider"] = {"allow_fallbacks": False}
+
             async with session.post(
                 self.base_url,
                 headers=headers,
@@ -831,6 +839,10 @@ If asked about a specific token, suggest sending the address for analysis."""
                 "max_tokens": max_tokens,
                 "response_format": {"type": "json_object"},
             }
+
+            # Prevent OpenRouter from silently falling back to other models
+            if self.use_openrouter:
+                payload["provider"] = {"allow_fallbacks": False}
 
             async with session.post(
                 self.base_url,

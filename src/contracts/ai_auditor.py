@@ -56,7 +56,7 @@ class AIContractAuditor:
         if self._ai_client is None:
             try:
                 from src.ai.openai_client import OpenAIClient
-                self._ai_client = OpenAIClient()
+                self._ai_client = OpenAIClient(model=settings.ai_model, use_openrouter=True)
             except Exception as e:
                 logger.warning(f"AI client unavailable: {e}")
         return self._ai_client
