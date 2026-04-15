@@ -50,6 +50,26 @@ class Settings(BaseSettings):
         description="Solana RPC endpoint (use Helius for production)"
     )
     helius_api_key: Optional[str] = Field(None, env="HELIUS_API_KEY")
+    helius_ws_url: str = Field(
+        "wss://mainnet.helius-rpc.com",
+        env="HELIUS_WS_URL",
+        description="Helius WebSocket endpoint (api-key appended at connect time)",
+    )
+    whale_feed_mode: str = Field(
+        "stream",
+        env="WHALE_FEED_MODE",
+        description="Whale feed source: 'stream' (logsSubscribe) or 'poll' (legacy polling)",
+    )
+    min_whale_usd: float = Field(
+        10_000.0,
+        env="MIN_WHALE_USD",
+        description="Minimum USD value to qualify as a whale transaction",
+    )
+    whale_stream_audit: bool = Field(
+        True,
+        env="WHALE_STREAM_AUDIT",
+        description="Hourly audit poll against parsed-tx endpoint to detect log decoder drift",
+    )
 
     # EVM Chains
     ethereum_rpc_url: str = Field(
