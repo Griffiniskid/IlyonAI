@@ -44,6 +44,7 @@ _DEDUP_SIZE = 10_000
 _ENRICH_CONCURRENCY = 8
 _RECONNECT_DELAYS = [1.0, 2.0, 5.0, 15.0, 30.0]
 _AUDIT_INTERVAL_SECONDS = 3600
+_SUPPLEMENT_POLL_SECONDS = 900  # 15 min — catches DEXes with stub/broken decoders
 
 
 class WhaleTransactionStream:
@@ -61,6 +62,7 @@ class WhaleTransactionStream:
         self._sub_to_dex: dict[int, str] = {}
         self._enrich_sem = asyncio.Semaphore(_ENRICH_CONCURRENCY)
         self._solana_client: Optional[SolanaClient] = None
+        self._seeded = False  # True after initial backfill has run
 
     # ─── Public lifecycle ────────────────────────────────────────────────
 
@@ -77,6 +79,8 @@ class WhaleTransactionStream:
         audit_task: Optional[asyncio.Task] = None
         if settings.whale_stream_audit:
             audit_task = asyncio.create_task(self._audit_loop())
+        cleanup_task = asyncio.create_task(self._cleanup_loop())
+        supplement_task = asyncio.create_task(self._supplement_poll_loop())
 
         attempt = 0
         try:
@@ -92,6 +96,8 @@ class WhaleTransactionStream:
                     attempt += 1
                     await asyncio.sleep(delay)
         finally:
+            supplement_task.cancel()
+            cleanup_task.cancel()
             if audit_task:
                 audit_task.cancel()
 
@@ -112,9 +118,9 @@ class WhaleTransactionStream:
                 await self._subscribe_all(ws)
                 logger.info("Whale stream connected; %d subscriptions active", len(self._sub_to_dex))
 
-                # Backfill after we know the connection is live.
-                if self._last_sig:
-                    asyncio.create_task(self._backfill_from_last_seen())
+                # Seed DB on first connect so endpoints return data immediately.
+                # On reconnect, backfill any missed txs during the outage.
+                asyncio.create_task(self._seed_or_backfill())
 
                 async for raw in ws:
                     if raw.type == aiohttp.WSMsgType.TEXT:
@@ -320,24 +326,30 @@ class WhaleTransactionStream:
             "chain": "solana",
         })
 
-    # ─── Reconnect backfill ──────────────────────────────────────────────
+    # ─── Seed / Reconnect backfill ──────────────────────────────────────
 
-    async def _backfill_from_last_seen(self) -> None:
-        """Enrich missed signatures since last-seen per DEX. Runs on reconnect."""
-        if not self._solana_client:
-            return
-        logger.info("Whale stream backfilling %d DEXes since last seen sig", len(self._last_sig))
+    async def _seed_or_backfill(self) -> None:
+        """Seed DB on first connect or backfill missed txs on reconnect.
+
+        On initial startup the DB may be empty because the stream only captures
+        future events. This method uses the legacy parsed-tx Helius endpoint to
+        fetch recent whale transactions so the /whales and /smart-money endpoints
+        return data immediately. On subsequent reconnects it does the same to
+        cover any gap while the WebSocket was down.
+        """
+        label = "seed" if not self._seeded else "backfill"
         try:
             async with SolanaClient(
                 rpc_url=settings.solana_rpc_url,
                 helius_api_key=settings.helius_api_key,
             ) as client:
-                # Use the existing polled-history path for a bounded backfill.
                 transactions = await client.get_recent_large_transactions(
                     min_amount_usd=settings.min_whale_usd,
                     limit=100,
                 )
             if not transactions:
+                logger.info("Whale stream %s: no transactions returned", label)
+                self._seeded = True
                 return
             fresh = [t for t in transactions if t.get("signature") not in self._seen_sigs]
             for t in fresh:
@@ -345,15 +357,80 @@ class WhaleTransactionStream:
                 if sig:
                     self._remember_sig(sig)
             if not fresh:
+                logger.info("Whale stream %s: all transactions already known", label)
+                self._seeded = True
                 return
             new_sigs = await self._db.insert_whale_transactions(fresh)
             new_sig_set = set(new_sigs or [])
             for t in fresh:
                 if t.get("signature") in new_sig_set:
                     await self._broadcast(t)
-            logger.info("Whale stream backfill: %d new transactions persisted", len(new_sig_set))
+            logger.info("Whale stream %s: %d new transactions persisted", label, len(new_sig_set))
+            self._seeded = True
         except Exception as e:
-            logger.warning("Whale stream backfill failed: %s", e)
+            logger.warning("Whale stream %s failed: %s", label, e)
+
+    # ─── Periodic cleanup ────────────────────────────────────────────────
+
+    async def _cleanup_loop(self) -> None:
+        """Periodically remove whale transactions older than 24h."""
+        while True:
+            try:
+                await asyncio.sleep(3600)  # every hour
+                deleted = await self._db.cleanup_old_whale_transactions(hours=24)
+                if deleted:
+                    logger.info("Whale stream cleanup: removed %d old transactions", deleted)
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.debug("Whale stream cleanup failed: %s", e)
+
+    # ─── Supplemental periodic poll ─────────────────────────────────────
+
+    async def _supplement_poll_loop(self) -> None:
+        """Periodically poll Helius parsed-tx endpoint as a catch-all.
+
+        The log-decode path currently only works for Pump.fun. Jupiter (the
+        highest-volume DEX) doesn't emit decodable events because it's a
+        router that delegates to inner AMMs. Until all inner-AMM decoders
+        are implemented, this supplemental poll keeps the whale feed populated
+        for every DEX at reduced frequency (every 15 min vs the old 5 min).
+
+        Credit cost: 9 calls × 96 cycles/day × 100 credits ≈ 86K/day
+        (vs 259K/day original). As decoders are added, this interval can
+        be widened or the loop removed entirely.
+        """
+        # Wait a bit before first poll — the seed backfill already populated initial data.
+        await asyncio.sleep(60)
+        while True:
+            try:
+                async with SolanaClient(
+                    rpc_url=settings.solana_rpc_url,
+                    helius_api_key=settings.helius_api_key,
+                ) as client:
+                    transactions = await client.get_recent_large_transactions(
+                        min_amount_usd=settings.min_whale_usd,
+                        limit=100,
+                    )
+                if transactions:
+                    fresh = [t for t in transactions if t.get("signature") not in self._seen_sigs]
+                    for t in fresh:
+                        sig = t.get("signature")
+                        if sig:
+                            self._remember_sig(sig)
+                    if fresh:
+                        new_sigs = await self._db.insert_whale_transactions(fresh)
+                        new_sig_set = set(new_sigs or [])
+                        for t in fresh:
+                            if t.get("signature") in new_sig_set:
+                                await self._broadcast(t)
+                        if new_sig_set:
+                            logger.info("Whale supplement poll: %d new transactions persisted", len(new_sig_set))
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.debug("Whale supplement poll failed: %s", e)
+            await asyncio.sleep(_SUPPLEMENT_POLL_SECONDS)
 
     # ─── Audit loop ──────────────────────────────────────────────────────
 
