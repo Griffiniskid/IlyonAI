@@ -18,6 +18,7 @@ from src.api.routes.trending import setup_trending_routes
 from src.api.routes.portfolio import setup_portfolio_routes
 from src.api.routes.transactions import setup_transactions_routes
 from src.api.routes.whale import setup_whale_routes
+from src.api.routes.whale_leaderboard import setup_whale_leaderboard_routes
 from src.public_api.router import setup_public_api_routes
 from src.api.routes.auth import setup_auth_routes
 from src.api.routes.stats import setup_stats_routes
@@ -75,7 +76,12 @@ async def api_info(request: web.Request) -> web.Response:
             "portfolio": "GET /api/v1/portfolio",
             "whales": "GET /api/v1/whales",
             "shield": "GET /api/v1/shield/{wallet}",
+            "shield_status": "GET /api/v1/shield/status",
             "contract": "POST /api/v1/contract/scan",
+            "entities": "GET /api/v1/entities",
+            "entity_resolve": "POST /api/v1/entities/resolve",
+            "entity_merge": "POST /api/v1/entities/merge",
+            "entity_stats": "GET /api/v1/entities/stats",
             "pool_analysis": "POST /api/v1/defi/pool/analyze",
             "defi_pools": "GET /api/v1/defi/pools",
             "defi_yields": "GET /api/v1/defi/yields",
@@ -186,6 +192,7 @@ def create_api_app() -> web.Application:
     setup_portfolio_routes(app)
     setup_transactions_routes(app)
     setup_whale_routes(app)
+    setup_whale_leaderboard_routes(app)
     setup_auth_routes(app)
     setup_stats_routes(app)
     setup_chains_routes(app)
@@ -254,6 +261,7 @@ def setup_api_routes(app: web.Application):
     setup_portfolio_routes(app)
     setup_transactions_routes(app)
     setup_whale_routes(app)
+    setup_whale_leaderboard_routes(app)
     setup_auth_routes(app)
     setup_stats_routes(app)
     setup_chains_routes(app)
