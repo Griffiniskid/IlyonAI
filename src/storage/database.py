@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import declarative_base
 from sqlalchemy import Column, Integer, BigInteger, String, Float, Boolean, DateTime, ForeignKey, JSON, Text, UniqueConstraint
 from sqlalchemy import select, update, func
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.config import settings
 
@@ -1124,7 +1124,7 @@ class Database:
 
         async with self.async_session() as session:
             # Try upsert
-            stmt = insert(WalletReputation).values(
+            stmt = pg_insert(WalletReputation).values(
                 wallet_address=wallet_address,
                 reputation_score=reputation_score,
                 risk_level=risk_level,
@@ -1215,7 +1215,7 @@ class Database:
             return False
 
         async with self.async_session() as session:
-            stmt = insert(TokenDeployment).values(
+            stmt = pg_insert(TokenDeployment).values(
                 token_address=token_address,
                 deployer_wallet=deployer_wallet,
                 token_symbol=token_symbol,
@@ -1897,6 +1897,7 @@ class Database:
         if not self._initialized:
             return []
         new_signatures = []
+        is_pg = str(self.engine.url).startswith("postgresql")
         async with self.async_session() as session:
             for tx in transactions:
                 try:
@@ -1913,7 +1914,7 @@ class Database:
                     else:
                         tx_timestamp = datetime.utcnow()
 
-                    stmt = insert(WhaleTransaction).values(
+                    values = dict(
                         signature=tx["signature"],
                         wallet_address=tx.get("wallet_address", ""),
                         wallet_label=tx.get("wallet_label"),
@@ -1926,7 +1927,15 @@ class Database:
                         price_usd=float(tx.get("price_usd", 0)),
                         dex_name=tx.get("dex_name", "Unknown"),
                         tx_timestamp=tx_timestamp,
-                    ).on_conflict_do_nothing(index_elements=["signature"])
+                    )
+
+                    if is_pg:
+                        stmt = pg_insert(WhaleTransaction).values(**values).on_conflict_do_nothing(index_elements=["signature"])
+                    else:
+                        # SQLite / other dialects: INSERT OR IGNORE via prefix
+                        from sqlalchemy import insert as sa_insert
+                        stmt = sa_insert(WhaleTransaction).values(**values).prefix_with("OR IGNORE")
+
                     result = await session.execute(stmt)
                     if result.rowcount and result.rowcount > 0:
                         new_signatures.append(tx["signature"])
@@ -1989,6 +1998,59 @@ class Database:
             result = await session.execute(stmt)
             await session.commit()
             return result.rowcount or 0
+
+    async def get_whale_aggregations(self, hours: int) -> dict:
+        """Return window rows and prior-window token set for the leaderboard.
+
+        Returns:
+            {
+                "rows": [ {signature, wallet_address, wallet_label, token_address,
+                           token_symbol, token_name, direction, amount_usd,
+                           tx_timestamp}, ... ],
+                "prior_token_addresses": set[str]  # tokens active in (2*window..window) ago
+            }
+        """
+        if not self._initialized:
+            return {"rows": [], "prior_token_addresses": set()}
+        now = datetime.utcnow()
+        window_cutoff = now - timedelta(hours=hours)
+        prior_cutoff = now - timedelta(hours=hours * 2)
+        async with self.async_session() as session:
+            stmt_window = (
+                select(WhaleTransaction)
+                .where(WhaleTransaction.tx_timestamp >= window_cutoff)
+                .order_by(WhaleTransaction.tx_timestamp.desc())
+            )
+            result = await session.execute(stmt_window)
+            window_rows = result.scalars().all()
+
+            stmt_prior = (
+                select(WhaleTransaction.token_address)
+                .where(
+                    WhaleTransaction.tx_timestamp >= prior_cutoff,
+                    WhaleTransaction.tx_timestamp < window_cutoff,
+                )
+                .distinct()
+            )
+            prior_result = await session.execute(stmt_prior)
+            prior_tokens = {row[0] for row in prior_result.all()}
+
+            rows = [
+                {
+                    "signature": r.signature,
+                    "wallet_address": r.wallet_address,
+                    "wallet_label": r.wallet_label,
+                    "token_address": r.token_address,
+                    "token_symbol": r.token_symbol,
+                    "token_name": r.token_name,
+                    "direction": r.direction,
+                    "amount_usd": float(r.amount_usd),
+                    "tx_timestamp": r.tx_timestamp,
+                }
+                for r in window_rows
+            ]
+
+            return {"rows": rows, "prior_token_addresses": prior_tokens}
 
     async def get_whale_transactions_for_wallet(self, wallet_address: str, hours: int = 24, limit: int = 50) -> list[dict]:
         """Query whale transactions for a specific wallet address."""
