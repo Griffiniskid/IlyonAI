@@ -8,6 +8,10 @@ import type {
   PortfolioResponse,
   PortfolioChainMatrixResponse,
   WhaleActivityResponse,
+  WhaleWindow,
+  WhaleSort,
+  WhaleLeaderboardResponse,
+  TopWhalesResponse,
   TrackedWalletResponse,
   AuthChallengeResponse,
   AuthVerifyResponse,
@@ -22,10 +26,6 @@ import type {
   RevokePreparationResponse,
   PoolResponse,
   YieldOpportunityResponse,
-  RektIncident,
-  RektListResponse,
-  AuditRecord,
-  IntelStatsResponse,
   VulnerabilityItem,
   ApprovalItem,
   LendingMarketResponse,
@@ -44,8 +44,6 @@ import type {
   SmartMoneyOverviewResponse,
   WalletProfileResponse,
   WalletForensicsResponse,
-  AlertRecordResponse,
-  AlertRuleResponse,
 } from "@/types";
 
 export interface BlinkResponse {
@@ -800,8 +798,6 @@ function normalizeDefiProtocolProfile(raw: any, depth = 0): DefiProtocolProfile 
     top_opportunities: depth <= 0 && Array.isArray(raw.top_opportunities)
       ? raw.top_opportunities.map((item: any) => normalizeOpportunity(item, depth + 1))
       : [],
-    audits: Array.isArray(raw.audits) ? raw.audits : [],
-    incidents: Array.isArray(raw.incidents) ? raw.incidents : [],
     evidence: Array.isArray(raw.evidence) ? raw.evidence.map(normalizeDefiEvidence) : [],
     scenarios: Array.isArray(raw.scenarios) ? raw.scenarios.map(normalizeDefiScenario) : [],
     dependencies: Array.isArray(raw.dependencies) ? raw.dependencies.map(normalizeDefiDependency) : [],
@@ -1205,6 +1201,41 @@ export async function getWhaleActivityForToken(
   return normalizeWhaleActivityResponse(raw);
 }
 
+export async function getWhaleLeaderboard(params: {
+  window?: WhaleWindow;
+  sort?: WhaleSort;
+  limit?: number;
+} = {}): Promise<WhaleLeaderboardResponse> {
+  const sp = new URLSearchParams();
+  if (params.window) sp.set("window", params.window);
+  if (params.sort) sp.set("sort", params.sort);
+  if (params.limit) sp.set("limit", params.limit.toString());
+  const q = sp.toString();
+  const raw = await fetchAPI<any>(`/api/v1/whales/leaderboard${q ? `?${q}` : ""}`);
+  return unwrapEnvelope<WhaleLeaderboardResponse>(raw, {
+    window: (params.window ?? "6h") as WhaleWindow,
+    sort: (params.sort ?? "composite") as WhaleSort,
+    rows: [],
+    updated_at: new Date().toISOString(),
+  });
+}
+
+export async function getTopWhales(params: {
+  window?: WhaleWindow;
+  limit?: number;
+} = {}): Promise<TopWhalesResponse> {
+  const sp = new URLSearchParams();
+  if (params.window) sp.set("window", params.window);
+  if (params.limit) sp.set("limit", params.limit.toString());
+  const q = sp.toString();
+  const raw = await fetchAPI<any>(`/api/v1/whales/top-wallets${q ? `?${q}` : ""}`);
+  return unwrapEnvelope<TopWhalesResponse>(raw, {
+    window: (params.window ?? "6h") as WhaleWindow,
+    rows: [],
+    updated_at: new Date().toISOString(),
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // SMART MONEY API
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1246,57 +1277,6 @@ export async function getWalletForensics(address: string): Promise<WalletForensi
     confidence: Number(data.confidence ?? 0),
     evidence_summary: data.evidence_summary ?? "",
   };
-}
-
-export async function getAlerts(severity?: string): Promise<AlertRecordResponse[]> {
-  const params = new URLSearchParams();
-  if (severity) params.set("severity", severity);
-  const raw = await fetchAPI<any>(`/api/v1/alerts${params.toString() ? `?${params.toString()}` : ""}`);
-  const payload = unwrapEnvelope<unknown>(raw);
-  return Array.isArray(payload) ? (payload as AlertRecordResponse[]) : [];
-}
-
-export async function getAlertRules(): Promise<AlertRuleResponse[]> {
-  const raw = await fetchAPI<any>("/api/v1/alerts/rules");
-  const payload = unwrapEnvelope<unknown>(raw);
-  return Array.isArray(payload) ? (payload as AlertRuleResponse[]) : [];
-}
-
-export async function updateAlertRecord(
-  alertId: string,
-  payload: { action: "seen" | "acknowledge" | "snooze" | "unsnooze" | "resolve"; snoozed_until?: string }
-): Promise<AlertRecordResponse> {
-  const raw = await fetchAPI<any>(`/api/v1/alerts/${alertId}`, {
-    method: "PATCH",
-    body: JSON.stringify(payload),
-  });
-  return unwrapEnvelope<AlertRecordResponse>(raw) as AlertRecordResponse;
-}
-
-export async function createAlertRule(payload: {
-  name: string;
-  severity: string[];
-}): Promise<AlertRuleResponse> {
-  const raw = await fetchAPI<any>("/api/v1/alerts/rules", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-  return unwrapEnvelope<AlertRuleResponse>(raw) as AlertRuleResponse;
-}
-
-export async function updateAlertRule(
-  ruleId: string,
-  payload: { name?: string; severity?: string[] }
-): Promise<AlertRuleResponse> {
-  const raw = await fetchAPI<any>(`/api/v1/alerts/rules/${ruleId}`, {
-    method: "PUT",
-    body: JSON.stringify(payload),
-  });
-  return unwrapEnvelope<AlertRuleResponse>(raw) as AlertRuleResponse;
-}
-
-export async function deleteAlertRule(ruleId: string): Promise<void> {
-  await fetchAPI(`/api/v1/alerts/rules/${ruleId}`, { method: "DELETE" });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1709,67 +1689,85 @@ export async function calculateHealthFactor(params: {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// INTEL / REKT API
+// ENTITY API
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function getRektIncidents(params?: {
-  chain?: string;
-  attackType?: string;
-  minAmount?: number;
-  search?: string;
-  limit?: number;
-}): Promise<RektListResponse> {
-  const p = new URLSearchParams();
-  if (params?.chain) p.set("chain", params.chain);
-  if (params?.attackType) p.set("attack_type", params.attackType);
-  if (params?.minAmount != null) p.set("min_amount", params.minAmount.toString());
-  if (params?.search) p.set("search", params.search);
-  if (params?.limit != null) p.set("limit", params.limit.toString());
-  const query = p.toString();
-  const raw = await fetchAPI<any>(`/api/v1/intel/rekt${query ? `?${query}` : ""}`);
-  const payload = unwrapEnvelope<Record<string, unknown>>(raw, {});
-  const incidents = Array.isArray(payload?.incidents) ? payload.incidents : [];
-  const meta = raw?.meta ?? {};
-
-  return {
-    incidents: incidents as RektIncident[],
-    count: Number(payload?.count ?? incidents.length),
-    total_stolen_usd: Number(payload?.total_stolen_usd ?? 0),
-    meta: {
-      cursor: typeof meta.cursor === "string" ? meta.cursor : null,
-      freshness: typeof meta.freshness === "string" ? meta.freshness : "unknown",
-    },
-  };
+export interface EntityResolution {
+  entity_id: string;
+  wallets: string[];
+  reason: string | null;
+  status: "existing" | "created";
+  chains: string[];
 }
 
-export async function getRektIncident(id: string): Promise<RektIncident | null> {
-  const raw = await fetchAPI<any>(`/api/v1/intel/rekt/${id}`);
-  const payload = unwrapEnvelope<unknown>(raw);
-  if (!payload || typeof payload !== "object") {
-    return null;
-  }
-  return payload as RektIncident;
+export interface EntityRecord {
+  id: string;
+  wallets: string[];
+  reason: string | null;
+  wallet_count: number;
+  label: string | null;
+  tags: string[];
+  risk_level: string | null;
+  total_volume_usd: number;
+  chains: string[];
+  created_at: string | null;
+  last_active: string | null;
 }
 
-export async function getAudits(params?: {
-  protocol?: string;
-  auditor?: string;
-  chain?: string;
-  verdict?: "PASS" | "FAIL";
-  limit?: number;
-}): Promise<{ audits: AuditRecord[]; count: number }> {
-  const p = new URLSearchParams();
-  if (params?.protocol) p.set("protocol", params.protocol);
-  if (params?.auditor) p.set("auditor", params.auditor);
-  if (params?.chain) p.set("chain", params.chain);
-  if (params?.verdict) p.set("verdict", params.verdict);
-  if (params?.limit != null) p.set("limit", params.limit.toString());
-  const query = p.toString();
-  return fetchAPI(`/api/v1/intel/audits${query ? `?${query}` : ""}`);
+export interface EntityStats {
+  total_entities: number;
+  total_wallets: number;
+  entities_with_labels: number;
+  entities_with_multiple_wallets: number;
+  multi_chain_entities: number;
 }
 
-export async function getIntelStats(): Promise<IntelStatsResponse> {
-  return fetchAPI<IntelStatsResponse>("/api/v1/intel/stats");
+export async function resolveEntity(
+  wallet: string,
+  chains?: string[]
+): Promise<EntityResolution> {
+  return fetchAPI<EntityResolution>("/api/v1/entities/resolve", {
+    method: "POST",
+    body: JSON.stringify({ wallet, chains: chains ?? [] }),
+  });
+}
+
+export async function mergeEntities(
+  entityA: string,
+  entityB: string,
+  reason?: string
+): Promise<{ entity_id: string; wallets: string[]; reason: string | null; merged_from: string[] }> {
+  return fetchAPI("/api/v1/entities/merge", {
+    method: "POST",
+    body: JSON.stringify({
+      entity_a: entityA,
+      entity_b: entityB,
+      reason: reason ?? "Manual merge",
+    }),
+  });
+}
+
+export async function getEntityStats(): Promise<EntityStats> {
+  return fetchAPI<EntityStats>("/api/v1/entities/stats");
+}
+
+export async function addWalletToEntity(
+  entityId: string,
+  wallet: string,
+  reason?: string
+): Promise<{ entity_id: string; wallets: string[]; wallet_count: number }> {
+  return fetchAPI(`/api/v1/entities/${entityId}/wallets`, {
+    method: "POST",
+    body: JSON.stringify({ wallet, reason: reason ?? "" }),
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SERVICE HEALTH API
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function getServiceHealth(): Promise<any> {
+  return fetchAPI("/api/v1/stats/health");
 }
 
 export { APIError };

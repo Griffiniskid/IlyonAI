@@ -319,6 +319,55 @@ export interface WhaleActivityResponse {
   entity_confidence?: number | null;
 }
 
+export type WhaleWindow = "1h" | "6h" | "24h";
+export type WhaleSort = "composite" | "buyers" | "new";
+
+export interface WhaleLeaderboardTopWhale {
+  address: string;
+  label: string | null;
+  side: "buy" | "sell";
+  amount_usd: number;
+}
+
+export interface WhaleLeaderboardRow {
+  token_address: string;
+  token_symbol: string;
+  token_name: string;
+  net_flow_usd: number;
+  gross_buy_usd: number;
+  gross_sell_usd: number;
+  distinct_buyers: number;
+  distinct_sellers: number;
+  tx_count: number;
+  buy_sell_ratio: number;
+  acceleration: number;
+  is_new_on_radar: boolean;
+  composite_score: number;
+  top_whales: WhaleLeaderboardTopWhale[];
+}
+
+export interface WhaleLeaderboardResponse {
+  window: WhaleWindow;
+  sort: WhaleSort;
+  rows: WhaleLeaderboardRow[];
+  updated_at: string;
+}
+
+export interface TopWhaleRow {
+  address: string;
+  label: string | null;
+  total_volume_usd: number;
+  tx_count: number;
+  tokens_touched: number;
+  dominant_side: "buy" | "sell" | "mixed";
+}
+
+export interface TopWhalesResponse {
+  window: WhaleWindow;
+  rows: TopWhaleRow[];
+  updated_at: string;
+}
+
 export interface SmartMoneyParticipant {
   wallet_address: string;
   label: string | null;
@@ -389,28 +438,6 @@ export interface WalletForensicsResponse {
   funding_risk: number;
   confidence: number;
   evidence_summary: string;
-}
-
-export type AlertSeverity = "low" | "medium" | "high" | "critical";
-export type AlertState = "new" | "seen" | "acknowledged";
-
-export interface AlertRecordResponse {
-  id: string;
-  state: AlertState;
-  severity: AlertSeverity;
-  title: string;
-  user_id?: string | null;
-  rule_id?: string | null;
-  subject_id?: string | null;
-  kind?: string | null;
-  snoozed_until?: string | null;
-  resolved_at?: string | null;
-}
-
-export interface AlertRuleResponse {
-  id: string;
-  name: string;
-  severity: AlertSeverity[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -816,8 +843,6 @@ export interface DefiProtocolProfile {
   top_markets: LendingMarketResponse[];
   top_pools: PoolResponse[];
   top_opportunities: DefiOpportunityResponse[];
-  audits: AuditRecord[];
-  incidents: RektIncident[];
   evidence: DefiEvidenceItem[];
   scenarios: DefiScenarioItem[];
   dependencies?: DefiDependency[];
@@ -1008,68 +1033,6 @@ export interface HealthFactorResponse {
   status: "SAFE" | "MODERATE" | "WARNING" | "DANGER";
   message: string;
   collateral_drop_to_liquidation_pct?: number;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// INTEL / REKT TYPES
-// ═══════════════════════════════════════════════════════════════════════════
-
-export interface RektIncident {
-  id: string;
-  name: string;
-  date: string;
-  amount_usd: number;
-  protocol: string;
-  chains: string[];
-  attack_type: string;
-  description: string;
-  post_mortem_url: string | null;
-  funds_recovered: boolean;
-  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
-}
-
-export interface RektListResponse {
-  incidents: RektIncident[];
-  count: number;
-  total_stolen_usd: number;
-  meta: {
-    cursor: string | null;
-    freshness: string;
-  };
-}
-
-export interface AuditRecord {
-  id: string;
-  protocol: string;
-  auditor: string;
-  date: string;
-  report_url: string;
-  severity_findings: {
-    critical: number;
-    high: number;
-    medium: number;
-    low: number;
-    informational: number;
-  };
-  verdict: "PASS" | "FAIL";
-  chains: string[];
-  findings_source?: "verified" | "estimated";
-}
-
-export interface IntelStatsResponse {
-  rekt: {
-    total_incidents: number;
-    total_stolen_usd: number;
-    total_recovered_usd: number;
-    recovery_rate: number;
-    top_attack_types: Array<{ type: string; count: number }>;
-    chains_most_hit: Array<{ chain: string; count: number }>;
-  };
-  audits: {
-    total_audits: number;
-    pass_count: number;
-    fail_count: number;
-  };
 }
 
 export interface SearchResultResponse {
