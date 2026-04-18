@@ -33,7 +33,7 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080",
     NEXT_PUBLIC_SOLANA_NETWORK: process.env.NEXT_PUBLIC_SOLANA_NETWORK || "mainnet-beta",
-    NEXT_PUBLIC_COMING_SOON: process.env.NEXT_PUBLIC_COMING_SOON || "true",
+    NEXT_PUBLIC_COMING_SOON: process.env.NEXT_PUBLIC_COMING_SOON || "false",
   },
   async rewrites() {
     return [

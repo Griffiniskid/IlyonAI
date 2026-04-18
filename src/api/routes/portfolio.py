@@ -98,13 +98,50 @@ def _calculate_health_score(tokens: List, total_value: float) -> int:
     return max(0, min(100, score))
 
 
-async def get_wallet_tokens(wallet_address: str) -> List[Dict]:
-    """Fetch token holdings for a wallet using Helius (Solana) and Moralis (EVM)."""
+async def _fetch_evm_tokens_rpc(wallet_address: str) -> List[Dict]:
+    """Fetch EVM token holdings via RPC (no API key needed)."""
+    import asyncio as aio
+    from src.chains.base import ChainType
+    from src.chains.registry import ChainRegistry
+
+    registry = ChainRegistry.get_instance()
+    registry.initialize(settings)
+
     tokens = []
-    
-    # Check if wallet is EVM or Solana based on format
+    evm_chains = registry.get_evm_chains()
+
+    async def fetch_chain(chain: ChainType):
+        try:
+            client = registry.get_client(chain)
+            chain_tokens = await client.get_wallet_tokens(wallet_address)
+            for t in chain_tokens:
+                t["chain"] = chain.value
+            return chain_tokens
+        except Exception as e:
+            logger.debug(f"RPC token fetch failed for {chain.value}: {e}")
+            return []
+
+    results = await aio.gather(
+        *[fetch_chain(c) for c in evm_chains],
+        return_exceptions=True,
+    )
+    for result in results:
+        if isinstance(result, list):
+            tokens.extend(result)
+
+    return tokens
+
+
+async def get_wallet_tokens(wallet_address: str) -> List[Dict]:
+    """Fetch token holdings for a wallet.
+
+    Uses Helius for Solana. For EVM, tries Moralis first (if API key
+    is available), otherwise falls back to direct RPC calls (free).
+    """
+    tokens = []
+
     is_evm = wallet_address.startswith("0x") and len(wallet_address) == 42
-    
+
     if not is_evm:
         # Solana handling
         try:
@@ -118,49 +155,52 @@ async def get_wallet_tokens(wallet_address: str) -> List[Dict]:
         except Exception as e:
             logger.error(f"Error fetching Solana wallet tokens: {e}")
     else:
-        # EVM handling
-        try:
-            from src.data.moralis import MoralisClient
-            moralis = MoralisClient()
-            import asyncio
-            
-            # Fetch balances for top EVM chains
-            evm_chains = ["ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"]
-            
-            async def fetch_chain(chain: str):
-                try:
-                    res = await moralis.get_wallet_token_balances(wallet_address, chain)
-                    # Convert Moralis format to expected format
-                    chain_tokens = []
-                    for t in res:
-                        # Moralis returns decimals, balance, usd_price, usd_value
-                        balance = float(t.get("balance_formatted") or 0)
-                        if balance <= 0:
-                            continue
-                        chain_tokens.append({
-                            "mint": t.get("token_address", ""),
-                            "name": t.get("name", ""),
-                            "symbol": t.get("symbol", ""),
-                            "logo": t.get("logo"),
-                            "amount": balance,
-                            "value_usd": float(t.get("usd_value") or 0),
-                            "price_usd": float(t.get("usd_price") or 0),
-                            "price_change_24h": float(t.get("usd_price_24hr_percent_change") or 0),
-                            "chain": chain
-                        })
-                    return chain_tokens
-                except Exception as e:
-                    logger.warning(f"Error fetching Moralis {chain} tokens: {e}")
-                    return []
+        # EVM handling: try Moralis first, fallback to RPC
+        moralis_tokens = []
+        if settings.moralis_api_key:
+            try:
+                import asyncio
+                moralis = MoralisClient()
+                evm_chains = ["ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"]
 
-            results = await asyncio.gather(*(fetch_chain(c) for c in evm_chains))
-            for res in results:
-                tokens.extend(res)
-                
-            await moralis.close()
-        except Exception as e:
-            logger.error(f"Error fetching EVM wallet tokens: {e}")
-            
+                async def fetch_chain(chain: str):
+                    try:
+                        res = await moralis.get_wallet_token_balances(wallet_address, chain)
+                        chain_tokens = []
+                        for t in res:
+                            balance = float(t.get("balance_formatted") or 0)
+                            if balance <= 0:
+                                continue
+                            chain_tokens.append({
+                                "mint": t.get("token_address", ""),
+                                "name": t.get("name", ""),
+                                "symbol": t.get("symbol", ""),
+                                "logo": t.get("logo"),
+                                "amount": balance,
+                                "value_usd": float(t.get("usd_value") or 0),
+                                "price_usd": float(t.get("usd_price") or 0),
+                                "price_change_24h": float(t.get("usd_price_24hr_percent_change") or 0),
+                                "chain": chain
+                            })
+                        return chain_tokens
+                    except Exception as e:
+                        logger.warning(f"Error fetching Moralis {chain} tokens: {e}")
+                        return []
+
+                results = await asyncio.gather(*(fetch_chain(c) for c in evm_chains))
+                for res in results:
+                    moralis_tokens.extend(res)
+                await moralis.close()
+            except Exception as e:
+                logger.warning(f"Moralis fallback triggered: {e}")
+
+        if moralis_tokens:
+            tokens.extend(moralis_tokens)
+        else:
+            # Fallback: direct RPC (free, no API key needed)
+            rpc_tokens = await _fetch_evm_tokens_rpc(wallet_address)
+            tokens.extend(rpc_tokens)
+
     return tokens
 
 
@@ -369,8 +409,11 @@ async def get_chain_parity_matrix(request: web.Request) -> web.Response:
                 }
             }
 
+    providers = [SolanaCapabilitiesProvider()]
+    if settings.moralis_api_key:
+        providers.append(MoralisClient())
     aggregator = MultiChainPortfolioAggregator(
-        position_providers=[SolanaCapabilitiesProvider(), MoralisClient()]
+        position_providers=providers
     )
     snapshot = aggregator.aggregate([])
     payload = make_envelope(snapshot, meta={"matrix": "chain_parity_v1"})

@@ -35,9 +35,9 @@ import {
   copyToClipboard,
   cn,
 } from "@/lib/utils";
-import { createBlink, getRektIncidents, normalizeConfidencePercent } from "@/lib/api";
+import { createBlink, normalizeConfidencePercent } from "@/lib/api";
 import { useToast } from "@/components/ui/toaster";
-import type { ChainName, RektIncident } from "@/types";
+import type { ChainName } from "@/types";
 
 const SUPPORTED_CHAINS: ChainName[] = [
   "solana",
@@ -67,7 +67,6 @@ export default function TokenAnalysisPage() {
   const [copied, setCopied] = useState(false);
   const [isCreatingBlink, setIsCreatingBlink] = useState(false);
   const [analysisStage, setAnalysisStage] = useState(0);
-  const [rektIncidents, setRektIncidents] = useState<RektIncident[]>([]);
 
   const {
     mutate: analyze,
@@ -106,27 +105,6 @@ export default function TokenAnalysisPage() {
       return () => clearInterval(interval);
     }
   }, [isAnalyzing]);
-
-  useEffect(() => {
-    if (!analysis?.token?.name) return;
-
-    let active = true;
-    getRektIncidents({ search: analysis.token.name, limit: 3 })
-      .then((result) => {
-        if (active) {
-          setRektIncidents(result.incidents);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setRektIncidents([]);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [analysis?.token?.name]);
 
   const handleCopyAddress = async () => {
     await copyToClipboard(address);
@@ -395,19 +373,6 @@ export default function TokenAnalysisPage() {
     </div>
   </GlassCard>
 </section>
-
-      <section aria-label="rekt-risk-context" className="mt-6">
-        <GlassCard>
-          <h3 className="font-semibold">Risk Context: Hacks & Exploits</h3>
-          <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-            {rektIncidents.length === 0 ? (
-              <li>No related incidents found.</li>
-            ) : (
-              rektIncidents.map((incident) => <li key={incident.id}>{incident.name}</li>)
-            )}
-          </ul>
-        </GlassCard>
-      </section>
 
       {/* Additional info row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">

@@ -5,7 +5,9 @@ from aiohttp.test_utils import TestClient, TestServer
 from src.api.app import setup_api_routes
 from src.api.middleware.cors import cors_middleware
 from src.api.middleware.rate_limit import rate_limit_middleware
+from src.api.routes.alerts import ALERT_STORE_KEY
 from src.api.routes.auth import auth_middleware
+from tests.helpers import AsyncInMemoryAlertStore
 
 
 async def navigate_discover_to_smart_money_to_alerts(client: TestClient) -> None:
@@ -32,6 +34,8 @@ async def navigate_discover_to_smart_money_to_alerts(client: TestClient) -> None
 async def test_discover_to_alert_journey_has_no_dead_ends():
     app = web.Application(middlewares=[cors_middleware, auth_middleware, rate_limit_middleware])
     setup_api_routes(app)
+    # Replace DatabaseAlertStore with async in-memory store for tests
+    app[ALERT_STORE_KEY] = AsyncInMemoryAlertStore()
 
     client = TestClient(TestServer(app))
     await client.start_server()

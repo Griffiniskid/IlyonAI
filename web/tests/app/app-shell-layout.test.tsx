@@ -11,10 +11,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-vi.mock("@/lib/hooks", () => ({
-  useAlertSummary: () => ({ unreadCount: 0, alerts: [] }),
-  useUpdateAlert: () => ({ mutateAsync: vi.fn() }),
-}));
+vi.mock("@/lib/hooks", () => ({}));
 
 describe("AppShell layout", () => {
   it("renders discoverable nav routes and mobile core domains", async () => {
@@ -35,9 +32,6 @@ describe("AppShell layout", () => {
       "/whales",
       "/entity",
       "/shield",
-      "/audits",
-      "/rekt",
-      "/alerts",
       "/portfolio",
       "/settings",
     ];

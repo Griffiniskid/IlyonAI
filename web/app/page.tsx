@@ -598,12 +598,6 @@ export default function HomePage() {
               description="Search liquidity pools directly from the main page and inspect safety, yield quality, confidence, and exit quality in one report."
               delay={400}
             />
-            <FeatureCard
-              icon={BarChart3}
-              title="Protocol Audits"
-              description="Review smart contract audit records and security posture before you deposit into a protocol."
-              delay={500}
-            />
           </div>
         </div>
       </section>

@@ -5,11 +5,12 @@ import {
   Radar,
   Flame,
   Shield,
-  Bell,
   Settings,
   PieChart,
   Droplets,
   Briefcase,
+  MessagesSquare,
+  ArrowLeftRight,
   LucideIcon
 } from "lucide-react";
 
@@ -45,15 +46,19 @@ export const navGroups: NavGroup[] = [
     label: "Protect",
     items: [
       { label: "Shield", href: "/shield", icon: Shield },
-      { label: "Audits", href: "/audits", icon: Briefcase },
-      { label: "Rekt", href: "/rekt", icon: Flame },
-      { label: "Alerts", href: "/alerts", icon: Bell },
     ],
   },
   {
     label: "Portfolio",
     items: [
       { label: "Portfolio", href: "/portfolio", icon: PieChart },
+    ],
+  },
+  {
+    label: "AI Agent",
+    items: [
+      { label: "Chat", href: "/agent/chat", icon: MessagesSquare },
+      { label: "Swap", href: "/agent/swap", icon: ArrowLeftRight },
     ],
   },
   {

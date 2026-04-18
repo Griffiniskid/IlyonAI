@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import dynamic from "next/dynamic";
 import { useAuth, useUser } from "@/lib/hooks";
@@ -16,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Wallet,
-  Bell,
   Shield,
   Loader2,
   Check,
@@ -31,12 +29,6 @@ export default function SettingsPage() {
   const { data: user, isLoading: userLoading } = useUser();
 
   const { addToast } = useToast();
-
-  const [notifications, setNotifications] = useState({
-    priceAlerts: true,
-    whaleActivity: false,
-    securityAlerts: true,
-  });
 
   const handleAuthenticate = async () => {
     if (!signMessage) {
@@ -143,7 +135,7 @@ export default function SettingsPage() {
             <h2 className="font-semibold">Account Statistics</h2>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 sm:gap-4">
+          <div className="grid grid-cols-2 gap-2 sm:gap-4">
             <div className="text-center p-3 sm:p-4 bg-card/50 rounded-lg">
               <div className="text-xl sm:text-2xl font-bold">{user.analyses_count}</div>
               <div className="text-xs sm:text-sm text-muted-foreground">Analyses</div>
@@ -152,10 +144,6 @@ export default function SettingsPage() {
               <div className="text-xl sm:text-2xl font-bold">{user.tracked_wallets}</div>
               <div className="text-xs sm:text-sm text-muted-foreground">Tracked</div>
             </div>
-            <div className="text-center p-3 sm:p-4 bg-card/50 rounded-lg">
-              <div className="text-xl sm:text-2xl font-bold">{user.alerts_count}</div>
-              <div className="text-xs sm:text-sm text-muted-foreground">Alerts</div>
-            </div>
           </div>
 
           <div className="mt-4 pt-4 border-t border-border text-sm text-muted-foreground">
@@ -163,77 +151,6 @@ export default function SettingsPage() {
           </div>
         </GlassCard>
       )}
-
-      {/* Notifications */}
-      <section id="preferences">
-        <GlassCard className="mb-6">
-        <div className="flex items-center gap-2 mb-4">
-          <Bell className="h-5 w-5 text-emerald-500" />
-          <h2 className="font-semibold">Notifications</h2>
-        </div>
-
-        <div className="space-y-4">
-          {[
-            {
-              key: "priceAlerts",
-              label: "Price Alerts",
-              description: "Get notified when token prices hit your targets",
-            },
-            {
-              key: "whaleActivity",
-              label: "Whale Activity",
-              description: "Alerts for large transactions on tracked tokens",
-            },
-            {
-              key: "securityAlerts",
-              label: "Security Alerts",
-              description: "Warnings when token security changes",
-            },
-          ].map((item) => (
-            <div
-              key={item.key}
-              className="flex items-center justify-between py-2"
-            >
-              <div>
-                <div className="font-medium">{item.label}</div>
-                <div className="text-sm text-muted-foreground">
-                  {item.description}
-                </div>
-              </div>
-              <Button
-                variant={
-                  notifications[item.key as keyof typeof notifications]
-                    ? "default"
-                    : "outline"
-                }
-                size="sm"
-                onClick={() =>
-                  setNotifications((prev) => ({
-                    ...prev,
-                    [item.key]: !prev[item.key as keyof typeof notifications],
-                  }))
-                }
-                className={
-                  notifications[item.key as keyof typeof notifications]
-                    ? "bg-emerald-600"
-                    : ""
-                }
-              >
-                {notifications[item.key as keyof typeof notifications]
-                  ? "On"
-                  : "Off"}
-              </Button>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-4 p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
-          <div className="text-sm text-yellow-400">
-            Browser notifications require permission. Coming soon!
-          </div>
-        </div>
-        </GlassCard>
-      </section>
 
       {/* Links */}
       <section>

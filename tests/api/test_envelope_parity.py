@@ -6,6 +6,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer, make_mocked_request
 
 from src.api.routes import alerts, analysis, chains, contracts, defi, intel, opportunities, portfolio, shield, smart_money, stats, stream, transactions, trending, whale
+from tests.helpers import AsyncInMemoryAlertStore
 
 
 ENVELOPE_KEYS = {"status", "data", "meta", "errors", "trace_id", "freshness"}
@@ -45,7 +46,7 @@ async def test_primary_routes_return_envelope_contract():
     req_intel = make_mocked_request("GET", "/api/v1/intel/rekt")
 
     app = web.Application()
-    alerts.setup_alert_routes(app)
+    alerts.setup_alert_routes(app, store=AsyncInMemoryAlertStore())
     req_alerts = make_mocked_request("GET", "/api/v1/alerts", app=app)
     req_alert_rule_missing = make_mocked_request(
         "GET",
@@ -98,7 +99,7 @@ async def test_error_edges_return_envelope_for_invalid_json_and_limit():
         return await handler(request)
 
     app = web.Application(middlewares=[_auth_context])
-    alerts.setup_alert_routes(app)
+    alerts.setup_alert_routes(app, store=AsyncInMemoryAlertStore())
     transactions.setup_transactions_routes(app)
 
     server = TestServer(app)

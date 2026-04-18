@@ -503,19 +503,17 @@ NEXT_PUBLIC_SOLANA_NETWORK=mainnet-beta
 NEXT_PUBLIC_SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
 
 # Coming Soon plugs (true = show plugs on in-development pages, false = show full features)
-NEXT_PUBLIC_COMING_SOON=true
+NEXT_PUBLIC_COMING_SOON=false
 ```
 
 ### Feature Flags
 
-The `NEXT_PUBLIC_COMING_SOON` environment variable controls visibility of features still under development:
+The `NEXT_PUBLIC_COMING_SOON` environment variable controls visibility of features:
 
 | Value | Behavior |
 |-------|----------|
-| `true` (default) | Shield, Audits, REKT Database, Alerts, and Entity Explorer show "Coming Soon" placeholders. Alert notifications are hidden. |
-| `false` | All features are fully accessible, including those in active development. |
-
-This allows deploying to production (hackathon demo) with polished working features while keeping in-development pages gracefully hidden.
+| `false` (default) | All features are fully accessible — Shield, Audits, REKT, Alerts, Entity Explorer. |
+| `true` | Shield, Audits, REKT Database, Alerts, and Entity Explorer show "Coming Soon" placeholders. Alert notifications are hidden. |
 
 ---
 

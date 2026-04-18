@@ -44,7 +44,7 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://ilyonai.com}
         NEXT_PUBLIC_SOLANA_NETWORK: ${NEXT_PUBLIC_SOLANA_NETWORK:-mainnet-beta}
         NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
-        NEXT_PUBLIC_COMING_SOON: ${NEXT_PUBLIC_COMING_SOON:-true}
+        NEXT_PUBLIC_COMING_SOON: ${NEXT_PUBLIC_COMING_SOON:-false}
     restart: unless-stopped
     depends_on:
       api:
@@ -53,7 +53,7 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://ilyonai.com}
       NEXT_PUBLIC_SOLANA_NETWORK: ${NEXT_PUBLIC_SOLANA_NETWORK:-mainnet-beta}
       NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
-      NEXT_PUBLIC_COMING_SOON: ${NEXT_PUBLIC_COMING_SOON:-true}
+      NEXT_PUBLIC_COMING_SOON: ${NEXT_PUBLIC_COMING_SOON:-false}
     ports:
       - "${WEB_HOST_PORT:-3000}:3000"
     healthcheck:
