@@ -74,10 +74,19 @@ DEX_PROGRAM_IDS: dict[str, str] = {
 class SwapEvent:
     """Structured swap record decoded directly from a Solana program log.
 
-    `payment_side` indicates which side of the swap is denominated in a known
-    payment mint (SOL/WSOL/USDC/USDT). Token-for-token swaps (where neither
-    side is a payment mint) cannot be priced from the log alone and are
-    rejected by decoders — they return `None`.
+    Two flavors:
+
+    1. **Fully-priced** (Jupiter, Pump.fun): `input_mint`, `output_mint`,
+       and amounts are set, `payment_side` identifies the SOL/stable leg, and
+       USD can be computed from the log alone via `compute_payment_usd` —
+       sub-threshold trades are dropped at zero cost.
+
+    2. **Amount-only** (Raydium CLMM / CP, Orca Whirlpool, Meteora DLMM):
+       The DEX's on-chain event carries swap amounts but not mint addresses
+       (mints live on the pool account). Mints and `payment_side` are `None`
+       in the decoded event. The caller applies a coarse raw-amount
+       pre-filter and, for survivors, resolves the real mints + USD via
+       `getTransaction` enrichment (RPC_CALL budget, not TRANSACTION_HISTORY).
     """
 
     dex_name: str
@@ -92,7 +101,26 @@ class SwapEvent:
     output_mint: Optional[str]
     output_amount_raw: Optional[int]
 
-    payment_side: Literal["input", "output"]
+    payment_side: Optional[Literal["input", "output"]]
+
+    # Pool account involved in the swap (set for amount-only events). Retained
+    # so future caching layers can resolve pool → mints without an extra RPC.
+    pool_address: Optional[str] = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Coarse whale candidate threshold for amount-only decoders
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Used to pre-filter pool-based swap events before the enrichment RPC. Set so
+# that no $10K whale can slip below it, regardless of whether the payment leg
+# is WSOL (9 dp), USDC (6 dp), or USDT (6 dp):
+#   - USDC/USDT: $10K ≈ 1.0 × 10^10 raw
+#   - WSOL at $100 (very conservative low): $10K ≈ 10^12 raw
+# We use 5e9 — below any priced $10K whale — so some non-whales get enriched
+# and filtered out later by `_parse_helius_transaction`, but no real whale
+# is ever dropped at the log-parse layer.
+AMOUNT_ONLY_WHALE_CANDIDATE_RAW: int = 5 * 10 ** 9
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -313,6 +341,177 @@ def _stub_decoder(dex_name: str) -> Callable[[list[str], str, int], Optional[Swa
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Amount-only decoders (pool-based Anchor events)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# These decoders parse `Program data:` blobs whose Anchor discriminators match
+# the documented event names. Offsets are taken from each program's public IDL.
+# Mints live on the pool account and are not in the event — the handler
+# resolves them via the `getTransaction` enrichment path (already RPC_CALL
+# budget), which gives byte-exact amounts and mints.
+#
+# These functions return a partial `SwapEvent` with `input_mint`,
+# `output_mint`, and `payment_side` set to `None`, plus the pool address and
+# raw amounts. Any decode error → `None` (drop silently).
+
+
+def _decode_anchor_amounts(
+    logs: list[str],
+    discriminator: bytes,
+    pool_offset: int,
+    amount_a_offset: int,
+    amount_b_offset: int,
+    min_len: int,
+) -> Optional[tuple[str, int, int]]:
+    """Shared helper: scan program-data blobs for a discriminator, unpack
+    the pool pubkey and two u64 amounts at fixed offsets. Returns
+    (pool_base58, amount_a, amount_b) or None."""
+    for blob in _extract_program_data(logs):
+        if not blob.startswith(discriminator):
+            continue
+        if len(blob) < min_len:
+            continue
+        try:
+            pool_b58 = _b58_pubkey(blob[pool_offset:pool_offset + 32])
+            amount_a = struct.unpack_from("<Q", blob, amount_a_offset)[0]
+            amount_b = struct.unpack_from("<Q", blob, amount_b_offset)[0]
+        except Exception:
+            continue
+        return pool_b58, int(amount_a), int(amount_b)
+    return None
+
+
+# Raydium CLMM SwapEvent: pool_state(32) sender(32) ta0(32) ta1(32)
+#                         amount_0(u64) transfer_fee_0(u64)
+#                         amount_1(u64) transfer_fee_1(u64) ...
+_RAYDIUM_CLMM_DISC = _anchor_discriminator("SwapEvent")
+
+
+def decode_raydium_clmm(logs: list[str], signature: str, slot: int) -> Optional[SwapEvent]:
+    """Decode a Raydium CLMM SwapEvent (pool + amounts; mints resolved via RPC)."""
+    res = _decode_anchor_amounts(
+        logs,
+        discriminator=_RAYDIUM_CLMM_DISC,
+        pool_offset=8,
+        amount_a_offset=8 + 32 * 4,
+        amount_b_offset=8 + 32 * 4 + 8 + 8,
+        min_len=8 + 32 * 4 + 8 * 4,
+    )
+    if not res:
+        return None
+    pool, amount_0, amount_1 = res
+    return _amount_only_event("Raydium CLMM", signature, slot, pool, amount_0, amount_1)
+
+
+# Raydium CP (CPMM) SwapEvent: pool_id(32) iv_before(u64) ov_before(u64)
+#                              input_amount(u64) output_amount(u64)
+#                              input_fee(u64) output_fee(u64) base_input(bool)
+_RAYDIUM_CP_DISC = _anchor_discriminator("SwapEvent")  # same name; scoped by program id
+
+
+def decode_raydium_cp(logs: list[str], signature: str, slot: int) -> Optional[SwapEvent]:
+    """Decode a Raydium CPMM SwapEvent (pool + in/out amounts)."""
+    res = _decode_anchor_amounts(
+        logs,
+        discriminator=_RAYDIUM_CP_DISC,
+        pool_offset=8,
+        amount_a_offset=8 + 32 + 8 + 8,      # input_amount
+        amount_b_offset=8 + 32 + 8 + 8 + 8,  # output_amount
+        min_len=8 + 32 + 8 * 6 + 1,
+    )
+    if not res:
+        return None
+    pool, amount_in, amount_out = res
+    return _amount_only_event("Raydium CP", signature, slot, pool, amount_in, amount_out)
+
+
+# Orca Whirlpool Traded: whirlpool(32) a_to_b(bool)
+#                        pre_sqrt_price(u128) post_sqrt_price(u128)
+#                        input_amount(u64) output_amount(u64) ...
+_ORCA_TRADED_DISC = _anchor_discriminator("Traded")
+
+
+def decode_orca_whirlpool(logs: list[str], signature: str, slot: int) -> Optional[SwapEvent]:
+    """Decode an Orca Whirlpool Traded event (pool + in/out amounts)."""
+    pool_off = 8
+    # skip a_to_b (1) + pre_sqrt_price (16) + post_sqrt_price (16)
+    amt_in_off = 8 + 32 + 1 + 16 + 16
+    amt_out_off = amt_in_off + 8
+    res = _decode_anchor_amounts(
+        logs,
+        discriminator=_ORCA_TRADED_DISC,
+        pool_offset=pool_off,
+        amount_a_offset=amt_in_off,
+        amount_b_offset=amt_out_off,
+        min_len=amt_out_off + 8,
+    )
+    if not res:
+        return None
+    pool, amount_in, amount_out = res
+    return _amount_only_event("Orca", signature, slot, pool, amount_in, amount_out)
+
+
+# Meteora DLMM Swap: lb_pair(32) from_(32) start_bin_id(i32) end_bin_id(i32)
+#                    amount_in(u64) amount_out(u64) swap_for_y(bool) ...
+_METEORA_SWAP_DISC = _anchor_discriminator("Swap")
+
+
+def decode_meteora_dlmm(logs: list[str], signature: str, slot: int) -> Optional[SwapEvent]:
+    """Decode a Meteora DLMM Swap event (pool + in/out amounts)."""
+    amt_in_off = 8 + 32 + 32 + 4 + 4
+    amt_out_off = amt_in_off + 8
+    res = _decode_anchor_amounts(
+        logs,
+        discriminator=_METEORA_SWAP_DISC,
+        pool_offset=8,
+        amount_a_offset=amt_in_off,
+        amount_b_offset=amt_out_off,
+        min_len=amt_out_off + 8,
+    )
+    if not res:
+        return None
+    pool, amount_in, amount_out = res
+    return _amount_only_event("Meteora", signature, slot, pool, amount_in, amount_out)
+
+
+def _amount_only_event(
+    dex_name: str,
+    signature: str,
+    slot: int,
+    pool_address: str,
+    amount_a: int,
+    amount_b: int,
+) -> SwapEvent:
+    """Build an amount-only SwapEvent (mints/payment_side left None)."""
+    return SwapEvent(
+        dex_name=dex_name,
+        signature=signature,
+        slot=slot,
+        block_time=None,
+        user_wallet=None,
+        input_mint=None,
+        input_amount_raw=int(amount_a),
+        output_mint=None,
+        output_amount_raw=int(amount_b),
+        payment_side=None,
+        pool_address=pool_address,
+    )
+
+
+def is_whale_candidate_raw(event: SwapEvent) -> bool:
+    """True iff a decoded amount-only event is large enough to be worth enriching.
+
+    Fully-priced events are evaluated via `compute_payment_usd` instead; this
+    helper only applies to events with `payment_side is None`.
+    """
+    if event.payment_side is not None:
+        return True  # fully-priced — handled by USD check
+    amt_a = event.input_amount_raw or 0
+    amt_b = event.output_amount_raw or 0
+    return max(amt_a, amt_b) >= AMOUNT_ONLY_WHALE_CANDIDATE_RAW
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Registry
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -320,12 +519,15 @@ def _stub_decoder(dex_name: str) -> Callable[[list[str], str, int], Optional[Swa
 DECODERS: dict[str, Callable[[list[str], str, int], Optional[SwapEvent]]] = {
     "Jupiter": decode_jupiter,
     "Raydium": decode_raydium_v4,
-    "Raydium CLMM": _stub_decoder("Raydium CLMM"),
-    "Raydium CP": _stub_decoder("Raydium CP"),
+    "Raydium CLMM": decode_raydium_clmm,
+    "Raydium CP": decode_raydium_cp,
     "Pump.fun": decode_pumpfun,
-    "Orca": _stub_decoder("Orca"),
-    "Meteora": _stub_decoder("Meteora"),
+    "Orca": decode_orca_whirlpool,
+    "Meteora": decode_meteora_dlmm,
+    # Phoenix uses a non-Anchor binary log format; left stubbed. The 2-min
+    # RPC supplement poll covers it via standard getSignaturesForAddress.
     "Phoenix": _stub_decoder("Phoenix"),
+    # Lifinity: public IDL variants differ; covered by the RPC supplement poll.
     "Lifinity": _stub_decoder("Lifinity"),
 }
 

@@ -1987,6 +1987,42 @@ class Database:
                 "outflow_usd": outflow_usd,
             }
 
+    async def get_whale_unresolved_token_addresses(self, limit: int = 500) -> list[str]:
+        """Return distinct token addresses from whale rows whose symbol is '???'.
+
+        Used to backfill token metadata for rows that were persisted before the
+        DexScreener enrichment step ran (e.g., via the RPC poll path).
+        """
+        if not self._initialized:
+            return []
+        async with self.async_session() as session:
+            stmt = (
+                select(WhaleTransaction.token_address)
+                .where(WhaleTransaction.token_symbol == "???")
+                .where(WhaleTransaction.token_address != "")
+                .distinct()
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            return [r[0] for r in result.all() if r[0]]
+
+    async def update_whale_token_metadata(self, token_address: str, symbol: str, name: str) -> int:
+        """Set symbol/name on every whale row matching `token_address`. Returns row count."""
+        if not self._initialized:
+            return 0
+        if not token_address:
+            return 0
+        from sqlalchemy import update as sa_update
+        async with self.async_session() as session:
+            stmt = (
+                sa_update(WhaleTransaction)
+                .where(WhaleTransaction.token_address == token_address)
+                .values(token_symbol=symbol or "???", token_name=name or "Unknown")
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount or 0
+
     async def cleanup_old_whale_transactions(self, hours: int = 24) -> int:
         """Delete whale transactions older than the given window. Returns count deleted."""
         if not self._initialized:
@@ -1998,6 +2034,37 @@ class Database:
             result = await session.execute(stmt)
             await session.commit()
             return result.rowcount or 0
+
+    async def cleanup_non_alpha_whale_transactions(self) -> int:
+        """Delete whale rows whose token is a stablecoin, bridged major, or LST.
+
+        Applies the mint- and symbol-level exclusion lists from
+        `src.data.token_filters` so rows inserted before the filter existed
+        disappear from the UI on stream startup.
+        """
+        if not self._initialized:
+            return 0
+        from src.data.token_filters import EXCLUDED_MINTS, EXCLUDED_SYMBOL_RE
+        from sqlalchemy import delete
+        async with self.async_session() as session:
+            mint_stmt = delete(WhaleTransaction).where(
+                WhaleTransaction.token_address.in_(list(EXCLUDED_MINTS))
+            )
+            mint_res = await session.execute(mint_stmt)
+
+            rows_stmt = select(WhaleTransaction.id, WhaleTransaction.token_symbol)
+            rows = (await session.execute(rows_stmt)).all()
+            bad_ids = [
+                rid for rid, sym in rows
+                if sym and sym != "???" and EXCLUDED_SYMBOL_RE.match(sym.strip())
+            ]
+            sym_deleted = 0
+            if bad_ids:
+                sym_stmt = delete(WhaleTransaction).where(WhaleTransaction.id.in_(bad_ids))
+                sym_res = await session.execute(sym_stmt)
+                sym_deleted = sym_res.rowcount or 0
+            await session.commit()
+            return (mint_res.rowcount or 0) + sym_deleted
 
     async def get_whale_aggregations(self, hours: int) -> dict:
         """Return window rows and prior-window token set for the leaderboard.

@@ -25,6 +25,7 @@ from src.analytics.anomaly_detector import BehavioralAnomalyDetector
 from src.analytics.time_series import TimeSeriesDataPoint
 from src.analytics.wallet_forensics import WalletForensicsEngine, get_token_deployer
 from src.core.models import TokenInfo
+from src.data.token_filters import EXCLUDED_MINTS, is_excluded_symbol
 from src.smart_money.models import CanonicalFlowEvent
 from src.smart_money.normalizer import normalize_event
 
@@ -1135,8 +1136,13 @@ class SolanaClient:
                 main_user = wsol_user
 
             # ── Determine primary token transfer (the traded asset) ──
-            # Filter out payment-side mints (WSOL, USDC, USDT)
-            asset_transfers = [t for t in token_transfers if t.get('mint') not in self.PAYMENT_MINTS]
+            # Filter out payment-side mints (WSOL, USDC, USDT) AND excluded
+            # non-alpha mints (stablecoins, wrapped majors, SOL LSTs).
+            asset_transfers = [
+                t for t in token_transfers
+                if t.get('mint') not in self.PAYMENT_MINTS
+                and t.get('mint') not in EXCLUDED_MINTS
+            ]
 
             if not asset_transfers:
                 return None
@@ -1165,6 +1171,11 @@ class SolanaClient:
             # Use passed metadata if available
             symbol = known_symbol if known_symbol else '???'
             name = known_name if known_name else 'Unknown'
+
+            # Symbol-level filter: drop bridged majors, stablecoins, LSTs that
+            # slipped past the mint list (new wrapped variants, etc.).
+            if is_excluded_symbol(symbol):
+                return None
             
             # Convert timestamp to timezone-aware UTC datetime
             from datetime import datetime, timezone
