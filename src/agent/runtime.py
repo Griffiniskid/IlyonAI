@@ -1,0 +1,137 @@
+"""ReAct runtime: wires LLM + memory + tools + SSE streaming."""
+from __future__ import annotations
+
+import json as _json
+import uuid
+from typing import AsyncIterator
+
+from langchain_classic.agents import AgentExecutor, create_react_agent
+from langchain_classic.prompts import PromptTemplate
+
+from src.agent.llm import IlyonChatModel
+from src.agent.streaming import StreamCollector, encode_sse, frame_event_name
+from src.agent.session import PersistentWindowMemory
+from src.storage.chat import get_chat, append_message, create_chat
+from src.api.schemas.agent import CardFrame, ToolEnvelope
+
+SYSTEM_PROMPT = PromptTemplate.from_template(
+    """You are Ilyon Sentinel's crypto agent. You answer questions about
+DeFi, quote swaps, find pools, and assemble allocations. For every
+allocation or pool, you MUST cite Sentinel scoring (Safety, Durability,
+Exit, Confidence), risk_level (HIGH|MEDIUM|LOW), strategy_fit
+(conservative|balanced|aggressive), and any Shield flags. You never
+broadcast transactions -- only return unsigned tx payloads via build_*
+tools. When unsure, use read-only tools first.
+
+Tools:
+{tools}
+
+Use this format:
+Thought: I need to ...
+Action: <tool-name>
+Action Input: <json>
+Observation: ...
+Thought: I now know the answer
+Final Answer: ...
+
+Chat history:
+{chat_history}
+
+Question: {input}
+{agent_scratchpad}
+"""
+)
+
+
+async def run_turn(
+    *,
+    db,
+    router,
+    tools,
+    chat_id: str,
+    user_id: int,
+    message: str,
+    wallet: str | None = None,
+) -> AsyncIterator[bytes]:
+    """Execute one agent turn and yield SSE-encoded frames.
+
+    Parameters
+    ----------
+    db : AsyncSession
+        Database session for persistence.
+    router
+        Duck-typed object with ``complete()`` (used by IlyonChatModel).
+    tools : list
+        LangChain tools available to the agent.
+    chat_id : str
+        UUID of the chat session.
+    user_id : int
+        Owner of the chat.
+    message : str
+        User's input message.
+    wallet : str | None
+        Optional wallet address (forwarded to tools via metadata).
+    """
+    # Ensure the chat row exists.
+    chat = await get_chat(db, chat_id, user_id)
+    if chat is None:
+        chat = await create_chat(db, user_id=user_id, title=message[:60])
+    await append_message(db, chat.id, role="user", content=message)
+
+    memory = await PersistentWindowMemory.load(db, chat.id, k=10)
+    llm = IlyonChatModel(router=router, model="default")
+    agent = create_react_agent(llm, tools, SYSTEM_PROMPT)
+    collector = StreamCollector()
+    executor = AgentExecutor(
+        agent=agent,
+        tools=tools,
+        memory=memory,
+        callbacks=[collector],
+        max_iterations=10,
+        handle_parsing_errors=True,
+    )
+
+    card_ids: list[str] = []
+    final_text: str = ""
+
+    async for event in executor.astream_events({"input": message}, version="v2"):
+        # Drain queued frames from the callback.
+        for frame in collector.drain():
+            yield encode_sse(frame_event_name(frame), frame.model_dump())
+            if isinstance(frame, CardFrame):
+                card_ids.append(frame.card_id)
+
+        # Check for tool results that contain enriched envelopes.
+        if event["event"] == "on_tool_end":
+            try:
+                raw = event["data"].get("output", "")
+                env = (
+                    ToolEnvelope.model_validate_json(raw)
+                    if isinstance(raw, str)
+                    else None
+                )
+                if env and env.card_type and env.card_payload is not None:
+                    collector.emit_card(env.card_id, env.card_type, env.card_payload)
+            except Exception:
+                pass
+
+        if event["event"] == "on_chain_end" and event.get("name") == "AgentExecutor":
+            output = event["data"].get("output", {})
+            final_text = (
+                output.get("output", "") if isinstance(output, dict) else str(output)
+            )
+
+    from src.agent.clean import clean_agent_output
+
+    final_text = clean_agent_output(final_text)
+    collector.emit_final(final_text, card_ids)
+    for frame in collector.drain():
+        yield encode_sse(frame_event_name(frame), frame.model_dump())
+
+    await append_message(
+        db,
+        chat.id,
+        role="assistant",
+        content=final_text,
+        cards=[{"card_id": cid} for cid in card_ids],
+    )
