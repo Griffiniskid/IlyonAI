@@ -38,7 +38,7 @@ export function MultiWalletProvider({ children }: { children: ReactNode }) {
       return metamask.signMessage(msg);
     }
     const sig = await phantom.signMessage(msg);
-    return btoa(String.fromCharCode(...sig));
+    return btoa(String.fromCharCode.apply(null, Array.from(sig)));
   }, [evmAddress]);
 
   return (
