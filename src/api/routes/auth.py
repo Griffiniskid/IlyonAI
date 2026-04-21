@@ -473,22 +473,181 @@ async def auth_middleware(request: web.Request, handler):
     return await handler(request)
 
 
-# ── Agent-platform auth stubs (W4 will replace) ──────────────────────────
-
-async def verify_evm(request: web.Request) -> web.Response:
-    return web.json_response({"error": "not_implemented"}, status=501)
-
+# ── Agent-platform auth endpoints (EVM + email/password + merge) ─────────
 
 async def register(request: web.Request) -> web.Response:
-    return web.json_response({"error": "not_implemented"}, status=501)
+    """POST /api/v1/auth/register -- email/password sign-up."""
+    from src.auth.password import hash_password
+
+    body = await request.json()
+    email = body.get("email", "").lower().strip()
+    password = body.get("password", "")
+    display = body.get("display_name") or email.split("@")[0]
+
+    if not email or not password:
+        return web.json_response(
+            {"error": "email and password required"}, status=400
+        )
+
+    import hashlib
+
+    sentinel = "email:" + hashlib.sha256(email.encode()).hexdigest()[:36]
+    assert len(sentinel) == 42  # sentinel wallet addresses are always 42 chars
+
+    try:
+        from src.storage.database import get_database
+        from sqlalchemy import text
+
+        db = await get_database()
+        async with db._engine.connect() as conn:
+            # Check email not taken
+            r = await conn.execute(
+                text("SELECT id FROM web_users WHERE email = :e"), {"e": email}
+            )
+            if r.first():
+                return web.json_response({"error": "email_taken"}, status=400)
+            pw_hash = hash_password(password)
+            await conn.execute(
+                text(
+                    "INSERT INTO web_users (wallet_address, email, password_hash, display_name) "
+                    "VALUES (:wa, :e, :ph, :dn)"
+                ),
+                {"wa": sentinel, "e": email, "ph": pw_hash, "dn": display},
+            )
+            await conn.commit()
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+    token = secrets.token_urlsafe(48)
+    return web.json_response(
+        {"token": token, "user": {"email": email, "display_name": display}}
+    )
 
 
 async def login(request: web.Request) -> web.Response:
-    return web.json_response({"error": "not_implemented"}, status=501)
+    """POST /api/v1/auth/login -- email/password sign-in."""
+    from src.auth.password import verify_password
+
+    body = await request.json()
+    email = body.get("email", "").lower().strip()
+    password = body.get("password", "")
+
+    try:
+        from src.storage.database import get_database
+        from sqlalchemy import text
+
+        db = await get_database()
+        async with db._engine.connect() as conn:
+            r = await conn.execute(
+                text(
+                    "SELECT id, password_hash, display_name FROM web_users WHERE email = :e"
+                ),
+                {"e": email},
+            )
+            row = r.first()
+            if not row or not row[1] or not verify_password(password, row[1]):
+                return web.json_response(
+                    {"error": "invalid_credentials"}, status=400
+                )
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+    token = secrets.token_urlsafe(48)
+    return web.json_response(
+        {"token": token, "user": {"email": email, "display_name": row[2]}}
+    )
+
+
+async def verify_evm(request: web.Request) -> web.Response:
+    """POST /api/v1/auth/verify-evm -- MetaMask ECDSA sign-in."""
+    from src.auth.ethereum import verify_ethereum_signature
+
+    body = await request.json()
+    address = body.get("address", "").lower()
+    message = body.get("message", "")
+    signature = body.get("signature", "")
+
+    if not verify_ethereum_signature(address, message, signature):
+        return web.json_response({"error": "bad_signature"}, status=400)
+
+    from src.storage.database import get_database
+    from sqlalchemy import text
+
+    db = await get_database()
+    async with db._engine.connect() as conn:
+        r = await conn.execute(
+            text("SELECT id FROM web_users WHERE wallet_address = :wa"),
+            {"wa": address},
+        )
+        if not r.first():
+            await conn.execute(
+                text(
+                    "INSERT INTO web_users (wallet_address, display_name) VALUES (:wa, :dn)"
+                ),
+                {"wa": address, "dn": f"{address[:6]}...{address[-4:]}"},
+            )
+            await conn.commit()
+
+    token = secrets.token_urlsafe(48)
+    return web.json_response(
+        {"token": token, "user": {"wallet_address": address}}
+    )
 
 
 async def link_wallet(request: web.Request) -> web.Response:
-    return web.json_response({"error": "not_implemented"}, status=501)
+    """POST /api/v1/auth/link-wallet -- merge email account with EVM wallet."""
+    from src.auth.ethereum import verify_ethereum_signature
+    from src.auth.merge import merge_accounts
+
+    body = await request.json()
+    address = body.get("address", "").lower()
+    message = body.get("message", "")
+    signature = body.get("signature", "")
+    wallet = request.get("user_wallet")
+
+    if not wallet:
+        return web.json_response({"error": "auth_required"}, status=401)
+
+    if not verify_ethereum_signature(address, message, signature):
+        return web.json_response({"error": "bad_signature"}, status=400)
+
+    from src.storage.database import get_database
+    from sqlalchemy import text
+
+    db = await get_database()
+    async with db._engine.connect() as conn:
+        email_r = await conn.execute(
+            text("SELECT id FROM web_users WHERE wallet_address = :wa"),
+            {"wa": wallet},
+        )
+        email_row = email_r.first()
+        if not email_row:
+            return web.json_response(
+                {"error": "user_not_found"}, status=404
+            )
+        email_id = email_row[0]
+
+        wallet_r = await conn.execute(
+            text("SELECT id FROM web_users WHERE wallet_address = :wa"),
+            {"wa": address},
+        )
+        wallet_row = wallet_r.first()
+        wallet_id = wallet_row[0] if wallet_row else email_id
+
+    async with db._engine.connect() as conn:
+        await merge_accounts(
+            conn,
+            email_id=email_id,
+            wallet_id=wallet_id,
+            sentinel=wallet,
+            real_wallet=address,
+        )
+        await conn.commit()
+
+    token = secrets.token_urlsafe(48)
+    return web.json_response(
+        {"token": token, "user": {"wallet_address": address}}
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -503,11 +662,10 @@ def setup_auth_routes(app: web.Application):
     app.router.add_post('/api/v1/auth/refresh', refresh_session)
     app.router.add_get('/api/v1/auth/me', get_me)
 
-    # Agent-platform auth stubs
+    # Agent-platform auth (EVM, email/password, account merge)
     app.router.add_post('/api/v1/auth/verify-evm', verify_evm)
     app.router.add_post('/api/v1/auth/register', register)
     app.router.add_post('/api/v1/auth/login', login)
     app.router.add_post('/api/v1/auth/link-wallet', link_wallet)
 
-    # Add auth middleware
-    logger.info("Auth routes registered with Ed25519 signature verification")
+    logger.info("Auth routes registered with Ed25519 + ECDSA + email/password")

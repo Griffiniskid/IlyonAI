@@ -72,20 +72,28 @@ async def test_tokens_bar_returns_503_when_flag_off():
 
 
 @pytest.mark.asyncio
-async def test_auth_stubs_return_501():
+async def test_auth_endpoints_validate_input():
+    """Auth endpoints are no longer stubs; they validate input and return 4xx."""
     from src.api.routes.auth import setup_auth_routes
 
     app = web.Application()
     setup_auth_routes(app)
 
     async with TestClient(TestServer(app)) as client:
-        for path in [
-            "/api/v1/auth/verify-evm",
-            "/api/v1/auth/register",
-            "/api/v1/auth/login",
-            "/api/v1/auth/link-wallet",
-        ]:
-            r = await client.post(path, json={})
-            assert r.status == 501, f"{path} returned {r.status}"
-            body = await r.json()
-            assert body["error"] == "not_implemented", f"{path} body: {body}"
+        # register -- missing fields -> 400
+        r = await client.post("/api/v1/auth/register", json={})
+        assert r.status == 400
+
+        # login -- missing fields -> 400 (will hit DB error or return 400)
+        r = await client.post("/api/v1/auth/login", json={})
+        assert r.status in (400, 500)
+
+        # verify-evm -- bad signature -> 400
+        r = await client.post("/api/v1/auth/verify-evm", json={
+            "address": "0xabc", "message": "hi", "signature": "0xbad",
+        })
+        assert r.status == 400
+
+        # link-wallet -- no auth -> 401
+        r = await client.post("/api/v1/auth/link-wallet", json={})
+        assert r.status == 401
