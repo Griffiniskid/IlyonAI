@@ -252,6 +252,30 @@ class Settings(BaseSettings):
     )
     session_ttl_hours: int = Field(24, env="SESSION_TTL_HOURS", description="Session TTL in hours")
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # AGENT PLATFORM FEATURE FLAGS
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    FEATURE_AGENT_V2: bool = Field(False, env="FEATURE_AGENT_V2")
+    FEATURE_TOKENS_BAR: bool = Field(False, env="FEATURE_TOKENS_BAR")
+    FEATURE_CHROME_EXT: bool = Field(False, env="FEATURE_CHROME_EXT")
+    FEATURE_AFFILIATE_HOOK: bool = Field(False, env="FEATURE_AFFILIATE_HOOK")
+    FEATURE_GREENFIELD_MEMORY: bool = Field(False, env="FEATURE_GREENFIELD_MEMORY")
+    ALLOWED_EXTENSION_IDS: str = Field("", env="ALLOWED_EXTENSION_IDS",
+                                       description="Comma-separated chrome/moz extension IDs")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # AGENT PLATFORM SERVICE CREDS
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    dexscreener_api_key: Optional[str] = Field(None, env="DEXSCREENER_API_KEY")
+    enso_api_key: Optional[str] = Field(None, env="ENSO_API_KEY")
+    jupiter_api_base: str = Field("https://quote-api.jup.ag/v6", env="JUPITER_API_BASE")
+    debridge_api_base: str = Field("https://api.dln.trade/v1.0", env="DEBRIDGE_API_BASE")
+    bnb_greenfield_sp: Optional[str] = Field(None, env="BNB_GREENFIELD_SP")
+    bnb_greenfield_account: Optional[str] = Field(None, env="BNB_GREENFIELD_ACCOUNT")
+    bnb_greenfield_private_key: Optional[str] = Field(None, env="BNB_GREENFIELD_PRIVATE_KEY")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
