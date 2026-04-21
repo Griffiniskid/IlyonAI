@@ -592,10 +592,18 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 4: Run once to produce the file**
+- [ ] **Step 4: Pin the dev dependency**
+
+Append to `requirements-dev.txt`:
+
+```
+datamodel-code-generator[jsonschema]==0.25.6
+```
+
+Run:
 
 ```bash
-pip install 'datamodel-code-generator[jsonschema]'
+pip install -r requirements-dev.txt
 python scripts/gen_agent_types.py
 ```
 
@@ -1111,6 +1119,18 @@ EOF
 
 Everything below may proceed in parallel once Phase 1 is merged. Workstreams are self-contained; each lands behind its feature flag.
 
+**Explicit cross-workstream dependencies (beyond Phase 1):**
+- W6.3 (card renderers) **blocked by** W7.1 (fixture corpus).
+- W9 (swap page) **blocked by** W12 (wallet adapters) for the signing step.
+- W10.2 (extension popup/sidepanel) **blocked by** W6 (shared `ChatShell`).
+- W13.1 (service worker) **blocked by** W10.1 (extension scaffold).
+- W11.3 (summarizer) **blocked by** W11.2 (Greenfield client).
+- X.1 Playwright **blocked by** W1+W4+W6 (web) and W10+W13 (extension).
+- X.2 Cutover **blocked by** X.1 green.
+- X.3 Deletion **blocked by** X.2 + ≥14 days + green prod Playwright.
+
+All other pairs are independent.
+
 ---
 
 ## W1 — Backend Agent Core
@@ -1215,10 +1235,31 @@ def test_encode_sse_prepends_event_line():
 async def test_collector_emits_monotonic_step_index():
     c = StreamCollector()
     c.on_llm_start({}, [["p"]])
-    c.on_agent_action(type("A", (), {"tool": "t", "tool_input": {}})())
-    c.on_tool_end("raw")
+    await c.on_agent_action(type("A", (), {"tool": "t", "tool_input": {}, "log":"thought"})())
+    await c.on_tool_end("raw", name="t")
     frames = [f for f in c.drain()]
     assert all(f.step_index == 1 for f in frames if hasattr(f, "step_index"))
+
+@pytest.mark.asyncio
+async def test_observation_frame_carries_tool_name():
+    """Spec §2.4: observation frames carry {step_index, name, ok, error?}."""
+    from src.api.schemas.agent import ObservationFrame
+    c = StreamCollector()
+    await c.on_agent_action(type("A",(),{"tool":"get_token_price","tool_input":{},"log":""})())
+    await c.on_tool_end("raw", name="get_token_price")
+    obs = [f for f in c.drain() if isinstance(f, ObservationFrame)]
+    assert obs and obs[0].name == "get_token_price"
+    assert obs[0].ok is True
+
+@pytest.mark.asyncio
+async def test_observation_frame_on_error_carries_name_and_code():
+    from src.api.schemas.agent import ObservationFrame
+    c = StreamCollector()
+    await c.on_agent_action(type("A",(),{"tool":"x","tool_input":{},"log":""})())
+    await c.on_tool_error(ValueError("bad"), name="x")
+    obs = [f for f in c.drain() if isinstance(f, ObservationFrame)]
+    assert obs and obs[0].name == "x"
+    assert obs[0].ok is False and obs[0].error.code == "ValueError"
 ```
 
 - [ ] **Step 2: Fail**
@@ -1272,14 +1313,16 @@ class StreamCollector(AsyncCallbackHandler):
                  else {"input": action.tool_input},
         ))
 
-    async def on_tool_end(self, output, **_):
+    async def on_tool_end(self, output, *, name: str | None = None, **_):
+        tool_name = name or (_.get("serialized") or {}).get("name") or ""
         self._queue.append(ObservationFrame(
-            step_index=self._step, name="", ok=True, error=None,
+            step_index=self._step, name=tool_name, ok=True, error=None,
         ))
 
-    async def on_tool_error(self, error, **_):
+    async def on_tool_error(self, error, *, name: str | None = None, **_):
+        tool_name = name or (_.get("serialized") or {}).get("name") or ""
         self._queue.append(ObservationFrame(
-            step_index=self._step, name="",
+            step_index=self._step, name=tool_name,
             ok=False,
             error={"code": type(error).__name__, "message": str(error)},
         ))
@@ -1614,7 +1657,131 @@ git add src/agent/runtime.py src/agent/clean.py tests/agent/test_runtime.py src/
 git commit -m "feat(agent): ReAct runtime wired to SSE, memory, persistence"
 ```
 
-### Task W1.5: Per-user rate limit
+### Task W1.5: Runtime emits card frames from enriched envelopes
+
+**Files:**
+- Modify: `src/agent/runtime.py`
+- Test: `tests/agent/test_runtime_cards.py`
+
+The decorator (W3) enriches each tool result; the runtime must translate the enriched envelope into a `CardFrame` so the SSE stream carries the card. Without this step, W3 runs but no card ever reaches the client.
+
+- [ ] **Step 1: Test**
+
+```python
+import pytest
+from src.agent.runtime import run_turn
+
+class FakeTool:
+    name = "find_liquidity_pool"
+    async def ainvoke(self, _):
+        # Tool returns an already-decorated envelope (W3 wrapper) as JSON.
+        from src.api.schemas.agent import ToolEnvelope
+        return ToolEnvelope(
+            ok=True, data={"protocol":"Aave"}, card_type="pool",
+            card_id="00000000-0000-0000-0000-000000000001",
+            card_payload={"protocol":"Aave","chain":"Arbitrum","asset":"USDC","apy":"5%","tvl":"$1B"},
+        ).model_dump_json()
+
+@pytest.mark.asyncio
+async def test_runtime_emits_card_frame_per_tool_call(db_session, fake_router):
+    frames = b""
+    async for chunk in run_turn(
+        db=db_session, router=fake_router, tools=[FakeTool()],
+        chat_id=<new uuid>, user_id=1,
+        message="find me a pool", wallet=None,
+    ):
+        frames += chunk
+    assert b"event: card" in frames
+    assert b'"card_type":"pool"' in frames
+```
+
+- [ ] **Step 2: Fail (no card emission yet)**
+
+- [ ] **Step 3: Implement card emission**
+
+In `src/agent/runtime.py`, after `on_tool_end`, the runtime reads the JSON payload and converts to a `CardFrame`:
+
+```python
+# Inside the astream_events loop:
+if event["event"] == "on_tool_end":
+    import json
+    from src.api.schemas.agent import ToolEnvelope
+    try:
+        env = ToolEnvelope.model_validate_json(event["data"]["output"])
+    except Exception:
+        env = None
+    if env and env.card_type and env.card_payload is not None:
+        collector.emit_card(env.card_id, env.card_type, env.card_payload)
+```
+
+- [ ] **Step 4: Pass**
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/agent/runtime.py tests/agent/test_runtime_cards.py
+git commit -m "feat(agent): runtime translates enriched envelopes into CardFrame"
+```
+
+### Task W1.6: Per-session rate limit
+
+**Note:** Spec §2.2 calls for a "per-user (0.5s min gap)" limit. Key on `(user_id, session_id)` so a user with two open sessions isn't throttled cross-session. If the existing middleware at `src/api/middleware/rate_limit.py` is global-only, add the keyed variant there.
+
+**Files:**
+- Modify: `src/api/middleware/rate_limit.py`
+- Test: `tests/api/middleware/test_rate_limit_agent.py`
+
+- [ ] **Step 1: Test — two sessions, one user, no throttle**
+
+```python
+import pytest, asyncio
+from src.api.middleware.rate_limit import PerSessionGap
+
+def test_same_user_different_sessions_allowed():
+    gap = PerSessionGap(0.5)
+    assert gap.allow(1, "sess-a") is True
+    assert gap.allow(1, "sess-b") is True
+
+def test_same_user_same_session_throttled():
+    gap = PerSessionGap(0.5)
+    assert gap.allow(1, "sess-a") is True
+    assert gap.allow(1, "sess-a") is False
+```
+
+- [ ] **Step 2: Fail**
+
+- [ ] **Step 3: Implement**
+
+```python
+# src/api/middleware/rate_limit.py (append)
+from time import monotonic
+
+class PerSessionGap:
+    def __init__(self, min_gap_s: float = 0.5):
+        self._last: dict[tuple[int, str], float] = {}
+        self._gap = min_gap_s
+    def allow(self, user_id: int, session_id: str) -> bool:
+        key = (user_id, session_id)
+        now = monotonic()
+        if now - self._last.get(key, 0) < self._gap:
+            return False
+        self._last[key] = now
+        return True
+
+agent_gap = PerSessionGap(0.5)
+```
+
+In `src/api/routes/agent.py::agent_turn`, before running:
+
+```python
+from src.api.middleware.rate_limit import agent_gap
+if not agent_gap.allow(user.id, body["session_id"]):
+    return web.json_response({"error":"rate_limited"}, status=429)
+```
+
+- [ ] **Step 4: Pass**
+
+- [ ] **Step 5: Commit**
 
 **Files:**
 - Modify: `src/api/middleware/rate_limit.py` (add per-session variant if missing)
@@ -1806,32 +1973,122 @@ def register_all_tools(services, user_id: int = 0, wallet: str | None = None):
 
 - [ ] **Step 5: Pass + commit**
 
-### Tasks W2.2 … W2.14 — remaining 13 tools
+### Task W2.2: get_token_price
 
-Same shape as W2.1. For each, define the sig, bind to service, test with fake.
+**Files:** `src/agent/tools/price.py`, `tests/agent/tools/test_price.py`
 
-| # | Tool | Service binding | card_type |
-|---|---|---|---|
-| W2.2 | `get_token_price` | `services.price.get(token, chain)` | `token` |
-| W2.3 | `simulate_swap` | `services.quotes.quote(chain, in_tok, out_tok, amt)` | `swap_quote` |
-| W2.4 | `build_swap_tx` | `services.enso.build(...)` | `swap_quote` |
-| W2.5 | `build_solana_swap` | `services.jupiter.build(...)` | `swap_quote` |
-| W2.6 | `get_defi_market_overview` | `services.defillama.protocols()` | `market_overview` |
-| W2.7 | `get_defi_analytics` | Tiered: `MarketScanPipeline` + `OpportunityEngine.deep` | `pool` or `market_overview` |
-| W2.8 | `get_staking_options` | `OpportunityEngine.scan(category=['staking','liquid-staking'])` + `StakingMetadataService` | `allocation` if multiple, else `stake` |
-| W2.9 | `search_dexscreener_pairs` | `services.dexscreener.search(q)` | `pair_list` |
-| W2.10 | `find_liquidity_pool` | `OpportunityEngine.find_pool` → `DexScreenerClient` fallback | `pool` |
-| W2.11 | `build_stake_tx` | `services.stake_builder.build(...)` | `stake` |
-| W2.12 | `build_deposit_lp_tx` | `services.lp_builder.build(...)` | `pool` |
-| W2.13 | `build_bridge_tx` | `services.debridge.build(...)` | `bridge` |
-| W2.14 | `build_transfer_tx` | `services.transfer.build(...)` | `plan` |
+- [ ] Failing test: fake price service returning `{"symbol":"SOL","address":"So1..","chain":"solana","price_usd":"89.6","change_24h_pct":1.2}` → assert `card_type == "token"`, payload echoes price.
+- [ ] Implement: `async def get_token_price(ctx, *, token: str, chain: str = "ethereum")` → call `ctx.services.price.get(token, chain)` → `ok_envelope(data=..., card_type="token", card_payload=...)`. Fallback: on `PriceService` failure, try `ctx.services.dexscreener.price_for(token)`.
+- [ ] Register in `_TOOL_REGISTRY`.
+- [ ] Test PASS.
+- [ ] Commit: `feat(agent): tool get_token_price`
 
-**One bite-sized subtask group per tool:**
-- [ ] Write failing test with fake service
-- [ ] Implement tool function (≤ 30 lines)
-- [ ] Wire into `register_all_tools`
-- [ ] Run test → PASS
-- [ ] Commit with message `feat(agent): tool <name>`
+### Task W2.3: simulate_swap
+
+**Files:** `src/agent/tools/swap_simulate.py`, `tests/agent/tools/test_swap_simulate.py`
+
+- [ ] Failing test: fake `quote_service.quote(chain, in_tok, out_tok, amt)` returns `{pay, receive, rate, router, price_impact_pct}`. Assert `card_type == "swap_quote"`.
+- [ ] Implement: dispatch by chain family (EVM → EnsoClient; Solana → JupiterClient) via QuoteService.
+- [ ] Register.
+- [ ] Commit: `feat(agent): tool simulate_swap`
+
+### Task W2.4: build_swap_tx (EVM, via Enso)
+
+**Files:** `src/agent/tools/swap_build.py`, `tests/agent/tools/test_swap_build.py`
+
+- [ ] Failing test: fake `services.enso.build(...)` returns `{unsigned_tx, simulation}`. Assert envelope contains `card_type == "swap_quote"` and `data.unsigned_tx`.
+- [ ] Implement (returns unsigned tx; never signs — enforces spec §2.2 safety gate).
+- [ ] Register.
+- [ ] Commit.
+
+### Task W2.5: build_solana_swap (Jupiter)
+
+**Files:** `src/agent/tools/solana_swap.py`, `tests/agent/tools/test_solana_swap.py`
+
+- [ ] Failing test: fake `services.jupiter.build(...)` returns serialized tx base64. Assert `card_type == "swap_quote"`, `data.serialized_tx` present.
+- [ ] Implement.
+- [ ] Register.
+- [ ] Commit.
+
+### Task W2.6: get_defi_market_overview
+
+**Files:** `src/agent/tools/market_overview.py`, `tests/agent/tools/test_market_overview.py`
+
+- [ ] Failing test: fake `services.defillama.protocols()` returns list of 20 protocols. Assert `card_type == "market_overview"`, `payload.protocols` contains all rows.
+- [ ] Implement: aggregate summary (top-N by TVL, rollup by category).
+- [ ] Register.
+- [ ] Commit.
+
+### Task W2.7: get_defi_analytics (tiered)
+
+**Files:** `src/agent/tools/analytics.py`, `tests/agent/tools/test_analytics.py`
+
+- [ ] Failing test 1: generic list query ("best yields USDC") → uses `MarketScanPipeline`, emits `card_type="market_overview"`.
+- [ ] Failing test 2: specific pool query (explicit protocol + pair) → uses `OpportunityEngine.deep`, emits `card_type="pool"`.
+- [ ] Implement dispatcher with intent classifier: if `pool_id` or (`protocol` AND `asset`) present → deep path; else list path.
+- [ ] Register.
+- [ ] Commit.
+
+### Task W2.8: get_staking_options
+
+**Files:** `src/agent/tools/staking.py`, `tests/agent/tools/test_staking.py`
+
+- [ ] Failing test: fake `opportunity_engine.scan(category=["staking","liquid-staking"])` returns 5 pools. Assert `card_type == "allocation"` when N>1, `"stake"` when N==1.
+- [ ] Implement: filter on `category in {staking, liquid-staking}`; overlay `services.staking_metadata.lookup(protocol)` (adds unbond_days, validator info).
+- [ ] Register.
+- [ ] Commit.
+
+### Task W2.9: search_dexscreener_pairs
+
+**Files:** `src/agent/tools/dex_search.py`, `tests/agent/tools/test_dex_search.py`
+
+- [ ] Failing test: fake `services.dexscreener.search("BONK")` returns 8 pairs. Assert `card_type == "pair_list"`, `payload.pairs` length 8.
+- [ ] Implement.
+- [ ] Register.
+- [ ] Commit.
+
+### Task W2.10: find_liquidity_pool (hybrid with fallback)
+
+**Files:** `src/agent/tools/pool_find.py`, `tests/agent/tools/test_pool_find.py`
+
+- [ ] Failing test 1: `opportunity_engine.find_pool` returns a hit → `card_type="pool"` from Ilyon data.
+- [ ] Failing test 2: `opportunity_engine.find_pool` returns None (long-tail meme coin) → fallback to `dexscreener_client.search()`, still `card_type="pool"`.
+- [ ] Implement.
+- [ ] Register.
+- [ ] Commit.
+
+### Task W2.11: build_stake_tx
+
+**Files:** `src/agent/tools/stake_build.py`, `tests/agent/tools/test_stake_build.py`
+
+- [ ] Failing test for each of the 4 protocols (Lido, Rocket Pool, Jito, Marinade) — fake adapter returns unsigned tx, assert `card_type == "stake"`, `data.unsigned_tx` present, `payload.requires_signature` surfaced via decorator plan card.
+- [ ] Implement: `services.stake_builder.build(protocol, amount, user_addr)` dispatches per-protocol.
+- [ ] Register.
+- [ ] Commit.
+
+### Task W2.12: build_deposit_lp_tx
+
+**Files:** `src/agent/tools/lp_build.py`, `tests/agent/tools/test_lp_build.py`
+
+- [ ] Failing test per family (Uniswap v3, PancakeSwap v3, Raydium).
+- [ ] Implement: dispatches to LpBuilder adapters.
+- [ ] Register. Commit.
+
+### Task W2.13: build_bridge_tx
+
+**Files:** `src/agent/tools/bridge_build.py`, `tests/agent/tools/test_bridge_build.py`
+
+- [ ] Failing test: fake `services.debridge.build(...)` returns unsigned tx + estimated_seconds. Assert `card_type == "bridge"`.
+- [ ] Implement.
+- [ ] Register. Commit.
+
+### Task W2.14: build_transfer_tx
+
+**Files:** `src/agent/tools/transfer_build.py`, `tests/agent/tools/test_transfer_build.py`
+
+- [ ] Failing test: EVM path (populated `to`/`value`/`data`); Solana path (SystemProgram.transfer). Assert `card_type == "plan"` (single-step plan).
+- [ ] Implement.
+- [ ] Register. Commit.
 
 ---
 
@@ -1953,6 +2210,131 @@ And the runtime emits a `card` frame from `enriched.card_type + enriched.card_pa
 
 - [ ] **Step 4: Unit + integration test. Commit.**
 
+### Task W3.2: Enforce "every tool flows through decorator"
+
+Spec §13: **every tool response flows through the Sentinel decorator from day 1.** This is a correctness invariant, not a best-effort guarantee.
+
+**Files:**
+- Modify: `src/agent/tools/__init__.py`
+- Test: `tests/agent/test_decorator_enforcement.py`
+
+- [ ] **Step 1: Test — registry shape enforces wrapping**
+
+```python
+import pytest
+from src.agent.tools import register_all_tools, _WRAPPED_TOOL_NAMES
+from src.agent.decorator import DECORATION_MAP
+
+def test_registry_covers_every_decoration_map_entry():
+    """Every tool in DECORATION_MAP must be registered."""
+    tools = register_all_tools(services=type("S",(),{})(), user_id=0, wallet=None)
+    names = {t.name for t in tools}
+    for tname in DECORATION_MAP:
+        assert tname in names, f"{tname} in DECORATION_MAP but not registered"
+
+def test_every_registered_tool_is_decorator_wrapped():
+    """register_all_tools must mark every tool as wrapped."""
+    tools = register_all_tools(services=type("S",(),{})(), user_id=0, wallet=None)
+    for t in tools:
+        assert t.name in _WRAPPED_TOOL_NAMES, f"{t.name} bypasses decorator"
+
+@pytest.mark.asyncio
+async def test_wrapper_invokes_decorate_for_every_tool(monkeypatch):
+    """The wrapper must call decorate() on every tool return."""
+    from src.agent import tools as tools_mod
+    calls = []
+    async def fake_decorate(name, raw, ctx):
+        calls.append(name)
+        from src.api.schemas.agent import ToolEnvelope
+        return ToolEnvelope.model_validate(raw)
+    monkeypatch.setattr(tools_mod, "decorate", fake_decorate)
+
+    class FakePortfolio:
+        async def aggregate(self, w): return {"wallet":w,"total_usd":"0","by_chain":{}}
+    services = type("S",(),{"portfolio":FakePortfolio()})()
+    tools = register_all_tools(services=services, user_id=1, wallet="0xabc")
+    bal = next(t for t in tools if t.name == "get_wallet_balance")
+    await bal.coroutine(wallet="0xabc")
+    assert "get_wallet_balance" in calls
+```
+
+- [ ] **Step 2: Fail (wrapper unconditionality not guaranteed)**
+
+- [ ] **Step 3: Implement enforcement**
+
+In `src/agent/tools/__init__.py`:
+
+```python
+from langchain.tools import StructuredTool
+from src.agent.tools._base import ToolCtx
+from src.agent.decorator import decorate, DECORATION_MAP
+
+# Map tool name → (function, description)
+from .balance import get_wallet_balance
+from .price import get_token_price
+from .swap_simulate import simulate_swap
+from .swap_build import build_swap_tx
+from .solana_swap import build_solana_swap
+from .market_overview import get_defi_market_overview
+from .analytics import get_defi_analytics
+from .staking import get_staking_options
+from .dex_search import search_dexscreener_pairs
+from .pool_find import find_liquidity_pool
+from .stake_build import build_stake_tx
+from .lp_build import build_deposit_lp_tx
+from .bridge_build import build_bridge_tx
+from .transfer_build import build_transfer_tx
+
+_TOOL_REGISTRY = {
+    "get_wallet_balance": (get_wallet_balance, "Get multi-chain wallet balance."),
+    "get_token_price": (get_token_price, "Get current price for a token."),
+    "simulate_swap": (simulate_swap, "Quote a swap (no tx build)."),
+    "build_swap_tx": (build_swap_tx, "Build an unsigned EVM swap tx via Enso."),
+    "build_solana_swap": (build_solana_swap, "Build an unsigned Solana swap tx via Jupiter."),
+    "get_defi_market_overview": (get_defi_market_overview, "Aggregate DeFi market stats."),
+    "get_defi_analytics": (get_defi_analytics, "Tiered pool/protocol analytics."),
+    "get_staking_options": (get_staking_options, "List liquid-staking and staking options."),
+    "search_dexscreener_pairs": (search_dexscreener_pairs, "Search DexScreener pairs."),
+    "find_liquidity_pool": (find_liquidity_pool, "Find a liquidity pool for a pair."),
+    "build_stake_tx": (build_stake_tx, "Build an unsigned stake tx."),
+    "build_deposit_lp_tx": (build_deposit_lp_tx, "Build an unsigned LP deposit tx."),
+    "build_bridge_tx": (build_bridge_tx, "Build an unsigned deBridge transfer."),
+    "build_transfer_tx": (build_transfer_tx, "Build an unsigned native transfer."),
+}
+
+_WRAPPED_TOOL_NAMES: set[str] = set()
+
+def _wrap(name: str, fn, ctx: ToolCtx):
+    async def runner(**kw):
+        env = await fn(ctx, **kw)
+        enriched = await decorate(name, env.model_dump(), ctx)
+        return enriched.model_dump_json()
+    _WRAPPED_TOOL_NAMES.add(name)
+    return runner
+
+def register_all_tools(services, user_id: int = 0, wallet: str | None = None):
+    ctx = ToolCtx(services=services, user_id=user_id, wallet=wallet)
+    # Sanity: registry names must cover DECORATION_MAP.
+    missing = set(DECORATION_MAP) - set(_TOOL_REGISTRY)
+    if missing:
+        raise RuntimeError(f"DECORATION_MAP has entries with no registered tool: {missing}")
+    tools = []
+    for name, (fn, desc) in _TOOL_REGISTRY.items():
+        tools.append(StructuredTool.from_function(
+            coroutine=_wrap(name, fn, ctx), name=name, description=desc,
+        ))
+    return tools
+```
+
+- [ ] **Step 4: Pass**
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/agent/tools/__init__.py tests/agent/test_decorator_enforcement.py
+git commit -m "feat(agent): enforce every tool is decorator-wrapped at registration"
+```
+
 ---
 
 ## W4 — Auth
@@ -2048,11 +2430,74 @@ async def verify_evm(request):
     ...
 ```
 
-- [ ] **Step 4: link-wallet (authenticated; the §4.5 merge transaction)**
+- [ ] **Step 4.a: sentinel wallet_address length test (spec §4.2)**
 
-Implement the merge txn as described in spec §4.5: delete old sessions, repoint chats, delete obsolete row, update wallet_address.
+```python
+def test_register_sentinel_is_exactly_42_chars():
+    email = "long-ish-email-address@example.com"
+    import hashlib
+    sentinel = "email:" + hashlib.sha256(email.encode()).hexdigest()[:36]
+    assert len(sentinel) == 42
 
-- [ ] **Step 5: Tests + commit**
+def test_register_rejects_wrong_sentinel_length():
+    with pytest.raises(AssertionError):
+        sentinel = "email:" + "abc"  # only 9 chars
+        assert len(sentinel) == 42
+```
+
+- [ ] **Step 4.b: link-wallet step 1 — delete old sessions**
+
+Failing test: two `user_sessions` rows (one for email sentinel, one for real wallet) exist before merge → after `link_wallet`, both rows are gone.
+
+Implement: `DELETE FROM user_sessions WHERE wallet_address IN (:sentinel, :real_wallet)`.
+
+- [ ] **Step 4.c: link-wallet step 2 — repoint chats**
+
+Failing test: a `chats` row belongs to `user_id = wallet_row_id` before merge → after merge, it belongs to `user_id = email_row_id`.
+
+Implement: `UPDATE chats SET user_id = :email_id WHERE user_id = :wallet_id`.
+
+- [ ] **Step 4.d: link-wallet step 3 — delete obsolete row**
+
+Failing test: if a `web_users` row existed at `wallet_address=<real>`, after merge that row id is gone.
+
+Implement: `DELETE FROM web_users WHERE id = :wallet_id` (only when wallet_id != email_id).
+
+- [ ] **Step 4.e: link-wallet step 4 — update wallet_address**
+
+Failing test: email row's `wallet_address` flips from `email:<hash>` to `<real>` atomically.
+
+Implement: `UPDATE web_users SET wallet_address = :real_wallet WHERE id = :email_id`.
+
+- [ ] **Step 4.f: link-wallet step 5 — mint new JWT**
+
+Failing test: returned token decodes to `{sub: email_id, wallet_address: <real>}`.
+
+Implement: `create_token(email_id, wallet_address=real_wallet)` and return in response.
+
+All five operations execute inside a single `async with db.begin()` transaction. If any step raises, the whole merge rolls back.
+
+- [ ] **Step 5: Full merge integration test + commit**
+
+```python
+@pytest.mark.asyncio
+async def test_link_wallet_full_merge_flow(client, db_session):
+    # Register via email
+    r = await client.post("/api/v1/auth/register", json={"email":"a@b.c","password":"pw"})
+    token = r.json()["token"]
+    email_id = r.json()["user"]["id"]
+    # Simulate that the wallet already has history
+    await create_wallet_only_user(db_session, wallet="0xreal")
+    # Challenge/verify with real wallet + link
+    ch = (await client.post("/api/v1/auth/challenge", json={"address":"0xreal"})).json()
+    r2 = await client.post("/api/v1/auth/link-wallet",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"address":"0xreal","message":ch["challenge"],"signature":"<fixture-sig>"})
+    assert r2.status_code == 200
+    # Assert: email row updated, wallet row deleted, chats repointed, sessions deleted
+```
+
+Commit: `feat(auth): link-wallet performs atomic 5-step merge`.
 
 ---
 
@@ -2134,10 +2579,14 @@ Each component:
 
 ### Task W6.3: Card renderers
 
+**Blocked by:** W7.1 (fixture corpus must exist before renderers can snapshot-test).
+
 One task per card_type (11 total), each:
 - [ ] Create `web/components/agent/cards/<Name>Card.tsx` by lifting JSX from the current mockup where relevant
-- [ ] Add a Storybook story (or at minimum a fixture test using `tests/fixtures/cards/<card_type>.json`) asserting the fixture renders
+- [ ] Add a fixture test (vitest/jest) that imports `tests/fixtures/cards/<card_type>.json` and snapshot-asserts the rendered output
 - [ ] Commit
+
+Order: `AllocationCard` first (matches the existing mockup most closely and exercises the Sentinel matrix), then `SwapQuoteCard`, `PoolCard`, `TokenCard`, `PositionCard`, `PlanCard`, `BalanceCard`, `BridgeCard`, `StakeCard`, `MarketOverviewCard`, `PairListCard`.
 
 ### Task W6.4: Replace /agent/chat mockup with live chat
 
@@ -2162,15 +2611,23 @@ One task per card_type (11 total), each:
 
 ## W8 — Tokens top bar
 
+### Task W8.0: sentinel_lite helper
+
+**Files:** `src/defi/sentinel_lite.py`, `tests/defi/test_sentinel_lite.py`
+
+- [ ] Failing test: given a token address, helper returns `{"score": int 0..100, "badge": "safe"|"caution"|"risky"}` in under 100ms (must use only cached signals, no heavy pipeline).
+- [ ] Implement: pull `ShieldService.verdict(token)` (cached) + the most-recent Sentinel score from Ilyon's `opportunity_cache` for a pool involving the token (if any). Collapse to a single 0–100 number: `min(shield.score, pool.sentinel) if pool else shield.score`. Badge from thresholds.
+- [ ] Commit: `feat(defi): sentinel_lite one-score projection for ticker`
+
 ### Task W8.1: Backend ticker endpoint
 
 **Files:**
 - Modify: `src/api/routes/tokens_bar.py`
 - Test: `tests/api/test_tokens_bar.py`
 
-- [ ] Replace stub with handler that returns top 10 tokens by market cap with {symbol, address, chain, price, change_24h, sentinel_lite}.
-- [ ] Uses existing `PriceService` + new `sentinel_lite(token)` helper (one-score projection of Sentinel).
-- [ ] Cache for 30s.
+- [ ] Replace stub with handler that returns top 10 tokens by market cap with `{symbol, address, chain, price, change_24h, sentinel_lite: {score, badge}}`.
+- [ ] Uses existing `PriceService` + `sentinel_lite` helper from W8.0.
+- [ ] Cache for 30s via `aiohttp_cache` or an in-process TTL dict.
 - [ ] Commit.
 
 ### Task W8.2: TokensTicker component
@@ -2202,8 +2659,8 @@ One task per card_type (11 total), each:
 ### Task W10.1: Scaffold extension build
 
 - [ ] Copy `manifest.json`, `popup.html`, `sidepanel.html`, entrypoints from `IlyonAi-Wallet-assistant-main/client/src/{popup,sidepanel,background,content}`.
-- [ ] Rewire bundler (Vite or esbuild as used by assistant) to resolve `web/components/agent/*`.
-- [ ] Build produces `dist/ilyon-extension.zip`.
+- [ ] Use **Vite** (with `@crxjs/vite-plugin`) — matches the upstream assistant's bundler. Add `extension/vite.config.ts` resolving `@/*` → `web/*` so the extension shares `web/components/agent/*` and `web/types/agent.ts`.
+- [ ] Build script `pnpm -C extension build` produces `extension/dist/` + `extension/dist/ilyon-extension.zip` (via `zip-a-folder`).
 - [ ] Commit.
 
 ### Task W10.2: Popup + Sidepanel mount ChatShell
@@ -2245,10 +2702,66 @@ function test_SingleSwap_Charges0_25Pct_Affiliate() public { ... }
 
 ### Task W11.3: Memory summarizer + background job
 
-- [ ] On every 10th turn, schedule a `summarize_chat(chat_id)` task that reads all messages + runs a single LLM call with the summarization prompt → writes to Greenfield at `{user_id}/{chat_id}.json`.
-- [ ] On session resume, load that summary and prepend to the window memory.
-- [ ] Test with stubbed Greenfield.
-- [ ] Commit.
+**Turn counter location:** the `chats` table already has `updated_at`; use `COUNT(chat_messages WHERE role='assistant')` at turn end as the counter. Cheap on an indexed FK. Trigger condition: `assistant_count % 10 == 0` and `> 0`.
+
+- [ ] **Step 1: Failing test**
+
+```python
+@pytest.mark.asyncio
+async def test_summary_fires_on_tenth_assistant_turn(db_session, fake_router, fake_greenfield):
+    chat = await create_chat(db_session, user_id=1)
+    for i in range(20):
+        await append_message(db_session, chat.id, role="user", content=f"q{i}")
+        await append_message(db_session, chat.id, role="assistant", content=f"a{i}")
+        await maybe_summarize(db_session, router=fake_router, greenfield=fake_greenfield, chat_id=chat.id, user_id=1)
+    # Expected: fires at assistant counts 10 and 20 → two writes.
+    assert len(fake_greenfield.writes) == 2
+    assert fake_greenfield.writes[-1].key == f"1/{chat.id}.json"
+```
+
+- [ ] **Step 2: Implement `src/agent/summarizer.py`**
+
+```python
+from sqlalchemy import select, func
+from src.models.chat import ChatMessage
+
+async def maybe_summarize(db, *, router, greenfield, chat_id, user_id):
+    count_r = await db.execute(
+        select(func.count(ChatMessage.id))
+        .where(ChatMessage.chat_id==chat_id, ChatMessage.role=="assistant"))
+    count = count_r.scalar_one()
+    if count == 0 or count % 10 != 0:
+        return
+    msgs_r = await db.execute(
+        select(ChatMessage).where(ChatMessage.chat_id==chat_id)
+                            .order_by(ChatMessage.created_at))
+    transcript = "\n".join(f"{m.role}: {m.content}" for m in msgs_r.scalars())
+    summary = await router.complete(
+        model="default",
+        messages=[{"role":"system","content":"Summarize this chat as context for future turns, <= 400 tokens."},
+                  {"role":"user","content":transcript}],
+        temperature=0.2, stop=None,
+    )
+    await greenfield.put_object(
+        key=f"{user_id}/{chat_id}.json",
+        body=summary["content"].encode(),
+    )
+```
+
+Called from `run_turn` after the assistant message is persisted (fire-and-forget via `asyncio.create_task` so it doesn't block the response).
+
+- [ ] **Step 3: Session resume loads the summary**
+
+In `PersistentWindowMemory.load`, additionally:
+
+```python
+if settings.FEATURE_GREENFIELD_MEMORY:
+    summary = await greenfield.get_object(f"{user_id}/{chat_id}.json")
+    if summary:
+        mem.chat_memory.add_ai_message(f"[prior conversation summary]\n{summary.decode()}")
+```
+
+- [ ] **Step 4: Pass + commit**
 
 ---
 
@@ -2270,6 +2783,15 @@ function test_SingleSwap_Charges0_25Pct_Affiliate() public { ... }
 - [ ] Create `web/components/providers/WalletProvider.tsx` that exposes `{ wallet, connect, signMessage, sendTx }`.
 - [ ] Mount in `web/components/providers.tsx`.
 - [ ] Commit.
+
+### Task W12.4: Replace assistant's localStorage['token'] with Ilyon useAuth
+
+Spec §3.4 requires removing assistant's legacy auth storage.
+
+- [ ] Grep: `rg "localStorage\\[.(token|ilyon_token).\\]|localStorage\\.getItem\\('(token|ilyon_token)'\\)" web/ extension/` — list all hits.
+- [ ] Replace every hit with the Ilyon `useAuth()` hook's `token` accessor (web) or `chrome.storage.local.get('ilyon_token')` (extension).
+- [ ] Test: re-grep after change returns empty.
+- [ ] Commit: `refactor(auth): drop legacy localStorage token path`.
 
 ---
 
