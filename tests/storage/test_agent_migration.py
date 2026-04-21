@@ -8,17 +8,25 @@ Verifies that:
 
 These tests require a running PostgreSQL instance with the migration applied.
 They are intended to run via:  alembic upgrade head  &&  pytest tests/storage/
+Skipped automatically when DATABASE_URL is not set.
 """
+import os
 import pytest
 from sqlalchemy import text
 from src.storage.database import get_database
 
+requires_postgres = pytest.mark.skipif(
+    not os.environ.get("DATABASE_URL"),
+    reason="Requires DATABASE_URL (PostgreSQL)",
+)
 
+
+@requires_postgres
 @pytest.mark.asyncio
 async def test_web_users_has_new_columns():
     """web_users must contain id, email, password_hash, display_name after migration."""
     db = await get_database()
-    async with db._engine.connect() as conn:
+    async with db.engine.connect() as conn:
         cols = await conn.execute(text(
             "SELECT column_name FROM information_schema.columns "
             "WHERE table_name = 'web_users'"
@@ -27,11 +35,12 @@ async def test_web_users_has_new_columns():
     assert {"id", "email", "password_hash", "display_name"}.issubset(names)
 
 
+@requires_postgres
 @pytest.mark.asyncio
 async def test_chats_and_chat_messages_exist():
     """Both chats and chat_messages tables must exist after migration."""
     db = await get_database()
-    async with db._engine.connect() as conn:
+    async with db.engine.connect() as conn:
         for table in ("chats", "chat_messages"):
             result = await conn.execute(text(
                 "SELECT EXISTS (SELECT FROM pg_tables WHERE tablename = :t)"
@@ -39,11 +48,12 @@ async def test_chats_and_chat_messages_exist():
             assert result.scalar() is True
 
 
+@requires_postgres
 @pytest.mark.asyncio
 async def test_chat_messages_fk_cascades():
     """Deleting a web_users row must cascade-delete its chats (and chat_messages)."""
     db = await get_database()
-    async with db._engine.begin() as conn:
+    async with db.engine.begin() as conn:
         # Insert a test user
         await conn.execute(text(
             "INSERT INTO web_users (wallet_address) VALUES ('test_cascade') "

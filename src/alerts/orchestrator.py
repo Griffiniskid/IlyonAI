@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from typing import Dict, Any, Optional
 import time
@@ -29,7 +30,7 @@ class AlertOrchestrator:
         for key in expired:
             del self._seen[key]
 
-    def ingest(self, event: Dict[str, Any]) -> Optional[AlertRecord]:
+    async def ingest(self, event: Dict[str, Any]) -> Optional[AlertRecord]:
         dedupe_key = f"{event.get('user_id')}_{event.get('rule_id')}_{event.get('subject_id')}"
         now = time.time()
         self._prune_seen(now)
@@ -51,7 +52,7 @@ class AlertOrchestrator:
             kind=event.get("kind"),
         )
         if hasattr(self.store, "add_alert"):
-            self.store.add_alert(alert)
+            await self.store.add_alert(alert)
         return alert
 
     def deliver_alert_with_failover(

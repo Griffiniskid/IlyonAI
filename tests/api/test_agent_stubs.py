@@ -8,7 +8,9 @@ from aiohttp.test_utils import TestClient, TestServer
 
 
 @pytest.mark.asyncio
-async def test_agent_route_returns_503_when_flag_off():
+async def test_agent_route_returns_503_when_flag_off(monkeypatch):
+    monkeypatch.setattr("src.config.settings.FEATURE_AGENT_V2", False)
+
     from src.api.routes.agent import setup_agent_routes
 
     app = web.Application()
@@ -22,7 +24,9 @@ async def test_agent_route_returns_503_when_flag_off():
 
 
 @pytest.mark.asyncio
-async def test_agent_sessions_returns_503_when_flag_off():
+async def test_agent_sessions_returns_503_when_flag_off(monkeypatch):
+    monkeypatch.setattr("src.config.settings.FEATURE_AGENT_V2", False)
+
     from src.api.routes.agent import setup_agent_routes
 
     app = web.Application()
@@ -34,7 +38,9 @@ async def test_agent_sessions_returns_503_when_flag_off():
 
 
 @pytest.mark.asyncio
-async def test_agent_session_detail_returns_503_when_flag_off():
+async def test_agent_session_detail_returns_503_when_flag_off(monkeypatch):
+    monkeypatch.setattr("src.config.settings.FEATURE_AGENT_V2", False)
+
     from src.api.routes.agent import setup_agent_routes
 
     app = web.Application()
@@ -46,7 +52,9 @@ async def test_agent_session_detail_returns_503_when_flag_off():
 
 
 @pytest.mark.asyncio
-async def test_agent_post_message_returns_503_when_flag_off():
+async def test_agent_post_message_returns_503_when_flag_off(monkeypatch):
+    monkeypatch.setattr("src.config.settings.FEATURE_AGENT_V2", False)
+
     from src.api.routes.agent import setup_agent_routes
 
     app = web.Application()
@@ -58,7 +66,9 @@ async def test_agent_post_message_returns_503_when_flag_off():
 
 
 @pytest.mark.asyncio
-async def test_agent_delete_session_returns_503_when_flag_off():
+async def test_agent_delete_session_returns_503_when_flag_off(monkeypatch):
+    monkeypatch.setattr("src.config.settings.FEATURE_AGENT_V2", False)
+
     from src.api.routes.agent import setup_agent_routes
 
     app = web.Application()
@@ -70,7 +80,9 @@ async def test_agent_delete_session_returns_503_when_flag_off():
 
 
 @pytest.mark.asyncio
-async def test_tokens_bar_returns_503_when_flag_off():
+async def test_tokens_bar_returns_503_when_flag_off(monkeypatch):
+    monkeypatch.setattr("src.config.settings.FEATURE_TOKENS_BAR", False)
+
     from src.api.routes.tokens_bar import setup_tokens_bar_routes
 
     app = web.Application()

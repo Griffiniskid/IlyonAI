@@ -21,7 +21,7 @@ class InMemoryAlertStore:
             return [item for item in value if isinstance(item, str)]
         return []
 
-    def create_rule(self, payload: dict) -> AlertRule:
+    async def create_rule(self, payload: dict) -> AlertRule:
         self._rule_counter += 1
         rule = AlertRule(
             id=f"r-{self._rule_counter}",
@@ -31,13 +31,13 @@ class InMemoryAlertStore:
         self._rules[rule.id] = rule
         return rule
 
-    def list_rules(self) -> list[AlertRule]:
+    async def list_rules(self) -> list[AlertRule]:
         return list(self._rules.values())
 
-    def get_rule(self, rule_id: str) -> Optional[AlertRule]:
+    async def get_rule(self, rule_id: str) -> Optional[AlertRule]:
         return self._rules.get(rule_id)
 
-    def update_rule(self, rule_id: str, payload: dict) -> Optional[AlertRule]:
+    async def update_rule(self, rule_id: str, payload: dict) -> Optional[AlertRule]:
         current = self._rules.get(rule_id)
         if current is None:
             return None
@@ -51,29 +51,29 @@ class InMemoryAlertStore:
         self._rules[rule_id] = updated
         return updated
 
-    def delete_rule(self, rule_id: str) -> bool:
+    async def delete_rule(self, rule_id: str) -> bool:
         if rule_id not in self._rules:
             return False
         del self._rules[rule_id]
         return True
 
-    def add_alert(self, alert: AlertRecord) -> AlertRecord:
+    async def add_alert(self, alert: AlertRecord) -> AlertRecord:
         self._alerts.append(alert)
         return alert
 
-    def list_alerts(self, severity: str | None = None) -> list[AlertRecord]:
+    async def list_alerts(self, severity: str | None = None) -> list[AlertRecord]:
         if severity is None:
             return list(self._alerts)
         return [alert for alert in self._alerts if alert.severity == severity]
 
-    def get_alert(self, alert_id: str) -> Optional[AlertRecord]:
+    async def get_alert(self, alert_id: str) -> Optional[AlertRecord]:
         for alert in self._alerts:
             if alert.id == alert_id:
                 return alert
         return None
 
-    def apply_alert_action(self, alert_id: str, action: str, snoozed_until: str | None = None) -> Optional[AlertRecord]:
-        alert = self.get_alert(alert_id)
+    async def apply_alert_action(self, alert_id: str, action: str, snoozed_until: str | None = None) -> Optional[AlertRecord]:
+        alert = await self.get_alert(alert_id)
         if alert is None:
             return None
 

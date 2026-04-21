@@ -3,6 +3,8 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer, TestClient
 from src.api.routes.alerts import setup_alert_routes
 from src.api.routes.auth import auth_middleware
+from src.alerts.store import InMemoryAlertStore
+
 
 @pytest.mark.asyncio
 async def test_alert_rule_crud_and_severity_filter(monkeypatch):
@@ -16,13 +18,14 @@ async def test_alert_rule_crud_and_severity_filter(monkeypatch):
 
     monkeypatch.setattr("src.api.routes.auth.get_session_store", get_session_store_stub, raising=False)
 
+    store = InMemoryAlertStore()
     app = web.Application(middlewares=[auth_middleware])
-    setup_alert_routes(app)
-    
+    setup_alert_routes(app, store=store)
+
     server = TestServer(app)
     client = TestClient(server)
     await server.start_server()
-    
+
     try:
         create_resp = await client.post(
             "/api/v1/alerts/rules",
@@ -81,8 +84,9 @@ async def test_alert_rule_rejects_invalid_payload_with_400(monkeypatch):
 
     monkeypatch.setattr("src.api.routes.auth.get_session_store", get_session_store_stub, raising=False)
 
+    store = InMemoryAlertStore()
     app = web.Application(middlewares=[auth_middleware])
-    setup_alert_routes(app)
+    setup_alert_routes(app, store=store)
 
     server = TestServer(app)
     client = TestClient(server)
