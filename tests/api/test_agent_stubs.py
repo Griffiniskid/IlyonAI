@@ -58,6 +58,18 @@ async def test_agent_post_message_returns_503_when_flag_off():
 
 
 @pytest.mark.asyncio
+async def test_agent_delete_session_returns_503_when_flag_off():
+    from src.api.routes.agent import setup_agent_routes
+
+    app = web.Application()
+    setup_agent_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        r = await client.delete("/api/v1/agent/sessions/abc123")
+        assert r.status == 503
+
+
+@pytest.mark.asyncio
 async def test_tokens_bar_returns_503_when_flag_off():
     from src.api.routes.tokens_bar import setup_tokens_bar_routes
 
