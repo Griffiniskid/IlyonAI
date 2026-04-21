@@ -473,6 +473,24 @@ async def auth_middleware(request: web.Request, handler):
     return await handler(request)
 
 
+# ── Agent-platform auth stubs (W4 will replace) ──────────────────────────
+
+async def verify_evm(request: web.Request) -> web.Response:
+    return web.json_response({"error": "not_implemented"}, status=501)
+
+
+async def register(request: web.Request) -> web.Response:
+    return web.json_response({"error": "not_implemented"}, status=501)
+
+
+async def login(request: web.Request) -> web.Response:
+    return web.json_response({"error": "not_implemented"}, status=501)
+
+
+async def link_wallet(request: web.Request) -> web.Response:
+    return web.json_response({"error": "not_implemented"}, status=501)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # ROUTE SETUP
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -484,6 +502,12 @@ def setup_auth_routes(app: web.Application):
     app.router.add_post('/api/v1/auth/logout', logout)
     app.router.add_post('/api/v1/auth/refresh', refresh_session)
     app.router.add_get('/api/v1/auth/me', get_me)
+
+    # Agent-platform auth stubs
+    app.router.add_post('/api/v1/auth/verify-evm', verify_evm)
+    app.router.add_post('/api/v1/auth/register', register)
+    app.router.add_post('/api/v1/auth/login', login)
+    app.router.add_post('/api/v1/auth/link-wallet', link_wallet)
 
     # Add auth middleware
     logger.info("Auth routes registered with Ed25519 signature verification")

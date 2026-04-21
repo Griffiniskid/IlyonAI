@@ -32,6 +32,8 @@ from src.api.routes.wallet_intel import setup_wallet_intel_routes
 from src.api.routes.entity import setup_entity_routes
 from src.api.routes.stream import setup_stream_routes
 from src.api.routes.alerts import setup_alert_routes
+from src.api.routes.agent import setup_agent_routes
+from src.api.routes.tokens_bar import setup_tokens_bar_routes
 from src.agents.sentinel import start_sentinel, stop_sentinel
 from src.config import settings
 
@@ -199,6 +201,8 @@ def create_api_app() -> web.Application:
     setup_entity_routes(app)
     setup_stream_routes(app)
     setup_alert_routes(app)
+    setup_agent_routes(app)
+    setup_tokens_bar_routes(app)
     setup_public_api_routes(app)
 
     # Background sentinel agent
@@ -267,6 +271,8 @@ def setup_api_routes(app: web.Application):
     setup_entity_routes(app)
     setup_stream_routes(app)
     setup_alert_routes(app)
+    setup_agent_routes(app)
+    setup_tokens_bar_routes(app)
     setup_public_api_routes(app)
 
     logger.info("All API routes added to existing application")
