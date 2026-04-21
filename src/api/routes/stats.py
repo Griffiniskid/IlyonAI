@@ -228,25 +228,11 @@ async def get_dashboard_stats(request: web.Request) -> web.Response:
         total_volume = defillama_data.get("total_24h", 0)
         volume_change = defillama_data.get("volume_change", 0.0)
         
-        # Generate hourly volume chart from DefiLlama data
-        volume_chart_data = defillama_data.get("hourly_data", [])
-        
-        # If no hourly data from DefiLlama, return a flat average breakdown
-        # rather than fabricating random variation
-        if not volume_chart_data and total_volume > 0:
-            now = datetime.utcnow()
-            avg_hourly = total_volume / 24
-            for i in range(24):
-                hour = (now - timedelta(hours=23 - i)).strftime("%H:00")
-                volume_chart_data.append({
-                    "time": hour,
-                    "volume": avg_hourly,
-                })
-        
-        # Convert to VolumeDataPoint objects
+        # Hourly volume chart from DefiLlama — only real data, no fabricated fallback.
+        volume_chart_data = defillama_data.get("hourly_data", []) or []
         volume_chart = [
             VolumeDataPoint(time=d["time"], volume=d["volume"])
-            for d in volume_chart_data[-24:]  # Last 24 hours
+            for d in volume_chart_data[-24:]
         ]
 
         # Market distribution from trending tokens (liquidity-weighted)
