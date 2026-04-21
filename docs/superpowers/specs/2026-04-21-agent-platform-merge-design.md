@@ -156,6 +156,8 @@ event: done          data: {}
 
 `step_index` is monotonic across an agent turn and lets the frontend's `ReasoningAccordion` at `web/app/agent/chat/page.tsx` (which currently consumes `{steps, time, lines}`) render incrementally. `elapsed_ms` on `final` supplies the `time` prop.
 
+**Frame responsibilities:** `observation` frames carry only `{step_index, name, ok, error?}` — the raw tool `data` and any enriched `sentinel`/`shield` blocks are delivered exclusively on `card` frames. Tools that return null `card_type` emit only an `observation` with no accompanying `card`; their data is discarded from the client stream (still logged server-side for debugging). This keeps the frame grammar unambiguous: cards are the canonical data-delivery vehicle, observations are the status signal.
+
 The AgentExecutor is wrapped in a custom callback handler that emits these frames on `on_llm_start`, `on_tool_start`, `on_tool_end`, and a post-tool decorator hook that emits `card` when the Sentinel decorator returns a `card_payload`.
 
 ### 2.5 Sentinel + Shield decorator (`src/agent/decorator.py`)
@@ -333,7 +335,9 @@ ALTER TABLE web_users ADD CONSTRAINT web_users_id_unique UNIQUE (id);
 -- first wallet link via MERGE (see §4.5).
 ```
 
-Existing Ilyon web-auth code continues to resolve users by `wallet_address`; new code resolves by `web_users.id`. JWT `sub` is `web_users.id` (integer), so the token format stays stable even if the user later links a wallet or changes email.
+Existing Ilyon web-auth code continues to resolve users by `wallet_address`; new code resolves by `web_users.id`. JWT `sub` is `web_users.id` (integer), so the token format stays stable even if the user later links a wallet or changes email. FKs from new tables (`chats.user_id`, later agent-session tables) target `web_users(id)` via its `UNIQUE` constraint; `wallet_address` remains `PRIMARY KEY` only to preserve legacy FKs in `user_sessions` and `tracked_wallets`.
+
+**Sentinel wallet_address format for email-only users:** literal prefix `"email:"` (6 chars) + `sha256(lowercase(email))[:36]` (36 hex chars) = 42 chars total, which fits `VARCHAR(44)`. Implementation MUST assert `len(sentinel) == 42` on insert. The sentinel is never shown in UI and is blocked from on-chain verification paths at the auth layer.
 
 ### 4.3 Endpoints
 
@@ -355,7 +359,14 @@ Single JWT issued by `create_token(user_id: int, scopes, wallet_address?, email?
 
 ### 4.5 Account-merge path
 
-If a user registers with email, then later signs a wallet challenge that proves ownership of an address matching a sentinel row, the two are merged inside a transaction: the email row's `id` is kept, `wallet_address` is overwritten, sessions are invalidated, a new JWT is issued. This is the only path that deletes a `web_users` row.
+If a user registers with email, then later signs a wallet challenge that proves ownership of an address, the two are merged inside a single transaction:
+
+1. `DELETE FROM user_sessions WHERE wallet_address IN (<email-sentinel>, <real-wallet>)` — explicit, no reliance on cascade semantics.
+2. If a row already exists at `<real-wallet>` (user had wallet-only history), re-point that row's `chats` to the email row's `id` via `UPDATE chats SET user_id = <email-row-id> WHERE user_id = <wallet-row-id>`, then `DELETE FROM web_users WHERE id = <wallet-row-id>`.
+3. `UPDATE web_users SET wallet_address = <real-wallet> WHERE id = <email-row-id>`.
+4. Mint a new JWT with `sub = <email-row-id>`, `wallet_address = <real-wallet>`.
+
+`user_sessions.wallet_address` is therefore **not** `ON UPDATE CASCADE` — we delete-then-reinsert rather than rely on DB-level propagation, which keeps the behavior explicit and testable. This is the only path that deletes a `web_users` row.
 
 ### 4.6 CORS
 
@@ -405,7 +416,7 @@ Prerequisite extension: `CREATE EXTENSION IF NOT EXISTS pgcrypto;` (gen_random_u
 - One row per message; assistant messages store the final content + cards + full tool trace.
 - Cards carry their own `card_id` (uuid); persisted inside the `cards` JSONB so a refreshed UI can rehydrate references without regenerating IDs.
 - Short-term context (LLM window memory) rehydrates the last k=10 messages on session resume.
-- Long-term context (Greenfield, W11) stores a distilled summary of everything beyond k=10, keyed on `{user_id}/{chat_id}.json`. When feature-flagged on, the agent prompt template is `[greenfield_summary?] + [k=10 window]`; the summary is regenerated every 10 turns via a background task.
+- Long-term context (Greenfield, W11) stores a distilled summary of everything beyond k=10, keyed on `{user_id}/{chat_id}.json`. When feature-flagged on, the agent prompt template is `[greenfield_summary?] + [k=10 window]`; the summary is regenerated every **N=10 turns** via a background task (same cadence referenced in §10.2).
 - `DELETE /api/v1/agent/sessions/{id}` cascades to messages and (if enabled) the Greenfield object.
 
 ---
@@ -476,7 +487,7 @@ agent/runtime.py
 
 - Playwright: `/agent/chat` golden path (login → ask → stream → card renders → persist → refresh page → history shows).
 - Playwright: `/agent/swap` (type → quote → build → signature prompt mocked).
-- Playwright: Chrome extension popup loads, sidepanel opens, same agent stream renders.
+- Playwright: Chrome extension popup loads, sidepanel opens, same agent stream renders. Extension harness: W13 produces a packed CRX artifact; Playwright launches Chromium with `--disable-extensions-except=<crx-path>` and `--load-extension=<unpacked-path>` per-run. Harness lives at `tests/e2e/extension/fixtures/`.
 
 ### 8.4 Contract
 
@@ -511,7 +522,7 @@ agent/runtime.py
 - `GreenfieldService.ts` ported to backend as `src/storage/greenfield.py` (python-bnb-greenfield or direct HTTP to Greenfield SP).
 - Stores long-term agent memory (distilled summaries beyond window memory k=10).
 - Per-user bucket; object key = `{user_id}/{session_id}.json`.
-- Read on session resume after warm DB hydration; write on session end or every N turns.
+- Read on session resume after warm DB hydration; write on session end and every 10 turns (the N referenced in §5.2).
 - Feature-flagged (`FEATURE_GREENFIELD_MEMORY`) so local dev works without BNB Greenfield creds.
 
 ---
