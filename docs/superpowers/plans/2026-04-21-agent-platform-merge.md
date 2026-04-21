@@ -1783,34 +1783,11 @@ if not agent_gap.allow(user.id, body["session_id"]):
 
 - [ ] **Step 5: Commit**
 
-**Files:**
-- Modify: `src/api/middleware/rate_limit.py` (add per-session variant if missing)
-- Test: `tests/api/middleware/test_rate_limit_agent.py`
-
-- [ ] **Step 1: Inspect existing middleware, add a per-user-key rate limiter**
-
-Add:
-
-```python
-from time import monotonic
-
-class PerUserGap:
-    def __init__(self, min_gap_s: float = 0.5):
-        self._last: dict[int, float] = {}
-        self._gap = min_gap_s
-    def allow(self, user_id: int) -> bool:
-        now = monotonic()
-        if now - self._last.get(user_id, 0) < self._gap:
-            return False
-        self._last[user_id] = now
-        return True
-
-agent_gap = PerUserGap(0.5)
+```bash
+git add src/api/middleware/rate_limit.py src/api/routes/agent.py \
+        tests/api/middleware/test_rate_limit_agent.py
+git commit -m "feat(agent): per-session rate limit (0.5s gap keyed on user+session)"
 ```
-
-In `agent_turn`, before running: `if not agent_gap.allow(user.id): return web.json_response({"error":"rate_limited"}, status=429)`.
-
-- [ ] **Step 2-5:** test, pass, commit.
 
 ---
 
@@ -2445,39 +2422,193 @@ def test_register_rejects_wrong_sentinel_length():
         assert len(sentinel) == 42
 ```
 
-- [ ] **Step 4.b: link-wallet step 1 — delete old sessions**
+Each of the five sub-steps below is a full red→green→commit cycle. All operations execute inside a single `async with db.begin()` transaction — assemble it incrementally; each passing test exercises the partially-built merge function.
 
-Failing test: two `user_sessions` rows (one for email sentinel, one for real wallet) exist before merge → after `link_wallet`, both rows are gone.
+#### Sub-step 4.b — delete old sessions
 
-Implement: `DELETE FROM user_sessions WHERE wallet_address IN (:sentinel, :real_wallet)`.
+- [ ] **4.b.1: Failing test**
 
-- [ ] **Step 4.c: link-wallet step 2 — repoint chats**
+```python
+@pytest.mark.asyncio
+async def test_merge_step_deletes_stale_sessions(db_session):
+    from src.auth.merge import merge_accounts
+    # Seed: two user_sessions rows
+    await db_session.execute(text(
+        "INSERT INTO user_sessions (token, wallet_address, expires_at) "
+        "VALUES ('t1', 'email:abc', now()+interval '1h'), "
+        "       ('t2', '0xreal',     now()+interval '1h')"))
+    await merge_accounts(db_session, email_id=1, wallet_id=2,
+                         sentinel="email:abc", real_wallet="0xreal")
+    r = await db_session.execute(text(
+        "SELECT count(*) FROM user_sessions WHERE wallet_address IN ('email:abc','0xreal')"))
+    assert r.scalar_one() == 0
+```
 
-Failing test: a `chats` row belongs to `user_id = wallet_row_id` before merge → after merge, it belongs to `user_id = email_row_id`.
+- [ ] **4.b.2: Fail** — `src.auth.merge` module doesn't exist yet.
 
-Implement: `UPDATE chats SET user_id = :email_id WHERE user_id = :wallet_id`.
+- [ ] **4.b.3: Implement (partial)** — create `src/auth/merge.py`:
 
-- [ ] **Step 4.d: link-wallet step 3 — delete obsolete row**
+```python
+from sqlalchemy import text
 
-Failing test: if a `web_users` row existed at `wallet_address=<real>`, after merge that row id is gone.
+async def merge_accounts(db, *, email_id, wallet_id, sentinel, real_wallet):
+    async with db.begin():
+        await db.execute(text(
+            "DELETE FROM user_sessions WHERE wallet_address IN (:s, :r)"),
+            {"s": sentinel, "r": real_wallet})
+```
 
-Implement: `DELETE FROM web_users WHERE id = :wallet_id` (only when wallet_id != email_id).
+- [ ] **4.b.4: Pass**
 
-- [ ] **Step 4.e: link-wallet step 4 — update wallet_address**
+- [ ] **4.b.5: Commit**
 
-Failing test: email row's `wallet_address` flips from `email:<hash>` to `<real>` atomically.
+```bash
+git add src/auth/merge.py tests/auth/test_merge.py
+git commit -m "feat(auth): merge step 1 — delete stale sessions"
+```
 
-Implement: `UPDATE web_users SET wallet_address = :real_wallet WHERE id = :email_id`.
+#### Sub-step 4.c — repoint chats
 
-- [ ] **Step 4.f: link-wallet step 5 — mint new JWT**
+- [ ] **4.c.1: Failing test**
 
-Failing test: returned token decodes to `{sub: email_id, wallet_address: <real>}`.
+```python
+@pytest.mark.asyncio
+async def test_merge_repoints_chats_to_email_user(db_session):
+    # Seed chat owned by wallet_id=2; email_id=1
+    chat_id = await db_session.scalar(text(
+        "INSERT INTO chats (user_id, title) VALUES (2, 'x') RETURNING id"))
+    await merge_accounts(db_session, email_id=1, wallet_id=2,
+                         sentinel="email:abc", real_wallet="0xreal")
+    owner = await db_session.scalar(text(
+        "SELECT user_id FROM chats WHERE id=:id"), {"id": chat_id})
+    assert owner == 1
+```
 
-Implement: `create_token(email_id, wallet_address=real_wallet)` and return in response.
+- [ ] **4.c.2: Fail** — still owned by 2.
 
-All five operations execute inside a single `async with db.begin()` transaction. If any step raises, the whole merge rolls back.
+- [ ] **4.c.3: Implement** — append to the transaction in `merge_accounts`:
 
-- [ ] **Step 5: Full merge integration test + commit**
+```python
+        await db.execute(text(
+            "UPDATE chats SET user_id = :eid WHERE user_id = :wid"),
+            {"eid": email_id, "wid": wallet_id})
+```
+
+- [ ] **4.c.4: Pass**
+
+- [ ] **4.c.5: Commit** — `feat(auth): merge step 2 — repoint chats to email user`.
+
+#### Sub-step 4.d — delete obsolete web_users row
+
+- [ ] **4.d.1: Failing test**
+
+```python
+@pytest.mark.asyncio
+async def test_merge_deletes_obsolete_wallet_row(db_session):
+    # email row id=1, wallet row id=2
+    await merge_accounts(db_session, email_id=1, wallet_id=2,
+                         sentinel="email:abc", real_wallet="0xreal")
+    r = await db_session.scalar(text("SELECT count(*) FROM web_users WHERE id=2"))
+    assert r == 0
+
+@pytest.mark.asyncio
+async def test_merge_noop_when_no_wallet_row(db_session):
+    # email_id == wallet_id — no merge row to delete
+    await merge_accounts(db_session, email_id=1, wallet_id=1,
+                         sentinel="email:abc", real_wallet="0xreal")
+    r = await db_session.scalar(text("SELECT count(*) FROM web_users WHERE id=1"))
+    assert r == 1  # email row still there
+```
+
+- [ ] **4.d.2: Fail**
+
+- [ ] **4.d.3: Implement**
+
+```python
+        if email_id != wallet_id:
+            await db.execute(text("DELETE FROM web_users WHERE id = :wid"),
+                             {"wid": wallet_id})
+```
+
+- [ ] **4.d.4: Pass**
+
+- [ ] **4.d.5: Commit** — `feat(auth): merge step 3 — delete obsolete wallet row`.
+
+#### Sub-step 4.e — update wallet_address on email row
+
+- [ ] **4.e.1: Failing test**
+
+```python
+@pytest.mark.asyncio
+async def test_merge_updates_email_row_wallet(db_session):
+    await merge_accounts(db_session, email_id=1, wallet_id=2,
+                         sentinel="email:abc", real_wallet="0xreal")
+    wa = await db_session.scalar(text(
+        "SELECT wallet_address FROM web_users WHERE id=1"))
+    assert wa == "0xreal"
+```
+
+- [ ] **4.e.2: Fail**
+
+- [ ] **4.e.3: Implement**
+
+```python
+        await db.execute(text(
+            "UPDATE web_users SET wallet_address = :real WHERE id = :eid"),
+            {"real": real_wallet, "eid": email_id})
+```
+
+- [ ] **4.e.4: Pass**
+
+- [ ] **4.e.5: Commit** — `feat(auth): merge step 4 — update email row wallet`.
+
+#### Sub-step 4.f — mint new JWT and return
+
+- [ ] **4.f.1: Failing test**
+
+```python
+@pytest.mark.asyncio
+async def test_link_wallet_endpoint_returns_merged_token(client, authed_email_user):
+    ch = (await client.post("/api/v1/auth/challenge",
+                             json={"address": "0xreal"})).json()
+    r = await client.post("/api/v1/auth/link-wallet",
+        headers={"Authorization": f"Bearer {authed_email_user.token}"},
+        json={"address":"0xreal","message":ch["challenge"],"signature":"<fixture>"})
+    assert r.status_code == 200
+    claims = decode_token(r.json()["token"])
+    assert claims["sub"] == authed_email_user.id
+    assert claims["wallet_address"] == "0xreal"
+```
+
+- [ ] **4.f.2: Fail** — endpoint still returns 501.
+
+- [ ] **4.f.3: Implement handler in `src/api/routes/auth.py`**
+
+```python
+@routes.post("/api/v1/auth/link-wallet")
+async def link_wallet(request: web.Request) -> web.Response:
+    user = await request.app["auth"].require_user(request)
+    body = await request.json()
+    if not _consume_challenge(body["message"]):
+        return web.json_response({"error":"bad_challenge"}, status=400)
+    if not verify_ethereum_signature(body["address"], body["message"], body["signature"]):
+        return web.json_response({"error":"bad_signature"}, status=400)
+    async with request.app["db"].session() as db:
+        wallet_row = (await db.execute(select(WebUser)
+            .where(WebUser.wallet_address == body["address"]))).scalar_one_or_none()
+        wallet_id = wallet_row.id if wallet_row else user.id
+        sentinel = user.wallet_address
+        await merge_accounts(db, email_id=user.id, wallet_id=wallet_id,
+                             sentinel=sentinel, real_wallet=body["address"])
+    token = create_token(user.id, wallet_address=body["address"], email=user.email)
+    return web.json_response({"token": token, "user": serialize_user(user)})
+```
+
+- [ ] **4.f.4: Pass**
+
+- [ ] **4.f.5: Commit** — `feat(auth): merge step 5 — /link-wallet endpoint mints fresh JWT`.
+
+- [ ] **Step 5: Full merge integration test (top-level regression)**
 
 ```python
 @pytest.mark.asyncio
