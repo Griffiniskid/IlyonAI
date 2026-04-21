@@ -17,13 +17,57 @@ def _flag_off() -> web.Response:
     return web.json_response({"error": "agent_v2_disabled"}, status=503)
 
 
-# ── Agent turn (stub) ─────────────────────────────────────────────────────
+# ── Agent turn (SSE streaming) ─────────────────────────────────────────────
 
 @routes.post("/api/v1/agent")
-async def agent_turn(request: web.Request) -> web.Response:
+async def agent_turn(request: web.Request) -> web.StreamResponse:
+    """Agent v2 main endpoint: accepts a user message, streams ReAct steps as SSE."""
     if not settings.FEATURE_AGENT_V2:
-        return _flag_off()
-    return web.json_response({"error": "not_implemented"}, status=501)
+        return web.json_response({"error": "agent_v2_disabled"}, status=503)
+
+    from src.api.middleware.rate_limit import agent_gap
+
+    body = await request.json()
+    session_id = body.get("session_id", "")
+    wallet = request.get("user_wallet") or body.get("wallet")
+    user_id = request.get("user_id", 0)
+
+    if not agent_gap.allow(user_id, session_id):
+        return web.json_response({"error": "rate_limited"}, status=429)
+
+    from src.agent.clean import normalize_short_swap_query
+    from src.agent.streaming import encode_sse
+    from src.api.schemas.agent import DoneFrame, FinalFrame
+
+    response = web.StreamResponse(
+        status=200,
+        headers={"Content-Type": "text/event-stream", "Cache-Control": "no-cache"},
+    )
+    await response.prepare(request)
+
+    try:
+        message = normalize_short_swap_query(body.get("message", ""))
+
+        # Skeleton: when db + router + tools are wired (post-W2), this will
+        # delegate to run_turn(). For now we emit a placeholder response.
+        f = FinalFrame(
+            content="Agent v2 is initializing. Tools not yet registered.",
+            card_ids=[],
+            elapsed_ms=0,
+            steps=0,
+        )
+        await response.write(encode_sse("final", f.model_dump()))
+        d = DoneFrame()
+        await response.write(encode_sse("done", d.model_dump()))
+    except Exception as e:
+        import json
+
+        await response.write(
+            f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n".encode()
+        )
+
+    await response.write_eof()
+    return response
 
 
 # ── Chat session CRUD ─────────────────────────────────────────────────────
