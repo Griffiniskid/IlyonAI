@@ -6,6 +6,8 @@ endpoints remain stubs until the agent loop is implemented.
 """
 from __future__ import annotations
 
+import uuid
+
 from aiohttp import web
 
 from src.config import settings
@@ -48,17 +50,28 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
     try:
         message = normalize_short_swap_query(body.get("message", ""))
 
-        # Skeleton: when db + router + tools are wired (post-W2), this will
-        # delegate to run_turn(). For now we emit a placeholder response.
-        f = FinalFrame(
-            content="Agent v2 is initializing. Tools not yet registered.",
-            card_ids=[],
-            elapsed_ms=0,
-            steps=0,
-        )
-        await response.write(encode_sse("final", f.model_dump()))
-        d = DoneFrame()
-        await response.write(encode_sse("done", d.model_dump()))
+        from src.storage.database import get_database
+        from src.agent.runtime import run_turn
+        from src.ai.router import AIRouter
+        from src.agent.tools import register_all_tools
+        from src.agent.context import ToolContext
+
+        db = await get_database()
+        router = AIRouter()
+        ctx = ToolContext(wallet=wallet, services={})
+        tools = register_all_tools(ctx)
+
+        async for chunk in run_turn(
+            db=db,
+            router=router,
+            tools=tools,
+            chat_id=session_id or str(uuid.uuid4()),
+            user_id=user_id,
+            message=message,
+            wallet=wallet,
+        ):
+            await response.write(chunk)
+
     except Exception as e:
         import json
 
@@ -89,7 +102,7 @@ async def list_sessions(request: web.Request) -> web.Response:
 
         db = await get_database()
         # Resolve user_id from wallet_address
-        async with db._engine.connect() as conn:
+        async with db.engine.connect() as conn:
             r = await conn.execute(
                 text("SELECT id FROM web_users WHERE wallet_address = :wa"),
                 {"wa": wallet},
@@ -99,7 +112,7 @@ async def list_sessions(request: web.Request) -> web.Response:
                 return web.json_response({"sessions": []})
             user_id = row[0]
 
-        async with AsyncSession(db._engine) as session:
+        async with AsyncSession(db.engine) as session:
             chats = await list_chats(session, user_id)
             return web.json_response({
                 "sessions": [
@@ -133,7 +146,7 @@ async def get_session(request: web.Request) -> web.Response:
         from sqlalchemy.ext.asyncio import AsyncSession
 
         db = await get_database()
-        async with db._engine.connect() as conn:
+        async with db.engine.connect() as conn:
             r = await conn.execute(
                 text("SELECT id FROM web_users WHERE wallet_address = :wa"),
                 {"wa": wallet},
@@ -143,7 +156,7 @@ async def get_session(request: web.Request) -> web.Response:
                 return web.json_response({"error": "not_found"}, status=404)
             user_id = row[0]
 
-        async with AsyncSession(db._engine) as session:
+        async with AsyncSession(db.engine) as session:
             chat = await get_chat(session, session_id, user_id)
             if chat is None:
                 return web.json_response({"error": "not_found"}, status=404)
@@ -184,7 +197,7 @@ async def delete_session(request: web.Request) -> web.Response:
         from sqlalchemy.ext.asyncio import AsyncSession
 
         db = await get_database()
-        async with db._engine.connect() as conn:
+        async with db.engine.connect() as conn:
             r = await conn.execute(
                 text("SELECT id FROM web_users WHERE wallet_address = :wa"),
                 {"wa": wallet},
@@ -194,7 +207,7 @@ async def delete_session(request: web.Request) -> web.Response:
                 return web.json_response({"error": "not_found"}, status=404)
             user_id = row[0]
 
-        async with AsyncSession(db._engine) as session:
+        async with AsyncSession(db.engine) as session:
             deleted = await delete_chat(session, session_id, user_id)
             if not deleted:
                 return web.json_response({"error": "not_found"}, status=404)

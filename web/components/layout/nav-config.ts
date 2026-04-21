@@ -1,16 +1,16 @@
 import {
   Compass,
   LineChart,
-
+  MessageSquare,
+  ArrowLeftRight,
   Radar,
-  Flame,
   Shield,
-  Bell,
   Settings,
   PieChart,
   Droplets,
   Briefcase,
-  LucideIcon
+  TrendingUp,
+  LucideIcon,
 } from "lucide-react";
 
 export type NavItem = {
@@ -30,7 +30,14 @@ export const navGroups: NavGroup[] = [
     items: [
       { label: "Overview", href: "/", icon: Compass },
       { label: "Dashboard", href: "/dashboard", icon: LineChart },
-      { label: "Trending", href: "/trending", icon: Flame },
+      { label: "Trending", href: "/trending", icon: TrendingUp },
+    ],
+  },
+  {
+    label: "Agent",
+    items: [
+      { label: "Chat", href: "/agent/chat", icon: MessageSquare },
+      { label: "Swap", href: "/agent/swap", icon: ArrowLeftRight },
     ],
   },
   {
@@ -45,9 +52,6 @@ export const navGroups: NavGroup[] = [
     label: "Protect",
     items: [
       { label: "Shield", href: "/shield", icon: Shield },
-      { label: "Audits", href: "/audits", icon: Briefcase },
-      { label: "Rekt", href: "/rekt", icon: Flame },
-      { label: "Alerts", href: "/alerts", icon: Bell },
     ],
   },
   {
