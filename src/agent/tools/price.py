@@ -10,11 +10,25 @@ async def get_token_price(ctx, *, token, chain="ethereum"):
     logger.warning(f"PRICE TOOL: Looking up {symbol} on {chain}")
     
     # For major tokens, try CoinGecko first for accurate prices
-    major_tokens = {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", 
+    major_tokens = {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana",
                     "USDC": "usd-coin", "USDT": "tether", "BNB": "binancecoin",
                     "XRP": "ripple", "ADA": "cardano", "DOGE": "dogecoin",
-                    "TRON": "tron", "LINK": "chainlink", "MATIC": "matic-network"}
+                    "TRON": "tron", "LINK": "chainlink", "MATIC": "matic-network",
+                    "WETH": "weth", "WBTC": "wrapped-bitcoin",
+                    "AVAX": "avalanche-2", "ATOM": "cosmos", "DOT": "polkadot",
+                    "JUP": "jupiter-exchange-solana", "PYTH": "pyth-network",
+                    "RAY": "raydium", "ORCA": "orca", "JITO": "jito-governance-token",
+                    "JITOSOL": "jito-staked-sol", "STETH": "staked-ether",
+                    "RETH": "rocket-pool-eth"}
     
+    # Native chain hints for major tokens (so the label says "Solana" for SOL).
+    native_chain = {
+        "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana",
+        "BNB": "bsc", "USDC": "ethereum", "USDT": "ethereum",
+        "TRON": "tron", "MATIC": "polygon", "XRP": "ripple",
+        "ADA": "cardano", "DOGE": "dogecoin", "LINK": "ethereum",
+    }
+
     if symbol in major_tokens:
         if hasattr(ctx.services, "price") and ctx.services.price:
             try:
@@ -22,20 +36,32 @@ async def get_token_price(ctx, *, token, chain="ethereum"):
                 coin_id = major_tokens[symbol]
                 price_data = await ctx.services.price.get_token_price([coin_id], vs_currencies="usd")
                 logger.warning(f"PRICE TOOL: CoinGecko price data: {price_data}")
-                
+
                 if price_data and coin_id in price_data:
                     coin_data = price_data[coin_id]
-                    data = {
-                        "symbol": symbol,
-                        "address": "",
-                        "chain": chain,
-                        "price_usd": str(coin_data.get("usd", 0)),
-                        "change_24h_pct": coin_data.get("usd_24h_change", 0) or 0,
-                        "market_cap": coin_data.get("usd_market_cap", 0) or 0,
-                    }
-                    return ok_envelope(data=data, card_type="token", card_payload=data)
+                    usd = coin_data.get("usd")
+                    if usd and float(usd) > 0:
+                        data = {
+                            "symbol": symbol,
+                            "address": "",
+                            "chain": native_chain.get(symbol, chain),
+                            "price_usd": str(usd),
+                            "change_24h_pct": coin_data.get("usd_24h_change", 0) or 0,
+                            "market_cap": coin_data.get("usd_market_cap", 0) or 0,
+                            "dex": "CoinGecko",
+                        }
+                        return ok_envelope(data=data, card_type="token", card_payload=data)
             except Exception as e:
                 logger.warning(f"CoinGecko price error for {symbol}: {e}")
+
+        # Major tokens MUST NOT fall through to DexScreener search — those
+        # queries return scam clones (e.g. "BTC" at $0.04 on some random DEX).
+        # Return a clean err envelope instead.
+        return err_envelope(
+            "price_unavailable",
+            f"CoinGecko price feed is temporarily unavailable for {symbol}. Please try again in a minute.",
+            card_type="token",
+        )
     
     # For other tokens, try DexScreener (real-time DEX data)
     if hasattr(ctx.services, "dexscreener") and ctx.services.dexscreener:

@@ -177,6 +177,7 @@ def create_api_app() -> web.Application:
 
     # Health check and info
     app.router.add_get("/health", health_check)
+    app.router.add_get("/api/v1/health", health_check)
     app.router.add_get("/api/v1", api_info)
     app.router.add_get("/api/v1/docs", api_docs)
 

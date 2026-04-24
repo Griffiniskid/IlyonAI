@@ -183,18 +183,89 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
                         params["asset_hint"] = asset_hint
                     return tool_name, params
                 if tool_name == "get_token_price" and match.groups():
-                    params["token"] = match.group(1).upper()
+                    tok = match.group(1).upper()
+                    # Skip common English words that aren't tokens.
+                    if tok.lower() not in {"the", "a", "an", "this", "that", "it", "of", "on", "in", "for"}:
+                        params["token"] = tok
                 elif tool_name == "simulate_swap":
-                    # Try to extract swap details
-                    tokens = re.findall(r'(\w+)', message_lower)
-                    if len(tokens) >= 2:
-                        params["token_in"] = tokens[-2].upper()
-                        params["token_out"] = tokens[-1].upper()
-                    # Try to extract amount
-                    amount_match = re.search(r'(\d+(?:\.\d+)?)', message)
-                    if amount_match:
-                        params["amount"] = amount_match.group(1)
-                    params["chain"] = "ethereum"
+                    # Parse "swap [of] <amount> <TOKEN_IN> to <TOKEN_OUT> on <chain>".
+                    swap_re = re.compile(
+                        r"(?:swap|exchange|convert|trade)\s+"
+                        r"(?:of\s+)?"
+                        r"(?P<amount>[\d,]+(?:\.\d+)?)\s*"
+                        r"(?P<tin>[A-Za-z]{2,10})\s+"
+                        r"(?:to|for|into)\s+"
+                        r"(?P<tout>[A-Za-z]{2,10})"
+                        r"(?:\s+on\s+(?P<chain>\w+))?",
+                        re.IGNORECASE,
+                    )
+                    m2 = swap_re.search(message)
+                    if m2:
+                        params["token_in"] = m2.group("tin").upper()
+                        params["token_out"] = m2.group("tout").upper()
+                        params["amount"] = m2.group("amount").replace(",", "")
+                        chain = m2.group("chain")
+                        params["chain"] = (chain.lower() if chain else "ethereum")
+                    else:
+                        # Fallback: pick the last two capitalised tokens that aren't english stop-words
+                        stop = {"SWAP", "TO", "FOR", "INTO", "ON", "THE", "A", "AN"}
+                        candidates = [t for t in re.findall(r"[A-Za-z]{2,10}", message)
+                                      if t.upper() not in stop]
+                        if len(candidates) >= 2:
+                            params["token_in"] = candidates[-2].upper()
+                            params["token_out"] = candidates[-1].upper()
+                        amount_match = re.search(r'(\d+(?:\.\d+)?)', message)
+                        if amount_match:
+                            params["amount"] = amount_match.group(1)
+                        params["chain"] = "ethereum"
+                elif tool_name == "find_liquidity_pool":
+                    # "pool for USDC on Ethereum" / "pool for USDC/WETH"
+                    pair_re = re.compile(
+                        r"(?:pool|pair|lp)\s+(?:for\s+)?"
+                        r"(?P<ta>[A-Za-z]{2,10})"
+                        r"(?:\s*[/-]\s*(?P<tb>[A-Za-z]{2,10}))?"
+                        r"(?:\s+on\s+(?P<chain>\w+))?",
+                        re.IGNORECASE,
+                    )
+                    m3 = pair_re.search(message)
+                    _STABLES = {"USDC", "USDT", "DAI", "FRAX", "LUSD", "USDE"}
+                    if m3:
+                        ta = m3.group("ta").upper()
+                        tb = m3.group("tb")
+                        params["token_a"] = ta
+                        if tb:
+                            params["token_b"] = tb.upper()
+                        else:
+                            # Smart default: stable → pair with WETH, else pair with USDC.
+                            params["token_b"] = "WETH" if ta in _STABLES else "USDC"
+                        chain = m3.group("chain")
+                        if chain:
+                            params["chain"] = chain.lower()
+                    else:
+                        # Provide defaults so the tool doesn't 400 on missing required args
+                        params["token_a"] = "USDC"
+                        params["token_b"] = "WETH"
+                        params["chain"] = "ethereum"
+                elif tool_name == "get_wallet_balance":
+                    # Pull the first 0x... (EVM) or base58 Solana-ish address.
+                    evm_m = re.search(r"\b(0x[a-fA-F0-9]{40})\b", message)
+                    sol_m = re.search(r"\b([1-9A-HJ-NP-Za-km-z]{32,44})\b", message)
+                    if evm_m:
+                        params["wallet"] = evm_m.group(1)
+                    elif sol_m:
+                        params["wallet"] = sol_m.group(1)
+                elif tool_name == "get_staking_options":
+                    params["min_tvl"] = 200_000_000
+                    params["min_apy"] = 0.5
+                    params["limit"] = 8
+                    # Try to extract an asset filter
+                    asset_m = re.search(
+                        r"\b(?:for|of)\s+([A-Za-z]{2,8})\b",
+                        message,
+                        re.IGNORECASE,
+                    )
+                    if asset_m:
+                        params["asset"] = asset_m.group(1).upper()
                 return tool_name, params
     
     return None
@@ -211,42 +282,54 @@ def _format_price_response(data: dict) -> str:
     
     response = f"**{symbol} Price Update**\n\n"
     response += f"Current price: **${price}**\n"
-    
+
     if change:
         direction = "up" if float(change) > 0 else "down"
         response += f"24h change: {direction} {abs(float(change)):.2f}%\n"
-    
+
     if liquidity:
         response += f"Liquidity: ${float(liquidity):,.0f}\n"
-    
-    response += f"Source: {dex.title() if dex != 'unknown' else 'Multiple DEXs'} on {chain.title()}\n\n"
-    response += "*Note: Prices are sourced from live DEX data and may vary across exchanges.*"
-    
+
+    chain_label = (chain or "").replace("-", " ").title() if chain else ""
+    if dex and dex.lower() == "coingecko":
+        response += f"Source: CoinGecko · {chain_label}\n\n" if chain_label else "Source: CoinGecko\n\n"
+    elif dex and dex != "unknown":
+        response += f"Source: {dex.title()} on {chain_label or 'DEX'}\n\n"
+    else:
+        response += f"Source: Aggregated DEX feed\n\n"
+    response += "*Prices are sourced from live on-chain and CoinGecko feeds; small differences across exchanges are normal.*"
+
     return response
+
+
+def _pretty_project(slug: str) -> str:
+    if not slug:
+        return "Unknown"
+    s = str(slug).replace("_", "-").replace(".", " ")
+    return " ".join(p.capitalize() if p and not p.isupper() else p for p in s.split("-"))
 
 
 def _format_staking_response(data: dict) -> str:
     """Format staking data into natural language."""
     pools = data.get("staking_options", [])
-    
+
     if not pools:
         return "I couldn't find any staking pools matching your criteria right now. Try adjusting your search or check back later."
-    
+
     response = f"**Top Staking Opportunities** ({len(pools)} pools found)\n\n"
-    
+
     for i, pool in enumerate(pools[:5], 1):
-        protocol = pool.get("protocol", "Unknown")
+        protocol = _pretty_project(pool.get("protocol", "Unknown"))
         symbol = pool.get("symbol", "")
-        apy = pool.get("apy", 0)
-        tvl = pool.get("tvl_usd", 0)
+        apy = pool.get("apy", 0) or 0
+        tvl = pool.get("tvl_usd", 0) or 0
         risk = pool.get("risk_level", "UNKNOWN")
         chain = pool.get("chain", "Unknown")
-        
-        response += f"{i}. **{protocol}** - {symbol}\n"
-        response += f"   APY: {apy:.2f}% | TVL: ${tvl:,.0f} | Chain: {chain}\n"
-        response += f"   Risk Level: {risk}\n\n"
-    
-    response += "*Remember: Higher APY often means higher risk. Always DYOR before investing.*"
+
+        response += f"{i}. **{protocol}** — {symbol}  \n"
+        response += f"   APY {apy:.2f}% · TVL ${tvl:,.0f} · {chain} · Risk {risk}\n\n"
+
+    response += "*Ranked by log-TVL × APY (junk-yield pools filtered). DYOR — higher APY almost always means higher risk.*"
     return response
 
 
@@ -281,25 +364,92 @@ def _format_market_response(data: dict) -> str:
     return response
 
 
+def _format_balance_response(data: dict) -> str:
+    wallet = data.get("wallet", "")
+    total = data.get("total_usd", "0.00")
+    by_chain = data.get("by_chain") or {}
+    lines: list[str] = [f"**Wallet Balance — {wallet}**", ""]
+    if str(total) in ("0.00", "0", "0.0"):
+        lines.append("Total tracked value: **$0.00**\n")
+        lines.append(
+            "I couldn't find any positions on the supported chains. This usually means the wallet is empty, "
+            "on a chain we don't track yet, or the balance API is rate-limited — try again in a minute."
+        )
+    else:
+        lines.append(f"Total tracked value: **${total}**")
+        lines.append("")
+        for chain, usd in by_chain.items():
+            lines.append(f"- {chain.title()}: ${usd}")
+    lines.append("")
+    lines.append("*Balances are aggregated from Moralis (EVM) and Helius/RPC (Solana); small delays are normal.*")
+    return "\n".join(lines)
+
+
+def _format_pool_response(data: dict) -> str:
+    pools = data.get("pools", []) or []
+    ta = data.get("token_a", "?")
+    tb = data.get("token_b", "?")
+    if not pools:
+        return (
+            f"I couldn't find a {ta}/{tb} pool on the chain you asked for. "
+            "Try a different quote token (e.g. USDC or WETH) or another chain."
+        )
+    lines: list[str] = [f"**Liquidity Pools — {ta}/{tb}** ({len(pools)} found)", ""]
+    for i, p in enumerate(pools[:5], 1):
+        dex = p.get("dex", "unknown")
+        chain = p.get("chain", "unknown")
+        liq = p.get("liquidity_usd") or p.get("liquidity") or 0
+        try:
+            liq_str = f"${float(liq):,.0f}"
+        except Exception:
+            liq_str = str(liq)
+        lines.append(f"{i}. **{dex.title()}** on {str(chain).title()} · liquidity {liq_str}")
+    lines.append("")
+    lines.append("*Deepest pools first. Pair availability varies by DEX.*")
+    return "\n".join(lines)
+
+
 def _format_swap_response(data: dict) -> str:
     """Format swap data into natural language."""
-    token_in = data.get("token_in", "")
-    token_out = data.get("token_out", "")
-    amount = data.get("amount_in", data.get("amount", "0"))
-    estimated = data.get("estimated_out", "0")
-    price = data.get("price_usd", 0)
-    
-    response = f"**Swap Estimate: {amount} {token_in} → {token_out}**\n\n"
-    
-    if estimated != "0":
+    # Accept multiple payload shapes: flat {token_in, amount_in} or nested {pay, receive}.
+    pay = data.get("pay") or {}
+    receive = data.get("receive") or {}
+    token_in = data.get("token_in") or pay.get("symbol") or pay.get("token") or ""
+    token_out = data.get("token_out") or receive.get("symbol") or receive.get("token") or ""
+    amount = (
+        data.get("amount_in")
+        or data.get("amount")
+        or pay.get("amount")
+        or pay.get("amount_in")
+        or "0"
+    )
+    estimated = (
+        data.get("estimated_out")
+        or receive.get("amount")
+        or receive.get("amount_out")
+        or "0"
+    )
+    rate = data.get("rate")
+    router = data.get("router") or data.get("dex") or ""
+    chain = data.get("chain", "")
+    price_impact = data.get("price_impact_pct")
+
+    response = f"**Swap Quote — {amount} {token_in} → {token_out}**\n\n"
+    if estimated and str(estimated) != "0":
         response += f"Estimated receive: **~{estimated} {token_out}**\n"
-        if price:
-            response += f"Rate: ~${price:.4f} per {token_in}\n"
+    if rate:
+        response += f"Rate: {rate}\n"
+    if price_impact not in (None, ""):
+        response += f"Price impact: {price_impact}%\n"
+    if router:
+        response += f"Route: {router}"
+        if chain:
+            response += f" ({chain})"
+        response += "\n"
+    if estimated in (None, "0", "") and rate is None:
+        response += "\nI couldn't compute a firm quote — provide contract addresses for the pair to get an on-chain simulation."
     else:
-        response += "Unable to calculate exact swap estimate without token addresses.\n\n"
-        response += "To get a precise quote, please provide the token contract addresses or connect your wallet.\n"
-    
-    response += "\n*Note: This is an estimate. Actual amounts may vary due to slippage and market conditions.*"
+        response += "\n*Estimate only; sign inside your wallet to confirm slippage and gas.*"
     return response
 
 
@@ -382,6 +532,10 @@ def _format_tool_result(tool_name: str, result) -> str:
         return _format_market_response(data)
     elif card_type == "swap_quote" or tool_name == "simulate_swap":
         return _format_swap_response(data)
+    elif card_type == "balance" or tool_name == "get_wallet_balance":
+        return _format_balance_response(data)
+    elif card_type == "pool" or tool_name == "find_liquidity_pool":
+        return _format_pool_response(data)
     else:
         # Generic formatting
         return json.dumps(data, indent=2) if isinstance(data, dict) else str(data)
