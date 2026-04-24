@@ -23,8 +23,10 @@ Exit, Confidence), risk_level (HIGH|MEDIUM|LOW), strategy_fit
 broadcast transactions -- only return unsigned tx payloads via build_*
 tools. When unsure, use read-only tools first.
 
-Tools:
+You have access to the following tools:
 {tools}
+
+Tool Names: {tool_names}
 
 Use this format:
 Thought: I need to ...
@@ -33,9 +35,6 @@ Action Input: <json>
 Observation: ...
 Thought: I now know the answer
 Final Answer: ...
-
-Chat history:
-{chat_history}
 
 Question: {input}
 {agent_scratchpad}
@@ -112,6 +111,10 @@ async def run_turn(
                 )
                 if env and env.card_type and env.card_payload is not None:
                     collector.emit_card(env.card_id, env.card_type, env.card_payload)
+                if env and env.extra_cards:
+                    for extra in env.extra_cards:
+                        collector.emit_card(extra.card_id, extra.card_type, extra.payload)
+                        card_ids.append(extra.card_id)
             except Exception:
                 pass
 
@@ -135,3 +138,20 @@ async def run_turn(
         content=final_text,
         cards=[{"card_id": cid} for cid in card_ids],
     )
+
+
+async def run_ephemeral_turn(
+    *,
+    router,
+    tools,
+    message: str,
+    wallet: str | None = None,
+) -> AsyncIterator[bytes]:
+    """Execute one agent turn without DB persistence and yield SSE-encoded frames.
+
+    Used for guest/unauthenticated sessions where chat history is not stored.
+    Uses a simple direct LLM approach instead of ReAct agent.
+    """
+    from src.agent.simple_runtime import run_ephemeral_turn as _simple_run
+    async for chunk in _simple_run(router=router, tools=tools, message=message, wallet=wallet):
+        yield chunk

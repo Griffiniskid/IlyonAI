@@ -8,15 +8,6 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-vi.mock("@/lib/hooks", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/hooks")>();
-  return {
-    ...actual,
-    useAlertSummary: () => ({ unreadCount: 0, alerts: [] }),
-    useUpdateAlert: () => ({ mutateAsync: vi.fn() }),
-  };
-});
-
 function expectLinkPath(label: string, expectedHref: string) {
   const links = screen.getAllByRole("link", { name: new RegExp(label, "i") });
   const hasExpectedHref = links.some((link) => link.getAttribute("href") === expectedHref);
@@ -24,7 +15,7 @@ function expectLinkPath(label: string, expectedHref: string) {
 }
 
 describe("Platform overhaul smoke journey", () => {
-  it("keeps the Discover -> Smart Money -> Alerts path navigable", () => {
+  it("keeps the Discover -> Smart Money -> Portfolio path navigable", () => {
     render(
       <AppShell>
         <div>content</div>
@@ -33,6 +24,6 @@ describe("Platform overhaul smoke journey", () => {
 
     expectLinkPath("Discover", "/");
     expectLinkPath("Smart Money", "/smart-money");
-    expectLinkPath("Alerts", "/alerts");
+    expectLinkPath("Portfolio", "/portfolio");
   });
 });

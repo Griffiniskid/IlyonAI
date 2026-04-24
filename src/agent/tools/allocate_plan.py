@@ -1,0 +1,541 @@
+"""allocate_plan — chain-aware allocation using the real DeFi intelligence engine."""
+from __future__ import annotations
+
+import asyncio
+from typing import Any, Sequence
+from uuid import uuid4
+
+from src.agent.tools._base import err_envelope, ok_envelope
+from src.allocator.composer import (
+    PoolCandidate,
+    compose_allocation,
+    execution_steps_from_positions,
+    normalise_chain,
+    summarise_positions,
+    total_gas_from_steps,
+    wallets_summary_from_steps,
+)
+
+
+_AUDIT_PROJECTS = {
+    "lido", "rocket-pool", "rocketpool", "jito", "aave-v3", "aave-v2",
+    "compound-v3", "compound-v2", "pendle", "curve-dex", "curve",
+    "ether.fi", "ether-fi", "renzo", "etherfi", "spark", "morpho-blue",
+    "mountain-protocol", "usdy", "sky-lending", "makerdao", "mantle-staked-ether",
+    "origin-ether", "binance-staked-eth", "coinbase-wrapped-staked-eth",
+    "stader", "frax-ether", "raft", "gyroscope-protocol", "convex-finance",
+    "yearn-finance", "beefy", "idle", "clearpool", "maple", "goldfinch",
+    "instadapp", "yieldflow", "stargate", "hyperliquid",
+}
+
+
+def _infer_audits(project_slug: str) -> bool:
+    return project_slug.lower() in _AUDIT_PROJECTS
+
+
+def _infer_stable(symbol: str, pool: dict[str, Any]) -> bool:
+    if pool.get("stablecoin"):
+        return True
+    stable_tokens = ("USDC", "USDT", "DAI", "FRAX", "LUSD", "USDE", "SUSDE", "USDY", "PYUSD", "GHO")
+    symbol_upper = symbol.upper()
+    return any(token in symbol_upper for token in stable_tokens)
+
+
+def _infer_exposure(pool: dict[str, Any]) -> str:
+    symbol = str(pool.get("symbol") or "")
+    return "multi" if "-" in symbol and not symbol.startswith("PT-") else "single"
+
+
+def _infer_days_live(pool: dict[str, Any]) -> int:
+    tvl = float(pool.get("tvlUsd", 0) or 0)
+    if _infer_audits(str(pool.get("project") or "")):
+        return 720 if tvl >= 1_000_000_000 else 400
+    return 200 if tvl >= 100_000_000 else 60
+
+
+def _pool_to_candidate(pool: dict[str, Any]) -> PoolCandidate:
+    return PoolCandidate(
+        project=str(pool.get("project") or "Unknown"),
+        symbol=str(pool.get("symbol") or "?"),
+        chain=str(pool.get("chain") or "Ethereum"),
+        tvl_usd=float(pool.get("tvlUsd", 0) or 0),
+        apy=float(pool.get("apy", 0) or 0),
+        audits=_infer_audits(str(pool.get("project") or "")),
+        days_live=_infer_days_live(pool),
+        stable=_infer_stable(str(pool.get("symbol") or ""), pool),
+        il_risk=str(pool.get("ilRisk", "no") or "no"),
+        exposure=_infer_exposure(pool),
+        raw_flags=(),
+    )
+from src.api.schemas.agent import (
+    AllocationPayload,
+    AllocationPosition,
+    ExecutionPlanPayload,
+    ExtraCard,
+    SentinelMatrixPayload,
+)
+
+
+def _format_tvl(usd: float) -> str:
+    if usd >= 1_000_000_000:
+        return f"${usd / 1_000_000_000:.1f}B"
+    if usd >= 1_000_000:
+        return f"${usd / 1_000_000:.0f}M"
+    return f"${usd:,.0f}"
+
+
+def _format_usd(usd: float) -> str:
+    return f"${usd:,.0f}"
+
+
+def _format_apy(apy: float) -> str:
+    return f"{apy:.1f}%"
+
+
+def _weight_ladder(count: int, risk_budget: str) -> list[int]:
+    if count <= 0:
+        return []
+    if risk_budget == "conservative":
+        base = [35, 25, 20, 12, 8]
+    elif risk_budget == "aggressive":
+        base = [30, 25, 20, 15, 10]
+    else:
+        base = [35, 20, 20, 15, 10]
+    trimmed = base[:count]
+    total = sum(trimmed)
+    weights = [int(round(value * 100 / total)) for value in trimmed]
+    drift = 100 - sum(weights)
+    if weights:
+        weights[0] += drift
+    return weights
+
+
+def _opportunity_score(profile: dict[str, Any]) -> int:
+    summary = profile.get("summary") or {}
+    return int(round(summary.get("opportunity_score") or summary.get("overall_score") or 0))
+
+
+def _protocol_name(profile: dict[str, Any]) -> str:
+    return str(profile.get("protocol_name") or profile.get("protocol") or profile.get("project") or "Unknown")
+
+
+def _build_flags(profile: dict[str, Any]) -> list[str]:
+    summary = profile.get("summary") or {}
+    flags: list[str] = []
+    for flag in summary.get("fragility_flags") or []:
+        text = str(flag).strip()
+        if text:
+            flags.append(text[:48])
+    for cap in profile.get("score_caps") or []:
+        if isinstance(cap, dict):
+            reason = str(cap.get("reason") or cap.get("code") or "").strip()
+            if reason:
+                flags.append(reason[:48])
+    ai_analysis = profile.get("ai_analysis") or {}
+    for risk in ai_analysis.get("main_risks") or []:
+        text = str(risk).strip()
+        if text:
+            flags.append(text[:48])
+    confidence = profile.get("confidence") or {}
+    if confidence.get("partial_analysis"):
+        flags.append("Partial evidence coverage")
+
+    deduped: list[str] = []
+    for flag in flags:
+        if flag not in deduped:
+            deduped.append(flag)
+    return deduped[:4]
+
+
+def _build_position(profile: dict[str, Any], *, rank: int, weight: int, usd_amount: float) -> AllocationPosition:
+    summary = profile.get("summary") or {}
+    chain = normalise_chain(str(profile.get("chain") or "mainnet"))
+    return AllocationPosition(
+        rank=rank,
+        protocol=_protocol_name(profile),
+        asset=str(profile.get("symbol") or "Unknown"),
+        chain=chain,
+        apy=_format_apy(float(profile.get("apy") or 0.0)),
+        sentinel=_opportunity_score(profile),
+        risk=str(summary.get("risk_level") or "MEDIUM").lower(),
+        fit=str(summary.get("strategy_fit") or "balanced"),
+        weight=weight,
+        usd=_format_usd(usd_amount * weight / 100.0),
+        tvl=_format_tvl(float(profile.get("tvl_usd") or 0.0)),
+        router="Jupiter" if chain == "sol" else "Enso",
+        safety=int(round(summary.get("safety_score") or 0)),
+        durability=int(round(summary.get("yield_durability_score") or 0)),
+        exit=int(round(summary.get("exit_liquidity_score") or 0)),
+        confidence=int(round(summary.get("confidence_score") or 0)),
+        flags=_build_flags(profile),
+    )
+
+
+def _pick_candidates(analysis: dict[str, Any], chains: Sequence[str] | None) -> list[dict[str, Any]]:
+    requested = {chain.lower() for chain in (chains or [])}
+    opportunities = analysis.get("top_opportunities") or []
+    filtered: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    for opportunity in opportunities:
+        chain = str(opportunity.get("chain") or "").lower()
+        if requested and chain not in requested:
+            continue
+        key = (
+            str(opportunity.get("symbol") or ""),
+            str(opportunity.get("protocol_name") or opportunity.get("protocol") or ""),
+            chain,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        filtered.append(opportunity)
+        if len(filtered) >= 5:
+            break
+    return filtered
+
+
+def _fallback_profile_from_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    summary = dict(candidate.get("summary") or {})
+    fallback = dict(candidate)
+    fallback.setdefault(
+        "ai_analysis",
+        {
+            "summary": summary.get("thesis") or summary.get("headline") or "The fallback profile kept the deterministic opportunity score because deep analysis timed out.",
+            "main_risks": summary.get("fragility_flags") or ["Deep analysis timed out; using deterministic scoring."],
+            "monitor_triggers": ["Re-run the request if you need the full deep profile."],
+        },
+    )
+    fallback.setdefault("score_caps", [])
+    return fallback
+
+
+def _decode_opportunity_id(opportunity_id: str) -> tuple[str | None, str | None]:
+    if "--" not in opportunity_id:
+        return None, None
+    kind, raw_id = opportunity_id.split("--", 1)
+    return kind, raw_id
+
+
+def _lookup_raw_candidate(analysis: dict[str, Any], *, kind: str, raw_id: str) -> dict[str, Any] | None:
+    if kind == "lending":
+        for item in analysis.get("top_lending_markets") or []:
+            if str(item.get("pool_id") or "") == raw_id:
+                return item
+        return None
+
+    source_key = "top_yields" if kind == "yield" else "top_pools"
+    for item in analysis.get(source_key) or []:
+        candidate_id = str(item.get("pool_id") or item.get("pool") or "")
+        if candidate_id == raw_id:
+            return item
+    return None
+
+
+async def _allocate_from_engine(
+    ctx,
+    *,
+    usd_amount: float,
+    risk_budget: str,
+    chains: list[str] | None,
+    asset_hint: str | None,
+):
+    engine = getattr(ctx.services, "defi_intelligence", None)
+    if engine is None:
+        return None
+
+    primary_chain = chains[0] if chains else None
+    analysis = await engine.analyze_market(
+        chain=primary_chain,
+        query=None,
+        min_tvl=100_000,
+        min_apy=0.5,
+        limit=12,
+        include_ai=True,
+        ranking_profile=risk_budget,
+    )
+
+    candidates = _pick_candidates(analysis, chains)
+    if not candidates:
+        return err_envelope(
+            "no_viable_pools",
+            "No opportunities matched the requested chain and risk filters.",
+        )
+
+    engine_core = getattr(engine, "engine", None)
+    llama = getattr(engine, "llama", None)
+    protocol_index = None
+    raw_lookup: dict[tuple[str, str], dict[str, Any]] = {}
+    if engine_core is not None and llama is not None:
+        protocol_index = engine_core._build_protocol_index(await llama.get_protocols())
+        raw_pools, raw_yields, raw_markets = await asyncio.gather(
+            engine_core.pool_analyzer.get_top_pools(
+                chain=primary_chain,
+                min_tvl=100_000,
+                min_apy=0.5,
+                limit=48,
+            ),
+            engine_core.farm_analyzer.get_yields(
+                chain=primary_chain,
+                min_tvl=100_000,
+                min_apy=0.5,
+                limit=48,
+            ),
+            engine_core.lending_analyzer.get_lending_markets(
+                chain=primary_chain,
+                limit=48,
+            ),
+        )
+        for item in raw_pools:
+            raw_lookup[("pool", str(item.get("pool_id") or item.get("pool") or ""))] = item
+        for item in raw_yields:
+            raw_lookup[("yield", str(item.get("pool_id") or item.get("pool") or ""))] = item
+        for item in raw_markets:
+            raw_lookup[("lending", str(item.get("pool_id") or ""))] = item
+
+    async def _build_profile(candidate: dict[str, Any]) -> dict[str, Any] | None:
+        async def _deep_profile() -> dict[str, Any] | None:
+            opportunity_id = str(candidate.get("id") or "")
+            if not opportunity_id:
+                return None
+            if protocol_index is not None and engine_core is not None:
+                kind, raw_id = _decode_opportunity_id(opportunity_id)
+                if not kind or not raw_id:
+                    return None
+                raw_candidate = raw_lookup.get((kind, raw_id)) or _lookup_raw_candidate(analysis, kind=kind, raw_id=raw_id)
+                if raw_candidate is None:
+                    return None
+                enriched_candidate = {**raw_candidate, "skip_token_intelligence": True}
+                if kind in {"pool", "yield"}:
+                    profile = await engine_core._build_pool_or_yield_opportunity(
+                        enriched_candidate,
+                        kind,
+                        protocol_index,
+                        True,
+                        risk_budget,
+                    )
+                else:
+                    profile = await engine_core._build_lending_opportunity(
+                        enriched_candidate,
+                        protocol_index,
+                        True,
+                        risk_budget,
+                    )
+                profile["ai_analysis"] = await engine_core.ai.build_opportunity_analysis(profile)
+                return profile
+
+            profile = await engine.get_opportunity_profile(
+                opportunity_id,
+                include_ai=True,
+                ranking_profile=risk_budget,
+            )
+            return profile
+
+        try:
+            profile = await asyncio.wait_for(_deep_profile(), timeout=18)
+        except asyncio.TimeoutError:
+            return _fallback_profile_from_candidate(candidate)
+        if profile is None:
+            return _fallback_profile_from_candidate(candidate)
+        return profile
+
+    profile_results = await asyncio.gather(*[_build_profile(candidate) for candidate in candidates[:5]])
+    profiles = [profile for profile in profile_results if profile is not None]
+
+    if not profiles:
+        return err_envelope(
+            "no_viable_pools",
+            "No opportunities survived deep analysis for this request.",
+        )
+
+    profiles.sort(key=_opportunity_score, reverse=True)
+    weights = _weight_ladder(len(profiles), risk_budget)
+    positions = [
+        _build_position(profile, rank=index, weight=weight, usd_amount=usd_amount)
+        for index, (profile, weight) in enumerate(zip(profiles, weights), start=1)
+    ]
+    summary = summarise_positions(positions, usd_amount)
+
+    allocation_payload = AllocationPayload(
+        positions=positions,
+        **summary,
+    )
+    sentinel_matrix_payload = SentinelMatrixPayload(
+        positions=positions,
+        low_count=summary["risk_mix"]["low"],
+        medium_count=summary["risk_mix"]["medium"],
+        high_count=summary["risk_mix"]["high"],
+        weighted_sentinel=summary["weighted_sentinel"],
+    )
+    steps = execution_steps_from_positions(positions, usd_amount)
+    execution_plan_payload = ExecutionPlanPayload(
+        steps=steps,
+        total_gas=total_gas_from_steps(steps),
+        slippage_cap="0.5%",
+        wallets=wallets_summary_from_steps(steps),
+        tx_count=len(steps),
+        requires_signature=True,
+    )
+
+    chain_scope = ", ".join(chains or []) if chains else None
+    trace = [
+        f"Filtered live opportunities to {chain_scope or 'all supported chains'} and ranked them with the production DeFi engine.",
+        f"Deep-analyzed {len(profiles)} finalists with docs, history, dependency, and AI synthesis.",
+        f"Composed a {risk_budget} allocation with weighted Sentinel score {summary['weighted_sentinel']}/100.",
+    ]
+    fallback_count = sum(1 for profile in profiles if str((profile.get("ai_analysis") or {}).get("summary") or "").startswith("The fallback profile kept"))
+    if fallback_count:
+        trace.insert(2, f"{fallback_count} finalist(s) hit the deep-analysis timeout and fell back to deterministic scoring.")
+    if asset_hint:
+        trace.insert(1, f"Detected starting asset context: {asset_hint}.")
+
+    envelope = ok_envelope(
+        data={
+            "total_usd": summary["total_usd"],
+            "blended_apy": summary["blended_apy"],
+            "weighted_sentinel": summary["weighted_sentinel"],
+            "positions": [position.model_dump() for position in positions],
+            "steps": steps,
+            "chain_scope": chain_scope,
+            "market_brief": analysis.get("ai_market_brief"),
+            "analysis_trace": trace,
+        },
+        card_type="allocation",
+        card_payload=allocation_payload.model_dump(),
+    )
+    envelope.extra_cards = [
+        ExtraCard(
+            card_id=str(uuid4()),
+            card_type="sentinel_matrix",
+            payload=sentinel_matrix_payload.model_dump(),
+        ),
+        ExtraCard(
+            card_id=str(uuid4()),
+            card_type="execution_plan",
+            payload=execution_plan_payload.model_dump(),
+        ),
+    ]
+    return envelope
+
+
+async def _allocate_from_defillama(
+    ctx,
+    *,
+    usd_amount: float,
+    risk_budget: str,
+    chains: list[str] | None,
+):
+    defillama = getattr(ctx.services, "defillama", None)
+    if defillama is None:
+        return None
+
+    raw_pools = await defillama.get_pools(min_tvl=50_000_000, min_apy=0.5)
+    requested = {chain.lower() for chain in (chains or [])}
+    candidates = []
+    for pool in raw_pools:
+        if requested and str(pool.get("chain") or "").lower() not in requested:
+            continue
+        candidates.append(_pool_to_candidate(pool))
+
+    positions = compose_allocation(candidates, usd_amount, risk_budget=risk_budget)
+    if not positions:
+        return err_envelope(
+            "no_viable_pools",
+            "No pools passed the fallback TVL, age, and risk filters.",
+        )
+
+    summary = summarise_positions(positions, usd_amount)
+    allocation_payload = AllocationPayload(positions=positions, **summary)
+    sentinel_matrix_payload = SentinelMatrixPayload(
+        positions=positions,
+        low_count=summary["risk_mix"]["low"],
+        medium_count=summary["risk_mix"]["medium"],
+        high_count=summary["risk_mix"]["high"],
+        weighted_sentinel=summary["weighted_sentinel"],
+    )
+    steps = execution_steps_from_positions(positions, usd_amount)
+    execution_plan_payload = ExecutionPlanPayload(
+        steps=steps,
+        total_gas=total_gas_from_steps(steps),
+        slippage_cap="0.5%",
+        wallets=wallets_summary_from_steps(steps),
+        tx_count=len(steps),
+        requires_signature=True,
+    )
+    chain_scope = ", ".join(chains or []) if chains else None
+    envelope = ok_envelope(
+        data={
+            "total_usd": summary["total_usd"],
+            "blended_apy": summary["blended_apy"],
+            "weighted_sentinel": summary["weighted_sentinel"],
+            "positions": [position.model_dump() for position in positions],
+            "steps": steps,
+            "chain_scope": chain_scope,
+            "analysis_trace": [
+                f"Filtered live opportunities to {chain_scope or 'all supported chains'} and ranked them with the fallback DefiLlama allocator.",
+                f"Composed a {risk_budget} allocation with weighted Sentinel score {summary['weighted_sentinel']}/100.",
+            ],
+        },
+        card_type="allocation",
+        card_payload=allocation_payload.model_dump(),
+    )
+    envelope.extra_cards = [
+        ExtraCard(
+            card_id=str(uuid4()),
+            card_type="sentinel_matrix",
+            payload=sentinel_matrix_payload.model_dump(),
+        ),
+        ExtraCard(
+            card_id=str(uuid4()),
+            card_type="execution_plan",
+            payload=execution_plan_payload.model_dump(),
+        ),
+    ]
+    return envelope
+
+
+async def allocate_plan(
+    ctx,
+    *,
+    usd_amount: float,
+    risk_budget: str = "balanced",
+    chains: list[str] | None = None,
+    asset_hint: str | None = None,
+):
+    if usd_amount <= 0:
+        return err_envelope("bad_amount", "usd_amount must be > 0")
+
+    rb = (risk_budget or "balanced").lower()
+    if rb not in {"conservative", "balanced", "aggressive"}:
+        rb = "balanced"
+
+    engine_result = await _allocate_from_engine(
+        ctx,
+        usd_amount=usd_amount,
+        risk_budget=rb,
+        chains=chains,
+        asset_hint=asset_hint,
+    )
+    # If the engine succeeded with real cards, return it. If it emitted
+    # an envelope with ok=False (engine-init ok but the intelligence pipe
+    # had no usable output), fall through to the DefiLlama fallback so we
+    # always give the user a valid allocation.
+    if engine_result is not None and getattr(engine_result, "ok", True):
+        return engine_result
+
+    fallback_result = await _allocate_from_defillama(
+        ctx,
+        usd_amount=usd_amount,
+        risk_budget=rb,
+        chains=chains,
+    )
+    if fallback_result is not None:
+        return fallback_result
+
+    # Both paths failed — surface the engine's original error if we have one.
+    if engine_result is not None:
+        return engine_result
+    return err_envelope(
+        "defi_intelligence_unavailable",
+        "The advanced DeFi intelligence engine is not initialized on this server.",
+    )

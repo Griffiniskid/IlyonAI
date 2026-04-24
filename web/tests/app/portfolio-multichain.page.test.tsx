@@ -23,17 +23,6 @@ vi.mock("@/components/ui/toaster", () => ({
   useToast: () => useToastMock(),
 }));
 
-vi.mock("@/lib/api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/api")>();
-  return {
-    ...actual,
-    getRektIncidents: vi.fn().mockResolvedValue({
-      incidents: [],
-      meta: { cursor: null, freshness: "warm" },
-    }),
-  };
-});
-
 describe("Portfolio multi-chain", () => {
   beforeEach(() => {
     vi.clearAllMocks();

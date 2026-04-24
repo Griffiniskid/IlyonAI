@@ -1,6 +1,7 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { streamAgent } from "@/lib/agent-client";
+import { loadGuestSession, touchGuestSession } from "@/lib/agent-sessions";
 import type { SSEFrame, ThoughtFrame, ToolFrame, CardFrame, FinalFrame } from "@/types/agent";
 
 interface AgentMessage {
@@ -18,6 +19,22 @@ export function useAgentStream(sessionId: string, token: string | null) {
   const [currentSteps, setCurrentSteps] = useState<{ thoughts: ThoughtFrame[]; tools: ToolFrame[]; cards: CardFrame[] }>({
     thoughts: [], tools: [], cards: [],
   });
+
+  useEffect(() => {
+    if (token) {
+      setMessages([]);
+      setCurrentSteps({ thoughts: [], tools: [], cards: [] });
+      return;
+    }
+    const session = loadGuestSession(sessionId);
+    setMessages(session?.messages ?? []);
+    setCurrentSteps({ thoughts: [], tools: [], cards: [] });
+  }, [sessionId, token]);
+
+  useEffect(() => {
+    if (token || isStreaming) return;
+    touchGuestSession(sessionId, messages);
+  }, [isStreaming, messages, sessionId, token]);
 
   const send = useCallback(async (message: string, wallet?: string) => {
     setIsStreaming(true);
@@ -43,10 +60,18 @@ export function useAgentStream(sessionId: string, token: string | null) {
           const f = frame as FinalFrame;
           finalContent = f.content;
           elapsedMs = f.elapsed_ms;
+        } else {
+          const anyFrame = frame as unknown as { kind?: string; error?: string };
+          if (anyFrame.kind === "error") {
+            finalContent = `⚠️ Agent error: ${anyFrame.error ?? "unknown"}`;
+          }
         }
       }
     } catch (e) {
-      finalContent = `Error: ${e instanceof Error ? e.message : "stream failed"}`;
+      finalContent = `⚠️ ${e instanceof Error ? e.message : "Connection lost. Please retry."}`;
+    }
+    if (!finalContent) {
+      finalContent = "⚠️ The agent closed the stream without a final answer. Please retry.";
     }
 
     setMessages(prev => [...prev, {

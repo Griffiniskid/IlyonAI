@@ -5,35 +5,37 @@ from aiohttp.test_utils import TestServer, TestClient
 from src.api.routes.wallet_intel import setup_wallet_intel_routes
 
 
-MOCK_TRANSACTIONS = [
-    {
-        "wallet_address": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9",
-        "amount_usd": 100000,
-        "type": "buy",
-        "token_symbol": "SOL",
-    },
-    {
-        "wallet_address": "SomeOtherWallet",
-        "amount_usd": 50000,
-        "type": "sell",
-        "token_symbol": "USDC",
-    },
-]
-
-
 @pytest.mark.asyncio
 async def test_profile_returns_wallet_and_label():
     """Profile endpoint should return wallet address, label, and recent_transactions."""
-    mock_db = AsyncMock()
-    mock_db.get_whale_transactions_for_wallet = AsyncMock(return_value=MOCK_TRANSACTIONS)
+    mock_transactions = [
+        {
+            "wallet_address": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9",
+            "amount_usd": 100000,
+            "type": "buy",
+            "token_symbol": "SOL",
+        },
+        {
+            "wallet_address": "SomeOtherWallet",
+            "amount_usd": 50000,
+            "type": "sell",
+            "token_symbol": "USDC",
+        },
+    ]
 
     app = web.Application()
     setup_wallet_intel_routes(app)
 
-    with patch("src.storage.database.get_database", return_value=mock_db):
+    with patch("src.api.routes.wallet_intel.SolanaClient") as MockClient:
+        instance = AsyncMock()
+        instance.get_whale_transactions = AsyncMock(return_value=mock_transactions)
+        instance.close = AsyncMock()
+        MockClient.return_value = instance
+
         server = TestServer(app)
         client = TestClient(server)
         await server.start_server()
+
         try:
             resp = await client.get(
                 "/api/v1/wallets/5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9/profile"
@@ -44,6 +46,9 @@ async def test_profile_returns_wallet_and_label():
             data = body["data"]
             assert data["wallet"] == "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9"
             assert data["label"] == "Alameda"
+            assert data["volume_usd"] == 100000
+            assert data["transaction_count"] == 1
+            assert len(data["recent_transactions"]) == 1
         finally:
             await client.close()
             await server.close()
@@ -52,16 +57,19 @@ async def test_profile_returns_wallet_and_label():
 @pytest.mark.asyncio
 async def test_profile_unknown_wallet_has_no_label():
     """Profile for an unknown wallet should return null label and still succeed."""
-    mock_db = AsyncMock()
-    mock_db.get_whale_transactions_for_wallet = AsyncMock(return_value=[])
-
     app = web.Application()
     setup_wallet_intel_routes(app)
 
-    with patch("src.storage.database.get_database", return_value=mock_db):
+    with patch("src.api.routes.wallet_intel.SolanaClient") as MockClient:
+        instance = AsyncMock()
+        instance.get_whale_transactions = AsyncMock(return_value=[])
+        instance.close = AsyncMock()
+        MockClient.return_value = instance
+
         server = TestServer(app)
         client = TestClient(server)
         await server.start_server()
+
         try:
             resp = await client.get("/api/v1/wallets/UnknownAddr123/profile")
             assert resp.status == 200
@@ -70,6 +78,9 @@ async def test_profile_unknown_wallet_has_no_label():
             data = body["data"]
             assert data["wallet"] == "UnknownAddr123"
             assert data["label"] is None
+            assert data["volume_usd"] == 0.0
+            assert data["transaction_count"] == 0
+            assert data["recent_transactions"] == []
         finally:
             await client.close()
             await server.close()
@@ -77,7 +88,7 @@ async def test_profile_unknown_wallet_has_no_label():
 
 @pytest.mark.asyncio
 async def test_forensics_degraded_when_engine_unavailable():
-    """Forensics should return 503 when the engine throws."""
+    """Forensics should return a degraded response when the engine throws."""
     app = web.Application()
     setup_wallet_intel_routes(app)
 
@@ -88,9 +99,17 @@ async def test_forensics_degraded_when_engine_unavailable():
         server = TestServer(app)
         client = TestClient(server)
         await server.start_server()
+
         try:
             resp = await client.get("/api/v1/wallets/SomeWallet/forensics")
-            assert resp.status == 503
+            assert resp.status == 200
+            body = await resp.json()
+            assert body["status"] == "ok"
+            data = body["data"]
+            assert data["risk_level"] == "UNKNOWN"
+            assert data["reputation_score"] == 0
+            assert data["patterns_detected"] == []
+            assert data["evidence_summary"] == "Forensics analysis unavailable"
         finally:
             await client.close()
             await server.close()
@@ -125,6 +144,7 @@ async def test_forensics_returns_analysis():
         server = TestServer(app)
         client = TestClient(server)
         await server.start_server()
+
         try:
             resp = await client.get("/api/v1/wallets/SuspiciousAddr/forensics")
             assert resp.status == 200

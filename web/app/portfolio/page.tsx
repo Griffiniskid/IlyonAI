@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -22,7 +22,7 @@ import {
   useAuth,
   usePortfolioChainMatrix,
 } from "@/lib/hooks";
-import { APIError, getRektIncidents } from "@/lib/api";
+import { APIError } from "@/lib/api";
 import { GlassCard } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,7 +45,6 @@ import {
   isValidSolanaAddress,
   cn,
 } from "@/lib/utils";
-import type { RektIncident } from "@/types";
 
 export default function PortfolioPage() {
   const { connected, publicKey } = useWallet();
@@ -53,44 +52,14 @@ export default function PortfolioPage() {
   const [inputError, setInputError] = useState<string | null>(null);
   const [trackedAddress, setTrackedAddress] = useState<string | null>(null);
   const { addToast } = useToast();
-  const [rektIncidents, setRektIncidents] = useState<RektIncident[]>([]);
 
+  const connectedAddress = publicKey?.toBase58() || null;
   const { data: portfolio, isLoading: portfolioLoading, refetch } = useWalletPortfolio(
-    publicKey?.toBase58() || null
+    connectedAddress
   );
   const { data: chainMatrix } = usePortfolioChainMatrix();
   const { data: trackedPortfolio, isLoading: trackedLoading } = useWalletPortfolio(trackedAddress);
   const trackWallet = useTrackWallet();
-
-  useEffect(() => {
-    if (!portfolio?.tokens?.length) {
-      setRektIncidents([]);
-      return;
-    }
-
-    const search = portfolio.tokens.slice(0, 3).map((token) => token.symbol).filter(Boolean).join(" ");
-    if (!search) {
-      setRektIncidents([]);
-      return;
-    }
-
-    let active = true;
-    getRektIncidents({ search, limit: 3 })
-      .then((result) => {
-        if (active) {
-          setRektIncidents(result.incidents);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setRektIncidents([]);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [portfolio?.tokens]);
 
   const handleAddWallet = () => {
     setInputError(null);
@@ -154,6 +123,15 @@ export default function PortfolioPage() {
           <p className="text-muted-foreground">
             Track your multi-chain holdings and their security status
           </p>
+          {connectedAddress && (
+            <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5">
+              <Wallet className="h-4 w-4 text-emerald-400" />
+              <span className="font-mono text-sm text-emerald-300">
+                {truncateAddress(connectedAddress, 6)}
+              </span>
+              <Badge variant="safe" className="ml-1">Connected</Badge>
+            </div>
+          )}
         </div>
         <Button
           variant="outline"
@@ -243,17 +221,6 @@ export default function PortfolioPage() {
         {inputError && (
           <p className="text-red-400 text-sm mt-2">{inputError}</p>
         )}
-      </GlassCard>
-
-      <GlassCard className="mb-8">
-        <h3 className="font-semibold">Risk Context: Hacks & Exploits</h3>
-        <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-          {rektIncidents.length === 0 ? (
-            <li>No related incidents found.</li>
-          ) : (
-            rektIncidents.map((incident) => <li key={incident.id}>{incident.name}</li>)
-          )}
-        </ul>
       </GlassCard>
 
       <section id="exposures">

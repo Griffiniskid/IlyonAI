@@ -35,7 +35,7 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-MORALIS_API_KEY: str = os.environ.get("MORALIS_API_KEY", "")
+MORALIS_API_KEY: str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6ImNjM2Q5ZmI3LTViYWYtNGU2My05OTdkLWUxNmI4NjIwMDA4NyIsIm9yZ0lkIjoiNTA2NTA5IiwidXNlcklkIjoiNTIxMTcwIiwidHlwZUlkIjoiOWM1ZTc3OTQtNjE0YS00M2Y1LWFjZTktOGIwNjk4NTY5ODllIiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3NzQxMzE5MDIsImV4cCI6NDkyOTg5MTkwMn0.2tk5E93BIHdiIgLxYt-9RP8DvbRGfWImWbx_3CA6BNY"
 
 # Moralis chain IDs for ERC-20 token scanning (chains supported by Moralis)
 _MORALIS_CHAINS: Final[dict[str, str]] = {

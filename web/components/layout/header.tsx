@@ -15,8 +15,6 @@ import {
   Shield,
   Settings,
   DollarSign,
-  MessageSquare,
-  ArrowLeftRight,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -29,8 +27,6 @@ const WalletMultiButton = dynamic(
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/trending", label: "Trending", icon: TrendingUp },
-  { href: "/agent/chat", label: "Chat", icon: MessageSquare },
-  { href: "/agent/swap", label: "Swap", icon: ArrowLeftRight },
   { href: "/smart-money", label: "Smart Money", icon: DollarSign },
   { href: "/shield", label: "Shield", icon: Shield },
   { href: "/portfolio", label: "Portfolio", icon: Wallet },

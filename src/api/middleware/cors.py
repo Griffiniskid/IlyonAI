@@ -10,16 +10,6 @@ from aiohttp.web import middleware
 from src.config import settings
 
 
-def _is_allowed_extension_origin(origin: str) -> bool:
-    if not settings.FEATURE_CHROME_EXT or not origin:
-        return False
-    allowed = {x.strip() for x in settings.ALLOWED_EXTENSION_IDS.split(",") if x.strip()}
-    for scheme in ("chrome-extension://", "moz-extension://"):
-        if origin.startswith(scheme):
-            return origin.removeprefix(scheme) in allowed
-    return False
-
-
 # Allowed headers for all routes
 ALLOWED_HEADERS = [
     "Content-Type",
@@ -42,7 +32,6 @@ def get_cors_origin(request: web.Request) -> str:
     Get appropriate CORS origin based on request path.
 
     Actions/Blinks routes require * for Twitter unfurling.
-    Extension origins are allowed behind FEATURE_CHROME_EXT flag.
     Other routes use configured origins.
     """
     path = request.path
@@ -53,12 +42,8 @@ def get_cors_origin(request: web.Request) -> str:
             or path.startswith('/.well-known/')):
         return "*"
 
-    # Extension origin check (chrome-extension://, moz-extension://)
-    request_origin = request.headers.get('Origin', '')
-    if _is_allowed_extension_origin(request_origin):
-        return request_origin
-
     # For other routes, check against configured origins
+    request_origin = request.headers.get('Origin', '')
     allowed_origins = settings.get_cors_origins()
 
     # If * is in allowed origins, allow all

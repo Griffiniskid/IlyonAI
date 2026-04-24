@@ -17,7 +17,7 @@ class FakeServices:
 async def test_all_tools_register():
     services = FakeServices()
     tools = register_all_tools(services=services, user_id=1, wallet="0xabc")
-    assert len(tools) == 14
+    assert len(tools) == 15
     names = {t.name for t in tools}
     expected = {
         "get_wallet_balance",
@@ -34,6 +34,7 @@ async def test_all_tools_register():
         "build_deposit_lp_tx",
         "build_bridge_tx",
         "build_transfer_tx",
+        "allocate_plan",
     }
     assert names == expected
 

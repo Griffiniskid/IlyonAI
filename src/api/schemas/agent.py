@@ -36,24 +36,69 @@ class _CardPayloadBase(_Strict):
     shield: Optional[ShieldBlock] = None
 
 
+ChainTone = Literal["eth", "sol", "arb", "mainnet", "base", "polygon", "bsc", "op", "avax"]
+RiskLevelLower = Literal["low", "medium", "high"]
+StrategyFit = Literal["conservative", "balanced", "aggressive"]
+WalletKind = Literal["MetaMask", "Phantom", "WalletConnect"]
+
+
 class AllocationPosition(_Strict):
     rank: int
     protocol: str
     asset: str
-    chain: str
+    chain: ChainTone
     apy: str
-    weight: int
+    sentinel: int = Field(ge=0, le=100)
+    risk: RiskLevelLower
+    fit: StrategyFit
+    weight: int = Field(ge=0, le=100)
     usd: str
+    tvl: str
     router: str
-    sentinel: Optional[SentinelBlock] = None
-    shield: Optional[ShieldBlock] = None
+    safety: int = Field(ge=0, le=100)
+    durability: int = Field(ge=0, le=100)
+    exit: int = Field(ge=0, le=100)
+    confidence: int = Field(ge=0, le=100)
+    flags: list[str] = Field(default_factory=list)
 
 
 class AllocationPayload(_CardPayloadBase):
     positions: list[AllocationPosition]
     total_usd: str
-    weighted_sentinel: int
+    blended_apy: str
+    chains: int
+    weighted_sentinel: int = Field(ge=0, le=100)
     risk_mix: dict[str, int]
+    combined_tvl: str
+
+
+class SentinelMatrixPayload(_CardPayloadBase):
+    positions: list[AllocationPosition]
+    low_count: int
+    medium_count: int
+    high_count: int
+    weighted_sentinel: int = Field(ge=0, le=100)
+
+
+class ExecutionStep(_Strict):
+    index: int
+    verb: str
+    amount: str
+    asset: str
+    target: str
+    chain: ChainTone
+    router: str
+    wallet: WalletKind
+    gas: str
+
+
+class ExecutionPlanPayload(_CardPayloadBase):
+    steps: list[ExecutionStep]
+    total_gas: str
+    slippage_cap: str
+    wallets: str
+    tx_count: int
+    requires_signature: bool = True
 
 
 class SwapQuotePayload(_CardPayloadBase):
@@ -136,6 +181,16 @@ class AllocationCard(_CardBase):
     payload: AllocationPayload
 
 
+class SentinelMatrixCard(_CardBase):
+    card_type: Literal["sentinel_matrix"]
+    payload: SentinelMatrixPayload
+
+
+class ExecutionPlanCard(_CardBase):
+    card_type: Literal["execution_plan"]
+    payload: ExecutionPlanPayload
+
+
 class SwapQuoteCard(_CardBase):
     card_type: Literal["swap_quote"]
     payload: SwapQuotePayload
@@ -188,7 +243,8 @@ class PairListCard(_CardBase):
 
 _CardUnion = Annotated[
     Union[
-        AllocationCard, SwapQuoteCard, PoolCard, TokenCard,
+        AllocationCard, SentinelMatrixCard, ExecutionPlanCard,
+        SwapQuoteCard, PoolCard, TokenCard,
         PositionCard, PlanCard, BalanceCard, BridgeCard,
         StakeCard, MarketOverviewCard, PairListCard,
     ],
@@ -210,7 +266,8 @@ class AgentCard(_Strict):
 
 
 CardType = Literal[
-    "allocation", "swap_quote", "pool", "token", "position", "plan",
+    "allocation", "sentinel_matrix", "execution_plan",
+    "swap_quote", "pool", "token", "position", "plan",
     "balance", "bridge", "stake", "market_overview", "pair_list",
 ]
 
@@ -218,6 +275,12 @@ CardType = Literal[
 class ToolError(_Strict):
     code: str
     message: str
+
+
+class ExtraCard(_Strict):
+    card_id: str
+    card_type: CardType
+    payload: dict
 
 
 class ToolEnvelope(_Strict):
@@ -228,6 +291,7 @@ class ToolEnvelope(_Strict):
     card_type: Optional[CardType] = None
     card_id: str
     card_payload: Optional[dict] = None
+    extra_cards: list[ExtraCard] = Field(default_factory=list)
     error: Optional[ToolError] = None
 
     def model_post_init(self, __context: Any) -> None:

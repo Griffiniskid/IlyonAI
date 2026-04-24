@@ -15,6 +15,7 @@ from .stake_build import build_stake_tx
 from .lp_build import build_deposit_lp_tx
 from .bridge_build import build_bridge_tx
 from .transfer_build import build_transfer_tx
+from .allocate_plan import allocate_plan
 
 _TOOL_REGISTRY = {
     "get_wallet_balance": (get_wallet_balance, "Get multi-chain wallet balance."),
@@ -58,6 +59,18 @@ _TOOL_REGISTRY = {
         build_transfer_tx,
         "Build an unsigned native transfer.",
     ),
+    "allocate_plan": (
+        allocate_plan,
+        (
+            "ONE-SHOT allocation planner. Call exactly once when the user asks "
+            "to 'allocate', 'distribute', 'diversify', or 'deploy' a specific "
+            "USD amount across yield / staking. Args: usd_amount (float, required), "
+            "risk_budget ('conservative'|'balanced'|'aggressive', default 'balanced'), "
+            "chains (optional list). Returns ranked top-5 positions, Sentinel "
+            "matrix, and an execution plan — in one call. Do NOT follow up with "
+            "other tools for an allocation intent."
+        ),
+    ),
 }
 
 
@@ -70,9 +83,46 @@ def register_all_tools(services, user_id=0, wallet=None):
             """Create a wrapper that curries ctx but preserves tool_fn's signature."""
 
             async def _run(*args, **kwargs):
-                return await tool_fn(_ctx, *args, **kwargs)
+                # Debug logging
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"TOOL CALL: {tool_fn.__name__} | args: {args} | kwargs: {kwargs}")
+                
+                # LangChain ReAct agent may pass input as a string containing JSON
+                # or as kwargs. Handle both cases.
+                if args and len(args) == 1:
+                    arg = args[0]
+                    if isinstance(arg, dict):
+                        return await tool_fn(_ctx, **arg)
+                    elif isinstance(arg, str):
+                        # Try to parse JSON from the string
+                        try:
+                            import json
+                            # Extract JSON object from string if embedded
+                            if '{' in arg and '}' in arg:
+                                start = arg.find('{')
+                                end = arg.rfind('}') + 1
+                                parsed = json.loads(arg[start:end])
+                                if isinstance(parsed, dict):
+                                    return await tool_fn(_ctx, **parsed)
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+                        # If can't parse, pass as 'input' parameter
+                        return await tool_fn(_ctx, input=arg)
+                elif args:
+                    return await tool_fn(_ctx, *args, **kwargs)
+                return await tool_fn(_ctx, **kwargs)
 
             _run.__signature__ = _strip_ctx_param(tool_fn)
+            _run.__name__ = tool_fn.__name__
+            _run.__doc__ = tool_fn.__doc__
+            # langchain's `create_schema_from_function` calls
+            # typing.get_type_hints() which reads __annotations__, not the
+            # synthetic __signature__ above. Copy annotations from the real
+            # tool function so required kwargs (e.g. usd_amount) resolve.
+            annotations = dict(getattr(tool_fn, "__annotations__", {}))
+            annotations.pop("ctx", None)
+            _run.__annotations__ = annotations
             return _run
 
         tools.append(

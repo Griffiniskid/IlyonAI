@@ -51,32 +51,58 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
         message = normalize_short_swap_query(body.get("message", ""))
 
         from src.storage.database import get_database
-        from src.agent.runtime import run_turn
+        from src.agent.runtime import run_turn, run_ephemeral_turn
         from src.ai.router import AIRouter
         from src.agent.tools import register_all_tools
-        from src.agent.context import ToolContext
+        from sqlalchemy import text
+        from sqlalchemy.ext.asyncio import AsyncSession
 
         db = await get_database()
         router = AIRouter()
-        ctx = ToolContext(wallet=wallet, services={})
-        tools = register_all_tools(ctx)
-
-        async for chunk in run_turn(
-            db=db,
-            router=router,
-            tools=tools,
-            chat_id=session_id or str(uuid.uuid4()),
-            user_id=user_id,
-            message=message,
-            wallet=wallet,
-        ):
-            await response.write(chunk)
+        
+        # Initialize agent services with real data clients
+        from src.agent.services import get_agent_services
+        agent_services = await get_agent_services()
+        services_ns = agent_services.to_namespace()
+        
+        # For guest/unauthenticated users, use ephemeral mode (no persistence)
+        # For authenticated users, use persistent mode
+        if not wallet or user_id == 0:
+            # Guest mode - no DB persistence, just streaming response
+            tools = register_all_tools(services_ns, user_id=0, wallet=wallet or "guest")
+            
+            async for chunk in run_ephemeral_turn(
+                router=router,
+                tools=tools,
+                message=message,
+                wallet=wallet,
+            ):
+                await response.write(chunk)
+        else:
+            # Authenticated mode with persistence
+            tools = register_all_tools(services_ns, user_id=user_id, wallet=wallet)
+            
+            async for chunk in run_turn(
+                db=db,
+                router=router,
+                tools=tools,
+                chat_id=session_id or str(uuid.uuid4()),
+                user_id=user_id,
+                message=message,
+                wallet=wallet,
+            ):
+                await response.write(chunk)
 
     except Exception as e:
         import json
+        import traceback
+        
+        error_msg = str(e)
+        traceback_str = traceback.format_exc()
+        print(f"Agent error: {error_msg}\n{traceback_str}")
 
         await response.write(
-            f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n".encode()
+            f"event: error\ndata: {json.dumps({'error': error_msg})}\n\n".encode()
         )
 
     await response.write_eof()

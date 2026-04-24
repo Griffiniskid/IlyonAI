@@ -314,8 +314,8 @@ async def start_sentinel(app):
     if app is not None and ALERT_STORE_KEY in app and not _alert_bridge_registered:
         orchestrator = create_alert_orchestrator(store=app[ALERT_STORE_KEY])
 
-        async def _bridge_handler(alert: SentinelAlert) -> None:
-            await orchestrator.ingest(_to_orchestrator_event(alert))
+        def _bridge_handler(alert: SentinelAlert) -> None:
+            orchestrator.ingest(_to_orchestrator_event(alert))
 
         sentinel.add_alert_handler(_bridge_handler)
         _alert_bridge_registered = True

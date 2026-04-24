@@ -18,24 +18,72 @@ export interface ShieldBlock {
   reasons: string[];
 }
 
+export type ChainTone = "eth" | "sol" | "arb" | "mainnet" | "base" | "polygon" | "bsc" | "op" | "avax";
+export type RiskLevelLower = "low" | "medium" | "high";
+export type StrategyFit = "conservative" | "balanced" | "aggressive";
+export type WalletKind = "MetaMask" | "Phantom" | "WalletConnect";
+
 export interface AllocationPosition {
   rank: number;
   protocol: string;
   asset: string;
-  chain: string;
+  chain: ChainTone;
   apy: string;
+  sentinel: number;
+  risk: RiskLevelLower;
+  fit: StrategyFit;
   weight: number;
   usd: string;
+  tvl: string;
   router: string;
-  sentinel?: SentinelBlock | null;
-  shield?: ShieldBlock | null;
+  safety: number;
+  durability: number;
+  exit: number;
+  confidence: number;
+  flags: string[];
 }
 
 export interface AllocationPayload {
   positions: AllocationPosition[];
   total_usd: string;
+  blended_apy: string;
+  chains: number;
   weighted_sentinel: number;
   risk_mix: Record<string, number>;
+  combined_tvl: string;
+  sentinel?: SentinelBlock | null;
+  shield?: ShieldBlock | null;
+}
+
+export interface SentinelMatrixPayload {
+  positions: AllocationPosition[];
+  low_count: number;
+  medium_count: number;
+  high_count: number;
+  weighted_sentinel: number;
+  sentinel?: SentinelBlock | null;
+  shield?: ShieldBlock | null;
+}
+
+export interface ExecutionStep {
+  index: number;
+  verb: string;
+  amount: string;
+  asset: string;
+  target: string;
+  chain: ChainTone;
+  router: string;
+  wallet: WalletKind;
+  gas: string;
+}
+
+export interface ExecutionPlanPayload {
+  steps: ExecutionStep[];
+  total_gas: string;
+  slippage_cap: string;
+  wallets: string;
+  tx_count: number;
+  requires_signature: boolean;
   sentinel?: SentinelBlock | null;
   shield?: ShieldBlock | null;
 }
@@ -132,10 +180,13 @@ export interface PairListPayload {
 }
 
 export type CardType =
-  | "allocation" | "swap_quote" | "pool" | "token" | "position"
+  | "allocation" | "sentinel_matrix" | "execution_plan"
+  | "swap_quote" | "pool" | "token" | "position"
   | "plan" | "balance" | "bridge" | "stake" | "market_overview" | "pair_list";
 
 export interface AllocationCard { card_id: string; card_type: "allocation"; payload: AllocationPayload; }
+export interface SentinelMatrixCard { card_id: string; card_type: "sentinel_matrix"; payload: SentinelMatrixPayload; }
+export interface ExecutionPlanCard { card_id: string; card_type: "execution_plan"; payload: ExecutionPlanPayload; }
 export interface SwapQuoteCard { card_id: string; card_type: "swap_quote"; payload: SwapQuotePayload; }
 export interface PoolCard { card_id: string; card_type: "pool"; payload: PoolPayload; }
 export interface TokenCard { card_id: string; card_type: "token"; payload: TokenPayload; }

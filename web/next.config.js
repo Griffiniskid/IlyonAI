@@ -35,10 +35,11 @@ const nextConfig = {
     NEXT_PUBLIC_SOLANA_NETWORK: process.env.NEXT_PUBLIC_SOLANA_NETWORK || "mainnet-beta",
   },
   async rewrites() {
+    const apiTarget = process.env.API_REWRITE_TARGET || "http://localhost:18090";
     return [
       {
         source: "/api/:path*",
-        destination: `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/:path*`,
+        destination: `${apiTarget}/api/:path*`,
       },
     ];
   },

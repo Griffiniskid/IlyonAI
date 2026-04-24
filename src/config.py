@@ -256,8 +256,8 @@ class Settings(BaseSettings):
     # AGENT PLATFORM FEATURE FLAGS
     # ═══════════════════════════════════════════════════════════════════════════
 
-    FEATURE_AGENT_V2: bool = Field(False, env="FEATURE_AGENT_V2")
-    FEATURE_TOKENS_BAR: bool = Field(False, env="FEATURE_TOKENS_BAR")
+    FEATURE_AGENT_V2: bool = Field(True, env="FEATURE_AGENT_V2")
+    FEATURE_TOKENS_BAR: bool = Field(True, env="FEATURE_TOKENS_BAR")
     FEATURE_CHROME_EXT: bool = Field(False, env="FEATURE_CHROME_EXT")
     FEATURE_AFFILIATE_HOOK: bool = Field(False, env="FEATURE_AFFILIATE_HOOK")
     FEATURE_GREENFIELD_MEMORY: bool = Field(False, env="FEATURE_GREENFIELD_MEMORY")
