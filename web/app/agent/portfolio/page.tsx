@@ -1,5 +1,5 @@
 import MainAppClient from "@/components/agent-app/MainAppClient";
 
-export default function AgentChatPage() {
+export default function AgentPortfolioPage() {
   return <MainAppClient />;
 }
