@@ -3961,9 +3961,9 @@ export default function MainApp() {
   }, []);
 
   const fetchChatList = (token: string) => {
-    fetch(`${API}/chats`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.ok ? r.json() : [])
-      .then(data => setChatList(data))
+    fetch(`${API}/agent/sessions`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : { sessions: [] })
+      .then(data => setChatList(data.sessions || []))
       .catch(() => {});
   };
 
@@ -4047,7 +4047,7 @@ export default function MainApp() {
     setShowChatList(false);
     // Load chat messages
     try {
-      const res = await fetch(`${API}/chats/${chatId}`, { headers: { Authorization: `Bearer ${authUser.token}` } });
+      const res = await fetch(`${API}/agent/sessions/${chatId}`, { headers: { Authorization: `Bearer ${authUser.token}` } });
       if (res.ok) {
         const data = await res.json();
         const loaded: Message[] = data.messages.map((m: { id: number; role: string; content: string; created_at: string }) => ({
@@ -4097,7 +4097,7 @@ export default function MainApp() {
 
   const handleDeleteChat = async (chatId: string) => {
     if (!authUser) return;
-    await fetch(`${API}/chats/${chatId}`, { method: "DELETE", headers: { Authorization: `Bearer ${authUser.token}` } }).catch(() => {});
+    await fetch(`${API}/agent/sessions/${chatId}`, { method: "DELETE", headers: { Authorization: `Bearer ${authUser.token}` } }).catch(() => {});
     setChatList(prev => prev.filter(c => c.id !== chatId));
     if (currentChatId === chatId) {
       setCurrentChatId(null);

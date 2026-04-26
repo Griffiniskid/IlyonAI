@@ -467,6 +467,21 @@ async def auth_middleware(request: web.Request, handler):
             if session:
                 request['user_wallet'] = session['wallet']
                 request['auth_scopes'] = session.get('scopes', [])
+                # Resolve user_id from wallet address for DB operations
+                try:
+                    from src.storage.database import get_database
+                    from sqlalchemy import text
+                    db = await get_database()
+                    async with db.engine.connect() as conn:
+                        r = await conn.execute(
+                            text("SELECT id FROM web_users WHERE wallet_address = :wa"),
+                            {"wa": session['wallet']},
+                        )
+                        row = r.first()
+                        if row:
+                            request['user_id'] = row[0]
+                except Exception:
+                    pass
         except Exception as e:
             logger.debug(f"Auth middleware error: {e}")
 

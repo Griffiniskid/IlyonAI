@@ -34,6 +34,23 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
     wallet = request.get("user_wallet") or body.get("wallet")
     user_id = request.get("user_id", 0)
 
+    # Resolve user_id from wallet if not already set by auth middleware
+    if user_id == 0 and wallet:
+        try:
+            from src.storage.database import get_database
+            from sqlalchemy import text
+            db = await get_database()
+            async with db.engine.connect() as conn:
+                r = await conn.execute(
+                    text("SELECT id FROM web_users WHERE wallet_address = :wa"),
+                    {"wa": wallet},
+                )
+                row = r.first()
+                if row:
+                    user_id = row[0]
+        except Exception:
+            pass
+
     if not agent_gap.allow(user_id, session_id):
         return web.json_response({"error": "rate_limited"}, status=429)
 
