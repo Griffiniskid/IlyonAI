@@ -239,7 +239,7 @@ export default function HomePage() {
       </section>
 
       {/* Integrations / Partners Section */}
-      <section className="relative py-24 px-4 border-t border-white/5">
+      <section className="relative py-24 px-4 border-t border-white/5 overflow-hidden">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-16">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 mb-6">
@@ -251,64 +251,135 @@ export default function HomePage() {
               <span className="text-gradient"> Protocols</span>
             </h2>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Ilyon AI integrates directly with 15+ industry-leading protocols across DeFi, data, and AI
+              Seamlessly integrated with 15+ industry-leading protocols
             </p>
           </div>
+        </div>
 
-          {(() => {
-            const integrations = [
-              // DEX / Aggregators
-              { name: "Jupiter", category: "DEX Aggregator", desc: "Solana", logo: "https://jup.ag/static/media/jupiter-logo.2d2d1a3f.svg" },
-              { name: "Enso", category: "EVM Bundler", desc: "Multi-chain", logo: "https://www.enso.build/assets/images/enso-logo.png" },
-              { name: "1inch", category: "DEX Aggregator", desc: "EVM", logo: "https://app.1inch.io/assets/images/1inch-logo.svg" },
-              { name: "deBridge", category: "Cross-Chain", desc: "Bridge", logo: "https://debridge.finance/images/logo.svg" },
-              // Data / Analytics
-              { name: "DefiLlama", category: "Analytics", desc: "DeFi Data", logo: "https://defillama.com/logo.png" },
-              { name: "CoinGecko", category: "Price Data", desc: "Market Data", logo: "https://static.coingecko.com/s/coingecko-logo-8901d2d8ebf2a4bdf88379cc404d7d0e.svg" },
-              { name: "Binance", category: "Price Data", desc: "Exchange", logo: "https://public.bnbstatic.com/image/pgc/202302/f5f822d3-7e2f-4d53-8c0c-fd5b5f2e0e2c.png" },
-              { name: "Moralis", category: "Web3 API", desc: "Multi-chain", logo: "https://moralis.io/wp-content/uploads/2022/12/Moralis-Logo-Light.svg" },
-              { name: "Helius", category: "Solana RPC", desc: "Infrastructure", logo: "https://helius.xyz/_next/image?url=%2Fassets%2Fhelius-icon.png&w=64&q=75" },
-              { name: "DexScreener", category: "Analytics", desc: "DEX Tracking", logo: "https://docs.dexscreener.com/img/logo.svg" },
-              // AI
-              { name: "OpenRouter", category: "AI Router", desc: "LLM Gateway", logo: "https://openrouter.ai/favicon.ico" },
-              { name: "Gemini", category: "AI Model", desc: "Google", logo: "https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg" },
-              { name: "Grok", category: "AI Model", desc: "xAI", logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/Grok_logo.png/640px-Grok_logo.png" },
-              // Wallets
-              { name: "Phantom", category: "Wallet", desc: "Solana", logo: "https://phantom.app/img/phantom-logo.svg" },
-              { name: "MetaMask", category: "Wallet", desc: "EVM", logo: "https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg" },
-            ];
-
-            const categories = [...new Set(integrations.map(i => i.category))];
-
-            return categories.map(cat => (
-              <div key={cat} className="mb-12">
-                <div className="text-center mb-6">
-                  <span className="text-xs font-bold tracking-widest uppercase text-emerald-400/80 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-4 py-1.5">
-                    {cat}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                  {integrations.filter(i => i.category === cat).map(item => (
+        {/* Infinite Scroll Marquee */}
+        <div className="relative">
+          {/* Gradient masks for fade effect */}
+          <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none" />
+          <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none" />
+          
+          {/* Row 1 - Scrolls Left */}
+          <div className="flex overflow-hidden mb-6">
+            <div className="flex animate-marquee-left gap-6 py-2">
+              {[...Array(2)].map((_, dupIndex) => (
+                <React.Fragment key={dupIndex}>
+                  {[
+                    { name: "Jupiter", logo: "/logos/jupiter.svg", bg: "#11131F" },
+                    { name: "Enso", logo: "/logos/enso.svg", bg: "#1a1a1a" },
+                    { name: "1inch", logo: "/logos/1inch.svg", bg: "#08272A" },
+                    { name: "deBridge", logo: "/logos/debridge.svg", bg: "#0a0a0a" },
+                    { name: "DefiLlama", logo: "/logos/defillama.svg", bg: "#1a1a1a" },
+                    { name: "CoinGecko", logo: "/logos/coingecko.svg", bg: "#1a1a1a" },
+                    { name: "Binance", logo: "/logos/binance.svg", bg: "#0B0E11" },
+                    { name: "Moralis", logo: "/logos/moralis.svg", bg: "#1a1a1a" },
+                  ].map((item) => (
                     <div
-                      key={item.name}
-                      className="group relative bg-card/40 border border-white/10 rounded-xl p-6 text-center hover:border-emerald-500/30 hover:bg-card/60 transition-all duration-300 hover:-translate-y-1"
+                      key={`${dupIndex}-${item.name}`}
+                      className="flex-shrink-0 w-48 h-24 rounded-xl border border-white/10 bg-white/[0.02] backdrop-blur-sm flex items-center justify-center gap-3 px-4 hover:border-emerald-500/30 hover:bg-white/[0.04] transition-all duration-300 group"
                     >
-                      <div className="w-12 h-12 mx-auto mb-3 rounded-lg bg-white/5 flex items-center justify-center overflow-hidden">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden" style={{ backgroundColor: item.bg }}>
                         <img
                           src={item.logo}
                           alt={item.name}
-                          className="w-8 h-8 object-contain opacity-80 group-hover:opacity-100 transition-opacity"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          className="w-7 h-7 object-contain opacity-70 group-hover:opacity-100 transition-opacity"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            target.parentElement!.innerHTML = `<span class="text-lg font-bold text-emerald-400">${item.name[0]}</span>`;
+                          }}
                         />
                       </div>
-                      <div className="text-sm font-semibold text-white/90 mb-1">{item.name}</div>
-                      <div className="text-xs text-muted-foreground">{item.desc}</div>
+                      <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">{item.name}</span>
                     </div>
                   ))}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+
+          {/* Row 2 - Scrolls Right */}
+          <div className="flex overflow-hidden">
+            <div className="flex animate-marquee-right gap-6 py-2">
+              {[...Array(2)].map((_, dupIndex) => (
+                <React.Fragment key={dupIndex}>
+                  {[
+                    { name: "Helius", logo: "/logos/helius.svg", bg: "#0a0a0a" },
+                    { name: "DexScreener", logo: "/logos/dexscreener.svg", bg: "#0f172a" },
+                    { name: "OpenRouter", logo: "/logos/openrouter.svg", bg: "#1a1a1a" },
+                    { name: "Gemini", logo: "/logos/gemini.svg", bg: "#1a1a1a" },
+                    { name: "Grok", logo: "/logos/grok.svg", bg: "#0a0a0a" },
+                    { name: "Phantom", logo: "/logos/phantom.svg", bg: "#1a1a1a" },
+                    { name: "MetaMask", logo: "/logos/metamask.svg", bg: "#1a1a1a" },
+                  ].map((item) => (
+                    <div
+                      key={`${dupIndex}-${item.name}`}
+                      className="flex-shrink-0 w-48 h-24 rounded-xl border border-white/10 bg-white/[0.02] backdrop-blur-sm flex items-center justify-center gap-3 px-4 hover:border-emerald-500/30 hover:bg-white/[0.04] transition-all duration-300 group"
+                    >
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden" style={{ backgroundColor: item.bg }}>
+                        <img
+                          src={item.logo}
+                          alt={item.name}
+                          className="w-7 h-7 object-contain opacity-70 group-hover:opacity-100 transition-opacity"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            target.parentElement!.innerHTML = `<span class="text-lg font-bold text-emerald-400">${item.name[0]}</span>`;
+                          }}
+                        />
+                      </div>
+                      <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">{item.name}</span>
+                    </div>
+                  ))}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Static Grid for Mobile */}
+        <div className="container mx-auto max-w-6xl mt-16 md:hidden">
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { name: "Jupiter", logo: "/logos/jupiter.svg" },
+              { name: "Enso", logo: "/logos/enso.svg" },
+              { name: "1inch", logo: "/logos/1inch.svg" },
+              { name: "deBridge", logo: "/logos/debridge.svg" },
+              { name: "DefiLlama", logo: "/logos/defillama.svg" },
+              { name: "CoinGecko", logo: "/logos/coingecko.svg" },
+              { name: "Binance", logo: "/logos/binance.svg" },
+              { name: "Moralis", logo: "/logos/moralis.svg" },
+              { name: "Helius", logo: "/logos/helius.svg" },
+              { name: "DexScreener", logo: "/logos/dexscreener.svg" },
+              { name: "OpenRouter", logo: "/logos/openrouter.svg" },
+              { name: "Gemini", logo: "/logos/gemini.svg" },
+              { name: "Grok", logo: "/logos/grok.svg" },
+              { name: "Phantom", logo: "/logos/phantom.svg" },
+              { name: "MetaMask", logo: "/logos/metamask.svg" },
+            ].map((item) => (
+              <div
+                key={item.name}
+                className="flex items-center gap-3 p-4 rounded-xl border border-white/10 bg-white/[0.02]"
+              >
+                <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  <img
+                    src={item.logo}
+                    alt={item.name}
+                    className="w-7 h-7 object-contain opacity-80"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      target.parentElement!.innerHTML = `<span class="text-lg font-bold text-emerald-400">${item.name[0]}</span>`;
+                    }}
+                  />
                 </div>
+                <span className="text-sm font-medium text-white/80">{item.name}</span>
               </div>
-            ));
-          })()}
+            ))}
+          </div>
         </div>
       </section>
 
