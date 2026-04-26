@@ -174,6 +174,72 @@
   .stagger-3 { animation-delay: 0.3s; }
   .stagger-4 { animation-delay: 0.4s; }
   .stagger-5 { animation-delay: 0.5s; }
+
+  /* Chat message bubbles */
+  .msg-bubble {
+    @apply px-4 py-3 text-sm leading-relaxed;
+  }
+
+  .msg-bubble.user {
+    @apply bg-gradient-to-br from-emerald-500/20 to-emerald-900/10 border border-emerald-500/30 text-white rounded-2xl rounded-br-sm;
+  }
+
+  .msg-bubble.assistant {
+    @apply bg-white/5 border border-white/10 text-white/90 rounded-2xl rounded-bl-sm;
+  }
+
+  .msg-avatar {
+    @apply w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0;
+  }
+
+  .msg-avatar.user {
+    @apply bg-emerald-500/20 border border-emerald-500/30 text-emerald-400;
+  }
+
+  .msg-avatar.assistant {
+    @apply bg-purple-500/20 border border-purple-500/30 text-purple-400;
+  }
+
+  /* Reasoning step styles */
+  .reasoning-wrap {
+    @apply mt-2;
+  }
+
+  .reasoning-toggle {
+    @apply flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-500/10 border border-purple-500/20 text-xs font-medium text-purple-400 w-full;
+  }
+
+  .reasoning-steps-list {
+    @apply p-2 space-y-1;
+  }
+
+  .reasoning-step {
+    @apply flex items-start gap-2 p-2 rounded-lg bg-white/[0.02] border border-white/5;
+  }
+
+  .reasoning-step-label {
+    @apply text-xs font-semibold;
+  }
+
+  .reasoning-step-label.think {
+    @apply text-purple-400;
+  }
+
+  .reasoning-step-label.tool {
+    @apply text-blue-400;
+  }
+
+  .reasoning-step-label.result {
+    @apply text-emerald-400;
+  }
+
+  .reasoning-step-label.conclude {
+    @apply text-emerald-300;
+  }
+
+  .reasoning-step-detail {
+    @apply text-[10px] text-white/40 mt-0.5;
+  }
 }
 
 /* Keyframes */
