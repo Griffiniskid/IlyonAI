@@ -707,10 +707,35 @@ const HOW_STEPS = [
   { num: "03", icon: "⚡", title: "Execute Instantly", desc: "Confirm the AI-generated transaction with one click. Fast, transparent, non-custodial." },
 ];
 
-const PARTNERS: { name: string; desc: string; logo?: string; icon?: string; logoSize: number }[] = [
-  { name: "1inch",   logo: "https://coin-images.coingecko.com/coins/images/13469/small/1inch-token.png", desc: "DEX Aggregator",     logoSize: 48 },
-  { name: "Jupiter", logo: "https://coin-images.coingecko.com/coins/images/34188/small/jup.png",         desc: "Solana Aggregator",  logoSize: 48 },
-  { name: "deBridge", logo: "https://debridge.com/assets/img/logo/debridge-icon.svg",                   desc: "Cross-Chain Bridge", logoSize: 64 },
+interface Partner {
+  name: string;
+  desc: string;
+  category: string;
+  logo?: string;
+  icon?: string;
+  logoSize: number;
+}
+
+const PARTNERS: Partner[] = [
+  // DEX / Aggregators
+  { name: "Jupiter", category: "DEX Aggregator", desc: "Solana", logo: "https://jup.ag/static/media/jupiter-logo.2d2d1a3f.svg", logoSize: 42 },
+  { name: "Enso", category: "EVM Bundler", desc: "Multi-chain", logo: "https://www.enso.build/assets/images/enso-logo.png", logoSize: 36 },
+  { name: "1inch", category: "DEX Aggregator", desc: "EVM", logo: "https://app.1inch.io/assets/images/1inch-logo.svg", logoSize: 40 },
+  { name: "deBridge", category: "Cross-Chain", desc: "Bridge", logo: "https://debridge.finance/images/logo.svg", logoSize: 36 },
+  // Data / Analytics
+  { name: "DefiLlama", category: "Analytics", desc: "DeFi Data", logo: "https://defillama.com/logo.png", logoSize: 36 },
+  { name: "CoinGecko", category: "Price Data", desc: "Market Data", logo: "https://static.coingecko.com/s/coingecko-logo-8901d2d8ebf2a4bdf88379cc404d7d0e.svg", logoSize: 34 },
+  { name: "Binance", category: "Price Data", desc: "Exchange", logo: "https://public.bnbstatic.com/image/pgc/202302/f5f822d3-7e2f-4d53-8c0c-fd5b5f2e0e2c.png", logoSize: 34 },
+  { name: "Moralis", category: "Web3 API", desc: "Multi-chain", logo: "https://moralis.io/wp-content/uploads/2022/12/Moralis-Logo-Light.svg", logoSize: 34 },
+  { name: "Helius", category: "Solana RPC", desc: "Infrastructure", logo: "https://helius.xyz/_next/image?url=%2Fassets%2Fhelius-icon.png&w=64&q=75", logoSize: 34 },
+  { name: "DexScreener", category: "Analytics", desc: "DEX Tracking", logo: "https://docs.dexscreener.com/img/logo.svg", logoSize: 32 },
+  // AI
+  { name: "OpenRouter", category: "AI Router", desc: "LLM Gateway", logo: "https://openrouter.ai/favicon.ico", logoSize: 32 },
+  { name: "Gemini", category: "AI Model", desc: "Google", logo: "https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg", logoSize: 32 },
+  { name: "Grok", category: "AI Model", desc: "xAI", logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/Grok_logo.png/640px-Grok_logo.png", logoSize: 32 },
+  // Wallets
+  { name: "Phantom", category: "Wallet", desc: "Solana", logo: "https://phantom.app/img/phantom-logo.svg", logoSize: 34 },
+  { name: "MetaMask", category: "Wallet", desc: "EVM", logo: "https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg", logoSize: 34 },
 ];
 
 const INTRO_STATS = [
@@ -911,17 +936,60 @@ const CSS = `
   .intro-step-desc  { font-size: 13px; color: rgba(255,255,255,0.38); line-height: 1.7; }
   .intro-step-arrow { display: flex; align-items: center; justify-content: center; font-size: 22px; color: rgba(255,255,255,0.2); padding: 0 8px; margin-top: 60px; }
 
-  .intro-partners-row {
-    display: flex; align-items: stretch; gap: 0;
-    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 18px; overflow: hidden; backdrop-filter: blur(15px);
+  .intro-partners-section { margin-bottom: 60px; }
+  .intro-partners-category { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #34D399; margin-bottom: 20px; text-align: center; }
+  .intro-partners-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 16px;
+    margin-bottom: 40px;
   }
-  .intro-partner { flex: 1; padding: 22px 20px; text-align: center; border-right: 1px solid rgba(255,255,255,0.06); transition: background 0.2s; }
-  .intro-partner:last-child { border-right: none; }
-  .intro-partner:hover { background: rgba(255,255,255,0.04); }
-  .intro-partner-icon { font-size: 28px; margin-bottom: 8px; }
-  .intro-partner-name { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
-  .intro-partner-type { font-size: 10px; color: rgba(255,255,255,0.28); }
+  .intro-partner {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 24px 16px;
+    text-align: center;
+    transition: all 0.25s ease;
+    backdrop-filter: blur(15px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 140px;
+  }
+  .intro-partner:hover {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(16,185,129,0.25);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+  }
+  .intro-partner-logo {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    object-fit: contain;
+    margin-bottom: 12px;
+    filter: brightness(0.95);
+    transition: filter 0.2s;
+  }
+  .intro-partner:hover .intro-partner-logo {
+    filter: brightness(1.1);
+  }
+  .intro-partner-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; color: rgba(255,255,255,0.9); }
+  .intro-partner-desc { font-size: 11px; color: rgba(255,255,255,0.4); font-weight: 500; }
+  .intro-partner-category-tag {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: rgba(16,185,129,0.7);
+    background: rgba(16,185,129,0.1);
+    border: 1px solid rgba(16,185,129,0.2);
+    border-radius: 99px;
+    padding: 3px 10px;
+    margin-top: 10px;
+  }
 
   .intro-bottom-cta { padding: 80px; border-top: 1px solid rgba(255,255,255,0.05); text-align: center; display: flex; flex-direction: column; align-items: center; }
   .intro-cta-glow { width: 200px; height: 200px; border-radius: 50%; filter: blur(80px); background: radial-gradient(circle, rgba(16,185,129,0.25) 0%, transparent 70%); margin-bottom: -80px; z-index: 0; position: relative; }
@@ -2649,6 +2717,21 @@ const CSS = `
     .feature-grid {
       grid-template-columns: 1fr;
     }
+    .intro-partners-grid {
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+    }
+    .intro-partner {
+      padding: 16px 12px;
+      min-height: 120px;
+    }
+    .intro-partner-logo {
+      width: 36px;
+      height: 36px;
+    }
+    .intro-partner-name {
+      font-size: 12px;
+    }
   }
 `;
 
@@ -4333,21 +4416,35 @@ export default function MainApp() {
             <section className="intro-section">
               <div className="intro-section-tag">Integrations</div>
               <h2 className="intro-section-title">Powered by the best protocols</h2>
-              <p className="intro-section-sub" style={{ marginBottom: 32 }}>Ilyon AI Beta integrates directly with industry-leading protocols.</p>
-              <div className="intro-partners-row">
-                {PARTNERS.map(p => (
-                  <div key={p.desc} className="intro-partner">
-                    <div className="intro-partner-icon">
-                      {p.logo
-                        ? <img src={p.logo} alt={p.name} style={{ width: p.logoSize, height: p.logoSize, borderRadius: 12, objectFit: "cover" }} />
-                        : <span style={{ fontSize: p.logoSize }}>{p.icon}</span>
-                      }
+              <p className="intro-section-sub" style={{ marginBottom: 48 }}>Ilyon AI Beta integrates directly with 15+ industry-leading protocols across DeFi, data, and AI.</p>
+              {(() => {
+                const categories = [...new Set(PARTNERS.map(p => p.category))];
+                return categories.map(cat => (
+                  <div key={cat} className="intro-partners-section">
+                    <div className="intro-partners-category">{cat}</div>
+                    <div className="intro-partners-grid">
+                      {PARTNERS.filter(p => p.category === cat).map(p => (
+                        <div key={p.name} className="intro-partner">
+                          {p.logo ? (
+                            <img 
+                              src={p.logo} 
+                              alt={p.name} 
+                              className="intro-partner-logo"
+                              style={{ width: p.logoSize, height: p.logoSize }}
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            />
+                          ) : (
+                            <span style={{ fontSize: 32, marginBottom: 12 }}>{p.icon}</span>
+                          )}
+                          <div className="intro-partner-name">{p.name}</div>
+                          <div className="intro-partner-desc">{p.desc}</div>
+                          <div className="intro-partner-category-tag">{p.category}</div>
+                        </div>
+                      ))}
                     </div>
-                    {p.name && <div className="intro-partner-name">{p.name}</div>}
-                    <div className="intro-partner-type">{p.desc}</div>
                   </div>
-                ))}
-              </div>
+                ));
+              })()}
             </section>
 
             <section className="intro-bottom-cta">
