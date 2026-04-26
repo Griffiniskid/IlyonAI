@@ -65,20 +65,20 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${inter.variable} ${jetbrains.variable} font-sans antialiased h-screen overflow-hidden`}
+        className={`${inter.variable} ${jetbrains.variable} font-sans antialiased h-screen`}
       >
         <Providers>
-          <div className="relative h-screen flex flex-col overflow-hidden">
+          <div className="relative min-h-screen flex flex-col">
             {/* Hero gradient background */}
             <div className="fixed inset-0 hero-gradient pointer-events-none" />
 
             {/* Global market ticker — visible on every page */}
             <MarketTickerBar />
 
-            <div className="flex-1 flex flex-col min-h-0 overflow-hidden pt-8">
+            <div className="flex-1 flex flex-col min-h-0 pt-8">
               <AppShell>
                 {/* Main content */}
-                <main className="flex-1 relative z-10 flex flex-col min-h-0 overflow-hidden">{children}</main>
+                <main className="flex-1 relative z-10 flex flex-col min-h-0">{children}</main>
 
                 {/* Footer */}
                 <Footer />

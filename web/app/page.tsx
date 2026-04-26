@@ -52,7 +52,7 @@ export default function HomePage() {
   const { data: statsData, isLoading: statsLoading } = useDashboardStats();
 
   return (
-    <div className="min-h-screen relative">
+    <div className="relative">
       <BackgroundEffects />
 
       {/* Hero Section */}
