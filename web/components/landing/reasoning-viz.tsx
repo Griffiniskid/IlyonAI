@@ -103,7 +103,7 @@ export function ReasoningVisualization() {
   }, [visibleSteps, scenario.steps.length, cycleScenario]);
 
   return (
-    <div className="w-full max-w-4xl mx-auto">
+    <div className="w-full max-w-4xl mx-auto min-h-[760px] md:min-h-[720px]">
       <AnimatePresence mode="wait">
         <motion.div
           key={scenario.id}
@@ -125,17 +125,17 @@ export function ReasoningVisualization() {
           </div>
 
           {/* Steps */}
-          <div className="space-y-4">
+          <div className="space-y-4 min-h-[590px]">
             {scenario.steps.map((step, i) => (
               <motion.div
                 key={i}
-                initial={{ opacity: 0, x: -20 }}
+                initial={{ opacity: 0.2, x: -20 }}
                 animate={{
                   opacity: i < visibleSteps ? 1 : 0.2,
                   x: i < visibleSteps ? 0 : -20,
                 }}
                 transition={{ duration: 0.4, delay: i * 0.1 }}
-                className={`relative p-5 rounded-xl border backdrop-blur-sm transition-all duration-300 ${
+                className={`relative min-h-[136px] p-5 rounded-xl border backdrop-blur-sm transition-all duration-300 ${
                   i < visibleSteps
                     ? "bg-white/[0.03] border-white/10"
                     : "bg-white/[0.01] border-white/5"
@@ -167,29 +167,20 @@ export function ReasoningVisualization() {
                     </div>
                     <p className="text-sm text-muted-foreground mb-2">{step.detail}</p>
 
-                    <AnimatePresence>
-                      {i < visibleSteps && step.substeps && (
+                    <div className="space-y-1.5 mt-3 min-h-[58px]">
+                      {step.substeps?.map((sub, j) => (
                         <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: "auto" }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="space-y-1.5 mt-3"
+                          key={j}
+                          initial={false}
+                          animate={{ opacity: i < visibleSteps ? 1 : 0, x: i < visibleSteps ? 0 : -10 }}
+                          transition={{ delay: i < visibleSteps ? j * 0.1 : 0, duration: 0.25 }}
+                          className="flex items-center gap-2 text-xs text-white/60"
                         >
-                          {step.substeps.map((sub, j) => (
-                            <motion.div
-                              key={j}
-                              initial={{ opacity: 0, x: -10 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: j * 0.1 }}
-                              className="flex items-center gap-2 text-xs text-white/60"
-                            >
-                              <span className="w-1 h-1 rounded-full bg-emerald-400/60" />
-                              {sub}
-                            </motion.div>
-                          ))}
+                          <span className="w-1 h-1 rounded-full bg-emerald-400/60" />
+                          {sub}
                         </motion.div>
-                      )}
-                    </AnimatePresence>
+                      ))}
+                    </div>
                   </div>
                 </div>
 

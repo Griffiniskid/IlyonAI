@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +33,29 @@ function BackgroundEffects() {
     </div>
   );
 }
+
+const INTEGRATION_ROW_ONE = [
+  { name: "Jupiter", logo: "https://www.google.com/s2/favicons?domain=jup.ag&sz=128", bg: "#11131F" },
+  { name: "Enso", logo: "https://www.google.com/s2/favicons?domain=enso.build&sz=128", bg: "#111111" },
+  { name: "1inch", logo: "https://www.google.com/s2/favicons?domain=1inch.io&sz=128", bg: "#071C25" },
+  { name: "deBridge", logo: "https://www.google.com/s2/favicons?domain=debridge.finance&sz=128", bg: "#0A0A0A" },
+  { name: "DefiLlama", logo: "https://www.google.com/s2/favicons?domain=defillama.com&sz=128", bg: "#12201C" },
+  { name: "CoinGecko", logo: "https://www.google.com/s2/favicons?domain=coingecko.com&sz=128", bg: "#16210B" },
+  { name: "Binance", logo: "https://www.google.com/s2/favicons?domain=binance.com&sz=128", bg: "#0B0E11" },
+  { name: "Moralis", logo: "https://www.google.com/s2/favicons?domain=moralis.io&sz=128", bg: "#0D1320" },
+];
+
+const INTEGRATION_ROW_TWO = [
+  { name: "Helius", logo: "https://www.google.com/s2/favicons?domain=helius.xyz&sz=128", bg: "#0A0A0A" },
+  { name: "DexScreener", logo: "https://www.google.com/s2/favicons?domain=dexscreener.com&sz=128", bg: "#0F172A" },
+  { name: "OpenRouter", logo: "https://www.google.com/s2/favicons?domain=openrouter.ai&sz=128", bg: "#111111" },
+  { name: "Gemini", logo: "https://www.google.com/s2/favicons?domain=gemini.google.com&sz=128", bg: "#111827" },
+  { name: "Grok", logo: "https://www.google.com/s2/favicons?domain=x.ai&sz=128", bg: "#0A0A0A" },
+  { name: "Phantom", logo: "https://www.google.com/s2/favicons?domain=phantom.app&sz=128", bg: "#151225" },
+  { name: "MetaMask", logo: "https://www.google.com/s2/favicons?domain=metamask.io&sz=128", bg: "#21150E" },
+];
+
+const ALL_INTEGRATIONS = [...INTEGRATION_ROW_ONE, ...INTEGRATION_ROW_TWO];
 
 // Stat card
 function StatCard({ value, label, icon: Icon, loading }: { value: string; label: string; icon: React.ElementType; loading?: boolean }) {
@@ -263,34 +287,20 @@ export default function HomePage() {
           <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none" />
           
           {/* Row 1 - Scrolls Left */}
-          <div className="flex overflow-hidden mb-6">
+          <div className="hidden md:flex overflow-hidden mb-6">
             <div className="flex animate-marquee-left gap-6 py-2">
               {[...Array(2)].map((_, dupIndex) => (
                 <React.Fragment key={dupIndex}>
-                  {[
-                    { name: "Jupiter", logo: "/logos/jupiter.svg", bg: "#11131F" },
-                    { name: "Enso", logo: "/logos/enso.svg", bg: "#1a1a1a" },
-                    { name: "1inch", logo: "/logos/1inch.svg", bg: "#08272A" },
-                    { name: "deBridge", logo: "/logos/debridge.svg", bg: "#0a0a0a" },
-                    { name: "DefiLlama", logo: "/logos/defillama.svg", bg: "#1a1a1a" },
-                    { name: "CoinGecko", logo: "/logos/coingecko.svg", bg: "#1a1a1a" },
-                    { name: "Binance", logo: "/logos/binance.svg", bg: "#0B0E11" },
-                    { name: "Moralis", logo: "/logos/moralis.svg", bg: "#1a1a1a" },
-                  ].map((item) => (
+                  {INTEGRATION_ROW_ONE.map((item) => (
                     <div
                       key={`${dupIndex}-${item.name}`}
-                      className="flex-shrink-0 w-48 h-24 rounded-xl border border-white/10 bg-white/[0.02] backdrop-blur-sm flex items-center justify-center gap-3 px-4 hover:border-emerald-500/30 hover:bg-white/[0.04] transition-all duration-300 group"
+                      className="flex-shrink-0 w-56 h-24 rounded-2xl border border-white/10 bg-white/[0.025] backdrop-blur-sm flex items-center justify-center gap-4 px-5 hover:border-emerald-500/30 hover:bg-white/[0.05] transition-all duration-300 group shadow-[0_18px_70px_rgba(0,0,0,0.22)]"
                     >
-                      <div className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden" style={{ backgroundColor: item.bg }}>
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden border border-white/10" style={{ backgroundColor: item.bg }}>
                         <img
                           src={item.logo}
                           alt={item.name}
-                          className="w-7 h-7 object-contain opacity-70 group-hover:opacity-100 transition-opacity"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                            target.parentElement!.innerHTML = `<span class="text-lg font-bold text-emerald-400">${item.name[0]}</span>`;
-                          }}
+                          className="w-9 h-9 object-contain opacity-90 group-hover:opacity-100 transition-opacity"
                         />
                       </div>
                       <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">{item.name}</span>
@@ -302,33 +312,20 @@ export default function HomePage() {
           </div>
 
           {/* Row 2 - Scrolls Right */}
-          <div className="flex overflow-hidden">
+          <div className="hidden md:flex overflow-hidden">
             <div className="flex animate-marquee-right gap-6 py-2">
               {[...Array(2)].map((_, dupIndex) => (
                 <React.Fragment key={dupIndex}>
-                  {[
-                    { name: "Helius", logo: "/logos/helius.svg", bg: "#0a0a0a" },
-                    { name: "DexScreener", logo: "/logos/dexscreener.svg", bg: "#0f172a" },
-                    { name: "OpenRouter", logo: "/logos/openrouter.svg", bg: "#1a1a1a" },
-                    { name: "Gemini", logo: "/logos/gemini.svg", bg: "#1a1a1a" },
-                    { name: "Grok", logo: "/logos/grok.svg", bg: "#0a0a0a" },
-                    { name: "Phantom", logo: "/logos/phantom.svg", bg: "#1a1a1a" },
-                    { name: "MetaMask", logo: "/logos/metamask.svg", bg: "#1a1a1a" },
-                  ].map((item) => (
+                  {INTEGRATION_ROW_TWO.map((item) => (
                     <div
                       key={`${dupIndex}-${item.name}`}
-                      className="flex-shrink-0 w-48 h-24 rounded-xl border border-white/10 bg-white/[0.02] backdrop-blur-sm flex items-center justify-center gap-3 px-4 hover:border-emerald-500/30 hover:bg-white/[0.04] transition-all duration-300 group"
+                      className="flex-shrink-0 w-56 h-24 rounded-2xl border border-white/10 bg-white/[0.025] backdrop-blur-sm flex items-center justify-center gap-4 px-5 hover:border-emerald-500/30 hover:bg-white/[0.05] transition-all duration-300 group shadow-[0_18px_70px_rgba(0,0,0,0.22)]"
                     >
-                      <div className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden" style={{ backgroundColor: item.bg }}>
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden border border-white/10" style={{ backgroundColor: item.bg }}>
                         <img
                           src={item.logo}
                           alt={item.name}
-                          className="w-7 h-7 object-contain opacity-70 group-hover:opacity-100 transition-opacity"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                            target.parentElement!.innerHTML = `<span class="text-lg font-bold text-emerald-400">${item.name[0]}</span>`;
-                          }}
+                          className="w-9 h-9 object-contain opacity-90 group-hover:opacity-100 transition-opacity"
                         />
                       </div>
                       <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">{item.name}</span>
@@ -343,23 +340,7 @@ export default function HomePage() {
         {/* Static Grid for Mobile */}
         <div className="container mx-auto max-w-6xl mt-16 md:hidden">
           <div className="grid grid-cols-2 gap-3">
-            {[
-              { name: "Jupiter", logo: "/logos/jupiter.svg" },
-              { name: "Enso", logo: "/logos/enso.svg" },
-              { name: "1inch", logo: "/logos/1inch.svg" },
-              { name: "deBridge", logo: "/logos/debridge.svg" },
-              { name: "DefiLlama", logo: "/logos/defillama.svg" },
-              { name: "CoinGecko", logo: "/logos/coingecko.svg" },
-              { name: "Binance", logo: "/logos/binance.svg" },
-              { name: "Moralis", logo: "/logos/moralis.svg" },
-              { name: "Helius", logo: "/logos/helius.svg" },
-              { name: "DexScreener", logo: "/logos/dexscreener.svg" },
-              { name: "OpenRouter", logo: "/logos/openrouter.svg" },
-              { name: "Gemini", logo: "/logos/gemini.svg" },
-              { name: "Grok", logo: "/logos/grok.svg" },
-              { name: "Phantom", logo: "/logos/phantom.svg" },
-              { name: "MetaMask", logo: "/logos/metamask.svg" },
-            ].map((item) => (
+            {ALL_INTEGRATIONS.map((item) => (
               <div
                 key={item.name}
                 className="flex items-center gap-3 p-4 rounded-xl border border-white/10 bg-white/[0.02]"
@@ -369,11 +350,6 @@ export default function HomePage() {
                     src={item.logo}
                     alt={item.name}
                     className="w-7 h-7 object-contain opacity-80"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.style.display = 'none';
-                      target.parentElement!.innerHTML = `<span class="text-lg font-bold text-emerald-400">${item.name[0]}</span>`;
-                    }}
                   />
                 </div>
                 <span className="text-sm font-medium text-white/80">{item.name}</span>
