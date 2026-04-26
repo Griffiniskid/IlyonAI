@@ -22,6 +22,7 @@ app = FastAPI(
 # Exact origins allowed in addition to the chrome-extension wildcard below.
 _EXTRA_ORIGINS = [
     "http://localhost:3000",
+    "http://localhost:3030",
     "http://localhost:5173",
 ]
 

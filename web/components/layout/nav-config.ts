@@ -11,7 +11,6 @@ import {
   Briefcase,
   MessagesSquare,
   ArrowLeftRight,
-  Sparkles,
   LucideIcon
 } from "lucide-react";
 
@@ -52,10 +51,9 @@ export const navGroups: NavGroup[] = [
   {
     label: "AI Agent",
     items: [
-      { label: "Dashboard", href: "/agent/dashboard", icon: Sparkles },
-      { label: "Chat", href: "/agent/chat", icon: MessagesSquare },
-      { label: "Swap", href: "/agent/swap", icon: ArrowLeftRight },
-      { label: "Portfolio", href: "/agent/portfolio", icon: PieChart },
+      { label: "Chat", href: "/agent/chat?tab=chat", icon: MessagesSquare },
+      { label: "Swap", href: "/agent/swap?tab=swap", icon: ArrowLeftRight },
+      { label: "Portfolio", href: "/agent/portfolio?tab=portfolio", icon: PieChart },
     ],
   },
   {

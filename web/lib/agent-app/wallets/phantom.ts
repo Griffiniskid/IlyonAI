@@ -122,7 +122,7 @@ export async function connectPhantomSolana(): Promise<PhantomSession> {
       signedMessage = `Sign in to Ilyon AI Beta\n\nTimestamp: ${Math.floor(Date.now() / 1000)}`;
       const encoded = new TextEncoder().encode(signedMessage);
       const signed = await w.phantom.solana.signMessage(encoded, "utf8");
-      signature = btoa(String.fromCharCode(...signed.signature));
+      signature = btoa(String.fromCharCode(...Array.from(signed.signature as Uint8Array)));
     } catch (e) {
       console.warn("Phantom signMessage failed, continuing without JWT auth:", e);
       signedMessage = "";

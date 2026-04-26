@@ -4,6 +4,7 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 import { AppShell } from "@/components/layout/app-shell";
 import { Footer } from "@/components/layout/footer";
+import { MarketTickerBar } from "@/components/agent-app/MarketTickerBar";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -59,20 +60,25 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${inter.variable} ${jetbrains.variable} font-sans antialiased min-h-screen`}
+        className={`${inter.variable} ${jetbrains.variable} font-sans antialiased h-screen overflow-hidden`}
       >
         <Providers>
-          <div className="relative min-h-screen">
+          <div className="relative h-screen flex flex-col overflow-hidden">
             {/* Hero gradient background */}
             <div className="fixed inset-0 hero-gradient pointer-events-none" />
 
-            <AppShell>
-              {/* Main content */}
-              <main className="flex-1 relative z-10">{children}</main>
+            {/* Global market ticker — visible on every page */}
+            <MarketTickerBar />
 
-              {/* Footer */}
-              <Footer />
-            </AppShell>
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden pt-8">
+              <AppShell>
+                {/* Main content */}
+                <main className="flex-1 relative z-10 flex flex-col min-h-0 overflow-hidden">{children}</main>
+
+                {/* Footer */}
+                <Footer />
+              </AppShell>
+            </div>
           </div>
         </Providers>
       </body>

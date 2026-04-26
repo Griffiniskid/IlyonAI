@@ -249,8 +249,8 @@ def clear_session_memory(session_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 _OPENROUTER_MODELS = [
+    "openai/gpt-oss-120b:free",
     "openai/gpt-4o-mini",
-    "anthropic/claude-3-5-haiku",
     "google/gemma-3-27b-it:free",
     "meta-llama/llama-3.3-70b-instruct:free",
 ]
