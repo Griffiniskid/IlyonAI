@@ -53,7 +53,17 @@ export interface BlinkResponse {
   url: string;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+const RAW_API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
+function getAPIBase() {
+  // Browser calls should go through Next rewrites so local dev is same-origin.
+  // Direct localhost:8080 calls are blocked by the API CORS allowlist on port 3030.
+  if (typeof window !== "undefined" && RAW_API_BASE.startsWith("http://localhost")) {
+    return "";
+  }
+
+  return RAW_API_BASE || "http://localhost:8080";
+}
 
 class APIError extends Error {
   code: string;
@@ -948,7 +958,7 @@ async function fetchAPI<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const url = `${API_BASE}${endpoint}`;
+  const url = `${getAPIBase()}${endpoint}`;
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
