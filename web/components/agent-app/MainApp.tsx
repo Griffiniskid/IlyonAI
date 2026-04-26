@@ -2062,7 +2062,9 @@ const CSS = `
 
   .tab-panel {
     flex: 1;
-    overflow: auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   .content-canvas {
@@ -2425,6 +2427,7 @@ const CSS = `
     min-height: 0;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
   }
 
   .chat-shell {
