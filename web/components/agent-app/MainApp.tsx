@@ -3986,6 +3986,10 @@ export default function MainApp() {
     }
   }, [showIntro, introFading]);
 
+  useEffect(() => {
+    console.log("chatList changed:", chatList.length, "items", chatList);
+  }, [chatList]);
+
   const launchApp = () => {
     if (!authUser) { setShowAuth(true); return; }
     setIntroFading(true); setTimeout(() => setShowIntro(false), 700);
