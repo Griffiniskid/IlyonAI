@@ -17,9 +17,9 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ilyon AI | Multi-Chain Token And Pool Intelligence",
+  title: "Ilyon AI | Your AI-Powered DeFi Trading Assistant",
   description:
-    "AI-powered token and pool intelligence across Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, Avalanche, and Solana. Analyze token security, pool sustainability, contract risk, and wallet approvals from one surface.",
+    "AI-powered DeFi trading assistant across Solana, Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, and Avalanche. Ask in natural language to check balances, find swap routes, bridge assets, track portfolios, and analyze tokens — all from one chat interface.",
   keywords: [
     "DeFi security",
     "multi-chain",
@@ -31,6 +31,11 @@ export const metadata: Metadata = {
     "yield farming",
     "crypto security",
     "AI analysis",
+    "AI trading assistant",
+    "DeFi assistant",
+    "natural language trading",
+    "crypto AI",
+    "wallet assistant",
     "Ethereum",
     "Solana",
     "Base",
@@ -40,15 +45,15 @@ export const metadata: Metadata = {
     apple: "/shield.png",
   },
   openGraph: {
-    title: "Ilyon AI | Multi-Chain Token And Pool Intelligence",
-    description: "AI-powered token security and pool intelligence across all major chains",
+    title: "Ilyon AI | Your AI-Powered DeFi Trading Assistant",
+    description: "AI-powered DeFi trading assistant across all major chains",
     type: "website",
     siteName: "Ilyon AI",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Ilyon AI | Multi-Chain Token And Pool Intelligence",
-    description: "AI-powered token security and pool intelligence across all major chains",
+    title: "Ilyon AI | Your AI-Powered DeFi Trading Assistant",
+    description: "AI-powered DeFi trading assistant across all major chains",
   },
 };
 
