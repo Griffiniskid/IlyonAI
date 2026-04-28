@@ -14,11 +14,18 @@ from sqlalchemy import text
 from src.storage.database import get_database
 
 
+async def _postgres_engine_or_skip():
+    db = await get_database()
+    if db.engine is None or not str(db.engine.url).startswith("postgresql"):
+        pytest.skip("agent platform migration checks require PostgreSQL")
+    return db.engine
+
+
 @pytest.mark.asyncio
 async def test_web_users_has_new_columns():
     """web_users must contain id, email, password_hash, display_name after migration."""
-    db = await get_database()
-    async with db._engine.connect() as conn:
+    engine = await _postgres_engine_or_skip()
+    async with engine.connect() as conn:
         cols = await conn.execute(text(
             "SELECT column_name FROM information_schema.columns "
             "WHERE table_name = 'web_users'"
@@ -30,8 +37,8 @@ async def test_web_users_has_new_columns():
 @pytest.mark.asyncio
 async def test_chats_and_chat_messages_exist():
     """Both chats and chat_messages tables must exist after migration."""
-    db = await get_database()
-    async with db._engine.connect() as conn:
+    engine = await _postgres_engine_or_skip()
+    async with engine.connect() as conn:
         for table in ("chats", "chat_messages"):
             result = await conn.execute(text(
                 "SELECT EXISTS (SELECT FROM pg_tables WHERE tablename = :t)"
@@ -42,8 +49,8 @@ async def test_chats_and_chat_messages_exist():
 @pytest.mark.asyncio
 async def test_chat_messages_fk_cascades():
     """Deleting a web_users row must cascade-delete its chats (and chat_messages)."""
-    db = await get_database()
-    async with db._engine.begin() as conn:
+    engine = await _postgres_engine_or_skip()
+    async with engine.begin() as conn:
         # Insert a test user
         await conn.execute(text(
             "INSERT INTO web_users (wallet_address) VALUES ('test_cascade') "

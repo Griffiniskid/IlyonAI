@@ -4,8 +4,64 @@ from src.agent.tools._base import ToolCtx
 from src.agent.tools import register_all_tools
 
 
+class FakePriceClient:
+    async def get_token_price(self, ids, vs_currencies="usd"):
+        prices = {
+            "ethereum": {"usd": 2000, "usd_24h_change": 1.5, "usd_market_cap": 1_000_000},
+            "usd-coin": {"usd": 1, "usd_24h_change": 0, "usd_market_cap": 1_000_000},
+        }
+        return {coin_id: prices[coin_id] for coin_id in ids if coin_id in prices}
+
+
+class FakeDexScreenerClient:
+    async def search_tokens(self, query, limit=10, chain=None):
+        return [
+            {
+                "symbol": query,
+                "address": "0xpair",
+                "chain": chain or "ethereum",
+                "dex": "uniswap",
+                "liquidity": 1_000_000,
+                "priceUsd": 1,
+                "pair_address": "0xpair",
+            }
+        ][:limit]
+
+
+class FakeDefiLlamaClient:
+    async def get_protocols(self):
+        return [
+            {
+                "name": "Uniswap",
+                "slug": "uniswap",
+                "tvl": 1_000_000_000,
+                "chainTvls": {"Ethereum": 1_000_000_000},
+                "category": "Dexes",
+                "change_1d": 1.0,
+                "change_7d": 2.0,
+            }
+        ]
+
+    async def get_pools(self, chain=None, min_tvl=0, min_apy=None):
+        return [
+            {
+                "project": "uniswap",
+                "pool": "0xpool",
+                "chain": "Ethereum",
+                "symbol": "ETH-USDC",
+                "apy": 3.5,
+                "apyBase": 3.0,
+                "apyReward": 0.5,
+                "tvlUsd": 100_000_000,
+            }
+        ]
+
+
 class FakeServices:
-    pass
+    def __init__(self):
+        self.price = FakePriceClient()
+        self.dexscreener = FakeDexScreenerClient()
+        self.defillama = FakeDefiLlamaClient()
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +142,7 @@ async def test_swap_simulate_tool():
     )
     assert env.ok
     assert env.card_type == "swap_quote"
-    assert env.card_payload["router"] == "auto"
+    assert env.card_payload["router"] == "Multi-DEX (via DexScreener)"
 
 
 @pytest.mark.asyncio
@@ -132,7 +188,7 @@ async def test_market_overview_tool():
     env = await get_defi_market_overview(ctx, limit=10)
     assert env.ok
     assert env.card_type == "market_overview"
-    assert env.card_payload["protocols"] == []
+    assert env.card_payload["protocols"][0]["name"] == "Uniswap"
 
 
 @pytest.mark.asyncio
@@ -163,8 +219,8 @@ async def test_staking_tool():
     ctx = ToolCtx(services=FakeServices(), user_id=1, wallet="0xabc")
     env = await get_staking_options(ctx, chain="ethereum")
     assert env.ok
-    assert env.card_type == "allocation"
-    assert env.card_payload["positions"] == []
+    assert env.card_type == "stake"
+    assert env.card_payload["staking_options"][0]["protocol"] == "uniswap"
 
 
 @pytest.mark.asyncio
@@ -183,7 +239,7 @@ async def test_pool_find_tool():
     from src.agent.tools.pool_find import find_liquidity_pool
 
     ctx = ToolCtx(services=FakeServices(), user_id=1, wallet="0xabc")
-    env = await find_liquidity_pool(ctx, protocol="uniswap", asset="ETH")
+    env = await find_liquidity_pool(ctx, token_a="ETH", token_b="USDC")
     assert env.ok
     assert env.card_type == "pool"
     assert env.card_payload["protocol"] == "uniswap"
