@@ -3436,7 +3436,7 @@ function AuthScreen({ onAuth, onClose }: AuthScreenProps) {
       let authUser: AuthUser;
       if (signature) {
         try {
-          const res = await fetch(`${API}/auth/phantom`, {
+          const res = await fetch(`${API}/assistant-auth/phantom`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -4029,7 +4029,7 @@ export default function MainApp() {
   useEffect(() => {
     const token = localStorage.getItem("ap_token");
     if (!token) return;
-    fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${API}/assistant-auth/me`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data) {

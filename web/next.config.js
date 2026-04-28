@@ -43,7 +43,7 @@ const nextConfig = {
       { source: "/api/v1/agent", destination: `${assistantTarget}/api/v1/agent` },
       { source: "/api/v1/chats", destination: `${assistantTarget}/api/v1/chats` },
       { source: "/api/v1/chats/:path*", destination: `${assistantTarget}/api/v1/chats/:path*` },
-      { source: "/api/v1/auth/:path*", destination: `${assistantTarget}/api/v1/auth/:path*` },
+      { source: "/api/v1/assistant-auth/:path*", destination: `${assistantTarget}/api/v1/auth/:path*` },
       { source: "/api/v1/rpc-proxy", destination: `${assistantTarget}/api/v1/rpc-proxy` },
       { source: "/api/v1/bridge-status/:path*", destination: `${assistantTarget}/api/v1/bridge-status/:path*` },
       { source: "/api/portfolio/:path*", destination: `${assistantTarget}/api/portfolio/:path*` },
