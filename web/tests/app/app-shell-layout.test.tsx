@@ -27,7 +27,6 @@ describe("AppShell layout", () => {
       "/",
       "/dashboard",
       "/trending",
-      "/defi",
       "/smart-money",
       "/whales",
       "/entity",

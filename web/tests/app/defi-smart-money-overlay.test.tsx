@@ -1,70 +1,26 @@
-import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import DefiDiscoverPage from "@/app/defi/page";
-import DefiDetailPage from "@/app/defi/[id]/page";
-import { getSmartMoneyOverview } from "@/lib/api";
+import { describe, expect, it } from "vitest";
+import DefiRedirect from "@/app/defi/page";
+import DefiDetailRedirect from "@/app/defi/[id]/page";
 
-vi.mock("@/app/defi/_components/discover-client", () => ({
-  default: () => <div>discover-client</div>,
-}));
+function expectDashboardRedirect(run: () => unknown) {
+  try {
+    run();
+  } catch (error) {
+    const redirectError = error as Error & { digest?: string };
+    expect(redirectError.message).toBe("NEXT_REDIRECT");
+    expect(redirectError.digest).toContain("/dashboard");
+    return;
+  }
 
-vi.mock("@/app/defi/_components/detail-client", () => ({
-  default: () => <div>detail-client</div>,
-}));
+  throw new Error("Expected Next redirect to be thrown");
+}
 
-vi.mock("@/lib/api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/api")>();
-  return {
-    ...actual,
-    getSmartMoneyOverview: vi.fn(),
-  };
-});
-
-describe("Defi smart-money overlays", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(getSmartMoneyOverview).mockResolvedValue({
-      net_flow_usd: 600,
-      inflow_usd: 900,
-      outflow_usd: 300,
-      top_buyers: [],
-      top_sellers: [],
-      updated_at: "2026-03-19T00:00:00.000Z",
-    });
+describe("Defi redirects", () => {
+  it("redirects defi discover to dashboard", () => {
+    expectDashboardRedirect(() => DefiRedirect());
   });
 
-it("renders smart money panel on defi discover", async () => {
-    const page = await DefiDiscoverPage();
-    render(page);
-    const overlay = await screen.findByLabelText("smart-money-overlay");
-    expect(overlay).toHaveTextContent(/Smart Money/);
-    expect(overlay).toHaveTextContent(/Entity confidence.*50%/);
-    expect(getSmartMoneyOverview).toHaveBeenCalledWith({ cache: "no-store" });
-  });
-
-  it("renders smart money panel on defi detail", async () => {
-    const page = await DefiDetailPage({ params: Promise.resolve({ id: "opp_1" }) });
-    render(page);
-    const overlay = await screen.findByLabelText("smart-money-overlay");
-    expect(overlay).toHaveTextContent(/Smart Money/);
-    expect(overlay).toHaveTextContent(/Entity confidence.*50%/);
-    expect(getSmartMoneyOverview).toHaveBeenCalledWith({ cache: "no-store" });
-  });
-
-  it("falls back to zero confidence for non-finite overview values", async () => {
-    vi.mocked(getSmartMoneyOverview).mockResolvedValueOnce({
-      net_flow_usd: Number.NaN,
-      inflow_usd: Number.POSITIVE_INFINITY,
-      outflow_usd: -100,
-      top_buyers: [],
-      top_sellers: [],
-      updated_at: "2026-03-19T00:00:00.000Z",
-    });
-
-    const page = await DefiDiscoverPage();
-    render(page);
-
-    const overlay = await screen.findByLabelText("smart-money-overlay");
-    expect(overlay).toHaveTextContent(/Entity confidence.*0%/);
+  it("redirects defi detail to dashboard", () => {
+    expectDashboardRedirect(() => DefiDetailRedirect());
   });
 });
