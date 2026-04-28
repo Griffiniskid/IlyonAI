@@ -32,12 +32,12 @@ class Settings(BaseSettings):
 
     # OpenRouter (required for all non-Grok AI analysis)
     openrouter_api_key: Optional[str] = Field(None, env="OPENROUTER_API_KEY")
-    ai_model: str = Field("openai/gpt-oss-120b:nitro", env="AI_MODEL", description="Default OpenRouter model for all non-Grok AI analysis")
+    ai_model: str = Field("nvidia/nemotron-3-super-120b-a12b:free", env="AI_MODEL", description="Default OpenRouter model for all non-Grok AI analysis")
 
     # Legacy OpenAI direct config (deprecated, kept for env compatibility only)
     openai_api_key: Optional[str] = Field(None, env="OPENAI_API_KEY")
-    openai_model: str = Field("openai/gpt-oss-120b:nitro", env="OPENAI_MODEL")
-    openai_mini_model: str = Field("openai/gpt-oss-120b:nitro", env="OPENAI_MINI_MODEL")
+    openai_model: str = Field("nvidia/nemotron-3-super-120b-a12b:free", env="OPENAI_MODEL")
+    openai_mini_model: str = Field("nvidia/nemotron-3-super-120b-a12b:free", env="OPENAI_MINI_MODEL")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # BLOCKCHAIN CONFIGURATION - MULTI-CHAIN
@@ -50,26 +50,6 @@ class Settings(BaseSettings):
         description="Solana RPC endpoint (use Helius for production)"
     )
     helius_api_key: Optional[str] = Field(None, env="HELIUS_API_KEY")
-    helius_ws_url: str = Field(
-        "wss://mainnet.helius-rpc.com",
-        env="HELIUS_WS_URL",
-        description="Helius WebSocket endpoint (api-key appended at connect time)",
-    )
-    whale_feed_mode: str = Field(
-        "stream",
-        env="WHALE_FEED_MODE",
-        description="Whale feed source: 'stream' (logsSubscribe) or 'poll' (legacy polling)",
-    )
-    min_whale_usd: float = Field(
-        10_000.0,
-        env="MIN_WHALE_USD",
-        description="Minimum USD value to qualify as a whale transaction",
-    )
-    whale_stream_audit: bool = Field(
-        True,
-        env="WHALE_STREAM_AUDIT",
-        description="Hourly audit poll against parsed-tx endpoint to detect log decoder drift",
-    )
 
     # EVM Chains
     ethereum_rpc_url: str = Field(
@@ -271,6 +251,30 @@ class Settings(BaseSettings):
         description="Secret key for session encryption"
     )
     session_ttl_hours: int = Field(24, env="SESSION_TTL_HOURS", description="Session TTL in hours")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # AGENT PLATFORM FEATURE FLAGS
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    FEATURE_AGENT_V2: bool = Field(True, env="FEATURE_AGENT_V2")
+    FEATURE_TOKENS_BAR: bool = Field(True, env="FEATURE_TOKENS_BAR")
+    FEATURE_CHROME_EXT: bool = Field(False, env="FEATURE_CHROME_EXT")
+    FEATURE_AFFILIATE_HOOK: bool = Field(False, env="FEATURE_AFFILIATE_HOOK")
+    FEATURE_GREENFIELD_MEMORY: bool = Field(False, env="FEATURE_GREENFIELD_MEMORY")
+    ALLOWED_EXTENSION_IDS: str = Field("", env="ALLOWED_EXTENSION_IDS",
+                                       description="Comma-separated chrome/moz extension IDs")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # AGENT PLATFORM SERVICE CREDS
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    dexscreener_api_key: Optional[str] = Field(None, env="DEXSCREENER_API_KEY")
+    enso_api_key: Optional[str] = Field(None, env="ENSO_API_KEY")
+    jupiter_api_base: str = Field("https://quote-api.jup.ag/v6", env="JUPITER_API_BASE")
+    debridge_api_base: str = Field("https://api.dln.trade/v1.0", env="DEBRIDGE_API_BASE")
+    bnb_greenfield_sp: Optional[str] = Field(None, env="BNB_GREENFIELD_SP")
+    bnb_greenfield_account: Optional[str] = Field(None, env="BNB_GREENFIELD_ACCOUNT")
+    bnb_greenfield_private_key: Optional[str] = Field(None, env="BNB_GREENFIELD_PRIVATE_KEY")
 
     class Config:
         env_file = ".env"

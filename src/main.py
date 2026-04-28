@@ -38,24 +38,16 @@ async def on_startup(app: web.Application):
     except Exception as e:
         logger.warning(f"Cache initialization failed: {e}")
 
-    # Start whale transaction feed (stream by default, poll as fallback)
+    # Start whale transaction poller
     try:
         from src.storage.database import get_database
+        from src.services.whale_poller import WhaleTransactionPoller
         from src.platform.stream_hub import get_stream_hub
         db = await get_database()
-        hub = get_stream_hub()
-        if settings.whale_feed_mode == "stream":
-            from src.services.whale_stream import WhaleTransactionStream
-            feed = WhaleTransactionStream(db=db, stream_hub=hub)
-            app["_whale_feed_task"] = asyncio.create_task(feed.run_forever())
-            logger.info("Whale feed: stream mode (logsSubscribe)")
-        else:
-            from src.services.whale_poller import WhaleTransactionPoller
-            poller = WhaleTransactionPoller(db=db, stream_hub=hub)
-            app["_whale_feed_task"] = asyncio.create_task(poller.run_forever())
-            logger.info("Whale feed: poll mode (legacy)")
+        poller = WhaleTransactionPoller(db=db, stream_hub=get_stream_hub())
+        app["_whale_poller_task"] = asyncio.create_task(poller.run_forever())
     except Exception as e:
-        logger.warning(f"Whale feed startup failed: {e}")
+        logger.warning(f"Whale poller startup failed: {e}")
 
     logger.info(f"✅ API Server ready on port {settings.web_api_port}")
 
@@ -63,10 +55,10 @@ async def on_cleanup(app: web.Application):
     logger = logging.getLogger('Ilyon_AI')
     logger.info("🛡️  ILYON AI API - Shutting Down")
     
-    # Stop whale feed (stream or poller)
-    feed_task = app.get("_whale_feed_task")
-    if feed_task:
-        feed_task.cancel()
+    # Stop whale poller
+    poller_task = app.get("_whale_poller_task")
+    if poller_task:
+        poller_task.cancel()
 
     try:
         from src.storage.database import get_database

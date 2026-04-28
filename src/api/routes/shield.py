@@ -265,32 +265,24 @@ async def prepare_revoke(request: web.Request) -> web.Response:
 
 
 async def get_shield_status(request: web.Request) -> web.Response:
-    """GET /api/v1/shield/status — report per-chain RPC availability."""
-    chain_rpcs = {
-        "ethereum": settings.ethereum_rpc_url,
-        "bsc": settings.bsc_rpc_url,
-        "polygon": settings.polygon_rpc_url,
-        "arbitrum": settings.arbitrum_rpc_url,
-        "base": settings.base_rpc_url,
-        "optimism": settings.optimism_rpc_url,
-        "avalanche": settings.avalanche_rpc_url,
+    """GET /api/v1/shield/status — report per-chain API key availability."""
+    chain_keys = {
+        "ethereum": settings.etherscan_api_key,
+        "bsc": settings.bscscan_api_key,
+        "polygon": settings.polygonscan_api_key,
+        "arbitrum": settings.arbiscan_api_key,
+        "base": settings.basescan_api_key,
+        "optimism": settings.optimism_etherscan_api_key,
+        "avalanche": settings.snowtrace_api_key,
     }
     chains = {}
-    for chain_name, rpc_url in chain_rpcs.items():
-        available = bool(rpc_url and rpc_url.strip())
+    for chain_name, key in chain_keys.items():
+        available = bool(key and key.strip())
         chains[chain_name] = {
             "available": available,
-            "method": "rpc_eth_getLogs" if available else None,
-            "reason": None if available else "RPC endpoint not configured",
+            "reason": None if available else "API key not configured",
         }
-    return envelope_response(
-        {
-            "chains": chains,
-            "mode": "rpc_direct",
-            "description": "Shield uses direct RPC eth_getLogs calls. No block explorer API keys required.",
-        },
-        meta={"surface": "shield_status"},
-    )
+    return envelope_response({"chains": chains}, meta={"surface": "shield_status"})
 
 
 def setup_shield_routes(app: web.Application):

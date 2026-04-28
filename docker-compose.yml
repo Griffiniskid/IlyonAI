@@ -34,6 +34,24 @@ services:
       retries: 3
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # AI WALLET ASSISTANT API
+  # ═══════════════════════════════════════════════════════════════════════════
+  assistant-api:
+    build:
+      context: ./IlyonAi-Wallet-assistant-main/server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ${ASSISTANT_ENV_FILE:-.env}
+    volumes:
+      - assistant_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # ILYON AI WEB FRONTEND
   # ═══════════════════════════════════════════════════════════════════════════
   web:
@@ -44,16 +62,20 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://ilyonai.com}
         NEXT_PUBLIC_SOLANA_NETWORK: ${NEXT_PUBLIC_SOLANA_NETWORK:-mainnet-beta}
         NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
-        NEXT_PUBLIC_COMING_SOON: ${NEXT_PUBLIC_COMING_SOON:-false}
+        API_REWRITE_TARGET: ${API_REWRITE_TARGET:-http://api:8080}
+        ASSISTANT_API_TARGET: ${ASSISTANT_API_TARGET:-http://assistant-api:8000}
     restart: unless-stopped
     depends_on:
       api:
+        condition: service_healthy
+      assistant-api:
         condition: service_healthy
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://ilyonai.com}
       NEXT_PUBLIC_SOLANA_NETWORK: ${NEXT_PUBLIC_SOLANA_NETWORK:-mainnet-beta}
       NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
-      NEXT_PUBLIC_COMING_SOON: ${NEXT_PUBLIC_COMING_SOON:-false}
+      API_REWRITE_TARGET: ${API_REWRITE_TARGET:-http://api:8080}
+      ASSISTANT_API_TARGET: ${ASSISTANT_API_TARGET:-http://assistant-api:8000}
     ports:
       - "${WEB_HOST_PORT:-3000}:3000"
     healthcheck:
@@ -99,6 +121,8 @@ services:
 # VOLUMES
 # ═══════════════════════════════════════════════════════════════════════════
 volumes:
+  assistant_data:
+    driver: local
   redis_data:
     driver: local
   postgres_data:

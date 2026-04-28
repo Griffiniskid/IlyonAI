@@ -5,14 +5,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RealtimeClient, type StreamStatus } from "./realtime";
 import * as api from "./api";
-import type {
-  AnalysisMode,
-  AnalysisResponse,
-  ChainName,
-  SmartMoneyOverviewResponse,
-  WhaleWindow,
-  WhaleSort,
-} from "@/types";
+import type { AlertRecordResponse, AnalysisMode, AnalysisResponse, ChainName, SmartMoneyOverviewResponse } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ANALYSIS HOOKS
@@ -206,22 +199,6 @@ export function useWhaleActivity(
   });
 }
 
-export function useWhaleLeaderboard(params: { window: WhaleWindow; sort: WhaleSort }) {
-  return useQuery({
-    queryKey: ["whales", "leaderboard", params.window, params.sort],
-    queryFn: () => api.getWhaleLeaderboard(params),
-    staleTime: 60_000,
-  });
-}
-
-export function useTopWhales(params: { window: WhaleWindow }) {
-  return useQuery({
-    queryKey: ["whales", "top", params.window],
-    queryFn: () => api.getTopWhales(params),
-    staleTime: 60_000,
-  });
-}
-
 export function useSmartMoneyOverview() {
   return useQuery<SmartMoneyOverviewResponse>({
     queryKey: ["smartMoney", "overview"],
@@ -301,6 +278,49 @@ export function useWalletForensics(address: string | null) {
     enabled: !!address,
     staleTime: 5 * 60_000,
   });
+}
+
+export function useAlerts(severity?: string) {
+  return useQuery<AlertRecordResponse[]>({
+    queryKey: ["alerts", severity ?? "all"],
+    queryFn: () => api.getAlerts(severity),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useAlertRules() {
+  return useQuery({
+    queryKey: ["alertRules"],
+    queryFn: api.getAlertRules,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useUpdateAlert() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      alertId,
+      action,
+      snoozed_until,
+    }: {
+      alertId: string;
+      action: "seen" | "acknowledge" | "snooze" | "unsnooze" | "resolve";
+      snoozed_until?: string;
+    }) => api.updateAlertRecord(alertId, { action, snoozed_until }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["alerts"] });
+    },
+    onError: (err) => {
+      console.error("Alert update failed:", err);
+    },
+  });
+}
+
+export function useAlertSummary() {
+  const { data = [] } = useAlerts();
+  const unreadCount = data.filter((alert) => alert.state === "new").length;
+  return { unreadCount, alerts: data };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

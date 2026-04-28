@@ -1,0 +1,37 @@
+{
+  "name": "agent-platform-client",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:check": "tsc && vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run --environment jsdom"
+  },
+  "dependencies": {
+    "@bnb-chain/greenfield-js-sdk": "^2.0.0",
+    "@bnb-chain/reed-solomon": "^1.0.0",
+    "@solana/web3.js": "^1.98.4",
+    "framer-motion": "^12.34.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.268",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "jsdom": "^26.1.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "eslint-plugin-react-refresh": "^0.4.9",
+    "typescript": "^5.5.3",
+    "vite": "^5.4.1",
+    "vitest": "^2.1.9"
+  }
+}

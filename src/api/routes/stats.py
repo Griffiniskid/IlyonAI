@@ -228,25 +228,11 @@ async def get_dashboard_stats(request: web.Request) -> web.Response:
         total_volume = defillama_data.get("total_24h", 0)
         volume_change = defillama_data.get("volume_change", 0.0)
         
-        # Generate hourly volume chart from DefiLlama data
-        volume_chart_data = defillama_data.get("hourly_data", [])
-        
-        # If no hourly data from DefiLlama, return a flat average breakdown
-        # rather than fabricating random variation
-        if not volume_chart_data and total_volume > 0:
-            now = datetime.utcnow()
-            avg_hourly = total_volume / 24
-            for i in range(24):
-                hour = (now - timedelta(hours=23 - i)).strftime("%H:00")
-                volume_chart_data.append({
-                    "time": hour,
-                    "volume": avg_hourly,
-                })
-        
-        # Convert to VolumeDataPoint objects
+        # Hourly volume chart from DefiLlama — only real data, no fabricated fallback.
+        volume_chart_data = defillama_data.get("hourly_data", []) or []
         volume_chart = [
             VolumeDataPoint(time=d["time"], volume=d["volume"])
-            for d in volume_chart_data[-24:]  # Last 24 hours
+            for d in volume_chart_data[-24:]
         ]
 
         # Market distribution from trending tokens (liquidity-weighted)
@@ -381,98 +367,8 @@ async def get_dashboard_stats(request: web.Request) -> web.Response:
         )
 
 
-async def get_service_health(request: web.Request) -> web.Response:
-    """
-    GET /api/v1/stats/health
-
-    Comprehensive service health report showing which features
-    are fully operational, degraded, or unavailable based on
-    configured API keys and service connectivity.
-    """
-    from src.config import settings
-
-    services = {
-        "ai_analysis": {
-            "status": "operational" if settings.openrouter_api_key else "unavailable",
-            "provider": "OpenRouter",
-            "required_key": "OPENROUTER_API_KEY",
-            "features": ["token analysis", "contract AI audit", "DeFi synthesis"],
-        },
-        "solana_rpc": {
-            "status": "operational",
-            "provider": "Solana RPC" + (" (Helius)" if settings.helius_api_key else " (Public)"),
-            "features": ["token data", "holder analysis", "wallet balances"],
-        },
-        "evm_rpc": {
-            "status": "operational",
-            "provider": "Public RPC endpoints",
-            "features": ["EVM token data", "shield approval scanning", "wallet balances"],
-        },
-        "shield": {
-            "status": "operational",
-            "provider": "Direct RPC (eth_getLogs)",
-            "features": ["approval scanning", "risk scoring", "revoke preparation"],
-            "note": "No API keys required - uses public RPC endpoints",
-        },
-        "honeypot_detection": {
-            "status": "operational" if settings.jupiter_api_key else "degraded",
-            "provider": "Jupiter API",
-            "required_key": "JUPITER_API_KEY",
-            "features": ["sell tax detection", "swap simulation"],
-        },
-        "goplus_security": {
-            "status": "operational",
-            "provider": "GoPlus Labs (free tier)",
-            "features": ["token security checks", "honeypot detection", "contract risk"],
-            "note": "No API key required for basic usage",
-        },
-        "twitter_sentiment": {
-            "status": "operational" if settings.grok_api_key else "unavailable",
-            "provider": "xAI Grok",
-            "required_key": "GROK_API_KEY",
-            "features": ["narrative analysis", "social sentiment"],
-        },
-        "defi_data": {
-            "status": "operational",
-            "provider": "DefiLlama + DexScreener (free)",
-            "features": ["pool data", "yields", "TVL", "trending tokens"],
-            "note": "No API keys required",
-        },
-        "portfolio": {
-            "status": "operational" if settings.moralis_api_key else "degraded",
-            "provider": "Moralis" if settings.moralis_api_key else "RPC fallback",
-            "features": ["EVM token balances", "portfolio tracking"],
-            "note": None if settings.moralis_api_key else "Using RPC fallback - limited token discovery",
-        },
-        "database": {
-            "status": "operational" if settings.database_url else "degraded",
-            "provider": "PostgreSQL" if settings.database_url else "In-memory",
-            "features": ["persistent storage", "analysis cache", "blinks"],
-        },
-    }
-
-    operational_count = sum(1 for s in services.values() if s["status"] == "operational")
-    total = len(services)
-
-    return envelope_response({
-        "overall_status": "operational" if operational_count == total else "degraded",
-        "services_operational": operational_count,
-        "services_total": total,
-        "services": services,
-        "required_keys": ["OPENROUTER_API_KEY"],
-        "recommended_keys": ["HELIUS_API_KEY", "JUPITER_API_KEY", "GROK_API_KEY"],
-        "optional_keys": ["MORALIS_API_KEY", "GOPLUS_API_KEY"],
-        "not_needed": [
-            "ETHERSCAN_API_KEY", "BSCSCAN_API_KEY", "POLYGONSCAN_API_KEY",
-            "ARBISCAN_API_KEY", "BASESCAN_API_KEY", "OPTIMISM_ETHERSCAN_API_KEY",
-            "SNOWTRACE_API_KEY",
-        ],
-    })
-
-
 def setup_stats_routes(app: web.Application):
     """Setup stats API routes"""
     app.router.add_get('/api/v1/stats', get_dashboard_stats)
-    app.router.add_get('/api/v1/stats/health', get_service_health)
 
     logger.info("Stats routes registered")

@@ -18,7 +18,6 @@ from src.api.routes.trending import setup_trending_routes
 from src.api.routes.portfolio import setup_portfolio_routes
 from src.api.routes.transactions import setup_transactions_routes
 from src.api.routes.whale import setup_whale_routes
-from src.api.routes.whale_leaderboard import setup_whale_leaderboard_routes
 from src.public_api.router import setup_public_api_routes
 from src.api.routes.auth import setup_auth_routes
 from src.api.routes.stats import setup_stats_routes
@@ -33,6 +32,8 @@ from src.api.routes.wallet_intel import setup_wallet_intel_routes
 from src.api.routes.entity import setup_entity_routes
 from src.api.routes.stream import setup_stream_routes
 from src.api.routes.alerts import setup_alert_routes
+from src.api.routes.agent import setup_agent_routes
+from src.api.routes.tokens_bar import setup_tokens_bar_routes
 from src.agents.sentinel import start_sentinel, stop_sentinel
 from src.config import settings
 
@@ -76,12 +77,7 @@ async def api_info(request: web.Request) -> web.Response:
             "portfolio": "GET /api/v1/portfolio",
             "whales": "GET /api/v1/whales",
             "shield": "GET /api/v1/shield/{wallet}",
-            "shield_status": "GET /api/v1/shield/status",
             "contract": "POST /api/v1/contract/scan",
-            "entities": "GET /api/v1/entities",
-            "entity_resolve": "POST /api/v1/entities/resolve",
-            "entity_merge": "POST /api/v1/entities/merge",
-            "entity_stats": "GET /api/v1/entities/stats",
             "pool_analysis": "POST /api/v1/defi/pool/analyze",
             "defi_pools": "GET /api/v1/defi/pools",
             "defi_yields": "GET /api/v1/defi/yields",
@@ -181,6 +177,7 @@ def create_api_app() -> web.Application:
 
     # Health check and info
     app.router.add_get("/health", health_check)
+    app.router.add_get("/api/v1/health", health_check)
     app.router.add_get("/api/v1", api_info)
     app.router.add_get("/api/v1/docs", api_docs)
 
@@ -192,7 +189,6 @@ def create_api_app() -> web.Application:
     setup_portfolio_routes(app)
     setup_transactions_routes(app)
     setup_whale_routes(app)
-    setup_whale_leaderboard_routes(app)
     setup_auth_routes(app)
     setup_stats_routes(app)
     setup_chains_routes(app)
@@ -206,6 +202,8 @@ def create_api_app() -> web.Application:
     setup_entity_routes(app)
     setup_stream_routes(app)
     setup_alert_routes(app)
+    setup_agent_routes(app)
+    setup_tokens_bar_routes(app)
     setup_public_api_routes(app)
 
     # Background sentinel agent
@@ -261,7 +259,6 @@ def setup_api_routes(app: web.Application):
     setup_portfolio_routes(app)
     setup_transactions_routes(app)
     setup_whale_routes(app)
-    setup_whale_leaderboard_routes(app)
     setup_auth_routes(app)
     setup_stats_routes(app)
     setup_chains_routes(app)
@@ -275,6 +272,8 @@ def setup_api_routes(app: web.Application):
     setup_entity_routes(app)
     setup_stream_routes(app)
     setup_alert_routes(app)
+    setup_agent_routes(app)
+    setup_tokens_bar_routes(app)
     setup_public_api_routes(app)
 
     logger.info("All API routes added to existing application")

@@ -248,3 +248,30 @@ async def rate_limit_middleware(request: web.Request, handler):
     request["ip_hash"] = limiter.get_ip_hash(ip)
 
     return await handler(request)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PER-SESSION RATE LIMIT (Agent v2)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class PerSessionGap:
+    """Lightweight per-(user, session) gap enforcer for the agent SSE endpoint.
+
+    Returns False if the same user+session pair sent a request within
+    *min_gap_s* seconds of the last allowed request.
+    """
+
+    def __init__(self, min_gap_s: float = 0.5):
+        self._last: dict[tuple[int, str], float] = {}
+        self._gap = min_gap_s
+
+    def allow(self, user_id: int, session_id: str) -> bool:
+        key = (user_id, session_id)
+        now = time.monotonic()
+        if now - self._last.get(key, 0) < self._gap:
+            return False
+        self._last[key] = now
+        return True
+
+
+agent_gap = PerSessionGap(0.5)

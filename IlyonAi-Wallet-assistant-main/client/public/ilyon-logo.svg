@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="shieldGradient" x1="45" y1="28" x2="212" y2="228" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#67F0C3"/>
+      <stop offset="0.52" stop-color="#39E0A8"/>
+      <stop offset="1" stop-color="#25CF96"/>
+    </linearGradient>
+    <filter id="softGlow" x="18" y="8" width="220" height="240" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <g stroke="url(#shieldGradient)" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" filter="url(#softGlow)">
+    <path d="M52 48 L128 29 L204 48 V144 C204 185 177 216 128 242 C79 216 52 185 52 144 Z"/>
+    <path d="M52 48 L128 90 L204 48"/>
+    <path d="M128 90 V242"/>
+    <path d="M52 95 V152 L88 172"/>
+    <path d="M204 95 V152 L168 172"/>
+  </g>
+</svg>

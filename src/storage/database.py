@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import declarative_base
 from sqlalchemy import Column, Integer, BigInteger, String, Float, Boolean, DateTime, ForeignKey, JSON, Text, UniqueConstraint
 from sqlalchemy import select, update, func
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.postgresql import insert
 
 from src.config import settings
 
@@ -1124,7 +1124,7 @@ class Database:
 
         async with self.async_session() as session:
             # Try upsert
-            stmt = pg_insert(WalletReputation).values(
+            stmt = insert(WalletReputation).values(
                 wallet_address=wallet_address,
                 reputation_score=reputation_score,
                 risk_level=risk_level,
@@ -1215,7 +1215,7 @@ class Database:
             return False
 
         async with self.async_session() as session:
-            stmt = pg_insert(TokenDeployment).values(
+            stmt = insert(TokenDeployment).values(
                 token_address=token_address,
                 deployer_wallet=deployer_wallet,
                 token_symbol=token_symbol,
@@ -1897,7 +1897,6 @@ class Database:
         if not self._initialized:
             return []
         new_signatures = []
-        is_pg = str(self.engine.url).startswith("postgresql")
         async with self.async_session() as session:
             for tx in transactions:
                 try:
@@ -1914,7 +1913,7 @@ class Database:
                     else:
                         tx_timestamp = datetime.utcnow()
 
-                    values = dict(
+                    stmt = insert(WhaleTransaction).values(
                         signature=tx["signature"],
                         wallet_address=tx.get("wallet_address", ""),
                         wallet_label=tx.get("wallet_label"),
@@ -1927,15 +1926,7 @@ class Database:
                         price_usd=float(tx.get("price_usd", 0)),
                         dex_name=tx.get("dex_name", "Unknown"),
                         tx_timestamp=tx_timestamp,
-                    )
-
-                    if is_pg:
-                        stmt = pg_insert(WhaleTransaction).values(**values).on_conflict_do_nothing(index_elements=["signature"])
-                    else:
-                        # SQLite / other dialects: INSERT OR IGNORE via prefix
-                        from sqlalchemy import insert as sa_insert
-                        stmt = sa_insert(WhaleTransaction).values(**values).prefix_with("OR IGNORE")
-
+                    ).on_conflict_do_nothing(index_elements=["signature"])
                     result = await session.execute(stmt)
                     if result.rowcount and result.rowcount > 0:
                         new_signatures.append(tx["signature"])
@@ -1987,42 +1978,6 @@ class Database:
                 "outflow_usd": outflow_usd,
             }
 
-    async def get_whale_unresolved_token_addresses(self, limit: int = 500) -> list[str]:
-        """Return distinct token addresses from whale rows whose symbol is '???'.
-
-        Used to backfill token metadata for rows that were persisted before the
-        DexScreener enrichment step ran (e.g., via the RPC poll path).
-        """
-        if not self._initialized:
-            return []
-        async with self.async_session() as session:
-            stmt = (
-                select(WhaleTransaction.token_address)
-                .where(WhaleTransaction.token_symbol == "???")
-                .where(WhaleTransaction.token_address != "")
-                .distinct()
-                .limit(limit)
-            )
-            result = await session.execute(stmt)
-            return [r[0] for r in result.all() if r[0]]
-
-    async def update_whale_token_metadata(self, token_address: str, symbol: str, name: str) -> int:
-        """Set symbol/name on every whale row matching `token_address`. Returns row count."""
-        if not self._initialized:
-            return 0
-        if not token_address:
-            return 0
-        from sqlalchemy import update as sa_update
-        async with self.async_session() as session:
-            stmt = (
-                sa_update(WhaleTransaction)
-                .where(WhaleTransaction.token_address == token_address)
-                .values(token_symbol=symbol or "???", token_name=name or "Unknown")
-            )
-            result = await session.execute(stmt)
-            await session.commit()
-            return result.rowcount or 0
-
     async def cleanup_old_whale_transactions(self, hours: int = 24) -> int:
         """Delete whale transactions older than the given window. Returns count deleted."""
         if not self._initialized:
@@ -2034,90 +1989,6 @@ class Database:
             result = await session.execute(stmt)
             await session.commit()
             return result.rowcount or 0
-
-    async def cleanup_non_alpha_whale_transactions(self) -> int:
-        """Delete whale rows whose token is a stablecoin, bridged major, or LST.
-
-        Applies the mint- and symbol-level exclusion lists from
-        `src.data.token_filters` so rows inserted before the filter existed
-        disappear from the UI on stream startup.
-        """
-        if not self._initialized:
-            return 0
-        from src.data.token_filters import EXCLUDED_MINTS, EXCLUDED_SYMBOL_RE
-        from sqlalchemy import delete
-        async with self.async_session() as session:
-            mint_stmt = delete(WhaleTransaction).where(
-                WhaleTransaction.token_address.in_(list(EXCLUDED_MINTS))
-            )
-            mint_res = await session.execute(mint_stmt)
-
-            rows_stmt = select(WhaleTransaction.id, WhaleTransaction.token_symbol)
-            rows = (await session.execute(rows_stmt)).all()
-            bad_ids = [
-                rid for rid, sym in rows
-                if sym and sym != "???" and EXCLUDED_SYMBOL_RE.match(sym.strip())
-            ]
-            sym_deleted = 0
-            if bad_ids:
-                sym_stmt = delete(WhaleTransaction).where(WhaleTransaction.id.in_(bad_ids))
-                sym_res = await session.execute(sym_stmt)
-                sym_deleted = sym_res.rowcount or 0
-            await session.commit()
-            return (mint_res.rowcount or 0) + sym_deleted
-
-    async def get_whale_aggregations(self, hours: int) -> dict:
-        """Return window rows and prior-window token set for the leaderboard.
-
-        Returns:
-            {
-                "rows": [ {signature, wallet_address, wallet_label, token_address,
-                           token_symbol, token_name, direction, amount_usd,
-                           tx_timestamp}, ... ],
-                "prior_token_addresses": set[str]  # tokens active in (2*window..window) ago
-            }
-        """
-        if not self._initialized:
-            return {"rows": [], "prior_token_addresses": set()}
-        now = datetime.utcnow()
-        window_cutoff = now - timedelta(hours=hours)
-        prior_cutoff = now - timedelta(hours=hours * 2)
-        async with self.async_session() as session:
-            stmt_window = (
-                select(WhaleTransaction)
-                .where(WhaleTransaction.tx_timestamp >= window_cutoff)
-                .order_by(WhaleTransaction.tx_timestamp.desc())
-            )
-            result = await session.execute(stmt_window)
-            window_rows = result.scalars().all()
-
-            stmt_prior = (
-                select(WhaleTransaction.token_address)
-                .where(
-                    WhaleTransaction.tx_timestamp >= prior_cutoff,
-                    WhaleTransaction.tx_timestamp < window_cutoff,
-                )
-                .distinct()
-            )
-            prior_result = await session.execute(stmt_prior)
-            prior_tokens = {row[0] for row in prior_result.all()}
-
-            rows = [
-                {
-                    "signature": r.signature,
-                    "wallet_address": r.wallet_address,
-                    "wallet_label": r.wallet_label,
-                    "token_address": r.token_address,
-                    "token_symbol": r.token_symbol,
-                    "token_name": r.token_name,
-                    "direction": r.direction,
-                    "amount_usd": float(r.amount_usd),
-                    "tx_timestamp": r.tx_timestamp,
-                }
-                for r in window_rows
-            ]
-
-            return {"rows": rows, "prior_token_addresses": prior_tokens}
 
     async def get_whale_transactions_for_wallet(self, wallet_address: str, hours: int = 24, limit: int = 50) -> list[dict]:
         """Query whale transactions for a specific wallet address."""

@@ -268,102 +268,11 @@ class ContractScanner:
 
         return False, 0.0, None
 
-    async def _fetch_goplus_security(
-        self, address: str, chain: ChainType
-    ) -> Dict[str, Any]:
-        """Fetch token security data from GoPlus (free, no API key needed)."""
-        try:
-            from src.data.goplus import GoPlusClient
-            client = GoPlusClient(api_key=settings.goplus_api_key)
-            try:
-                result = await client.check_token_security(address, chain)
-                return result or {}
-            finally:
-                await client.close()
-        except Exception as e:
-            logger.warning(f"GoPlus security check failed for {address}: {e}")
-            return {}
-
-    def _goplus_to_findings(self, goplus: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Convert GoPlus security data into vulnerability findings."""
-        findings = []
-        if not goplus:
-            return findings
-
-        checks = [
-            ("is_honeypot", "critical", "Honeypot Detected",
-             "Token identified as honeypot by GoPlus - cannot sell after buying"),
-            ("is_mintable", "high", "Mintable Token",
-             "Token supply can be increased by the owner"),
-            ("can_take_back_ownership", "high", "Ownership Reclaim Risk",
-             "Previous owner can reclaim ownership after renouncing"),
-            ("hidden_owner", "high", "Hidden Owner",
-             "Token has a hidden owner mechanism"),
-            ("selfdestruct", "critical", "Self-Destruct Capability",
-             "Contract can be destroyed, potentially locking all funds"),
-            ("transfer_pausable", "medium", "Pausable Transfers",
-             "Token transfers can be paused by the owner"),
-            ("cannot_sell_all", "high", "Sell Restriction",
-             "Cannot sell all tokens at once - possible exit scam"),
-            ("is_blacklisted", "medium", "Blacklist Capability",
-             "Token has address blacklisting functionality"),
-            ("owner_change_balance", "critical", "Owner Balance Manipulation",
-             "Owner can modify token balances directly"),
-            ("slippage_modifiable", "medium", "Modifiable Slippage",
-             "Trading slippage can be modified by owner"),
-            ("is_anti_whale", "low", "Anti-Whale Mechanism",
-             "Token has anti-whale transfer limits"),
-            ("trading_cooldown", "low", "Trading Cooldown",
-             "Token enforces a cooldown between trades"),
-            ("external_call", "medium", "External Contract Call",
-             "Contract makes external calls - potential for manipulation"),
-        ]
-
-        for field, severity, title, description in checks:
-            if goplus.get(field) is True:
-                findings.append({
-                    "severity": severity,
-                    "title": f"GoPlus: {title}",
-                    "description": description,
-                    "line_number": None,
-                    "code_snippet": None,
-                    "recommendation": f"Verify {title.lower()} risk before interacting.",
-                    "source": "goplus",
-                })
-
-        # Add tax findings
-        buy_tax = goplus.get("buy_tax", 0)
-        sell_tax = goplus.get("sell_tax", 0)
-        if isinstance(buy_tax, (int, float)) and buy_tax > 5:
-            severity = "critical" if buy_tax > 50 else "high" if buy_tax > 20 else "medium"
-            findings.append({
-                "severity": severity,
-                "title": f"GoPlus: High Buy Tax ({buy_tax}%)",
-                "description": f"Token has a {buy_tax}% buy tax",
-                "line_number": None,
-                "code_snippet": None,
-                "recommendation": "High buy tax reduces effective token value on purchase.",
-                "source": "goplus",
-            })
-        if isinstance(sell_tax, (int, float)) and sell_tax > 5:
-            severity = "critical" if sell_tax > 50 else "high" if sell_tax > 20 else "medium"
-            findings.append({
-                "severity": severity,
-                "title": f"GoPlus: High Sell Tax ({sell_tax}%)",
-                "description": f"Token has a {sell_tax}% sell tax",
-                "line_number": None,
-                "code_snippet": None,
-                "recommendation": "High sell tax may indicate honeypot or exit scam.",
-                "source": "goplus",
-            })
-
-        return findings
-
     async def scan(
         self, address: str, chain: ChainType
     ) -> Dict[str, Any]:
         """
-        Full contract scan: source fetch + static analysis + GoPlus + similarity check.
+        Full contract scan: source fetch + static analysis + similarity check.
 
         Returns structured scan result ready for AI audit and API response.
         """
@@ -389,23 +298,11 @@ class ContractScanner:
             "similarity_score": 0.0,
             "similar_contract_info": None,
             "scan_duration_ms": 0,
-            "goplus_security": None,
         }
 
-        # Step 1: Fetch source code and GoPlus data in parallel
-        goplus_task = self._fetch_goplus_security(address, chain)
-
+        # Step 1: Fetch source code
         if chain != ChainType.SOLANA:
-            source_task = self.get_contract_source(address, chain)
-            source_info, goplus_data = await asyncio.gather(
-                source_task, goplus_task, return_exceptions=True
-            )
-
-            if isinstance(source_info, Exception):
-                source_info = {"is_verified": False, "source_code": "", "name": ""}
-            if isinstance(goplus_data, Exception):
-                goplus_data = {}
-
+            source_info = await self.get_contract_source(address, chain)
             result.update({
                 "is_verified": source_info.get("is_verified", False),
                 "name": source_info.get("name"),
@@ -420,42 +317,18 @@ class ContractScanner:
             if source_info.get("source_code"):
                 vulns = self.analyze_source_code(source_info["source_code"])
                 result["vulnerabilities"].extend(vulns)
-        else:
-            goplus_data = await goplus_task
-            if isinstance(goplus_data, Exception):
-                goplus_data = {}
 
-        # Step 3: GoPlus findings
-        if goplus_data:
-            result["goplus_security"] = {
-                "is_honeypot": goplus_data.get("is_honeypot", False),
-                "buy_tax": goplus_data.get("buy_tax", 0),
-                "sell_tax": goplus_data.get("sell_tax", 0),
-                "is_open_source": goplus_data.get("is_open_source", False),
-                "is_proxy": goplus_data.get("is_proxy", False),
-                "is_mintable": goplus_data.get("is_mintable", False),
-                "holder_count": goplus_data.get("holder_count", 0),
-                "owner_address": goplus_data.get("owner_address", ""),
-                "creator_address": goplus_data.get("creator_address", ""),
-                "trust_list": goplus_data.get("trust_list", False),
-            }
-            goplus_findings = self._goplus_to_findings(goplus_data)
-            result["vulnerabilities"].extend(goplus_findings)
-
-            # Update name from GoPlus if not available from source
-            if not result["name"] and goplus_data.get("token_name"):
-                result["name"] = goplus_data["token_name"]
-
-        # Step 4: Bytecode analysis
+        # Step 3: Bytecode analysis
         bytecode = await self.get_bytecode(address, chain)
         if bytecode:
             bytecode_vulns = self.analyze_bytecode(bytecode)
+            # Deduplicate against source findings
             existing_titles = {v["title"] for v in result["vulnerabilities"]}
             for v in bytecode_vulns:
                 if v["title"] not in existing_titles:
                     result["vulnerabilities"].append(v)
 
-            # Step 5: Similarity check
+            # Step 4: Similarity check
             is_similar, sim_score, sim_info = self.check_similarity(bytecode)
             result["similar_to_scam"] = is_similar
             result["similarity_score"] = sim_score
@@ -477,8 +350,7 @@ class ContractScanner:
         logger.info(
             f"Contract scan complete for {address[:8]}: "
             f"verified={result['is_verified']}, "
-            f"vulns={len(result['vulnerabilities'])}, "
-            f"goplus={'yes' if goplus_data else 'no'}"
+            f"vulns={len(result['vulnerabilities'])}"
         )
 
         return result

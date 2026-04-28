@@ -5,7 +5,6 @@ from aiohttp.test_utils import TestClient, TestServer
 from src.alerts.audit_log import clear_audit_log, fetch_latest_audit_record
 from src.api.routes.alerts import setup_alert_routes
 from src.api.routes.auth import auth_middleware
-from tests.helpers import AsyncInMemoryAlertStore
 
 
 @pytest.mark.asyncio
@@ -22,7 +21,7 @@ async def test_alert_rule_change_writes_audit_record_with_actor_and_trace(monkey
     clear_audit_log()
 
     app = web.Application(middlewares=[auth_middleware])
-    setup_alert_routes(app, store=AsyncInMemoryAlertStore())
+    setup_alert_routes(app)
 
     client = TestClient(TestServer(app))
     await client.start_server()

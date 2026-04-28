@@ -4,6 +4,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import dynamic from "next/dynamic";
 import { useAuth, useUser } from "@/lib/hooks";
 import { useToast } from "@/components/ui/toaster";
+import AssistantWalletSettings from "@/components/agent-app/AssistantWalletSettings";
 
 // Dynamically import WalletMultiButton with SSR disabled to prevent hydration mismatch
 const WalletMultiButton = dynamic(
@@ -54,6 +55,9 @@ export default function SettingsPage() {
       <p className="text-muted-foreground mb-8">
         Manage your account and preferences
       </p>
+
+      {/* Agent wallet (Phantom/MetaMask/email session used for the AI Agent) */}
+      <AssistantWalletSettings />
 
       {/* Wallet Section */}
       <section id="auth">

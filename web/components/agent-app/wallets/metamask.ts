@@ -1,8 +1,16 @@
-const API_BASE = "/api/v1";
-const BNB_CHAIN_HEX = "0x38";
+/**
+ * MetaMask wallet connection + JWT authentication.
+ * Default chain: BNB Smart Chain (56).
+ *
+ * Uses EIP-1193 multi-provider detection to find the real MetaMask even when
+ * Phantom (or another wallet) has hijacked window.ethereum.
+ */
 
-export type EthProvider = {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+const API_BASE = "/api/v1/assistant-auth";
+const BNB_CHAIN_HEX = "0x38"; // 56
+
+type EthProvider = {
+  request: (a: { method: string; params?: unknown[] }) => Promise<unknown>;
   isMetaMask?: boolean;
   isPhantom?: boolean;
   providers?: EthProvider[];
@@ -20,78 +28,73 @@ export interface MetaMaskSession {
   chainId: number;
 }
 
-export function resolveMetaMaskProvider(): EthProvider {
-  const ethereum = (window as unknown as { ethereum?: EthProvider }).ethereum;
+async function switchToBNB(eth: EthProvider): Promise<void> {
+  try {
+    await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: BNB_CHAIN_HEX }] });
+  } catch (err: unknown) {
+    if ((err as { code?: number }).code === 4902) {
+      await eth.request({
+        method: "wallet_addEthereumChain",
+        params: [{
+          chainId: BNB_CHAIN_HEX,
+          chainName: "BNB Smart Chain",
+          nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+          rpcUrls: ["https://bsc-dataseed.binance.org"],
+          blockExplorerUrls: ["https://bscscan.com"],
+        }],
+      });
+    }
+    // If switch fails for another reason, continue anyway.
+  }
+}
 
-  if (!ethereum) {
+export function resolveMetaMaskProvider(): EthProvider {
+  const win = window as unknown as { ethereum?: EthProvider };
+  const eth = win.ethereum;
+
+  if (!eth) {
     throw new Error("MetaMask not installed. Please install it from metamask.io");
   }
 
-  if (ethereum.providers?.length) {
-    const provider = ethereum.providers.find(candidate => candidate.isMetaMask && !candidate.isPhantom)
-      ?? ethereum.providers.find(candidate => candidate.isMetaMask);
-    if (provider) return provider;
+  // EIP-1193: when multiple wallets are present, the browser collects them in providers[].
+  if (eth.providers?.length) {
+    const mm = eth.providers.find(p => p.isMetaMask && !p.isPhantom);
+    if (mm) return mm;
+    const anyMM = eth.providers.find(p => p.isMetaMask);
+    if (anyMM) return anyMM;
   }
 
-  if (ethereum.isPhantom) {
-    throw new Error("MetaMask not found. Phantom is intercepting window.ethereum - please select MetaMask.");
+  // Modern Phantom sets both isPhantom=true and isMetaMask=true for EVM compatibility.
+  if (eth.isPhantom) {
+    throw new Error("MetaMask not found. Phantom is intercepting window.ethereum - please install MetaMask.");
   }
 
-  return ethereum;
-}
-
-async function switchToDefaultChain(provider: EthProvider): Promise<void> {
-  try {
-    await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: BNB_CHAIN_HEX }] });
-  } catch (error: unknown) {
-    if ((error as { code?: number }).code !== 4902) return;
-
-    await provider.request({
-      method: "wallet_addEthereumChain",
-      params: [{
-        chainId: BNB_CHAIN_HEX,
-        chainName: "BNB Smart Chain",
-        nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
-        rpcUrls: ["https://bsc-dataseed.binance.org"],
-        blockExplorerUrls: ["https://bscscan.com"],
-      }],
-    });
-  }
-}
-
-function toHexMessage(message: string): string {
-  return "0x" + Array.from(new TextEncoder().encode(message), byte => byte.toString(16).padStart(2, "0")).join("");
+  return eth;
 }
 
 export async function connectMetaMask(): Promise<MetaMaskSession> {
-  const provider = resolveMetaMaskProvider();
-  const accounts = await provider.request({ method: "eth_requestAccounts" }) as string[];
+  const eth = resolveMetaMaskProvider();
+
+  const accounts = await eth.request({ method: "eth_requestAccounts" }) as string[];
   const address = accounts[0];
 
-  if (!address) {
-    throw new Error("No MetaMask account selected.");
-  }
+  await switchToBNB(eth);
 
-  await switchToDefaultChain(provider);
-
-  const chainHex = await provider.request({ method: "eth_chainId" }) as string;
+  const chainHex = await eth.request({ method: "eth_chainId" }) as string;
   const chainId = parseInt(chainHex, 16);
-  const message = `Sign in to Ilyon AI Beta\n\nTimestamp: ${Math.floor(Date.now() / 1000)}`;
-  const signature = await provider.request({
-    method: "personal_sign",
-    params: [toHexMessage(message), address],
-  }) as string;
 
-  const response = await fetch(`${API_BASE}/auth/metamask`, {
+  const ts = Math.floor(Date.now() / 1000);
+  const message = `Sign in to Ilyon AI Beta\n\nTimestamp: ${ts}`;
+  const msgHex = "0x" + Array.from(new TextEncoder().encode(message), b => b.toString(16).padStart(2, "0")).join("");
+  const signature = await eth.request({ method: "personal_sign", params: [msgHex, address] }) as string;
+
+  const res = await fetch(`${API_BASE}/auth/metamask`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ address, message, signature }),
   });
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.detail || "MetaMask authentication failed");
-  }
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Authentication failed");
 
   localStorage.setItem("ap_token", data.token);
   localStorage.setItem("ap_wallet", address);

@@ -5,6 +5,9 @@ import { navGroups } from "@/components/layout/nav-config";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { SidebarWalletCard } from "@/components/agent-app/SidebarWalletCard";
+import { SidebarMarketList } from "@/components/agent-app/SidebarMarketList";
+import { SidebarStatusBadges } from "@/components/agent-app/SidebarStatusBadges";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -21,8 +24,9 @@ export function Sidebar() {
   }, [pathname]);
 
   return (
-    <aside className="hidden md:flex md:w-64 md:flex-col md:border-r md:border-border/50 md:bg-background/70 md:backdrop-blur" aria-label="Primary">
-      <nav className="flex-1 overflow-y-auto sticky top-0 flex flex-col gap-6 p-4">
+    <aside className="hidden md:flex md:sticky md:top-0 md:h-screen md:w-64 md:flex-col md:border-r md:border-border/50 md:bg-background/70 md:backdrop-blur" aria-label="Primary">
+      <nav className="flex-1 overflow-y-auto flex flex-col gap-6 p-4">
+        <SidebarWalletCard />
         {navGroups.map((group) => (
           <div key={group.label} className="flex flex-col gap-2">
             <h4 className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
@@ -67,6 +71,8 @@ export function Sidebar() {
             </div>
           </div>
         ))}
+        <SidebarMarketList />
+        <SidebarStatusBadges />
       </nav>
     </aside>
   );

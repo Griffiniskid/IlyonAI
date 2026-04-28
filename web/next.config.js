@@ -33,14 +33,20 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080",
     NEXT_PUBLIC_SOLANA_NETWORK: process.env.NEXT_PUBLIC_SOLANA_NETWORK || "mainnet-beta",
-    NEXT_PUBLIC_COMING_SOON: process.env.NEXT_PUBLIC_COMING_SOON || "false",
   },
   async rewrites() {
+    const apiTarget = process.env.API_REWRITE_TARGET || "http://localhost:8080";
+    const assistantTarget = process.env.ASSISTANT_API_TARGET || "http://localhost:8000";
     return [
-      {
-        source: "/api/:path*",
-        destination: `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/:path*`,
-      },
+      { source: "/api/v1/agent-health", destination: `${assistantTarget}/health` },
+      { source: "/api/v1/agent", destination: `${assistantTarget}/api/v1/agent` },
+      { source: "/api/v1/chats", destination: `${assistantTarget}/api/v1/chats` },
+      { source: "/api/v1/chats/:path*", destination: `${assistantTarget}/api/v1/chats/:path*` },
+      { source: "/api/v1/auth/:path*", destination: `${assistantTarget}/api/v1/auth/:path*` },
+      { source: "/api/v1/rpc-proxy", destination: `${assistantTarget}/api/v1/rpc-proxy` },
+      { source: "/api/v1/bridge-status/:path*", destination: `${assistantTarget}/api/v1/bridge-status/:path*` },
+      { source: "/api/portfolio/:path*", destination: `${assistantTarget}/api/portfolio/:path*` },
+      { source: "/api/:path*", destination: `${apiTarget}/api/:path*` },
     ];
   },
 };
