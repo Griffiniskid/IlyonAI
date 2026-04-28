@@ -38,7 +38,6 @@ ENV PATH=/root/.local/bin:$PATH
 
 # Copy application code
 COPY src/ ./src/
-COPY .env.example .env.example
 
 # Create directories
 RUN mkdir -p logs
