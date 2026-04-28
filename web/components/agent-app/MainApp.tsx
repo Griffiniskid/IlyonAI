@@ -4412,7 +4412,7 @@ export default function MainApp() {
               <h2 className="intro-section-title">Powered by the best protocols</h2>
               <p className="intro-section-sub" style={{ marginBottom: 48 }}>Ilyon AI Beta integrates directly with 15+ industry-leading protocols across DeFi, data, and AI.</p>
               {(() => {
-                const categories = [...new Set(PARTNERS.map(p => p.category))];
+                const categories = Array.from(new Set(PARTNERS.map(p => p.category)));
                 return categories.map(cat => (
                   <div key={cat} className="intro-partners-section">
                     <div className="intro-partners-category">{cat}</div>
