@@ -1,0 +1,185 @@
+/* Agent-route overrides — hide MainApp's outer chrome so it lives inside the IlyonAI shell.
+   Loaded only by /agent/* via web/app/agent/layout.tsx. The IlyonAI sidebar + global ticker
+   stay; MainApp's own sidebar, top ticker, footer, and intro are suppressed. */
+
+/* Suppress MainApp's outer sidebar and its footer. */
+.app > aside.sidebar { display: none !important; }
+
+/* The global footer is outside MainApp; agent tabs need the full shell height. */
+body:has([data-agent-route]) footer { display: none !important; }
+
+body:has([data-agent-route]) div:has(> main > [data-agent-route]) {
+  align-self: stretch !important;
+  height: calc(100vh - 2rem) !important;
+  max-height: calc(100vh - 2rem) !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+body:has([data-agent-route]) main:has(> [data-agent-route]) {
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+body:has([data-agent-route]) [data-agent-route] {
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
+/* Permanently suppress MainApp's intro-screen. */
+.intro-screen { display: none !important; }
+
+/* Suppress MainApp's in-main ticker bar (we already render the global IlyonAI ticker). */
+.app .main > .ticker-bar { display: none !important; }
+
+/* The agent route layout owns the available AppShell space. Avoid viewport math here:
+   the global footer is outside MainApp, so 100vh would push it down as chat grows. */
+.app {
+  display: flex !important;
+  flex-direction: column !important;
+  grid-template-columns: none !important;
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  background: transparent !important;
+  overflow: hidden !important;
+}
+
+/* The main panel becomes a flex child filling the remaining height; tab panels inside
+   stretch and own their own internal scrolling. */
+.app > main.main {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* The tab-panel is the per-tab container. It must flex-grow to fill .main and provide
+   the box that .chat-wrap / .swap-wrap / .portfolio-wrap inherits from. */
+.app .main > .tab-panel,
+.app .main > div[class*="tab-panel"] {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* MainApp nests tab-panel inside content-canvas on /agent. This selector is the
+   one that keeps chat-wrap shrinkable so .messages remains the scroll container. */
+.app .main .content-canvas > .tab-panel {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* Chat / swap / portfolio wraps fill the tab-panel; drop fixed viewport math from MainApp. */
+.chat-wrap,
+.swap-wrap,
+.portfolio-wrap,
+.dashboard-wrap {
+  flex: 1 1 auto !important;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+/* page-shell wraps the chat thread; remove max-width/centering and excessive padding
+   so the chat sits flush against the IlyonAI sidebar edge with only minimal gutter. */
+.page-shell {
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 12px 16px !important;
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+}
+
+/* Chat is messenger-style: header, transcript, suggestions, composer. */
+.chat-wrap > .page-shell {
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  overflow: hidden !important;
+}
+
+.chat-wrap .chat-shell-head {
+  grid-row: 1 !important;
+}
+
+/* The messages thread is the scrollable area; trim padding and ensure it grows to fill. */
+.messages {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  padding: 12px 4px !important;
+  overflow-y: auto !important;
+}
+
+.chat-wrap .messages {
+  grid-row: 2 !important;
+  overflow-y: auto !important;
+}
+
+.chat-wrap .chat-composer {
+  grid-row: 3 !important;
+  min-height: 0 !important;
+  position: relative !important;
+  z-index: 2 !important;
+}
+
+/* The composer sits at the bottom of page-shell; it should not grow. */
+.quick-bar,
+.input-area {
+  flex: 0 0 auto !important;
+}
+
+.chat-wrap .quick-bar,
+.chat-wrap .input-area {
+  flex: 0 0 auto !important;
+}
+
+/* content-canvas wraps non-chat tabs (dashboard, swap, portfolio); fill width, drop padding. */
+.content-canvas {
+  width: 100% !important;
+  max-width: none !important;
+  padding: 12px 16px !important;
+  flex: 1 1 auto !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  overflow: auto !important;
+}
+
+.app .content-canvas:has(.chat-wrap) {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+/* On agent routes the messages pane owns scrolling; keep the page/footer from moving.
+   Scope this to the server-rendered route marker so it applies before MainApp hydrates. */
+body:has([data-agent-route]) { overflow-y: hidden !important; }
+
+/* The auth overlay must stack above MainApp's intro-screen (z-index: 200). */
+.auth-overlay { z-index: 400 !important; }
