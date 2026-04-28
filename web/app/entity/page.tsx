@@ -26,7 +26,9 @@ import { Badge } from "@/components/ui/badge";
 import * as api from "@/lib/api";
 
 async function fetchEntities() {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/api/v1/entities`);
+  const configuredBase = process.env.NEXT_PUBLIC_API_URL || "";
+  const apiBase = configuredBase.startsWith("http://localhost") ? "" : configuredBase;
+  const res = await fetch(`${apiBase}/api/v1/entities`);
   const json = await res.json();
   if (json.status !== "ok") throw new Error("Failed to load entities");
   return json.data.entities ?? [];

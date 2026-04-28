@@ -9,6 +9,7 @@ import {
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import { clusterApiUrl } from "@solana/web3.js";
 import { ToastProvider } from "@/components/ui/toaster";
+import { MultiWalletProvider } from "@/components/providers/WalletProvider";
 
 // Import wallet adapter CSS
 import "@solana/wallet-adapter-react-ui/styles.css";
@@ -49,7 +50,9 @@ export function Providers({ children }: ProvidersProps) {
       <ConnectionProvider endpoint={endpoint}>
         <WalletProvider wallets={wallets} autoConnect>
           <WalletModalProvider>
-            <ToastProvider>{children}</ToastProvider>
+            <MultiWalletProvider>
+              <ToastProvider>{children}</ToastProvider>
+            </MultiWalletProvider>
           </WalletModalProvider>
         </WalletProvider>
       </ConnectionProvider>

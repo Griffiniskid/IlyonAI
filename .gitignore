@@ -18,6 +18,15 @@ data/
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Next.js + Node build outputs
+.next/
+.next-local/
+web/.next/
+web/.next-local/
+web/out/
+node_modules/
+web/node_modules/
 *.so
 .Python
 build/
@@ -105,3 +114,4 @@ deploy/**/compose.env
 *.key
 credentials.json
 secrets.json
+.gitnexus

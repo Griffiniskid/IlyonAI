@@ -1,7 +1,7 @@
 import {
   Compass,
   LineChart,
-
+  Scan,
   Radar,
   Flame,
   Shield,
@@ -30,6 +30,7 @@ export const navGroups: NavGroup[] = [
     label: "Discover",
     items: [
       { label: "Overview", href: "/", icon: Compass },
+      { label: "Analyze", href: "/analyze", icon: Scan },
       { label: "Dashboard", href: "/dashboard", icon: LineChart },
       { label: "Trending", href: "/trending", icon: Flame },
     ],
@@ -49,9 +50,11 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Portfolio",
+    label: "AI Agent",
     items: [
-      { label: "Portfolio", href: "/portfolio", icon: PieChart },
+      { label: "Chat", href: "/agent/chat?tab=chat", icon: MessagesSquare },
+      { label: "Swap", href: "/agent/swap?tab=swap", icon: ArrowLeftRight },
+      { label: "Portfolio", href: "/agent/portfolio?tab=portfolio", icon: PieChart },
     ],
   },
   {

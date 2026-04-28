@@ -221,6 +221,45 @@ class AIRouter:
             return ""
         return await self.openai_mini.chat(message, system_prompt)
 
+    async def complete(
+        self,
+        *,
+        model: str = "default",
+        messages: list[dict] | None = None,
+        temperature: float = 0.2,
+        stop=None,
+        tools=None,
+    ) -> dict:
+        """OpenAI-compatible completion endpoint for LangChain agent use."""
+        if not self.openai_mini:
+            return {"content": "AI unavailable – no model configured.", "tool_calls": []}
+
+        # Build a single prompt from messages
+        parts = []
+        for m in (messages or []):
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            parts.append(f"{role}: {content}")
+        prompt = "\n".join(parts)
+
+        if tools:
+            # Include tool schemas in the prompt for ReAct-style usage
+            tool_descriptions = []
+            for t in tools:
+                if isinstance(t, dict):
+                    fn = t.get("function", t)
+                    tool_descriptions.append(f"- {fn.get('name', 'unknown')}: {fn.get('description', '')}")
+                else:
+                    tool_descriptions.append(f"- {getattr(t, 'name', 'unknown')}: {getattr(t, 'description', '')}")
+            prompt += "\n\nAvailable tools:\n" + "\n".join(tool_descriptions)
+
+        try:
+            response = await self.openai_mini.chat(prompt)
+            return {"content": response or "", "tool_calls": []}
+        except Exception as e:
+            logger.error(f"complete() error: {e}")
+            return {"content": f"Error: {e}", "tool_calls": []}
+
     async def close(self):
         """Cleanup all AI clients"""
         logger.info("🔄 Closing AI Router...")

@@ -3,6 +3,8 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { AppShell } from "@/components/layout/app-shell";
+import { Footer } from "@/components/layout/footer";
+import { MarketTickerBar } from "@/components/agent-app/MarketTickerBar";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -15,9 +17,9 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ilyon AI | Multi-Chain Token And Pool Intelligence",
+  title: "Ilyon AI | Your AI-Powered DeFi Trading Assistant",
   description:
-    "AI-powered token and pool intelligence across Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, Avalanche, and Solana. Analyze token security, pool sustainability, contract risk, and wallet approvals from one surface.",
+    "AI-powered DeFi trading assistant across Solana, Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, and Avalanche. Ask in natural language to check balances, find swap routes, bridge assets, track portfolios, and analyze tokens — all from one chat interface.",
   keywords: [
     "DeFi security",
     "multi-chain",
@@ -29,6 +31,11 @@ export const metadata: Metadata = {
     "yield farming",
     "crypto security",
     "AI analysis",
+    "AI trading assistant",
+    "DeFi assistant",
+    "natural language trading",
+    "crypto AI",
+    "wallet assistant",
     "Ethereum",
     "Solana",
     "Base",
@@ -38,15 +45,15 @@ export const metadata: Metadata = {
     apple: "/shield.png",
   },
   openGraph: {
-    title: "Ilyon AI | Multi-Chain Token And Pool Intelligence",
-    description: "AI-powered token security and pool intelligence across all major chains",
+    title: "Ilyon AI | Your AI-Powered DeFi Trading Assistant",
+    description: "AI-powered DeFi trading assistant across all major chains",
     type: "website",
     siteName: "Ilyon AI",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Ilyon AI | Multi-Chain Token And Pool Intelligence",
-    description: "AI-powered token security and pool intelligence across all major chains",
+    title: "Ilyon AI | Your AI-Powered DeFi Trading Assistant",
+    description: "AI-powered DeFi trading assistant across all major chains",
   },
 };
 
@@ -58,52 +65,25 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${inter.variable} ${jetbrains.variable} font-sans antialiased min-h-screen`}
+        className={`${inter.variable} ${jetbrains.variable} font-sans antialiased h-screen`}
       >
         <Providers>
-          <div className="relative min-h-screen">
+          <div className="relative min-h-screen flex flex-col">
             {/* Hero gradient background */}
             <div className="fixed inset-0 hero-gradient pointer-events-none" />
 
-            <AppShell>
-              {/* Main content */}
-              <main className="flex-1 relative z-10">{children}</main>
+            {/* Global market ticker — visible on every page */}
+            <MarketTickerBar />
 
-              {/* Footer */}
-              <footer className="border-t border-border/50 py-6 mt-auto relative z-10">
-                <div className="container mx-auto px-4">
-                  <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                    <div className="flex items-center">
-                      <img src="/logo.png" alt="Ilyon AI" className="h-14 sm:h-[72px] w-auto" />
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      Multi-chain token and pool intelligence
-                    </div>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <a href="/docs" className="hover:text-foreground transition">
-                        Documentation
-                      </a>
-                      <a
-                        href="https://x.com/ilyonProtocol"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:text-foreground transition"
-                      >
-                        Twitter
-                      </a>
-                      <a
-                        href="https://t.me/ilyonProtocol"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:text-foreground transition"
-                      >
-                        Telegram
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              </footer>
-            </AppShell>
+            <div className="flex-1 flex flex-col min-h-0 pt-8">
+              <AppShell>
+                {/* Main content */}
+                <main className="flex-1 relative z-10 flex flex-col min-h-0">{children}</main>
+
+                {/* Footer */}
+                <Footer />
+              </AppShell>
+            </div>
           </div>
         </Providers>
       </body>
