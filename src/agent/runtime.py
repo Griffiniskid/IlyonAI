@@ -12,7 +12,7 @@ from src.agent.llm import IlyonChatModel
 from src.agent.streaming import StreamCollector, encode_sse, frame_event_name
 from src.agent.session import PersistentWindowMemory
 from src.storage.chat import get_chat, append_message, create_chat
-from src.api.schemas.agent import CardFrame, ToolEnvelope
+from src.api.schemas.agent import CardFrame, ThoughtFrame, ToolEnvelope
 
 SYSTEM_PROMPT = PromptTemplate.from_template(
     """You are Ilyon Sentinel's crypto agent. You answer questions about
@@ -40,6 +40,19 @@ Question: {input}
 {agent_scratchpad}
 """
 )
+
+
+def _compose_plan_from_message(message: str):
+    """Return a deterministic execution plan for direct multi-step intents."""
+    from src.agent.simple_runtime import detect_intent
+
+    intent = detect_intent(message)
+    if not intent or intent[0] != "compose_plan":
+        return None
+
+    from src.agent.planner import build_plan
+
+    return build_plan(intent[1])
 
 
 async def run_turn(
@@ -76,6 +89,36 @@ async def run_turn(
     if chat is None:
         chat = await create_chat(db, user_id=user_id, title=message[:60])
     await append_message(db, chat.id, role="user", content=message)
+
+    direct_plan = _compose_plan_from_message(message)
+    if direct_plan is not None:
+        collector = StreamCollector()
+        collector._step += 1
+        collector._queue.append(ThoughtFrame(
+            step_index=collector._step,
+            content="Decomposing the request into a safe, ordered execution plan...",
+        ))
+        collector._queue.append(CardFrame(
+            step_index=collector._step,
+            card_id=direct_plan.plan_id,
+            card_type="execution_plan_v2",
+            payload=direct_plan.model_dump(),
+        ))
+        final_text = (
+            f"I prepared a {direct_plan.total_steps}-step execution plan. Review the full plan, "
+            "then sign each step in order; follow-up actions stay locked until the prior on-chain receipt confirms."
+        )
+        collector.emit_final(final_text, [direct_plan.plan_id])
+        for frame in collector.drain():
+            yield encode_sse(frame_event_name(frame), frame.model_dump())
+        await append_message(
+            db,
+            chat.id,
+            role="assistant",
+            content=final_text,
+            cards=[{"card_id": direct_plan.plan_id}],
+        )
+        return
 
     memory = await PersistentWindowMemory.load(db, chat.id, k=10)
     llm = IlyonChatModel(router=router, model="default")

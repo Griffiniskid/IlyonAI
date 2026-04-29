@@ -139,6 +139,41 @@ export interface PlanPayload {
   shield?: ShieldBlock | null;
 }
 
+export interface PlanStepV2 {
+  step_id: string;
+  order: number;
+  action: "swap" | "bridge" | "stake" | "unstake" | "deposit_lp" | "withdraw_lp" | "transfer" | "approve" | "wait_receipt" | "get_balance";
+  params: Record<string, unknown>;
+  depends_on: string[];
+  resolves_from: Record<string, string>;
+  sentinel?: SentinelBlock | null;
+  shield_flags: string[];
+  estimated_gas_usd?: number | null;
+  estimated_duration_s?: number | null;
+  status: "pending" | "ready" | "signing" | "broadcast" | "confirmed" | "failed" | "skipped";
+  tx_hash?: string | null;
+  receipt?: Record<string, unknown> | null;
+  error?: string | null;
+}
+
+export interface ExecutionPlanV2Payload {
+  plan_id: string;
+  title: string;
+  steps: PlanStepV2[];
+  total_steps: number;
+  total_gas_usd: number;
+  total_duration_estimate_s: number;
+  blended_sentinel?: number | null;
+  requires_signature_count: number;
+  risk_warnings: string[];
+  risk_gate: "clear" | "soft_warn" | "hard_block";
+  requires_double_confirm: boolean;
+  chains_touched: string[];
+  user_assets_required: Record<string, string>;
+  sentinel?: SentinelBlock | null;
+  shield?: ShieldBlock | null;
+}
+
 export interface BalancePayload {
   wallet: string;
   total_usd: string;
@@ -182,7 +217,7 @@ export interface PairListPayload {
 export type CardType =
   | "allocation" | "sentinel_matrix" | "execution_plan"
   | "swap_quote" | "pool" | "token" | "position"
-  | "plan" | "balance" | "bridge" | "stake" | "market_overview" | "pair_list";
+  | "plan" | "execution_plan_v2" | "balance" | "bridge" | "stake" | "market_overview" | "pair_list";
 
 export interface AllocationCard { card_id: string; card_type: "allocation"; payload: AllocationPayload; }
 export interface SentinelMatrixCard { card_id: string; card_type: "sentinel_matrix"; payload: SentinelMatrixPayload; }
@@ -192,6 +227,7 @@ export interface PoolCard { card_id: string; card_type: "pool"; payload: PoolPay
 export interface TokenCard { card_id: string; card_type: "token"; payload: TokenPayload; }
 export interface PositionCard { card_id: string; card_type: "position"; payload: PositionPayload; }
 export interface PlanCard { card_id: string; card_type: "plan"; payload: PlanPayload; }
+export interface ExecutionPlanV2Card { card_id: string; card_type: "execution_plan_v2"; payload: ExecutionPlanV2Payload; }
 export interface BalanceCard { card_id: string; card_type: "balance"; payload: BalancePayload; }
 export interface BridgeCard { card_id: string; card_type: "bridge"; payload: BridgePayload; }
 export interface StakeCard { card_id: string; card_type: "stake"; payload: StakePayload; }
@@ -199,8 +235,8 @@ export interface MarketOverviewCard { card_id: string; card_type: "market_overvi
 export interface PairListCard { card_id: string; card_type: "pair_list"; payload: PairListPayload; }
 
 export type AgentCard =
-  | AllocationCard | SwapQuoteCard | PoolCard | TokenCard | PositionCard
-  | PlanCard | BalanceCard | BridgeCard | StakeCard | MarketOverviewCard | PairListCard;
+  | AllocationCard | SentinelMatrixCard | ExecutionPlanCard | SwapQuoteCard | PoolCard | TokenCard | PositionCard
+  | PlanCard | ExecutionPlanV2Card | BalanceCard | BridgeCard | StakeCard | MarketOverviewCard | PairListCard;
 
 export interface ToolError {
   code: string;

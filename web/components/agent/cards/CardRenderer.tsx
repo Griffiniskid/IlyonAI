@@ -10,6 +10,7 @@ import type {
   AllocationPayload,
   SentinelMatrixPayload,
   ExecutionPlanPayload,
+  ExecutionPlanV2Payload,
   PlanPayload,
   PositionPayload,
   BridgePayload,
@@ -502,6 +503,64 @@ function PairListCard({ payload }: { payload: PairListPayload }) {
   );
 }
 
+function ExecutionPlanV2Card({ payload }: { payload: ExecutionPlanV2Payload }) {
+  const extra = (
+    <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-slate-400">
+      <span>{payload.requires_signature_count} signatures</span>
+      <span>${payload.total_gas_usd.toFixed(2)} gas</span>
+    </div>
+  );
+
+  return (
+    <div data-testid="execution-plan-v2-card">
+      {cardShell(
+        "Execution Plan",
+        <>
+          <div>
+            <div className="text-base font-semibold text-white">{payload.title}</div>
+            <div className="mt-1 text-xs text-slate-400">
+              {payload.total_steps} steps · ~{payload.total_duration_estimate_s}s estimate · {payload.risk_gate.replace("_", " ")}
+            </div>
+          </div>
+          {payload.requires_double_confirm ? (
+            <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-200">
+              Double confirmation required before signing because this plan includes cross-chain or higher-risk execution.
+            </div>
+          ) : null}
+          <div className="space-y-2">
+            {payload.steps.map((step) => (
+              <div
+                key={step.step_id}
+                data-testid="execution-plan-v2-row"
+                className="flex items-center justify-between rounded-lg bg-slate-700/30 px-3 py-2"
+              >
+                <div>
+                  <div className="text-sm font-medium text-white">
+                    {step.order}. {step.action.replace("_", " ")}
+                  </div>
+                  <div className="text-xs text-slate-400">Status: {step.status}</div>
+                </div>
+                <div className="text-right text-xs text-slate-400">
+                  {step.estimated_gas_usd != null ? <div>${step.estimated_gas_usd.toFixed(2)} gas</div> : null}
+                  {step.estimated_duration_s != null ? <div>~{step.estimated_duration_s}s</div> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+          {payload.risk_warnings.length ? (
+            <div className="space-y-1 text-xs text-yellow-300">
+              {payload.risk_warnings.map((warning) => (
+                <div key={warning}>{warning}</div>
+              ))}
+            </div>
+          ) : null}
+        </>,
+        extra,
+      )}
+    </div>
+  );
+}
+
 /* ── Fallback ─────────────────────────────────────────────────────────── */
 
 function FallbackCard({ card }: { card: CardFrame }) {
@@ -537,6 +596,8 @@ export function CardRenderer({ card }: Props) {
       return <DemoSentinelMatrixCard payload={payload as unknown as SentinelMatrixPayload} />;
     case "execution_plan":
       return <DemoExecutionPlanCard payload={payload as unknown as ExecutionPlanPayload} />;
+    case "execution_plan_v2":
+      return <ExecutionPlanV2Card payload={payload as unknown as ExecutionPlanV2Payload} />;
     case "plan":
       return <PlanCard payload={payload as unknown as PlanPayload} />;
     case "position":
