@@ -200,8 +200,8 @@ def _to_base_units(amount: str, token: str) -> str:
 def _detect_bridge_then_stake(message: str) -> tuple[str, dict] | None:
     pattern = re.compile(
         r"bridge\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})\s+"
-        r"from\s+(?P<src>[A-Za-z ]+?)\s+to\s+(?P<dst>[A-Za-z ]+?)\s+"
-        r"(?:and\s+)?stake\s+(?:it\s+)?(?:on\s+)?(?P<protocol>[A-Za-z0-9 ._-]+)",
+        r"from\s+(?P<src>[A-Za-z ]+?)\s+to\s+(?P<dst>[A-Za-z ]+?)\s*[,;]?\s*"
+        r"(?:(?:and|then)\s+)?stake\s+(?:it\s+)?(?:on\s+)?(?P<protocol>[A-Za-z0-9 ._-]+)",
         re.IGNORECASE,
     )
     match = pattern.search(message)

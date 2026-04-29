@@ -58,6 +58,15 @@ def test_detect_intent_parses_bridge_then_stake_plan():
     )
 
 
+def test_detect_intent_parses_bridge_comma_then_stake_plan():
+    intent = detect_intent("bridge 1,000 USDC from Ethereum to Arbitrum, then stake it on Aave")
+
+    assert intent is not None
+    assert intent[0] == "compose_plan"
+    assert intent[1]["steps"][0]["params"]["amount"] == "1000000000"
+    assert intent[1]["steps"][1]["params"]["chain_id"] == 42161
+
+
 @pytest.mark.asyncio
 async def test_run_ephemeral_turn_emits_execution_plan_card_for_bridge_then_stake():
     chunks = []
