@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from app.agents.crypto_agent import _build_bridge_tx, _build_stake_tx, get_staking_options
+from app.agents.crypto_agent import _build_bridge_tx, _build_stake_tx, _resolve_token_metadata, get_staking_options
 from app.api.endpoints import _extract_chain_alias, _try_direct_balance, _try_direct_bridge, _try_direct_stake, _try_direct_staking_info, _try_direct_swap
 
 
@@ -91,6 +91,69 @@ class DirectBalanceRoutingTests(unittest.TestCase):
 
 
 class DirectSwapRoutingTests(unittest.TestCase):
+    def test_bsc_eth_symbol_resolves_to_binance_peg_eth(self):
+        address, decimals, chain_id = _resolve_token_metadata("ETH", 56)
+
+        self.assertEqual(address, "0x2170Ed0880ac9A755fd29B2688956BD959F933F8")
+        self.assertEqual(decimals, 18)
+        self.assertEqual(chain_id, 56)
+
+    @patch("app.agents.crypto_agent._build_swap_tx")
+    def test_direct_swap_keeps_bnb_to_eth_on_bsc(self, mocked_build_swap_tx):
+        mocked_build_swap_tx.return_value = '{"status":"ok","chain_type":"evm"}'
+
+        result = _try_direct_swap(
+            "swap 0.003 bnb for eth",
+            "0x1111111111111111111111111111111111111111",
+            "SoL4naPubKey111111111111111111111111111111",
+            1,
+        )
+
+        self.assertEqual(result, '{"status":"ok","chain_type":"evm"}')
+        raw, _user_address, effective_chain = mocked_build_swap_tx.call_args.args
+        payload = json.loads(raw)
+        self.assertEqual(payload["token_in"], "BNB")
+        self.assertEqual(payload["token_out"], "ETH")
+        self.assertEqual(payload["amount"], "3000000000000000")
+        self.assertEqual(payload["chain_id"], 56)
+        self.assertEqual(effective_chain, 56)
+
+    @patch("app.agents.crypto_agent._build_swap_tx")
+    def test_direct_swap_keeps_binance_peg_eth_input_on_bsc(self, mocked_build_swap_tx):
+        mocked_build_swap_tx.return_value = '{"status":"ok","chain_type":"evm"}'
+
+        _try_direct_swap(
+            "swap 0.003 eth for bnb",
+            "0x1111111111111111111111111111111111111111",
+            "",
+            56,
+        )
+
+        raw, _user_address, effective_chain = mocked_build_swap_tx.call_args.args
+        payload = json.loads(raw)
+        self.assertEqual(payload["token_in"], "ETH")
+        self.assertEqual(payload["token_out"], "BNB")
+        self.assertEqual(payload["chain_id"], 56)
+        self.assertEqual(effective_chain, 56)
+
+    @patch("app.agents.crypto_agent._build_swap_tx")
+    def test_direct_swap_all_eth_for_bnb_stays_on_bsc(self, mocked_build_swap_tx):
+        mocked_build_swap_tx.return_value = '{"status":"ok","chain_type":"evm"}'
+
+        _try_direct_swap(
+            "swap all eth for bnb",
+            "0x1111111111111111111111111111111111111111",
+            "",
+            56,
+        )
+
+        raw, _user_address, effective_chain = mocked_build_swap_tx.call_args.args
+        payload = json.loads(raw)
+        self.assertEqual(payload["token_in"], "ETH")
+        self.assertEqual(payload["token_out"], "BNB")
+        self.assertEqual(payload["chain_id"], 56)
+        self.assertEqual(effective_chain, 56)
+
     @patch("app.agents.crypto_agent.build_solana_swap")
     def test_direct_swap_uses_solana_path_for_sol_pairs(self, mocked_build_solana_swap):
         mocked_build_solana_swap.return_value = '{"status":"ok","chain_type":"solana"}'

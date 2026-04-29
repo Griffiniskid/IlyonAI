@@ -414,8 +414,11 @@ def _try_direct_swap(query: str, user_address: str, solana_address: str, chain_i
                     "user_pubkey": solana_wallet,
                 })
                 return build_solana_swap(swap_input)
-            # Auto-detect chain from token (e.g. BNB → chain 56)
-            effective_chain = _NATIVE_CHAIN.get(token_in, chain_id)
+            initial_chain = chain_id if chain_id else _NATIVE_CHAIN.get(token_in, chain_id)
+            _, _, resolved_chain = _resolve_token_metadata(
+                token_in, initial_chain, user_address, search_wallet_all_chains=True,
+            )
+            effective_chain = resolved_chain if resolved_chain else initial_chain
             swap_input = json.dumps({
                 "chain": "evm",
                 "token_in": token_in,
@@ -444,9 +447,9 @@ def _try_direct_swap(query: str, user_address: str, solana_address: str, chain_i
                 "user_pubkey": solana_wallet,
             })
             return build_solana_swap(swap_input)
-        effective_chain = _NATIVE_CHAIN.get(token_in, chain_id)
-        _, decimals, resolved_chain = _resolve_token_metadata(token_in, effective_chain, user_address, search_wallet_all_chains=True)
-        effective_chain = resolved_chain
+        initial_chain = chain_id if chain_id else _NATIVE_CHAIN.get(token_in, chain_id)
+        _, decimals, resolved_chain = _resolve_token_metadata(token_in, initial_chain, user_address, search_wallet_all_chains=True)
+        effective_chain = resolved_chain if resolved_chain else initial_chain
         try:
             amount_smallest = str(int(Decimal(amount_human) * (Decimal(10) ** int(decimals or 18))))
         except (InvalidOperation, ValueError):

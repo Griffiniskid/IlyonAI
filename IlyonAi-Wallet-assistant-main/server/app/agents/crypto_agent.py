@@ -1176,8 +1176,9 @@ def _resolve_token_metadata(
         except Exception:
             return val, None, chain_id
 
-    # Native token aliases
-    if val.lower() in ("native", "eth", "bnb", "matic", "avax", "ftm"):
+    # Native token aliases are chain-scoped. Symbols like ETH also exist as
+    # bridged tokens on other chains (for example Binance-Peg ETH on BSC).
+    if val.lower() in ("native", _native_symbol(chain_id).lower()):
         return _ENSO_NATIVE_TOKEN, 18, chain_id
 
     # Look up in token registry on current chain
