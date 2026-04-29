@@ -112,6 +112,33 @@ ASSET_HINT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+CHAIN_IDS = {
+    "ethereum": 1,
+    "eth": 1,
+    "mainnet": 1,
+    "arbitrum": 42161,
+    "arb": 42161,
+    "base": 8453,
+    "optimism": 10,
+    "op": 10,
+    "polygon": 137,
+    "matic": 137,
+    "bsc": 56,
+    "bnb": 56,
+    "solana": 7565164,
+    "sol": 7565164,
+}
+
+TOKEN_DECIMALS = {
+    "USDC": 6,
+    "USDT": 6,
+    "DAI": 18,
+    "ETH": 18,
+    "BNB": 18,
+    "MATIC": 18,
+    "SOL": 9,
+}
+
 
 def _parse_amount(text: str) -> float:
     """Extract a USD amount from free text — supports $10k, 10,000, 10000 USDC, etc."""
@@ -160,9 +187,69 @@ def _parse_asset_hint(text: str) -> str | None:
     return symbol
 
 
+def _to_base_units(amount: str, token: str) -> str:
+    raw = amount.replace(",", "")
+    decimals = TOKEN_DECIMALS.get(token.upper(), 18)
+    if "." in raw:
+        whole, frac = raw.split(".", 1)
+        frac = (frac + ("0" * decimals))[:decimals]
+        return str(int(whole or "0") * (10 ** decimals) + int(frac or "0"))
+    return str(int(raw or "0") * (10 ** decimals))
+
+
+def _detect_bridge_then_stake(message: str) -> tuple[str, dict] | None:
+    pattern = re.compile(
+        r"bridge\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})\s+"
+        r"from\s+(?P<src>[A-Za-z ]+?)\s+to\s+(?P<dst>[A-Za-z ]+?)\s+"
+        r"(?:and\s+)?stake\s+(?:it\s+)?(?:on\s+)?(?P<protocol>[A-Za-z0-9 ._-]+)",
+        re.IGNORECASE,
+    )
+    match = pattern.search(message)
+    if not match:
+        return None
+
+    token = match.group("token").upper()
+    src = match.group("src").strip().lower()
+    dst = match.group("dst").strip().lower()
+    protocol = match.group("protocol").strip().lower().replace(" ", "-")
+    src_chain_id = CHAIN_IDS.get(src)
+    dst_chain_id = CHAIN_IDS.get(dst)
+    if src_chain_id is None or dst_chain_id is None:
+        return None
+
+    return (
+        "compose_plan",
+        {
+            "title": f"Bridge {token} to {match.group('dst').strip().title()} and stake on {match.group('protocol').strip().title()}",
+            "steps": [
+                {
+                    "step_id": "step-1",
+                    "action": "bridge",
+                    "params": {
+                        "token_in": token,
+                        "amount": _to_base_units(match.group("amount"), token),
+                        "src_chain_id": src_chain_id,
+                        "dst_chain_id": dst_chain_id,
+                    },
+                },
+                {
+                    "step_id": "step-2",
+                    "action": "stake",
+                    "params": {"token": token, "protocol": protocol, "chain_id": dst_chain_id},
+                    "resolves_from": {"amount": "step-1.received_amount"},
+                },
+            ],
+        },
+    )
+
+
 def detect_intent(message: str) -> tuple[str, dict] | None:
     """Detect intent and extract parameters from user message."""
     message_lower = message.lower()
+
+    multi_step = _detect_bridge_then_stake(message)
+    if multi_step is not None:
+        return multi_step
 
     for tool_name, patterns in INTENT_PATTERNS.items():
         for pattern in patterns:
@@ -581,6 +668,30 @@ async def run_ephemeral_turn(
                 final_content = _format_sentinel_methodology_response()
                 elapsed = int((__import__('time').monotonic() - started) * 1000)
                 collector.emit_final(final_content, [])
+                for frame in collector.drain():
+                    yield encode_sse(frame_event_name(frame), frame.model_dump())
+                return
+
+            if tool_name == "compose_plan":
+                from src.agent.planner import build_plan
+
+                collector._step += 1
+                collector._queue.append(ThoughtFrame(
+                    step_index=collector._step,
+                    content="Decomposing the request into a safe, ordered execution plan..."
+                ))
+                plan = build_plan(tool_input)
+                collector._queue.append(CardFrame(
+                    step_index=collector._step,
+                    card_id=plan.plan_id,
+                    card_type="execution_plan_v2",
+                    payload=plan.model_dump(),
+                ))
+                final_content = (
+                    f"I prepared a {plan.total_steps}-step execution plan. Review the full plan, "
+                    "then sign each step in order; follow-up actions stay locked until the prior on-chain receipt confirms."
+                )
+                collector.emit_final(final_content, [plan.plan_id])
                 for frame in collector.drain():
                     yield encode_sse(frame_event_name(frame), frame.model_dump())
                 return
