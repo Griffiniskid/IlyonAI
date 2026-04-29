@@ -194,10 +194,13 @@ def _match_bridge_chain_phrase(text: str) -> int:
 
 
 def _extract_bridge_amount_token(query: str) -> tuple[str, str]:
-    m = re.search(r"\bbridge\s+([0-9]*\.?[0-9]+|all|max)\s+([A-Za-z0-9]+)\b", query, re.IGNORECASE)
+    m = re.search(r"\bbridge\s+(?:(all|max|[0-9]*\.?[0-9]+)\s+)?([A-Za-z0-9]+)\b", query, re.IGNORECASE)
     if not m:
         return "", ""
-    return m.group(1), m.group(2).upper()
+    token = m.group(2).upper()
+    if token.lower() in {"from", "to", "on", "chain"}:
+        return "", ""
+    return m.group(1) or "all", token
 
 
 def _extract_bridge_src_chain(query: str) -> int:
@@ -561,7 +564,7 @@ def _try_direct_lp_deposit(query: str, user_address: str, chain_id: int) -> Opti
     return None
 
 
-def _try_direct_stake(query: str, user_address: str, chain_id: int) -> Optional[str]:
+def _try_direct_stake(query: str, user_address: str, chain_id: int, solana_address: str = "") -> Optional[str]:
     """
     Detect simple staking intents and build the stake transaction directly.
     Returns JSON on success or a helpful English explanation on failure.
@@ -572,21 +575,25 @@ def _try_direct_stake(query: str, user_address: str, chain_id: int) -> Optional[
     if q.lower().startswith("where to stake"):
         return None
 
-    m = re.search(r"^stake\s+(?:my\s+)?([A-Za-z0-9]+)(?:\s+on\s+([A-Za-z0-9]+))?\s*$", q, re.IGNORECASE)
+    m = re.search(r"^stake\s+(?:(all|max|[0-9]*\.?[0-9]+)\s+)?(?:my\s+)?([A-Za-z0-9]+)(?:\s+on\s+([A-Za-z0-9]+))?\s*$", q, re.IGNORECASE)
     if not m:
         return None
 
-    _STAKING_NATIVE_CHAIN = {"ETH": 1, "BNB": 56, "MATIC": 137}
-    token = m.group(1).upper()
-    protocol = (m.group(2) or "").lower()
+    _STAKING_NATIVE_CHAIN = {"ETH": 1, "BNB": 56, "MATIC": 137, "SOL": 101}
+    amount = m.group(1) or "all"
+    token = m.group(2).upper()
+    protocol = (m.group(3) or "").lower()
     effective_chain = _STAKING_NATIVE_CHAIN.get(token, chain_id)
     raw = json.dumps({
         "token": token,
         "protocol": protocol,
-        "amount": "all",
+        "amount": amount,
         "chain_id": effective_chain,
     })
-    result = _build_stake_tx(raw, user_address, effective_chain)
+    if solana_address:
+        result = _build_stake_tx(raw, user_address, effective_chain, solana_address)
+    else:
+        result = _build_stake_tx(raw, user_address, effective_chain)
     try:
         parsed = json.loads(result)
     except json.JSONDecodeError:
@@ -849,7 +856,7 @@ async def run_agent(
 
     # ── Try direct staking flow for simple staking requests ──────────────────
     direct_stake_result = _try_direct_stake(
-        direct_query, evm_wallet, effective_chain_id
+        direct_query, evm_wallet, effective_chain_id, solana_wallet
     )
     if direct_stake_result:
         provided_chat_id_early: Optional[str] = getattr(body, "chat_id", None)

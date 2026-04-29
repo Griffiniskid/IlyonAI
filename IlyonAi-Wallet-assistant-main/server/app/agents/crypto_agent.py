@@ -22,6 +22,7 @@ import re
 import time
 from typing import Any, Final, Optional
 
+import base58
 import httpx
 import requests as _requests
 from langchain.agents import AgentExecutor, AgentType, initialize_agent
@@ -241,6 +242,53 @@ def _get_or_create_memory(session_id: str) -> ConversationBufferWindowMemory:
 def clear_session_memory(session_id: str) -> None:
     """Explicitly drop a session's memory (e.g. on logout)."""
     _session_memory.pop(session_id, None)
+
+
+def has_session_memory(session_id: str) -> bool:
+    memory = _session_memory.get(session_id)
+    return bool(memory and memory.chat_memory.messages)
+
+
+def hydrate_session_memory(session_id: str, transcript: list[tuple[str, str]]) -> None:
+    memory = _get_or_create_memory(session_id)
+    memory.chat_memory.clear()
+    for role, content in transcript:
+        if role == "user":
+            memory.chat_memory.add_user_message(content)
+        else:
+            memory.chat_memory.add_ai_message(content)
+
+
+def compact_session_memory(session_id: str) -> None:
+    memory = _session_memory.get(session_id)
+    if not memory:
+        return
+    for msg in memory.chat_memory.messages:
+        content = getattr(msg, "content", "")
+        if isinstance(content, str):
+            msg.content = re.sub(
+                r"0x[0-9a-fA-F]{512,}",
+                "0x<transaction data omitted>",
+                content,
+            )
+
+
+def _passes_balance_filter(token: dict[str, Any], *, trusted_usd: float, ui_bal: float) -> bool:
+    if token.get("possible_spam"):
+        return False
+    return trusted_usd > 0 or ui_bal >= 1.0
+
+
+def _load_moralis_api_key(env_path: Any = None) -> str:
+    if env_path:
+        try:
+            for line in env_path.read_text().splitlines():
+                key, sep, value = line.partition("=")
+                if sep and key.strip() == "MORALIS_API_KEY":
+                    return value.strip().strip('"\'')
+        except OSError:
+            pass
+    return os.environ.get("MORALIS_API_KEY", MORALIS_API_KEY)
 
 
 # ---------------------------------------------------------------------------
@@ -1325,6 +1373,11 @@ def _build_enso_swap_tx(
             "status": "error",
             "message": f"Chain {chain_id} is not supported by Enso. Supported: {sorted(_ENSO_SUPPORTED)}",
         })
+    if not (settings.enso_api_key or "").strip():
+        return json.dumps({
+            "status": "error",
+            "message": "ENSO_API_KEY is required to build EVM swap, staking, and LP transactions.",
+        })
 
     token_in_raw = params.get("token_in", "")
     token_out_raw = params.get("token_out", "")
@@ -2028,6 +2081,7 @@ _STAKING_NATIVE_CHAIN: Final[dict[str, int]] = {
     "ETH": 1,
     "BNB": 56,
     "MATIC": 137,
+    "SOL": 101,
 }
 
 _STAKING_PROTOCOL_URLS: Final[dict[tuple[int, str, str], str]] = {
@@ -2039,6 +2093,8 @@ _STAKING_PROTOCOL_URLS: Final[dict[tuple[int, str, str], str]] = {
     (56, "BNB", "binance"): "https://www.binance.com/en/staked-bnb",
     (56, "BNB", "ankr"): "https://www.ankr.com/staking/stake/bnb/",
     (137, "MATIC", "lido"): "https://polygon.lido.fi/",
+    (101, "SOL", "jito"): "https://www.jito.network/staking/",
+    (101, "SOL", "marinade"): "https://marinade.finance/app/staking",
 }
 
 _CHAIN_LABELS: Final[dict[int, str]] = {
@@ -2050,6 +2106,7 @@ _CHAIN_LABELS: Final[dict[int, str]] = {
     42161: "Arbitrum",
     43114: "Avalanche",
     59144: "Linea",
+    101: "Solana",
     250: "Fantom",
     100: "Gnosis",
     324: "zkSync Era",
@@ -2257,7 +2314,7 @@ def _bridge_default_output_token(token_in: str, src_chain: int, dst_chain: int) 
     return token_upper
 
 
-def _build_stake_tx(raw: str, user_address: str, default_chain_id: int) -> str:
+def _build_stake_tx(raw: str, user_address: str, default_chain_id: int, solana_address: str = "") -> str:
     """
     Build a staking transaction via Enso routing.
     Staking = swap tokenIn for receipt token (e.g. ETH -> stETH via Lido).
@@ -2294,6 +2351,34 @@ def _build_stake_tx(raw: str, user_address: str, default_chain_id: int) -> str:
     receipt_token = staking_info["receipt"]
     protocol_name = staking_info["name"]
 
+    if chain_id in _APP_SOLANA_CHAIN_IDS and token == "SOL":
+        _evm_wallet, sol_wallet = _split_connected_wallets(user_address, solana_address)
+        if not sol_wallet:
+            return json.dumps({"status": "error", "message": "No Solana wallet connected for SOL staking. Connect Phantom first."})
+        if amount.lower().strip() in ("", "all", "max"):
+            return json.dumps({"status": "error", "message": "Please enter an exact SOL amount to stake, e.g. 'stake 0.2 SOL'."})
+
+        buy_token = "jito" if protocol == "jito" else "msol"
+        result_json = build_solana_swap(json.dumps({
+            "sell_token": "SOL",
+            "buy_token": buy_token,
+            "sell_amount": amount,
+            "user_pubkey": sol_wallet,
+        }))
+        try:
+            result = json.loads(result_json)
+        except json.JSONDecodeError:
+            return result_json
+        if result.get("status") == "ok":
+            result["action"] = "stake"
+            result["route_summary"] = f"Stake via {protocol_name}"
+            result["protocol_url"] = _STAKING_PROTOCOL_URLS.get(key, "")
+            result["from_token_symbol"] = "SOL"
+            result["to_token_symbol"] = protocol_name
+        elif "error" in result and "message" not in result:
+            result = {"status": "error", "message": result["error"]}
+        return json.dumps(result)
+
     # Route through Enso: tokenIn -> receiptToken (Enso handles the staking contract interaction)
     swap_params = {
         "token_in": token,
@@ -2315,6 +2400,40 @@ def _build_stake_tx(raw: str, user_address: str, default_chain_id: int) -> str:
         return json.dumps(result)
     except json.JSONDecodeError:
         return result_json
+
+
+def _get_solana_spl_balance(owner: str, mint: str) -> int:
+    for rpc in _SOL_RPCS_AGENT:
+        try:
+            r = _requests.post(
+                rpc,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getTokenAccountsByOwner",
+                    "params": [
+                        owner,
+                        {"mint": mint},
+                        {"encoding": "jsonParsed", "commitment": "processed"},
+                    ],
+                },
+                timeout=8,
+            )
+            total = 0
+            for item in (((r.json() or {}).get("result") or {}).get("value") or []):
+                amount = (((((item.get("account") or {}).get("data") or {}).get("parsed") or {}).get("info") or {}).get("tokenAmount") or {}).get("amount") or "0"
+                total += int(amount)
+            return total
+        except Exception:
+            continue
+    return 0
+
+
+def _is_valid_solana_address(address: str) -> bool:
+    try:
+        return len(base58.b58decode(address.strip())) == 32
+    except Exception:
+        return False
 
 
 def _build_deposit_lp_tx(raw: str, user_address: str, default_chain_id: int) -> str:
@@ -2410,6 +2529,11 @@ def _build_bridge_tx(raw: str, user_address: str, default_chain_id: int, solana_
     if not recipient:
         return json.dumps({"status": "error", "message": "No destination recipient is available for this bridge. Connect a wallet on the destination side or provide a recipient address explicitly."})
 
+    if src_chain == _DEBRIDGE_SOLANA_CHAIN_ID and not _is_valid_solana_address(sender):
+        return json.dumps({"status": "error", "message": "Please connect a valid Solana source wallet address before bridging from Solana."})
+    if dst_chain == _DEBRIDGE_SOLANA_CHAIN_ID and not _is_valid_solana_address(recipient):
+        return json.dumps({"status": "error", "message": "Please provide a valid Solana recipient address for this bridge."})
+
     if src_chain not in _DEBRIDGE_CHAIN_IDS or dst_chain not in _DEBRIDGE_CHAIN_IDS:
         return json.dumps({"status": "error", "message": f"deBridge does not support bridging between chain {src_chain} and chain {dst_chain}."})
 
@@ -2451,7 +2575,7 @@ def _build_bridge_tx(raw: str, user_address: str, default_chain_id: int, solana_
                 except Exception:
                     continue
         elif src_chain == _DEBRIDGE_SOLANA_CHAIN_ID:
-            return json.dumps({"status": "error", "message": "Bridging the full balance is currently supported only for native SOL. Please enter an exact SPL token amount."})
+            amount = str(_get_solana_spl_balance(sender, src_addr))
         else:
             _chain_rpcs = {
                 56: ["https://bsc-dataseed1.binance.org"],
@@ -2768,6 +2892,9 @@ _STAKING_PROTOCOLS: dict[tuple[int, str, str], dict[str, Any]] = {
     (56, "BNB", "ankr"):       {"receipt": "0x52F24a5e03aee338Da5fd9Df68D2b6FAe1178827", "name": "Ankr ankrBNB", "decimals": 18},
     # Polygon (chain_id=137)
     (137, "MATIC", "lido"):    {"receipt": "0x3A58a54C066FdC0f2D55FC9C89F0415C92eBf3C4", "name": "Lido stMATIC", "decimals": 18},
+    # Solana liquid staking via Jupiter SOL -> LST swap
+    (101, "SOL", "jito"):       {"receipt": "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn", "name": "Jito JitoSOL", "decimals": 9},
+    (101, "SOL", "marinade"):   {"receipt": "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So", "name": "Marinade mSOL", "decimals": 9},
 }
 
 # Default staking protocol per token (used when user doesn't specify a protocol)
@@ -2775,6 +2902,7 @@ _DEFAULT_STAKING: dict[tuple[int, str], str] = {
     (1, "ETH"): "lido",
     (56, "BNB"): "binance",
     (137, "MATIC"): "lido",
+    (101, "SOL"): "jito",
 }
 
 
@@ -3748,7 +3876,7 @@ def build_solana_swap(raw: str) -> str:
 
     raw_out_amount = int(quote.get("outAmount", 0))
     _SOL_MINT_ADDR = "So11111111111111111111111111111111111111112"
-    out_decimals   = 9 if output_mint == _SOL_MINT_ADDR else 6
+    out_decimals   = 6 if output_mint in _6_DECIMAL_MINTS else 9
     ui_out_amount  = round(raw_out_amount / (10 ** out_decimals), 5)
 
     # ── Step 2: Swap transaction ─────────────────────────────────────────────
@@ -4480,16 +4608,16 @@ def build_agent(
         ),
         Tool(
             name="build_stake_tx",
-            func=lambda raw: _build_stake_tx(raw, user_address, chain_id),
+            func=lambda raw: _build_stake_tx(raw, user_address, chain_id, solana_address),
             return_direct=True,
             description=(
-                "Builds a staking transaction via Enso. Stake tokens to earn yield. "
-                "Use this when user says 'stake ETH', 'stake on Lido', 'stake my BNB'. "
+                "Builds a staking transaction via Enso/Jupiter. Stake tokens to earn yield. "
+                "Use this when user says 'stake ETH', 'stake on Lido', 'stake my BNB', or 'stake SOL'. "
                 "Input: a JSON string with these keys - "
-                "token (required: 'ETH', 'BNB', 'MATIC'), "
-                "protocol (optional: 'lido', 'rocketpool', 'coinbase', 'binance', 'ankr'), "
+                "token (required: 'ETH', 'BNB', 'MATIC', 'SOL'), "
+                "protocol (optional: 'lido', 'rocketpool', 'coinbase', 'binance', 'ankr', 'jito', 'marinade'), "
                 "amount (in wei, or 'all' for full balance), "
-                "chain_id (optional; native staking chain is auto-detected: ETH->1, BNB->56, MATIC->137). "
+                "chain_id (optional; native staking chain is auto-detected: ETH->1, BNB->56, MATIC->137, SOL->101). "
                 "If user doesn't specify a protocol, the best default is chosen. "
                 "Example: {{\"token\":\"ETH\",\"protocol\":\"lido\",\"amount\":\"all\",\"chain_id\":1}}."
             ),

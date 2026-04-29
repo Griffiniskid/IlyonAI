@@ -19,6 +19,56 @@ class DirectStakingRoutingTests(unittest.TestCase):
         self.assertEqual(payload["chain_id"], 56)
         self.assertEqual(effective_chain, 56)
 
+    @patch("app.agents.crypto_agent._build_stake_tx")
+    def test_direct_stake_routes_solana_amount_to_solana_wallet(self, mocked_build_stake_tx):
+        mocked_build_stake_tx.return_value = '{"status":"ok"}'
+
+        _try_direct_stake(
+            "stake 0.2 sol",
+            "0x1111111111111111111111111111111111111111",
+            101,
+            "SoL4naPubKey111111111111111111111111111111",
+        )
+
+        raw, _user_address, effective_chain, solana_wallet = mocked_build_stake_tx.call_args.args
+        payload = json.loads(raw)
+        self.assertEqual(payload["token"], "SOL")
+        self.assertEqual(payload["amount"], "0.2")
+        self.assertEqual(payload["chain_id"], 101)
+        self.assertEqual(effective_chain, 101)
+        self.assertEqual(solana_wallet, "SoL4naPubKey111111111111111111111111111111")
+
+    @patch("app.agents.crypto_agent.build_solana_swap")
+    def test_build_stake_tx_solana_uses_jito_swap(self, mocked_build_solana_swap):
+        mocked_build_solana_swap.return_value = json.dumps({
+            "status": "ok",
+            "type": "solana_swap_proposal",
+            "chain_type": "solana",
+            "swapTransaction": "base64tx",
+            "out_amount": "123000000",
+            "ui_out_amount": 0.123,
+            "in_symbol": "SOL",
+            "out_symbol": "JITO",
+        })
+
+        result = json.loads(_build_stake_tx(
+            json.dumps({"token": "SOL", "protocol": "jito", "amount": "0.2", "chain_id": 101}),
+            "",
+            101,
+            "SoL4naPubKey111111111111111111111111111111",
+        ))
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["action"], "stake")
+        self.assertEqual(result["route_summary"], "Stake via Jito JitoSOL")
+        self.assertEqual(result["protocol_url"], "https://www.jito.network/staking/")
+        raw = mocked_build_solana_swap.call_args.args[0]
+        payload = json.loads(raw)
+        self.assertEqual(payload["sell_token"], "SOL")
+        self.assertEqual(payload["buy_token"], "jito")
+        self.assertEqual(payload["sell_amount"], "0.2")
+        self.assertEqual(payload["user_pubkey"], "SoL4naPubKey111111111111111111111111111111")
+
     @patch("app.agents.crypto_agent.get_staking_options")
     def test_staking_link_query_uses_staking_options_helper(self, mocked_get_staking_options):
         mocked_get_staking_options.return_value = '{"type":"universal_cards","cards":[]}'
@@ -91,6 +141,26 @@ class DirectBridgeRoutingTests(unittest.TestCase):
         self.assertEqual(solana_wallet, "SoL4naPubKey111111111111111111111111111111")
 
     @patch("app.agents.crypto_agent._build_bridge_tx")
+    def test_direct_bridge_without_amount_defaults_to_all_token(self, mocked_build_bridge_tx):
+        mocked_build_bridge_tx.return_value = '{"status":"ok","type":"bridge_proposal"}'
+
+        result = _try_direct_bridge(
+            "bridge usdt from sol chain to eth",
+            "0x1111111111111111111111111111111111111111",
+            "SoL4naPubKey111111111111111111111111111111",
+            101,
+        )
+
+        self.assertEqual(result, '{"status":"ok","type":"bridge_proposal"}')
+        raw, _evm_wallet, default_chain, _solana_wallet = mocked_build_bridge_tx.call_args.args
+        payload = json.loads(raw)
+        self.assertEqual(payload["token_in"], "USDT")
+        self.assertEqual(payload["amount"], "all")
+        self.assertEqual(payload["src_chain_id"], 101)
+        self.assertEqual(payload["dst_chain_id"], 1)
+        self.assertEqual(default_chain, 101)
+
+    @patch("app.agents.crypto_agent._build_bridge_tx")
     def test_direct_bridge_respects_explicit_from_chain(self, mocked_build_bridge_tx):
         mocked_build_bridge_tx.return_value = '{"status":"ok","type":"bridge_proposal"}'
 
@@ -132,6 +202,17 @@ class StakingOptionsTests(unittest.TestCase):
         self.assertTrue(any("Ankr" in title for title in titles))
         self.assertIn("https://www.binance.com/en/staked-bnb", urls)
         self.assertIn("https://www.ankr.com/staking/stake/bnb/", urls)
+
+    def test_get_staking_options_returns_direct_sol_protocol_cards(self):
+        payload = json.loads(get_staking_options("where can I stake SOL"))
+
+        self.assertEqual(payload["type"], "universal_cards")
+        titles = [card["title"] for card in payload["cards"]]
+        urls = [card["url"] for card in payload["cards"]]
+        self.assertTrue(any("Jito" in title for title in titles))
+        self.assertTrue(any("Marinade" in title for title in titles))
+        self.assertIn("https://www.jito.network/staking/", urls)
+        self.assertIn("https://marinade.finance/app/staking", urls)
 
 
 class BridgeBuilderTests(unittest.TestCase):
@@ -177,7 +258,7 @@ class BridgeBuilderTests(unittest.TestCase):
             "src_chain_id": 101,
             "dst_chain_id": 1,
         })
-        result = json.loads(_build_bridge_tx(raw, "", 56, "SoL4naPubKey111111111111111111111111111111,0x1111111111111111111111111111111111111111"))
+        result = json.loads(_build_bridge_tx(raw, "", 56, "11111111111111111111111111111111,0x1111111111111111111111111111111111111111"))
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["type"], "bridge_proposal")
@@ -198,6 +279,60 @@ class BridgeBuilderTests(unittest.TestCase):
         self.assertEqual(debridge_params["dstChainId"], 1)
         self.assertEqual(debridge_params["srcChainTokenIn"], "11111111111111111111111111111111")
         self.assertEqual(debridge_params["dstChainTokenOut"], "0x0000000000000000000000000000000000000000")
+
+    @patch("app.agents.crypto_agent._requests.get")
+    @patch("app.agents.crypto_agent._requests.post")
+    def test_build_bridge_tx_all_spl_uses_exact_solana_token_balance(self, mocked_post, mocked_get):
+        mocked_balance_response = Mock()
+        mocked_balance_response.json.return_value = {
+            "result": {
+                "value": [{
+                    "account": {
+                        "data": {
+                            "parsed": {
+                                "info": {
+                                    "tokenAmount": {"amount": "1234567"}
+                                }
+                            }
+                        }
+                    }
+                }]
+            }
+        }
+        mocked_post.return_value = mocked_balance_response
+
+        mocked_debridge_response = Mock()
+        mocked_debridge_response.status_code = 200
+        mocked_debridge_response.json.return_value = {
+            "tx": {"data": "0x00ff"},
+            "orderId": "spl-bridge-order",
+            "order": {"approximateFulfillmentDelay": 12},
+            "estimatedTransactionFee": {"total": "24162360"},
+            "estimation": {
+                "srcChainTokenIn": {"symbol": "USDC", "decimals": 6, "amount": "1234567"},
+                "dstChainTokenOut": {"symbol": "USDC", "decimals": 6, "amount": "1200000"},
+            },
+        }
+        mocked_get.return_value = mocked_debridge_response
+
+        raw = json.dumps({
+            "token_in": "USDC",
+            "amount": "all",
+            "src_chain_id": 101,
+            "dst_chain_id": 1,
+        })
+        result = json.loads(_build_bridge_tx(
+            raw,
+            "0x1111111111111111111111111111111111111111",
+            101,
+            "11111111111111111111111111111111",
+        ))
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["type"], "bridge_proposal")
+        debridge_params = mocked_get.call_args.kwargs["params"]
+        self.assertEqual(debridge_params["srcChainTokenInAmount"], "1234567")
+        self.assertEqual(debridge_params["srcChainTokenIn"], "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
 
 
 if __name__ == "__main__":

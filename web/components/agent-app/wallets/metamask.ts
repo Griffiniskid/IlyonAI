@@ -6,7 +6,7 @@
  * Phantom (or another wallet) has hijacked window.ethereum.
  */
 
-const API_BASE = "/api/v1/assistant-auth";
+const API_BASE = "/api/v1";
 const BNB_CHAIN_HEX = "0x38"; // 56
 
 type EthProvider = {
