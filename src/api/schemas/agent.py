@@ -142,6 +142,58 @@ class PlanPayload(_CardPayloadBase):
     requires_signature: bool
 
 
+class PlanStepV2(_Strict):
+    step_id: str
+    order: int
+    action: Literal[
+        "swap",
+        "bridge",
+        "stake",
+        "unstake",
+        "deposit_lp",
+        "withdraw_lp",
+        "transfer",
+        "approve",
+        "wait_receipt",
+        "get_balance",
+    ]
+    params: dict[str, Any]
+    depends_on: list[str] = Field(default_factory=list)
+    resolves_from: dict[str, str] = Field(default_factory=dict)
+    sentinel: Optional[SentinelBlock] = None
+    shield_flags: list[str] = Field(default_factory=list)
+    estimated_gas_usd: Optional[float] = None
+    estimated_duration_s: Optional[int] = None
+    status: Literal[
+        "pending",
+        "ready",
+        "signing",
+        "broadcast",
+        "confirmed",
+        "failed",
+        "skipped",
+    ] = "pending"
+    tx_hash: Optional[str] = None
+    receipt: Optional[dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+class ExecutionPlanV2Payload(_CardPayloadBase):
+    plan_id: str
+    title: str
+    steps: list[PlanStepV2]
+    total_steps: int
+    total_gas_usd: float
+    total_duration_estimate_s: int
+    blended_sentinel: Optional[int] = Field(default=None, ge=0, le=100)
+    requires_signature_count: int
+    risk_warnings: list[str] = Field(default_factory=list)
+    risk_gate: Literal["clear", "soft_warn", "hard_block"] = "clear"
+    requires_double_confirm: bool = False
+    chains_touched: list[str] = Field(default_factory=list)
+    user_assets_required: dict[str, str] = Field(default_factory=dict)
+
+
 class BalancePayload(_CardPayloadBase):
     wallet: str
     total_usd: str
@@ -216,6 +268,11 @@ class PlanCard(_CardBase):
     payload: PlanPayload
 
 
+class ExecutionPlanV2Card(_CardBase):
+    card_type: Literal["execution_plan_v2"]
+    payload: ExecutionPlanV2Payload
+
+
 class BalanceCard(_CardBase):
     card_type: Literal["balance"]
     payload: BalancePayload
@@ -245,7 +302,7 @@ _CardUnion = Annotated[
     Union[
         AllocationCard, SentinelMatrixCard, ExecutionPlanCard,
         SwapQuoteCard, PoolCard, TokenCard,
-        PositionCard, PlanCard, BalanceCard, BridgeCard,
+        PositionCard, PlanCard, ExecutionPlanV2Card, BalanceCard, BridgeCard,
         StakeCard, MarketOverviewCard, PairListCard,
     ],
     Field(discriminator="card_type"),
@@ -268,7 +325,7 @@ class AgentCard(_Strict):
 CardType = Literal[
     "allocation", "sentinel_matrix", "execution_plan",
     "swap_quote", "pool", "token", "position", "plan",
-    "balance", "bridge", "stake", "market_overview", "pair_list",
+    "execution_plan_v2", "balance", "bridge", "stake", "market_overview", "pair_list",
 ]
 
 
