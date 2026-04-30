@@ -534,33 +534,32 @@ class BridgeChainInferenceTests(unittest.TestCase):
 
 
 class CompoundActionTests(unittest.TestCase):
-    def test_compound_swap_and_bridge_returns_clarification(self):
-        from app.api.endpoints import _try_direct_compound_action_clarification
+    def test_compound_swap_and_bridge_detected(self):
+        from app.api.endpoints import _is_compound_action
 
-        result = _try_direct_compound_action_clarification(
+        result = _is_compound_action(
             "swap 0.2 sol for usdc and then bridge them to eth chain"
         )
 
-        self.assertIsNotNone(result)
-        self.assertIn("one step at a time", result.lower())
+        self.assertTrue(result)
 
-    def test_simple_swap_not_flagged_as_compound(self):
-        from app.api.endpoints import _try_direct_compound_action_clarification
+    def test_simple_swap_not_compound(self):
+        from app.api.endpoints import _is_compound_action
 
-        result = _try_direct_compound_action_clarification(
+        result = _is_compound_action(
             "swap 0.2 sol for usdc"
         )
 
-        self.assertIsNone(result)
+        self.assertFalse(result)
 
-    def test_simple_bridge_not_flagged_as_compound(self):
-        from app.api.endpoints import _try_direct_compound_action_clarification
+    def test_simple_bridge_not_compound(self):
+        from app.api.endpoints import _is_compound_action
 
-        result = _try_direct_compound_action_clarification(
+        result = _is_compound_action(
             "bridge wbtc to eth chain"
         )
 
-        self.assertIsNone(result)
+        self.assertFalse(result)
 
 
 class BridgeWalletErrorTests(unittest.TestCase):

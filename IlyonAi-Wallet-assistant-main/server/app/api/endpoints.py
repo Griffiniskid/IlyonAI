@@ -288,6 +288,10 @@ def _infer_bridge_src_chain(token_in: str, active_chain_id: int, solana_wallet: 
 
 
 def _try_direct_bridge(query: str, user_address: str, solana_address: str, chain_id: int) -> Optional[str]:
+    """Handle simple bridge requests. Skip compound/multi-step queries."""
+    if _is_compound_action(query):
+        return None
+    
     from app.agents.crypto_agent import _build_bridge_tx
 
     q = (query or "").strip()
@@ -362,28 +366,17 @@ def _try_direct_yield_search(query: str) -> Optional[str]:
     )
 
 
-def _try_direct_compound_action_clarification(query: str) -> Optional[str]:
-    """Detect compound/multi-step actions and ask user to do one step at a time."""
+def _is_compound_action(query: str) -> bool:
+    """Detect if query contains multiple action intents that should go to the agent."""
     lowered = (query or "").strip().lower()
-    compound_markers = [
-        r"\band\s+then\b",
-        r"\bthen\s+bridge\b",
-        r"\bthen\s+swap\b",
-        r"\bthen\s+stake\b",
-        r"\bthen\s+transfer\b",
-        r"\bafter\s+that\b",
+    # Match patterns like "swap X and bridge Y", "swap X then bridge Y"
+    compound_patterns = [
+        r"\b(swap|bridge|stake|transfer|send)\b.*\b(and|then)\b.*\b(swap|bridge|stake|transfer|send)\b",
+        r"\b(swap|bridge|stake|transfer|send)\b.*\bafter\s+that\b",
+        r"\bfirst\b.*\bthen\b",
         r"\bfollowed\s+by\b",
-        r"\band\s+after\s+that\b",
-        r"\bfirst\s+swap\b.*\bthen\b",
-        r"\bfirst\s+bridge\b.*\bthen\b",
     ]
-    for pattern in compound_markers:
-        if re.search(pattern, lowered):
-            return (
-                "I can help with one step at a time. "
-                "Please start with either the swap or the bridge, and once that's complete, we can do the next step."
-            )
-    return None
+    return any(re.search(pat, lowered) for pat in compound_patterns)
 
 
 def _try_direct_staking_info(query: str) -> Optional[str]:
@@ -433,7 +426,11 @@ def _try_direct_swap(query: str, user_address: str, solana_address: str, chain_i
     """
     Detect 'swap all/my X to Y' patterns and handle directly without the agent.
     Returns JSON string if handled, None if the agent should handle it.
+    Skips compound/multi-step queries so the agent can handle them.
     """
+    if _is_compound_action(query):
+        return None
+    
     import json
     from app.agents.crypto_agent import _build_swap_tx, _resolve_token_metadata, build_solana_swap
 
@@ -842,11 +839,6 @@ async def run_agent(
     direct_transfer_clarification = _try_direct_transfer_clarification(direct_query)
     if direct_transfer_clarification:
         return {"session_id": body.session_id, "chat_id": None, "response": direct_transfer_clarification}
-
-    # ── Detect compound/multi-step actions early to prevent agent crashes ─────
-    compound_clarification = _try_direct_compound_action_clarification(direct_query)
-    if compound_clarification:
-        return {"session_id": body.session_id, "chat_id": None, "response": compound_clarification}
 
     # ── Try direct swap handling for deterministic swap prompts ───────────────
     direct_swap_result = _try_direct_swap(
