@@ -2,8 +2,8 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from app.agents.crypto_agent import _build_bridge_tx, _build_stake_tx, get_staking_options
-from app.api.endpoints import _extract_chain_alias, _try_direct_balance, _try_direct_bridge, _try_direct_stake, _try_direct_staking_info, _try_direct_swap
+from app.agents.crypto_agent import _build_bridge_tx, _build_stake_tx, _resolve_token_metadata, build_solana_swap, get_staking_options
+from app.api.endpoints import _extract_chain_alias, _format_direct_swap_result, _try_direct_balance, _try_direct_bridge, _try_direct_stake, _try_direct_staking_info, _try_direct_swap, _try_direct_swap_clarification, _try_direct_transfer_clarification
 
 
 class DirectStakingRoutingTests(unittest.TestCase):
@@ -69,6 +69,29 @@ class DirectStakingRoutingTests(unittest.TestCase):
         self.assertEqual(payload["sell_amount"], "0.2")
         self.assertEqual(payload["user_pubkey"], "SoL4naPubKey111111111111111111111111111111")
 
+    @patch("app.agents.crypto_agent.settings.enso_api_key", "test-key")
+    @patch("app.agents.crypto_agent.httpx.get")
+    @patch("app.agents.crypto_agent._resolve_token_metadata")
+    def test_build_stake_tx_converts_decimal_bnb_amount_to_wei(self, mocked_resolve_token, mocked_get):
+        mocked_resolve_token.side_effect = [
+            ("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", 18, 56),
+            ("0x1bdd3Cf7F79cfB8EdbB955f20ad99211551BA275", 18, 56),
+        ]
+        mocked_get.return_value.raise_for_status.return_value = None
+        mocked_get.return_value.json.return_value = {
+            "tx": {"from": "0x1111111111111111111111111111111111111111", "to": "0x2222222222222222222222222222222222222222", "data": "0x", "value": "0x0"},
+            "amountOut": "1",
+        }
+
+        result = json.loads(_build_stake_tx(
+            json.dumps({"token": "BNB", "protocol": "binance", "amount": "0.01", "chain_id": 56}),
+            "0x1111111111111111111111111111111111111111",
+            56,
+        ))
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(mocked_get.call_args.kwargs["params"]["amountIn"], "10000000000000000")
+
     @patch("app.agents.crypto_agent.get_staking_options")
     def test_staking_link_query_uses_staking_options_helper(self, mocked_get_staking_options):
         mocked_get_staking_options.return_value = '{"type":"universal_cards","cards":[]}'
@@ -91,6 +114,76 @@ class DirectBalanceRoutingTests(unittest.TestCase):
 
 
 class DirectSwapRoutingTests(unittest.TestCase):
+    def test_bsc_eth_symbol_resolves_to_binance_peg_eth(self):
+        address, decimals, chain_id = _resolve_token_metadata("ETH", 56)
+
+        self.assertEqual(address, "0x2170Ed0880ac9A755fd29B2688956BD959F933F8")
+        self.assertEqual(decimals, 18)
+        self.assertEqual(chain_id, 56)
+
+    def test_avalanche_usdc_resolves_to_avalanche_registry(self):
+        address, decimals, chain_id = _resolve_token_metadata("USDC", 43114)
+
+        self.assertEqual(address, "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E")
+        self.assertEqual(decimals, 6)
+        self.assertEqual(chain_id, 43114)
+
+    @patch("app.agents.crypto_agent._build_swap_tx")
+    def test_direct_swap_keeps_bnb_to_eth_on_bsc(self, mocked_build_swap_tx):
+        mocked_build_swap_tx.return_value = '{"status":"ok","chain_type":"evm"}'
+
+        result = _try_direct_swap(
+            "swap 0.003 bnb for eth",
+            "0x1111111111111111111111111111111111111111",
+            "SoL4naPubKey111111111111111111111111111111",
+            1,
+        )
+
+        self.assertEqual(result, '{"status":"ok","chain_type":"evm"}')
+        raw, _user_address, effective_chain = mocked_build_swap_tx.call_args.args
+        payload = json.loads(raw)
+        self.assertEqual(payload["token_in"], "BNB")
+        self.assertEqual(payload["token_out"], "ETH")
+        self.assertEqual(payload["amount"], "3000000000000000")
+        self.assertEqual(payload["chain_id"], 56)
+        self.assertEqual(effective_chain, 56)
+
+    @patch("app.agents.crypto_agent._build_swap_tx")
+    def test_direct_swap_keeps_binance_peg_eth_input_on_bsc(self, mocked_build_swap_tx):
+        mocked_build_swap_tx.return_value = '{"status":"ok","chain_type":"evm"}'
+
+        _try_direct_swap(
+            "swap 0.003 eth for bnb",
+            "0x1111111111111111111111111111111111111111",
+            "",
+            56,
+        )
+
+        raw, _user_address, effective_chain = mocked_build_swap_tx.call_args.args
+        payload = json.loads(raw)
+        self.assertEqual(payload["token_in"], "ETH")
+        self.assertEqual(payload["token_out"], "BNB")
+        self.assertEqual(payload["chain_id"], 56)
+        self.assertEqual(effective_chain, 56)
+
+    @patch("app.agents.crypto_agent._build_swap_tx")
+    def test_direct_swap_all_eth_for_bnb_stays_on_bsc(self, mocked_build_swap_tx):
+        mocked_build_swap_tx.return_value = '{"status":"ok","chain_type":"evm"}'
+
+        _try_direct_swap(
+            "swap all eth for bnb",
+            "0x1111111111111111111111111111111111111111",
+            "",
+            56,
+        )
+
+        raw, _user_address, effective_chain = mocked_build_swap_tx.call_args.args
+        payload = json.loads(raw)
+        self.assertEqual(payload["token_in"], "ETH")
+        self.assertEqual(payload["token_out"], "BNB")
+        self.assertEqual(payload["chain_id"], 56)
+        self.assertEqual(effective_chain, 56)
+
     @patch("app.agents.crypto_agent.build_solana_swap")
     def test_direct_swap_uses_solana_path_for_sol_pairs(self, mocked_build_solana_swap):
         mocked_build_solana_swap.return_value = '{"status":"ok","chain_type":"solana"}'
@@ -109,6 +202,82 @@ class DirectSwapRoutingTests(unittest.TestCase):
         self.assertEqual(payload["buy_token"], "USDC")
         self.assertEqual(payload["sell_amount"], "0.2")
         self.assertEqual(payload["user_pubkey"], "SoL4naPubKey111111111111111111111111111111")
+
+    def test_direct_solana_swap_error_formats_as_user_message(self):
+        result = _format_direct_swap_result(
+            '{"status":"error","chain_type":"solana","message":"No WBTC balance on Solana."}'
+        )
+
+        self.assertEqual(result, "No WBTC balance on Solana.")
+
+    def test_direct_evm_swap_error_formats_as_user_message(self):
+        result = _format_direct_swap_result(
+            '{"status":"error","message":"Enso API 429: rate limit"}'
+        )
+
+        self.assertEqual(result, "Enso API 429: rate limit")
+
+    def test_amountless_swap_asks_for_amount_before_agent_can_guess(self):
+        result = _try_direct_swap_clarification("swap sol to usdc")
+
+        self.assertIn("specify", result.lower())
+        self.assertIn("amount", result.lower())
+
+    def test_ambiguous_send_all_tokens_asks_for_token_and_recipient(self):
+        result = _try_direct_transfer_clarification("send all my tokens to this address")
+
+        self.assertIn("which token", result.lower())
+        self.assertIn("recipient", result.lower())
+
+
+class _MockResponse:
+    def __init__(self, data, ok=True, status_code=200):
+        self._data = data
+        self.ok = ok
+        self.status_code = status_code
+        self.text = json.dumps(data)
+
+    def json(self):
+        return self._data
+
+
+class SolanaSwapBuilderTests(unittest.TestCase):
+    @patch("app.agents.crypto_agent._requests.post")
+    @patch("app.agents.crypto_agent._requests.get")
+    def test_ray_amount_uses_mint_decimals_not_default_nine(self, mocked_get, mocked_post):
+        mocked_get.return_value = _MockResponse({"outAmount": "800000"})
+        mocked_post.return_value = _MockResponse({"swapTransaction": "base64-tx"})
+
+        result = json.loads(build_solana_swap(json.dumps({
+            "sell_token": "RAY",
+            "buy_token": "USDC",
+            "sell_amount": "1",
+            "user_pubkey": "EE8f92KTgEega5zhWX6UPYBv12WowmwS3TkgoxpUvEgM",
+        })))
+
+        quote_params = mocked_get.call_args.kwargs["params"]
+        self.assertEqual(quote_params["amount"], 1_000_000)
+        self.assertEqual(result["ui_in_amount"], 1.0)
+        self.assertEqual(result["ui_out_amount"], 0.8)
+        self.assertEqual(result["in_symbol"], "RAY")
+        self.assertEqual(result["out_symbol"], "USDC")
+
+    @patch("app.agents.crypto_agent._requests.get")
+    @patch("app.agents.crypto_agent._get_solana_spl_balance")
+    def test_all_wbtc_without_balance_returns_direct_solana_error(self, mocked_balance, mocked_get):
+        mocked_balance.return_value = 0
+
+        result = json.loads(build_solana_swap(json.dumps({
+            "sell_token": "WBTC",
+            "buy_token": "SOL",
+            "sell_amount": "all",
+            "user_pubkey": "EE8f92KTgEega5zhWX6UPYBv12WowmwS3TkgoxpUvEgM",
+        })))
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["chain_type"], "solana")
+        self.assertIn("No WBTC balance", result["message"])
+        mocked_get.assert_not_called()
 
 
 class DirectYieldRoutingTests(unittest.TestCase):
