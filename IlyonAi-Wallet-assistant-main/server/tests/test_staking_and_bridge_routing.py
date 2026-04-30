@@ -504,5 +504,100 @@ class BridgeBuilderTests(unittest.TestCase):
         self.assertEqual(debridge_params["srcChainTokenIn"], "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
 
 
+class BridgeChainInferenceTests(unittest.TestCase):
+    @patch("app.api.endpoints._get_wallet_token_chains")
+    def test_infer_bridge_src_chain_finds_wbtc_on_solana(self, mocked_get_chains):
+        mocked_get_chains.return_value = [101]
+
+        from app.api.endpoints import _infer_bridge_src_chain
+        result = _infer_bridge_src_chain("WBTC", 56, "SoL4naPubKey111111111111111111111111111111")
+
+        self.assertEqual(result, 101)
+
+    @patch("app.api.endpoints._get_wallet_token_chains")
+    def test_infer_bridge_src_chain_falls_back_to_active_when_no_wallet_data(self, mocked_get_chains):
+        mocked_get_chains.return_value = []
+
+        from app.api.endpoints import _infer_bridge_src_chain
+        result = _infer_bridge_src_chain("WBTC", 56, "")
+
+        self.assertEqual(result, 56)
+
+    @patch("app.api.endpoints._get_wallet_token_chains")
+    def test_infer_bridge_src_chain_prefers_native_token_mapping(self, mocked_get_chains):
+        mocked_get_chains.return_value = [56]
+
+        from app.api.endpoints import _infer_bridge_src_chain
+        result = _infer_bridge_src_chain("SOL", 56, "SoL4naPubKey111111111111111111111111111111")
+
+        self.assertEqual(result, 101)
+
+
+class CompoundActionTests(unittest.TestCase):
+    def test_compound_swap_and_bridge_returns_clarification(self):
+        from app.api.endpoints import _try_direct_compound_action_clarification
+
+        result = _try_direct_compound_action_clarification(
+            "swap 0.2 sol for usdc and then bridge them to eth chain"
+        )
+
+        self.assertIsNotNone(result)
+        self.assertIn("one step at a time", result.lower())
+
+    def test_simple_swap_not_flagged_as_compound(self):
+        from app.api.endpoints import _try_direct_compound_action_clarification
+
+        result = _try_direct_compound_action_clarification(
+            "swap 0.2 sol for usdc"
+        )
+
+        self.assertIsNone(result)
+
+    def test_simple_bridge_not_flagged_as_compound(self):
+        from app.api.endpoints import _try_direct_compound_action_clarification
+
+        result = _try_direct_compound_action_clarification(
+            "bridge wbtc to eth chain"
+        )
+
+        self.assertIsNone(result)
+
+
+class BridgeWalletErrorTests(unittest.TestCase):
+    def test_bridge_evm_to_solana_without_evm_wallet_returns_helpful_error(self):
+        result = json.loads(_build_bridge_tx(
+            json.dumps({
+                "token_in": "BNB",
+                "amount": "100000000000000000",
+                "src_chain_id": 56,
+                "dst_chain_id": 101,
+            }),
+            "",  # No EVM wallet
+            56,
+            "SoL4naPubKey111111111111111111111111111111",
+        ))
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("connect", result["message"].lower())
+        self.assertIn("metamask", result["message"].lower())
+
+    def test_bridge_solana_to_evm_without_solana_wallet_returns_helpful_error(self):
+        result = json.loads(_build_bridge_tx(
+            json.dumps({
+                "token_in": "SOL",
+                "amount": "200000000",
+                "src_chain_id": 101,
+                "dst_chain_id": 1,
+            }),
+            "0x1111111111111111111111111111111111111111",
+            56,
+            "",  # No Solana wallet
+        ))
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("connect", result["message"].lower())
+        self.assertIn("phantom", result["message"].lower())
+
+
 if __name__ == "__main__":
     unittest.main()

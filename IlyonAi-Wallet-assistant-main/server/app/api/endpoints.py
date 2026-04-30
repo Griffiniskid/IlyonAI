@@ -185,6 +185,13 @@ _BRIDGE_NATIVE_TOKEN_TO_CHAIN: dict[str, int] = {
 }
 
 
+# Known Solana tokens for bridge inference
+_BRIDGE_SOLANA_TOKENS: set[str] = {
+    "SOL", "USDC", "USDT", "BONK", "WEN", "JUP", "RAY", "ORCA",
+    "MSOL", "JITO", "WBTC", "WETH", "PYTH", "JTO",
+}
+
+
 def _match_bridge_chain_phrase(text: str) -> int:
     lowered = (text or "").lower()
     for phrase, chain_id in _BRIDGE_CHAIN_ALIASES:
@@ -235,12 +242,48 @@ def _extract_bridge_dst_chain(query: str) -> int:
     return 0
 
 
+def _get_wallet_token_chains(token_in: str, solana_wallet: str) -> list[int]:
+    """Check which chains the token likely exists on based on known registries."""
+    chains: list[int] = []
+    token_upper = (token_in or "").upper()
+    if not token_upper:
+        return chains
+    # Check Solana
+    if solana_wallet and token_upper in _BRIDGE_SOLANA_TOKENS:
+        chains.append(101)
+    # Check EVM registries via crypto_agent imports
+    try:
+        from app.agents.crypto_agent import TOKENS_BY_CHAIN
+        for chain_id, tokens in TOKENS_BY_CHAIN.items():
+            if token_upper in {k.upper() for k in tokens.keys()}:
+                chains.append(chain_id)
+    except Exception:
+        pass
+    return chains
+
+
 def _infer_bridge_src_chain(token_in: str, active_chain_id: int, solana_wallet: str) -> int:
-    token_chain = _BRIDGE_NATIVE_TOKEN_TO_CHAIN.get((token_in or "").upper(), 0)
+    """Infer source chain for bridging. Prefer native mapping, then wallet token lookup, then active chain."""
+    token_upper = (token_in or "").upper()
+    # Native tokens have explicit chain mappings
+    token_chain = _BRIDGE_NATIVE_TOKEN_TO_CHAIN.get(token_upper, 0)
     if token_chain == 101 and solana_wallet:
         return 101
     if token_chain:
         return token_chain
+    # Non-native token: check known registries
+    wallet_chains = _get_wallet_token_chains(token_in, solana_wallet)
+    if wallet_chains:
+        # If only one chain has this token, use it
+        if len(wallet_chains) == 1:
+            return wallet_chains[0]
+        # If multiple chains, prefer Solana if wallet is connected
+        if 101 in wallet_chains and solana_wallet:
+            return 101
+        # Otherwise use the first found or active chain if it matches
+        if active_chain_id in wallet_chains:
+            return active_chain_id
+        return wallet_chains[0]
     return active_chain_id
 
 
@@ -317,6 +360,30 @@ def _try_direct_yield_search(query: str) -> Optional[str]:
         supported_only=not search_all_chains and not chain_alias,
         verified_only=True,
     )
+
+
+def _try_direct_compound_action_clarification(query: str) -> Optional[str]:
+    """Detect compound/multi-step actions and ask user to do one step at a time."""
+    lowered = (query or "").strip().lower()
+    compound_markers = [
+        r"\band\s+then\b",
+        r"\bthen\s+bridge\b",
+        r"\bthen\s+swap\b",
+        r"\bthen\s+stake\b",
+        r"\bthen\s+transfer\b",
+        r"\bafter\s+that\b",
+        r"\bfollowed\s+by\b",
+        r"\band\s+after\s+that\b",
+        r"\bfirst\s+swap\b.*\bthen\b",
+        r"\bfirst\s+bridge\b.*\bthen\b",
+    ]
+    for pattern in compound_markers:
+        if re.search(pattern, lowered):
+            return (
+                "I can help with one step at a time. "
+                "Please start with either the swap or the bridge, and once that's complete, we can do the next step."
+            )
+    return None
 
 
 def _try_direct_staking_info(query: str) -> Optional[str]:
@@ -775,6 +842,11 @@ async def run_agent(
     direct_transfer_clarification = _try_direct_transfer_clarification(direct_query)
     if direct_transfer_clarification:
         return {"session_id": body.session_id, "chat_id": None, "response": direct_transfer_clarification}
+
+    # ── Detect compound/multi-step actions early to prevent agent crashes ─────
+    compound_clarification = _try_direct_compound_action_clarification(direct_query)
+    if compound_clarification:
+        return {"session_id": body.session_id, "chat_id": None, "response": compound_clarification}
 
     # ── Try direct swap handling for deterministic swap prompts ───────────────
     direct_swap_result = _try_direct_swap(

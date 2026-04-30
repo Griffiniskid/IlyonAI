@@ -2540,9 +2540,17 @@ def _build_bridge_tx(raw: str, user_address: str, default_chain_id: int, solana_
     if src_chain == dst_chain:
         return json.dumps({"status": "error", "message": "Source and destination chains are the same. Use build_swap_tx for same-chain operations."})
     if not sender:
-        return json.dumps({"status": "error", "message": "No source wallet connected for this bridge. Connect the correct MetaMask or Phantom wallet first."})
+        src_chain_name = "Solana" if src_chain == _DEBRIDGE_SOLANA_CHAIN_ID else "EVM"
+        return json.dumps({
+            "status": "error",
+            "message": f"No {src_chain_name} source wallet connected. Please connect {'Phantom' if src_chain == _DEBRIDGE_SOLANA_CHAIN_ID else 'MetaMask'} to bridge from {src_chain_name}.",
+        })
     if not recipient:
-        return json.dumps({"status": "error", "message": "No destination recipient is available for this bridge. Connect a wallet on the destination side or provide a recipient address explicitly."})
+        dst_chain_name = "Solana" if dst_chain == _DEBRIDGE_SOLANA_CHAIN_ID else "EVM"
+        return json.dumps({
+            "status": "error",
+            "message": f"No {dst_chain_name} destination wallet connected. Please connect {'Phantom' if dst_chain == _DEBRIDGE_SOLANA_CHAIN_ID else 'MetaMask'} on the destination side or provide a recipient address.",
+        })
 
     if src_chain == _DEBRIDGE_SOLANA_CHAIN_ID and not _is_valid_solana_address(sender):
         return json.dumps({"status": "error", "message": "Please connect a valid Solana source wallet address before bridging from Solana."})
