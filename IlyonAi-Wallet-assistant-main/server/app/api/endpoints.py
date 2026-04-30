@@ -465,6 +465,49 @@ def _try_direct_swap(query: str, user_address: str, solana_address: str, chain_i
     return None
 
 
+def _format_direct_swap_result(raw_result: str) -> Optional[str]:
+    try:
+        parsed = json.loads(raw_result)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+    if not isinstance(parsed, dict):
+        return None
+    if parsed.get("status") == "ok":
+        return raw_result
+    if parsed.get("status") == "error":
+        message = parsed.get("message") or parsed.get("error")
+        return str(message) if message else raw_result
+    return None
+
+
+def _try_direct_swap_clarification(query: str) -> Optional[str]:
+    q = query.strip()
+    amountless = re.search(
+        r"\bswap\s+([A-Za-z0-9]+)\s+(?:to|for|into)\s+([A-Za-z0-9]+)\b",
+        q,
+        re.IGNORECASE,
+    )
+    if not amountless:
+        return None
+
+    lowered = q.lower()
+    if re.search(r"\bswap\s+(?:all|my|entire|full)\b", lowered):
+        return None
+    if re.search(r"\bswap\s+[0-9]*\.?[0-9]+\s+", lowered):
+        return None
+    return "Please specify the amount to swap, for example: 'swap 0.2 SOL to USDC' or 'swap all SOL to USDC'."
+
+
+def _try_direct_transfer_clarification(query: str) -> Optional[str]:
+    lowered = query.strip().lower()
+    if not re.search(r"\b(send|transfer)\b", lowered):
+        return None
+    if "all my tokens" not in lowered and "all tokens" not in lowered:
+        return None
+    return "Please specify which token to send and provide the recipient's full address before I build a transfer transaction."
+
+
 def _try_direct_lp_deposit(query: str, user_address: str, chain_id: int) -> Optional[str]:
     """
     Detect simple LP deposit intents and deterministically resolve the best pool first.
@@ -725,21 +768,21 @@ async def run_agent(
             return {"session_id": chat.id, "chat_id": chat.id, "response": direct_balance_result}
         return {"session_id": body.session_id, "chat_id": None, "response": direct_balance_result}
 
-    # ── Try direct swap-all handling (bypasses agent for "swap all X to Y") ──
-    # Only use the direct result if the swap SUCCEEDED — errors fall through to the agent
-    # so the AI can reason about the failure and suggest alternatives.
+    direct_swap_clarification = _try_direct_swap_clarification(direct_query)
+    if direct_swap_clarification:
+        return {"session_id": body.session_id, "chat_id": None, "response": direct_swap_clarification}
+
+    direct_transfer_clarification = _try_direct_transfer_clarification(direct_query)
+    if direct_transfer_clarification:
+        return {"session_id": body.session_id, "chat_id": None, "response": direct_transfer_clarification}
+
+    # ── Try direct swap handling for deterministic swap prompts ───────────────
     direct_swap_result = _try_direct_swap(
         direct_query, evm_wallet, solana_wallet, effective_chain_id
     )
     if direct_swap_result:
-        try:
-            _parsed_direct = json.loads(direct_swap_result)
-            _direct_ok = _parsed_direct.get("status") == "ok"
-        except (json.JSONDecodeError, AttributeError):
-            _direct_ok = False
-
-        if _direct_ok:
-            # Success — save to chat history and return directly (fast path)
+        direct_response = _format_direct_swap_result(direct_swap_result)
+        if direct_response is not None:
             provided_chat_id_early: Optional[str] = getattr(body, "chat_id", None)
             if current_user:
                 if provided_chat_id_early:
@@ -754,12 +797,12 @@ async def run_agent(
                     db.add(chat)
                     db.flush()
                 db.add(ChatMessage(chat_id=chat.id, role="user", content=body.query))
-                db.add(ChatMessage(chat_id=chat.id, role="assistant", content=direct_swap_result))
+                db.add(ChatMessage(chat_id=chat.id, role="assistant", content=direct_response))
                 chat.updated_at = datetime.now(timezone.utc)
                 db.commit()
-                return {"session_id": chat.id, "chat_id": chat.id, "response": direct_swap_result}
-            return {"session_id": body.session_id, "chat_id": None, "response": direct_swap_result}
-        # Error from direct swap — fall through to let the agent handle it with reasoning
+                return {"session_id": chat.id, "chat_id": chat.id, "response": direct_response}
+            return {"session_id": body.session_id, "chat_id": None, "response": direct_response}
+        # Non-Solana direct errors fall through to let the agent suggest alternatives.
 
     # ── Try direct bridge flow for common bridge requests ────────────────────
     direct_bridge_result = _try_direct_bridge(

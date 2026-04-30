@@ -14,6 +14,7 @@ Agent type: ZERO_SHOT_REACT_DESCRIPTION with ConversationBufferMemory
 
 import base64
 import concurrent.futures
+from decimal import Decimal, InvalidOperation
 from difflib import get_close_matches
 import json
 import logging
@@ -179,6 +180,13 @@ _TOKENS_ARB: Final[dict[str, dict[str, Any]]] = {
     "arb":   {"address": "0x912CE59144191C1204E64559FE8253a0e49E6548", "decimals": 18},
 }
 
+# Avalanche C-Chain — chain 43114
+_TOKENS_AVAX: Final[dict[str, dict[str, Any]]] = {
+    "usdc":  {"address": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", "decimals": 6},
+    "usdt":  {"address": "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7", "decimals": 6},
+    "wavax": {"address": "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7", "decimals": 18},
+}
+
 # Chain-indexed registry
 TOKENS_BY_CHAIN: Final[dict[int, dict[str, dict[str, Any]]]] = {
     1:     _TOKENS_ETH,
@@ -187,6 +195,7 @@ TOKENS_BY_CHAIN: Final[dict[int, dict[str, dict[str, Any]]]] = {
     8453:  _TOKENS_BASE,
     10:    _TOKENS_OP,
     42161: _TOKENS_ARB,
+    43114: _TOKENS_AVAX,
 }
 
 # Backwards-compatible alias for code that doesn't pass chain_id
@@ -1535,6 +1544,11 @@ def _build_enso_swap_tx(
         return default
 
     in_decimals = _decimals_for(src)
+    if "." in amount:
+        try:
+            amount = str(int(Decimal(amount) * (Decimal(10) ** in_decimals)))
+        except (InvalidOperation, ValueError):
+            return json.dumps({"status": "error", "message": f"Invalid amount: {amount}"})
 
     query: dict[str, Any] = {
         "chainId": chain_id,
@@ -3740,6 +3754,23 @@ _SOL_MINTS: Final[dict[str, str]] = {
     "jto":    "jtojtomepa8b1As4vcmvBmLQMRMRMRHMDDFQPVXq4TfY",
 }
 
+_SOL_MINT_DECIMALS: Final[dict[str, int]] = {
+    _SOL_MINTS["sol"]: 9,
+    _SOL_MINTS["usdc"]: 6,
+    _SOL_MINTS["usdt"]: 6,
+    _SOL_MINTS["bonk"]: 5,
+    _SOL_MINTS["wen"]: 5,
+    _SOL_MINTS["jup"]: 6,
+    _SOL_MINTS["ray"]: 6,
+    _SOL_MINTS["orca"]: 6,
+    _SOL_MINTS["msol"]: 9,
+    _SOL_MINTS["jito"]: 9,
+    _SOL_MINTS["wbtc"]: 8,
+    _SOL_MINTS["weth"]: 8,
+    _SOL_MINTS["pyth"]: 6,
+    _SOL_MINTS["jto"]: 9,
+}
+
 
 def _resolve_sol_mint(token: str) -> str:
     """Return the Solana mint address for a symbol or passthrough if already a mint."""
@@ -3750,6 +3781,53 @@ def _resolve_sol_mint(token: str) -> str:
     if 32 <= len(token) <= 44 and token.isalnum():
         return token
     raise ValueError(f"Unknown Solana token '{token}'. Pass the mint address directly or use a known symbol.")
+
+
+def _solana_swap_error(message: str) -> str:
+    return json.dumps({
+        "status": "error",
+        "type": "solana_swap_error",
+        "chain_type": "solana",
+        "message": message,
+    })
+
+
+def _get_solana_native_balance(owner: str) -> int:
+    for rpc in _SOL_RPCS_AGENT:
+        try:
+            r = _requests.post(
+                rpc,
+                json={"jsonrpc": "2.0", "id": 1, "method": "getBalance", "params": [owner, {"commitment": "processed"}]},
+                timeout=8,
+            )
+            return int((((r.json() or {}).get("result") or {}).get("value")) or 0)
+        except Exception:
+            continue
+    return 0
+
+
+def _get_solana_mint_decimals(mint: str) -> int:
+    if mint in _SOL_MINT_DECIMALS:
+        return _SOL_MINT_DECIMALS[mint]
+    for rpc in _SOL_RPCS_AGENT:
+        try:
+            r = _requests.post(
+                rpc,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getAccountInfo",
+                    "params": [mint, {"encoding": "jsonParsed", "commitment": "processed"}],
+                },
+                timeout=8,
+            )
+            parsed = (((((r.json() or {}).get("result") or {}).get("value") or {}).get("data") or {}).get("parsed") or {})
+            decimals = (((parsed.get("info") or {}).get("decimals")))
+            if decimals is not None:
+                return int(decimals)
+        except Exception:
+            continue
+    return 9
 
 
 def build_solana_swap(raw: str) -> str:
@@ -3778,7 +3856,7 @@ def build_solana_swap(raw: str) -> str:
     try:
         params = json.loads(raw)
     except json.JSONDecodeError as exc:
-        return json.dumps({"error": f"Invalid JSON input: {exc}"})
+        return _solana_swap_error(f"Invalid JSON input: {exc}")
 
     try:
         sell_token  = str(params["sell_token"])
@@ -3786,59 +3864,54 @@ def build_solana_swap(raw: str) -> str:
         raw_amount  = params["sell_amount"]   # may be float or int string
         user_pubkey = str(params.get("user_pubkey") or "").strip()
     except (KeyError, ValueError) as exc:
-        return json.dumps({"error": f"Missing or invalid parameter: {exc}"})
+        return _solana_swap_error(f"Missing or invalid parameter: {exc}")
 
     # ── Validate user_pubkey ─────────────────────────────────────────────────
     if not user_pubkey or len(user_pubkey) < 32:
-        return json.dumps({
-            "error": (
+        return _solana_swap_error(
                 "user_pubkey is missing or invalid. "
                 "The Phantom wallet public key must be provided to build the transaction."
-            )
-        })
+        )
 
     # ── Resolve mint addresses ───────────────────────────────────────────────
     try:
         input_mint  = _resolve_sol_mint(sell_token)
         output_mint = _resolve_sol_mint(buy_token)
     except ValueError as exc:
-        return json.dumps({"error": str(exc)})
+        return _solana_swap_error(str(exc))
 
     # ── Convert sell_amount to integer lamports ──────────────────────────────
     # Jupiter requires amount as a plain integer in the token's smallest unit.
     # The LLM might pass a human-readable float (e.g. 0.01156 SOL), so we
     # detect the token's decimals and multiply accordingly.
-    _6_DECIMAL_MINTS = {
-        _SOL_MINTS["usdc"],
-        _SOL_MINTS["usdt"],
-    }
-    _9_DECIMAL_MINTS = {
-        _SOL_MINTS["sol"],
-        _SOL_MINTS["msol"],
-        _SOL_MINTS["jito"],
-    }
+    token_decimals = _get_solana_mint_decimals(input_mint)
+    all_amount_requested = str(raw_amount).strip().lower() in {"all", "max"}
 
-    try:
-        amount_raw = float(raw_amount)
-    except (TypeError, ValueError) as exc:
-        return json.dumps({"error": f"sell_amount must be a number, got: {raw_amount!r} ({exc})"})
-
-    if input_mint in _6_DECIMAL_MINTS:
-        token_decimals = 6
+    if all_amount_requested:
+        if input_mint == _SOL_MINTS["sol"]:
+            sell_amount = max(0, _get_solana_native_balance(user_pubkey) - 5000)
+        else:
+            sell_amount = _get_solana_spl_balance(user_pubkey, input_mint)
+        if sell_amount <= 0:
+            return _solana_swap_error(f"No {sell_token.upper()} balance on Solana to swap.")
+        amount_raw = sell_amount / (10 ** token_decimals)
     else:
-        # SOL, mSOL, JitoSOL, and most SPL tokens use 9 decimals
-        token_decimals = 9
+        try:
+            amount_raw = float(raw_amount)
+        except (TypeError, ValueError) as exc:
+            return _solana_swap_error(f"sell_amount must be a number, got: {raw_amount!r} ({exc})")
 
-    # If the value is already an integer >= 1000 it is likely already in base units
-    # (e.g. the LLM passed 1000000000 for 1 SOL).  If it is a float or < 1000,
-    # treat it as a human-readable amount and scale up.
-    if amount_raw == int(amount_raw) and amount_raw >= 1000:
-        sell_amount = int(amount_raw)
-    else:
-        sell_amount = int(round(amount_raw * (10 ** token_decimals)))
+        # If a numeric value is passed as an int, treat large integers as base units.
+        # String inputs from natural-language prompts remain human-readable amounts.
+        if isinstance(raw_amount, int) and amount_raw >= 1000:
+            sell_amount = int(amount_raw)
+        else:
+            sell_amount = int(round(amount_raw * (10 ** token_decimals)))
 
     if sell_amount <= 0:
-        return json.dumps({"error": f"sell_amount resolved to {sell_amount} — must be > 0"})
+        return _solana_swap_error(f"sell_amount resolved to {sell_amount} — must be > 0")
+
+    ui_in_amount = round(sell_amount / (10 ** token_decimals), 8)
 
     logger.info(
         "[Jupiter] sell %s → buy %s | raw_amount=%s decimals=%d → lamports=%d | pubkey=%s…",
@@ -3876,8 +3949,7 @@ def build_solana_swap(raw: str) -> str:
         return json.dumps({"error": f"Jupiter quote error: {err_msg}"})
 
     raw_out_amount = int(quote.get("outAmount", 0))
-    _SOL_MINT_ADDR = "So11111111111111111111111111111111111111112"
-    out_decimals   = 6 if output_mint in _6_DECIMAL_MINTS else 9
+    out_decimals   = _get_solana_mint_decimals(output_mint)
     ui_out_amount  = round(raw_out_amount / (10 ** out_decimals), 5)
 
     # ── Step 2: Swap transaction ─────────────────────────────────────────────
@@ -3926,6 +3998,8 @@ def build_solana_swap(raw: str) -> str:
         "swapTransaction": swap_tx_b64,
         "out_amount":      str(raw_out_amount),
         "ui_out_amount":   ui_out_amount,
+        "in_amount":       str(sell_amount),
+        "ui_in_amount":    ui_in_amount,
         "in_symbol":       in_sym,
         "out_symbol":      out_sym,
     })
