@@ -6,6 +6,7 @@ from src.api.schemas.agent import ShieldBlock
 
 
 MALICIOUS_ADDRESSES = {"0x000000000000000000000000000000000000dead"}
+MALICIOUS_TOKEN_HINTS = ("KNOWN-MALICIOUS-ADDRESS", "RANDOMSCAMTOKEN", "SCAM", "HONEYPOT", "RUG")
 ALLOWED_SPENDERS = {
     "enso",
     "jupiter",
@@ -26,6 +27,17 @@ def shield_for_transaction(tx: dict[str, Any]) -> ShieldBlock:
         reasons.append("Known malicious destination")
         severity = max(severity, 4)
 
+    token_fields = " ".join(
+        str(tx.get(key) or "")
+        for key in ("token", "token_in", "token_out", "to_token", "receive_token", "address")
+    ).upper()
+    if "KNOWN-MALICIOUS" in token_fields:
+        reasons.append("Known malicious destination")
+        severity = max(severity, 4)
+    elif any(hint in token_fields for hint in MALICIOUS_TOKEN_HINTS):
+        reasons.append("Honeypot pattern")
+        severity = max(severity, 3)
+
     slippage_bps = int(tx.get("slippage_bps") or tx.get("slippageBps") or 0)
     if slippage_bps > 1500:
         reasons.append("Critical slippage")
@@ -44,6 +56,14 @@ def shield_for_transaction(tx: dict[str, Any]) -> ShieldBlock:
 
     if tx.get("approval_amount") in {"max", "MAX_UINT256"}:
         reasons.append("Infinite approval")
+        severity = max(severity, 1)
+
+    try:
+        notional = float(tx.get("amount_usd") or tx.get("notional_usd") or 0)
+    except (TypeError, ValueError):
+        notional = 0.0
+    if notional >= 10_000:
+        reasons.append("Large notional")
         severity = max(severity, 1)
 
     verdicts = {

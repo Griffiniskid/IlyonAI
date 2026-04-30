@@ -67,6 +67,30 @@ def test_detect_intent_parses_bridge_comma_then_stake_plan():
     assert intent[1]["steps"][1]["params"]["chain_id"] == 42161
 
 
+def test_detect_intent_parses_swap_then_deposit_lp_plan():
+    intent = detect_intent("swap 0.5 ETH to USDC then provide liquidity to USDC/USDT on Curve")
+
+    assert intent is not None
+    assert intent[0] == "compose_plan"
+    assert [step["action"] for step in intent[1]["steps"]] == ["swap", "deposit_lp"]
+
+
+def test_detect_intent_parses_single_transfer_plan():
+    intent = detect_intent("send 100 USDC to vitalik.eth")
+
+    assert intent is not None
+    assert intent[0] == "compose_plan"
+    assert [step["action"] for step in intent[1]["steps"]] == ["transfer"]
+
+
+def test_detect_intent_parses_stake_all_idle_eth_resolution_plan():
+    intent = detect_intent("stake all my idle ETH")
+
+    assert intent is not None
+    assert intent[0] == "compose_plan"
+    assert [step["action"] for step in intent[1]["steps"]] == ["get_balance", "stake"]
+
+
 @pytest.mark.asyncio
 async def test_run_ephemeral_turn_emits_execution_plan_card_for_bridge_then_stake():
     chunks = []

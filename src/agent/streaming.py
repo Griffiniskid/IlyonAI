@@ -13,6 +13,8 @@ from src.api.schemas.agent import (
     DoneFrame,
     FinalFrame,
     ObservationFrame,
+    PlanCompleteFrame,
+    StepStatusFrame,
     ThoughtFrame,
     ToolFrame,
 )
@@ -32,6 +34,8 @@ def frame_event_name(frame: Any) -> str:
         ToolFrame: "tool",
         ObservationFrame: "observation",
         CardFrame: "card",
+        StepStatusFrame: "step_status",
+        PlanCompleteFrame: "plan_complete",
         FinalFrame: "final",
         DoneFrame: "done",
     }[type(frame)]
@@ -67,6 +71,12 @@ class StreamCollector(AsyncCallbackHandler):
                 payload=payload,
             )
         )
+
+    def emit_step_status(self, frame: StepStatusFrame) -> None:
+        self._queue.append(frame)
+
+    def emit_plan_complete(self, frame: PlanCompleteFrame) -> None:
+        self._queue.append(frame)
 
     def emit_final(self, content: str, card_ids: list[str]) -> None:
         """Enqueue final + done frames."""

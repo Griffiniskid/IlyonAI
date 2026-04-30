@@ -345,6 +345,7 @@ class ToolEnvelope(_Strict):
     data: Optional[dict] = None
     sentinel: Optional[SentinelBlock] = None
     shield: Optional[ShieldBlock] = None
+    scoring_inputs: Optional[dict[str, Any]] = None
     card_type: Optional[CardType] = None
     card_id: str
     card_payload: Optional[dict] = None
@@ -381,6 +382,23 @@ class CardFrame(_Strict):
     payload: dict
 
 
+class StepStatusFrame(_Strict):
+    plan_id: str
+    step_id: str
+    status: Literal["pending", "ready", "signing", "broadcast", "confirmed", "failed", "skipped"]
+    order: int
+    tx_hash: Optional[str] = None
+    error: Optional[str] = None
+    event: Literal["step_status"] = "step_status"
+
+
+class PlanCompleteFrame(_Strict):
+    plan_id: str
+    status: Literal["complete", "aborted", "failed", "expired"]
+    payload: dict[str, Any] = Field(default_factory=dict)
+    event: Literal["plan_complete"] = "plan_complete"
+
+
 class FinalFrame(_Strict):
     content: str
     card_ids: list[str]
@@ -392,4 +410,13 @@ class DoneFrame(_Strict):
     pass
 
 
-SSEFrame = Union[ThoughtFrame, ToolFrame, ObservationFrame, CardFrame, FinalFrame, DoneFrame]
+SSEFrame = Union[
+    ThoughtFrame,
+    ToolFrame,
+    ObservationFrame,
+    CardFrame,
+    StepStatusFrame,
+    PlanCompleteFrame,
+    FinalFrame,
+    DoneFrame,
+]

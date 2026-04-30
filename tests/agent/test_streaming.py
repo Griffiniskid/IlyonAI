@@ -8,6 +8,8 @@ from src.api.schemas.agent import (
     DoneFrame,
     FinalFrame,
     ObservationFrame,
+    PlanCompleteFrame,
+    StepStatusFrame,
     ThoughtFrame,
     ToolFrame,
 )
@@ -52,6 +54,11 @@ def test_frame_event_name_thought():
 
 def test_frame_event_name_done():
     assert frame_event_name(DoneFrame()) == "done"
+
+
+def test_frame_event_name_step_status_and_plan_complete():
+    assert frame_event_name(StepStatusFrame(plan_id="p", step_id="s", status="ready", order=1)) == "step_status"
+    assert frame_event_name(PlanCompleteFrame(plan_id="p", status="aborted")) == "plan_complete"
 
 
 # ---------------------------------------------------------------------------

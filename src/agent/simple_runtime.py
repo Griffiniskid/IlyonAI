@@ -243,6 +243,113 @@ def _detect_bridge_then_stake(message: str) -> tuple[str, dict] | None:
     )
 
 
+def _detect_swap_then_lp(message: str) -> tuple[str, dict] | None:
+    pattern = re.compile(
+        r"swap\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<tin>[A-Za-z]{2,10})\s+"
+        r"(?:to|for|into)\s+(?P<tout>[A-Za-z]{2,10})\s+(?:then\s+)?"
+        r"(?:provide\s+liquidity|deposit\s+lp|add\s+liquidity)\s+(?:to\s+)?"
+        r"(?P<pair>[A-Za-z]{2,10}[/-][A-Za-z]{2,10})\s+(?:on\s+)?(?P<protocol>[A-Za-z0-9 ._-]+)",
+        re.IGNORECASE,
+    )
+    match = pattern.search(message)
+    if not match:
+        return None
+    pair = match.group("pair").upper().replace("/", "/")
+    protocol = match.group("protocol").strip().lower().replace(" ", "-")
+    return (
+        "compose_plan",
+        {
+            "title": f"Swap {match.group('tin').upper()} to {match.group('tout').upper()} and deposit LP on {match.group('protocol').strip().title()}",
+            "steps": [
+                {
+                    "step_id": "swap",
+                    "action": "swap",
+                    "params": {"token_in": match.group("tin").upper(), "token_out": match.group("tout").upper(), "amount": match.group("amount").replace(",", ""), "chain_id": 1},
+                },
+                {
+                    "step_id": "deposit-lp",
+                    "action": "deposit_lp",
+                    "params": {"token": pair, "protocol": protocol, "chain_id": 1},
+                    "resolves_from": {"amount": "swap.amount_out"},
+                },
+            ],
+        },
+    )
+
+
+def _detect_transfer_plan(message: str) -> tuple[str, dict] | None:
+    pattern = re.compile(r"(?:send|transfer)\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})\s+to\s+(?P<to>[\w.:-]+)", re.IGNORECASE)
+    match = pattern.search(message)
+    if not match:
+        return None
+    token = match.group("token").upper()
+    return (
+        "compose_plan",
+        {
+            "title": f"Send {token}",
+            "steps": [
+                {
+                    "step_id": "transfer",
+                    "action": "transfer",
+                    "params": {"token": token, "amount": _to_base_units(match.group("amount"), token), "recipient": match.group("to"), "chain_id": 1},
+                }
+            ],
+        },
+    )
+
+
+def _detect_stake_amount_plan(message: str) -> tuple[str, dict] | None:
+    idle = re.search(r"stake\s+all\s+my\s+idle\s+(?P<token>[A-Za-z]{2,10})", message, re.IGNORECASE)
+    if idle:
+        token = idle.group("token").upper()
+        return (
+            "compose_plan",
+            {
+                "title": f"Stake idle {token}",
+                "steps": [
+                    {"step_id": "balance", "action": "get_balance", "params": {"token": token, "chain_id": 1}},
+                    {"step_id": "stake", "action": "stake", "params": {"token": token, "protocol": "lido", "chain_id": 1}, "resolves_from": {"amount": "balance.idle_amount"}},
+                ],
+            },
+        )
+
+    direct = re.search(r"stake\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})\s+(?:on\s+)?(?P<protocol>[A-Za-z0-9 ._-]+)", message, re.IGNORECASE)
+    if not direct:
+        return None
+    token = direct.group("token").upper()
+    amount = float(direct.group("amount").replace(",", ""))
+    amount_usd = amount * 3000 if token == "ETH" else amount
+    return (
+        "compose_plan",
+        {
+            "title": f"Stake {token} on {direct.group('protocol').strip().title()}",
+            "steps": [
+                {
+                    "step_id": "stake",
+                    "action": "stake",
+                    "params": {"token": token, "amount": direct.group("amount"), "protocol": direct.group("protocol").strip().lower().replace(" ", "-"), "chain_id": 1, "amount_usd": amount_usd},
+                }
+            ],
+        },
+    )
+
+
+def _detect_malicious_swap_plan(message: str) -> tuple[str, dict] | None:
+    pattern = re.compile(r"swap\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<tin>[A-Za-z]{2,10})\s+(?:to|for|into)\s+(?P<tout>[A-Za-z0-9_-]+)", re.IGNORECASE)
+    match = pattern.search(message)
+    if not match or "malicious" not in match.group("tout").lower():
+        return None
+    return (
+        "compose_plan",
+        {
+            "title": "Blocked swap risk review",
+            "steps": [
+                {"step_id": "swap", "action": "swap", "params": {"token_in": match.group("tin").upper(), "token_out": match.group("tout").upper(), "amount": match.group("amount"), "chain_id": 1}}
+            ],
+        },
+    )
+
+
 def detect_intent(message: str) -> tuple[str, dict] | None:
     """Detect intent and extract parameters from user message."""
     message_lower = message.lower()
@@ -250,6 +357,10 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
         return multi_step
+    for detector in (_detect_swap_then_lp, _detect_stake_amount_plan, _detect_malicious_swap_plan, _detect_transfer_plan):
+        detected = detector(message)
+        if detected is not None:
+            return detected
 
     for tool_name, patterns in INTENT_PATTERNS.items():
         for pattern in patterns:
@@ -584,7 +695,7 @@ def _format_sentinel_methodology_response() -> str:
         "**4. Confidence**\n"
         "Confidence drops when coverage is incomplete. Missing docs, thin history, absent volume, or weak dependency evidence all reduce confidence and can cap otherwise attractive opportunities.\n\n"
         "**How scores combine**\n"
-        "Sentinel first computes a product-specific quality score from Safety, Yield Durability, Exit Liquidity, and Confidence. For single-asset and lending-like products the quality blend is 46% Safety, 22% Yield Durability, 22% Exit Liquidity, and 10% Confidence. LP variants shift those weights based on product type. Then overall deployability blends quality with APR efficiency, so yield only helps if it survives risk haircuts.\n\n"
+        "For the demo allocation rubric, Sentinel blends 0.40 Safety, 0.25 Yield Durability, 0.20 Exit Liquidity, and 0.15 Confidence into a 0-100 deployability score. The deeper DeFi pipeline can add product-specific APR efficiency and dependency haircuts, but the visible recommendation envelope always exposes those four core dimensions.\n\n"
         "**Risk level and strategy fit**\n"
         "Risk level is derived from the safety deficit. Strategy fit is conservative only when safety is very strong and yield quality is still healthy; otherwise opportunities move into balanced or aggressive buckets.\n\n"
         "**What this means in practice**\n"

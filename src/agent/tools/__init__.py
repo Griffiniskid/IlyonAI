@@ -90,10 +90,11 @@ def register_all_tools(services, user_id=0, wallet=None):
                 
                 # LangChain ReAct agent may pass input as a string containing JSON
                 # or as kwargs. Handle both cases.
+                result = None
                 if args and len(args) == 1:
                     arg = args[0]
                     if isinstance(arg, dict):
-                        return await tool_fn(_ctx, **arg)
+                        result = await tool_fn(_ctx, **arg)
                     elif isinstance(arg, str):
                         # Try to parse JSON from the string
                         try:
@@ -104,14 +105,23 @@ def register_all_tools(services, user_id=0, wallet=None):
                                 end = arg.rfind('}') + 1
                                 parsed = json.loads(arg[start:end])
                                 if isinstance(parsed, dict):
-                                    return await tool_fn(_ctx, **parsed)
+                                    result = await tool_fn(_ctx, **parsed)
                         except (json.JSONDecodeError, ValueError):
                             pass
                         # If can't parse, pass as 'input' parameter
-                        return await tool_fn(_ctx, input=arg)
+                        if result is None:
+                            result = await tool_fn(_ctx, input=arg)
                 elif args:
-                    return await tool_fn(_ctx, *args, **kwargs)
-                return await tool_fn(_ctx, **kwargs)
+                    result = await tool_fn(_ctx, *args, **kwargs)
+                else:
+                    result = await tool_fn(_ctx, **kwargs)
+
+                from src.api.schemas.agent import ToolEnvelope
+                from src.agent.tools.sentinel_wrap import enrich_tool_envelope
+
+                if isinstance(result, ToolEnvelope):
+                    return enrich_tool_envelope(tool_fn.__name__, result)
+                return result
 
             _run.__signature__ = _strip_ctx_param(tool_fn)
             _run.__name__ = tool_fn.__name__
