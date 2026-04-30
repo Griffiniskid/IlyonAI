@@ -292,7 +292,7 @@ def _try_direct_bridge(query: str, user_address: str, solana_address: str, chain
     if _is_compound_action(query):
         return None
     
-    from app.agents.crypto_agent import _build_bridge_tx
+    from app.agents.crypto_agent import _build_bridge_tx, _normalize_bridge_chain_id, _resolve_bridge_token_metadata
 
     q = (query or "").strip()
     lowered = q.lower()
@@ -309,6 +309,15 @@ def _try_direct_bridge(query: str, user_address: str, solana_address: str, chain
         return None
     if not src_chain:
         src_chain = _infer_bridge_src_chain(token_in, chain_id, solana_address)
+
+    # Convert human-readable amount to raw units (smallest denomination)
+    if amount.lower().strip() not in ("all", "max"):
+        try:
+            normalized_chain = _normalize_bridge_chain_id(src_chain, token_in=token_in, solana_wallet=solana_address)
+            _, src_decimals, _ = _resolve_bridge_token_metadata(token_in, normalized_chain, "")
+            amount = str(int(Decimal(amount) * (Decimal(10) ** int(src_decimals or 18))))
+        except Exception:
+            pass  # Let _build_bridge_tx handle validation if conversion fails
 
     payload = json.dumps({
         "token_in": token_in,
@@ -679,7 +688,7 @@ def _try_direct_stake(query: str, user_address: str, chain_id: int, solana_addre
     Detect simple staking intents and build the stake transaction directly.
     Returns JSON on success or a helpful English explanation on failure.
     """
-    from app.agents.crypto_agent import _build_stake_tx
+    from app.agents.crypto_agent import _build_stake_tx, _resolve_token_metadata
 
     q = query.strip()
     if q.lower().startswith("where to stake"):
@@ -694,6 +703,16 @@ def _try_direct_stake(query: str, user_address: str, chain_id: int, solana_addre
     token = m.group(2).upper()
     protocol = (m.group(3) or "").lower()
     effective_chain = _STAKING_NATIVE_CHAIN.get(token, chain_id)
+
+    # Convert human-readable amount to raw units for EVM chains
+    # Solana staking goes through build_solana_swap which handles human-readable amounts
+    if amount.lower().strip() not in ("all", "max") and effective_chain != 101:
+        try:
+            _, decimals, _ = _resolve_token_metadata(token, effective_chain, user_address, search_wallet_all_chains=True)
+            amount = str(int(Decimal(amount) * (Decimal(10) ** int(decimals or 18))))
+        except Exception:
+            pass  # Let _build_stake_tx handle validation if conversion fails
+
     raw = json.dumps({
         "token": token,
         "protocol": protocol,

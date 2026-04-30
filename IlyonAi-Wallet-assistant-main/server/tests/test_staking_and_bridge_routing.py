@@ -33,10 +33,31 @@ class DirectStakingRoutingTests(unittest.TestCase):
         raw, _user_address, effective_chain, solana_wallet = mocked_build_stake_tx.call_args.args
         payload = json.loads(raw)
         self.assertEqual(payload["token"], "SOL")
+        # Solana amounts remain human-readable (build_solana_swap handles conversion)
         self.assertEqual(payload["amount"], "0.2")
         self.assertEqual(payload["chain_id"], 101)
         self.assertEqual(effective_chain, 101)
         self.assertEqual(solana_wallet, "SoL4naPubKey111111111111111111111111111111")
+
+    @patch("app.agents.crypto_agent._build_stake_tx")
+    @patch("app.agents.crypto_agent._resolve_token_metadata")
+    def test_direct_stake_converts_evm_amount_to_raw_units(self, mocked_resolve, mocked_build_stake_tx):
+        mocked_build_stake_tx.return_value = '{"status":"ok"}'
+        mocked_resolve.return_value = ("0x0000000000000000000000000000000000000000", 18, 1)
+
+        _try_direct_stake(
+            "stake 5 ETH on Lido",
+            "0x1111111111111111111111111111111111111111",
+            1,
+        )
+
+        raw, _user_address, effective_chain = mocked_build_stake_tx.call_args.args
+        payload = json.loads(raw)
+        self.assertEqual(payload["token"], "ETH")
+        # 5 ETH → 5 * 10^18 = 5000000000000000000 raw units
+        self.assertEqual(payload["amount"], "5000000000000000000")
+        self.assertEqual(payload["chain_id"], 1)
+        self.assertEqual(effective_chain, 1)
 
     @patch("app.agents.crypto_agent.build_solana_swap")
     def test_build_stake_tx_solana_uses_jito_swap(self, mocked_build_solana_swap):
@@ -302,12 +323,31 @@ class DirectBridgeRoutingTests(unittest.TestCase):
         raw, evm_wallet, default_chain, solana_wallet = mocked_build_bridge_tx.call_args.args
         payload = json.loads(raw)
         self.assertEqual(payload["token_in"], "SOL")
-        self.assertEqual(payload["amount"], "0.2")
+        # 0.2 SOL → 0.2 * 10^9 = 200000000 raw units
+        self.assertEqual(payload["amount"], "200000000")
         self.assertEqual(payload["src_chain_id"], 101)
         self.assertEqual(payload["dst_chain_id"], 1)
         self.assertEqual(evm_wallet, "0x1111111111111111111111111111111111111111")
         self.assertEqual(default_chain, 101)
         self.assertEqual(solana_wallet, "SoL4naPubKey111111111111111111111111111111")
+
+    @patch("app.agents.crypto_agent._build_bridge_tx")
+    def test_direct_bridge_converts_whole_number_usdt_to_raw_units(self, mocked_build_bridge_tx):
+        mocked_build_bridge_tx.return_value = '{"status":"ok","type":"bridge_proposal"}'
+
+        _try_direct_bridge(
+            "bridge 5 usdt from sol chain to bnb chain",
+            "0x1111111111111111111111111111111111111111",
+            "SoL4naPubKey111111111111111111111111111111",
+            101,
+        )
+
+        payload = json.loads(mocked_build_bridge_tx.call_args.args[0])
+        self.assertEqual(payload["token_in"], "USDT")
+        # 5 USDT → 5 * 10^6 = 5000000 raw units
+        self.assertEqual(payload["amount"], "5000000")
+        self.assertEqual(payload["src_chain_id"], 101)
+        self.assertEqual(payload["dst_chain_id"], 56)
 
     @patch("app.agents.crypto_agent._build_bridge_tx")
     def test_direct_bridge_without_amount_defaults_to_all_token(self, mocked_build_bridge_tx):
