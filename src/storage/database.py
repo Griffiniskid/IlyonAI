@@ -491,6 +491,29 @@ class AgentPreferencesRow(Base):
     updated_at = Column(DateTime, nullable=True)
 
 
+class AgentChatRow(Base):
+    """Agent chat history header."""
+    __tablename__ = "agent_chats"
+
+    id = Column(String(36), primary_key=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    title = Column(String(200), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AgentChatMessageRow(Base):
+    """Individual message inside an agent chat."""
+    __tablename__ = "agent_chat_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    chat_id = Column(String(36), nullable=False, index=True)
+    role = Column(String(20), nullable=False)
+    content = Column(Text, nullable=False)
+    cards_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # DATABASE INTERFACE
 # ═══════════════════════════════════════════════════════════════════════════════
