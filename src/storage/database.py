@@ -474,6 +474,23 @@ class TransactionCache(Base):
     fetched_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
 
 
+class AgentPreferencesRow(Base):
+    """User-specific agent preferences for trading and risk management."""
+    __tablename__ = "agent_preferences"
+
+    user_id = Column(Integer, primary_key=True)
+    risk_budget = Column(String(32), default="balanced", nullable=False)
+    preferred_chains = Column(JSON, nullable=True)
+    blocked_protocols = Column(JSON, nullable=True)
+    gas_cap_usd = Column(Float, nullable=True)
+    slippage_cap_bps = Column(Integer, default=50, nullable=False)
+    notional_double_confirm_usd = Column(Float, default=10000.0, nullable=False)
+    auto_rebalance_opt_in = Column(Integer, default=0, nullable=False)
+    rebalance_auth_signature = Column(String(512), nullable=True)
+    rebalance_auth_nonce = Column(Integer, nullable=True)
+    updated_at = Column(DateTime, nullable=True)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # DATABASE INTERFACE
 # ═══════════════════════════════════════════════════════════════════════════════
