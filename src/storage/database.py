@@ -514,6 +514,19 @@ class AgentChatMessageRow(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class AgentPlanRow(Base):
+    """Persisted execution plan for the agent platform."""
+    __tablename__ = "agent_plans"
+
+    plan_id = Column(String(64), primary_key=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    payload_json = Column(Text, nullable=False)
+    status = Column(String(32), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # DATABASE INTERFACE
 # ═══════════════════════════════════════════════════════════════════════════════
