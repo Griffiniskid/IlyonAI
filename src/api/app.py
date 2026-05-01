@@ -5,6 +5,14 @@ Creates and configures the API application with all routes
 and middleware for handling web requests and Blinks.
 """
 
+import sys
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_ASSISTANT_SERVER = _REPO_ROOT / "IlyonAi-Wallet-assistant-main" / "server"
+if str(_ASSISTANT_SERVER) not in sys.path:
+    sys.path.insert(0, str(_ASSISTANT_SERVER))
+
 import logging
 from aiohttp import web
 
