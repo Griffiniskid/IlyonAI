@@ -596,14 +596,14 @@ def _try_direct_compound_swap_bridge(
     bridge_token_in = token_out
 
     # Determine bridge amount: if swap succeeded, use its output amount
+    # NOTE: Jupiter's out_amount is ALREADY in raw units (lamports/smallest units).
+    # Do NOT convert again — pass it straight to _build_bridge_tx.
     bridge_amount = "all"
-    if "out_amount" in swap_data:
+    if swap_data.get("type") == "solana_swap_proposal" and "out_amount" in swap_data:
         bridge_amount = str(swap_data["out_amount"])
     elif amount_str not in ("all", "max"):
+        # No successful swap output — fall back to original amount and convert to raw
         bridge_amount = amount_str
-
-    # Convert to raw units if needed
-    if bridge_amount not in ("all", "max"):
         try:
             normalized_chain = _normalize_bridge_chain_id(src_chain, token_in=bridge_token_in, solana_wallet=sol_wallet)
             _, src_decimals, _ = _resolve_bridge_token_metadata(bridge_token_in, normalized_chain, "")
