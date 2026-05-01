@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_REF="${ASSISTANT_IMMUTABLE_BASE:-bf1891e56808dc765c75e61ab0c904eae422c8d7}"
+BASE_REF="${ASSISTANT_IMMUTABLE_BASE:-pre-fusion-rewrite-20260501}"
 TARGET_DIR="IlyonAi-Wallet-assistant-main/"
 
 if ! git rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
