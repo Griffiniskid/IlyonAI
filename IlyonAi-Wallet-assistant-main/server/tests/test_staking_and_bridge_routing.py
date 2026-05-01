@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from app.agents.crypto_agent import _build_bridge_tx, _build_stake_tx, _resolve_token_metadata, build_solana_swap, get_staking_options
+from app.agents.crypto_agent import _build_bridge_tx, _build_stake_tx, _chain_name, _parse_tool_json, _resolve_token_metadata, build_solana_swap, get_staking_options
 from app.api.endpoints import _extract_chain_alias, _format_direct_swap_result, _try_direct_balance, _try_direct_bridge, _try_direct_stake, _try_direct_staking_info, _try_direct_swap, _try_direct_swap_clarification, _try_direct_transfer_clarification
 
 
@@ -33,10 +33,31 @@ class DirectStakingRoutingTests(unittest.TestCase):
         raw, _user_address, effective_chain, solana_wallet = mocked_build_stake_tx.call_args.args
         payload = json.loads(raw)
         self.assertEqual(payload["token"], "SOL")
+        # Solana amounts remain human-readable (build_solana_swap handles conversion)
         self.assertEqual(payload["amount"], "0.2")
         self.assertEqual(payload["chain_id"], 101)
         self.assertEqual(effective_chain, 101)
         self.assertEqual(solana_wallet, "SoL4naPubKey111111111111111111111111111111")
+
+    @patch("app.agents.crypto_agent._build_stake_tx")
+    @patch("app.agents.crypto_agent._resolve_token_metadata")
+    def test_direct_stake_converts_evm_amount_to_raw_units(self, mocked_resolve, mocked_build_stake_tx):
+        mocked_build_stake_tx.return_value = '{"status":"ok"}'
+        mocked_resolve.return_value = ("0x0000000000000000000000000000000000000000", 18, 1)
+
+        _try_direct_stake(
+            "stake 5 ETH on Lido",
+            "0x1111111111111111111111111111111111111111",
+            1,
+        )
+
+        raw, _user_address, effective_chain = mocked_build_stake_tx.call_args.args
+        payload = json.loads(raw)
+        self.assertEqual(payload["token"], "ETH")
+        # 5 ETH → 5 * 10^18 = 5000000000000000000 raw units
+        self.assertEqual(payload["amount"], "5000000000000000000")
+        self.assertEqual(payload["chain_id"], 1)
+        self.assertEqual(effective_chain, 1)
 
     @patch("app.agents.crypto_agent.build_solana_swap")
     def test_build_stake_tx_solana_uses_jito_swap(self, mocked_build_solana_swap):
@@ -302,12 +323,31 @@ class DirectBridgeRoutingTests(unittest.TestCase):
         raw, evm_wallet, default_chain, solana_wallet = mocked_build_bridge_tx.call_args.args
         payload = json.loads(raw)
         self.assertEqual(payload["token_in"], "SOL")
-        self.assertEqual(payload["amount"], "0.2")
+        # 0.2 SOL → 0.2 * 10^9 = 200000000 raw units
+        self.assertEqual(payload["amount"], "200000000")
         self.assertEqual(payload["src_chain_id"], 101)
         self.assertEqual(payload["dst_chain_id"], 1)
         self.assertEqual(evm_wallet, "0x1111111111111111111111111111111111111111")
         self.assertEqual(default_chain, 101)
         self.assertEqual(solana_wallet, "SoL4naPubKey111111111111111111111111111111")
+
+    @patch("app.agents.crypto_agent._build_bridge_tx")
+    def test_direct_bridge_converts_whole_number_usdt_to_raw_units(self, mocked_build_bridge_tx):
+        mocked_build_bridge_tx.return_value = '{"status":"ok","type":"bridge_proposal"}'
+
+        _try_direct_bridge(
+            "bridge 5 usdt from sol chain to bnb chain",
+            "0x1111111111111111111111111111111111111111",
+            "SoL4naPubKey111111111111111111111111111111",
+            101,
+        )
+
+        payload = json.loads(mocked_build_bridge_tx.call_args.args[0])
+        self.assertEqual(payload["token_in"], "USDT")
+        # 5 USDT → 5 * 10^6 = 5000000 raw units
+        self.assertEqual(payload["amount"], "5000000")
+        self.assertEqual(payload["src_chain_id"], 101)
+        self.assertEqual(payload["dst_chain_id"], 56)
 
     @patch("app.agents.crypto_agent._build_bridge_tx")
     def test_direct_bridge_without_amount_defaults_to_all_token(self, mocked_build_bridge_tx):
@@ -502,6 +542,207 @@ class BridgeBuilderTests(unittest.TestCase):
         debridge_params = mocked_get.call_args.kwargs["params"]
         self.assertEqual(debridge_params["srcChainTokenInAmount"], "1234567")
         self.assertEqual(debridge_params["srcChainTokenIn"], "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
+
+
+class BridgeChainInferenceTests(unittest.TestCase):
+    @patch("app.api.endpoints._get_wallet_token_chains")
+    def test_infer_bridge_src_chain_finds_wbtc_on_solana(self, mocked_get_chains):
+        mocked_get_chains.return_value = [101]
+
+        from app.api.endpoints import _infer_bridge_src_chain
+        result = _infer_bridge_src_chain("WBTC", 56, "SoL4naPubKey111111111111111111111111111111")
+
+        self.assertEqual(result, 101)
+
+    @patch("app.api.endpoints._get_wallet_token_chains")
+    def test_infer_bridge_src_chain_falls_back_to_active_when_no_wallet_data(self, mocked_get_chains):
+        mocked_get_chains.return_value = []
+
+        from app.api.endpoints import _infer_bridge_src_chain
+        result = _infer_bridge_src_chain("WBTC", 56, "")
+
+        self.assertEqual(result, 56)
+
+    @patch("app.api.endpoints._get_wallet_token_chains")
+    def test_infer_bridge_src_chain_prefers_native_token_mapping(self, mocked_get_chains):
+        mocked_get_chains.return_value = [56]
+
+        from app.api.endpoints import _infer_bridge_src_chain
+        result = _infer_bridge_src_chain("SOL", 56, "SoL4naPubKey111111111111111111111111111111")
+
+        self.assertEqual(result, 101)
+
+
+class CompoundActionTests(unittest.TestCase):
+    def test_compound_swap_and_bridge_detected(self):
+        from app.api.endpoints import _is_compound_action
+
+        result = _is_compound_action(
+            "swap 0.2 sol for usdc and then bridge them to eth chain"
+        )
+
+        self.assertTrue(result)
+
+    def test_simple_swap_not_compound(self):
+        from app.api.endpoints import _is_compound_action
+
+        result = _is_compound_action(
+            "swap 0.2 sol for usdc"
+        )
+
+        self.assertFalse(result)
+
+    def test_simple_bridge_not_compound(self):
+        from app.api.endpoints import _is_compound_action
+
+        result = _is_compound_action(
+            "bridge wbtc to eth chain"
+        )
+
+        self.assertFalse(result)
+
+
+class BridgeWalletErrorTests(unittest.TestCase):
+    def test_bridge_evm_to_solana_without_evm_wallet_returns_helpful_error(self):
+        result = json.loads(_build_bridge_tx(
+            json.dumps({
+                "token_in": "BNB",
+                "amount": "100000000000000000",
+                "src_chain_id": 56,
+                "dst_chain_id": 101,
+            }),
+            "",  # No EVM wallet
+            56,
+            "SoL4naPubKey111111111111111111111111111111",
+        ))
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("connect", result["message"].lower())
+        self.assertIn("metamask", result["message"].lower())
+
+    def test_bridge_solana_to_evm_without_solana_wallet_returns_helpful_error(self):
+        result = json.loads(_build_bridge_tx(
+            json.dumps({
+                "token_in": "SOL",
+                "amount": "200000000",
+                "src_chain_id": 101,
+                "dst_chain_id": 1,
+            }),
+            "0x1111111111111111111111111111111111111111",
+            56,
+            "",  # No Solana wallet
+        ))
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("connect", result["message"].lower())
+        self.assertIn("phantom", result["message"].lower())
+
+
+class TolerantToolJsonParserTests(unittest.TestCase):
+    """LLMs sometimes append commentary or wrap output in markdown fences.
+    The tool-input parser must tolerate this so multi-step flows
+    (e.g. "swap X then bridge it") don't fail with 'Invalid JSON input'.
+    """
+
+    def test_parses_plain_json(self):
+        self.assertEqual(
+            _parse_tool_json('{"token_in":"USDC","amount":"5000000"}'),
+            {"token_in": "USDC", "amount": "5000000"},
+        )
+
+    def test_strips_trailing_llm_commentary(self):
+        # Exact production failure payload (Image 2):
+        raw = (
+            '{"token_in":"USDC","amount":"9996215","src_chain_id":1,"dst_chain_id":56}'
+            "\n\n(Note: I used the approximate output amount 9.996215 USDC "
+            "converted to smallest units 9,996,215 for the bridge amount.)"
+        )
+        result = _parse_tool_json(raw)
+        self.assertEqual(result["token_in"], "USDC")
+        self.assertEqual(result["amount"], "9996215")
+        self.assertEqual(result["src_chain_id"], 1)
+        self.assertEqual(result["dst_chain_id"], 56)
+
+    def test_strips_markdown_code_fence(self):
+        raw = '```json\n{"token":"ETH","amount":"all"}\n```'
+        self.assertEqual(_parse_tool_json(raw), {"token": "ETH", "amount": "all"})
+
+    def test_strips_unlabeled_code_fence(self):
+        raw = '```\n{"token":"ETH","amount":"all"}\n```'
+        self.assertEqual(_parse_tool_json(raw), {"token": "ETH", "amount": "all"})
+
+    def test_extracts_first_json_when_prose_after(self):
+        raw = '{"a":1} then I will follow up with another tool call.'
+        self.assertEqual(_parse_tool_json(raw), {"a": 1})
+
+    def test_passes_through_dict(self):
+        self.assertEqual(_parse_tool_json({"token": "ETH"}), {"token": "ETH"})
+
+    def test_raises_on_no_json(self):
+        with self.assertRaises(json.JSONDecodeError):
+            _parse_tool_json("just some prose, no JSON here")
+
+    def test_raises_on_empty(self):
+        with self.assertRaises(json.JSONDecodeError):
+            _parse_tool_json("")
+
+
+class BridgeToolToleratesLlmCommentaryTests(unittest.TestCase):
+    """End-to-end: _build_bridge_tx must not return 'Invalid JSON input'
+    when the LLM appends commentary after the JSON arguments."""
+
+    def test_build_bridge_tx_accepts_trailing_commentary(self):
+        raw = (
+            '{"token_in":"USDC","amount":"9996215","src_chain_id":1,"dst_chain_id":56}'
+            "\n\n(Note: I used the approximate output amount 9.996215 USDC "
+            "converted to smallest units 9,996,215 for the bridge amount.)"
+        )
+
+        # We don't need the deBridge API to actually return — we just need
+        # to confirm the JSON-parse step no longer rejects this payload.
+        result = json.loads(_build_bridge_tx(
+            raw,
+            "0x1111111111111111111111111111111111111111",
+            1,
+            "",
+        ))
+
+        # Before fix: status=error, message starts with "Invalid JSON input".
+        # After fix: parsing succeeds; we may get a different downstream error
+        # (e.g. unresolved token, network), but NOT "Invalid JSON input".
+        if result.get("status") == "error":
+            self.assertNotIn("Invalid JSON input", result.get("message", ""))
+
+
+class ChainMetaTests(unittest.TestCase):
+    """Chain 101 (Solana) must be present in _CHAIN_META so the system prompt
+    correctly identifies Solana instead of saying 'Chain 101'.
+    """
+
+    def test_solana_chain_name(self):
+        self.assertEqual(_chain_name(101), "Solana")
+
+    def test_solana_native_symbol(self):
+        from app.agents.crypto_agent import _native_symbol
+        self.assertEqual(_native_symbol(101), "SOL")
+
+
+class SystemPromptTests(unittest.TestCase):
+    """The system prompt must correctly identify Solana and instruct the LLM
+    to check balances for compound actions when the source chain is ambiguous.
+    """
+
+    def test_system_prompt_names_solana(self):
+        from app.agents.crypto_agent import _build_system_prompt
+        prompt = _build_system_prompt(101, "0x1111111111111111111111111111111111111111", "SoL4naPubKey")
+        self.assertIn("Solana", prompt)
+        self.assertNotIn("Chain 101", prompt)
+
+    def test_system_prompt_mentions_balance_discovery(self):
+        from app.agents.crypto_agent import _build_system_prompt
+        prompt = _build_system_prompt(1, "0x1111111111111111111111111111111111111111", "")
+        self.assertIn("get_wallet_balance FIRST", prompt)
+        self.assertIn("discover which chain has the token", prompt)
 
 
 if __name__ == "__main__":

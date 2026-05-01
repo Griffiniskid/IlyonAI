@@ -83,6 +83,7 @@ _CHAIN_META: Final[dict[int, dict[str, str]]] = {
     100:    {"name": "Gnosis",            "native": "xDAI", "native_name": "xDAI"},
     42220:  {"name": "Celo",              "native": "CELO", "native_name": "CELO"},
     25:     {"name": "Cronos",            "native": "CRO",  "native_name": "CRO"},
+    101:    {"name": "Solana",            "native": "SOL",  "native_name": "SOL"},
 }
 
 # Maps a unique native symbol → canonical chain_id (for auto-detecting chain from token)
@@ -96,6 +97,48 @@ def _chain_name(chain_id: int) -> str:
 
 def _native_symbol(chain_id: int) -> str:
     return _CHAIN_META.get(chain_id, {}).get("native", "ETH")
+
+
+# ---------------------------------------------------------------------------
+# Tolerant JSON parser for LLM tool inputs.
+# LLMs frequently emit a valid JSON object followed by trailing prose
+# ("(Note: I converted ...)") or wrap output in markdown code fences.
+# Strict json.loads rejects this with "Extra data", which surfaces to the
+# user as an unhelpful "Invalid JSON input" error and breaks multi-step
+# flows like "swap X then bridge it".
+#
+# This helper extracts the first complete JSON object/array from `raw`
+# using JSONDecoder.raw_decode and ignores trailing commentary.
+# ---------------------------------------------------------------------------
+_JSON_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.IGNORECASE)
+
+
+def _parse_tool_json(raw: Any) -> Any:
+    """Parse JSON tool input, tolerating markdown fences and trailing prose.
+
+    Raises json.JSONDecodeError if no JSON object/array can be extracted.
+    """
+    if not isinstance(raw, str):
+        return raw
+    text = raw.strip()
+    if not text:
+        raise json.JSONDecodeError("Empty input", text, 0)
+    # Strip surrounding markdown code fences (```json ... ```).
+    text = _JSON_FENCE_RE.sub("", text).strip()
+    # Find the first '{' or '[' and decode from there using raw_decode,
+    # which stops at the end of the first complete JSON value and ignores
+    # any trailing characters (e.g. LLM commentary appended after the JSON).
+    start = -1
+    for idx, ch in enumerate(text):
+        if ch in "{[":
+            start = idx
+            break
+    if start == -1:
+        raise json.JSONDecodeError("No JSON object found", text, 0)
+    decoder = json.JSONDecoder()
+    obj, _end = decoder.raw_decode(text, start)
+    return obj
+
 
 # ---------------------------------------------------------------------------
 # Multi-chain token registry — indexed by chain_id
@@ -187,6 +230,22 @@ _TOKENS_AVAX: Final[dict[str, dict[str, Any]]] = {
     "wavax": {"address": "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7", "decimals": 18},
 }
 
+# Solana — chain 101 (SPL token mint addresses)
+_TOKENS_SOLANA: Final[dict[str, dict[str, Any]]] = {
+    "sol":   {"address": "So11111111111111111111111111111111111111112", "decimals": 9},
+    "usdc":  {"address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "decimals": 6},
+    "usdt":  {"address": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "decimals": 6},
+    "bonk":  {"address": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", "decimals": 5},
+    "jup":   {"address": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN", "decimals": 6},
+    "ray":   {"address": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "decimals": 6},
+    "orca":  {"address": "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE", "decimals": 6},
+    "msol":  {"address": "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So", "decimals": 9},
+    "jito":  {"address": "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn", "decimals": 9},
+    "wbtc":  {"address": "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh", "decimals": 8},
+    "weth":  {"address": "7vfCXTUXx5WJV5JNPkbiAK8A8dbekU6jP6tr4X6NLz4H", "decimals": 8},
+    "pyth":  {"address": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", "decimals": 6},
+}
+
 # Chain-indexed registry
 TOKENS_BY_CHAIN: Final[dict[int, dict[str, dict[str, Any]]]] = {
     1:     _TOKENS_ETH,
@@ -196,6 +255,7 @@ TOKENS_BY_CHAIN: Final[dict[int, dict[str, dict[str, Any]]]] = {
     10:    _TOKENS_OP,
     42161: _TOKENS_ARB,
     43114: _TOKENS_AVAX,
+    101:   _TOKENS_SOLANA,
 }
 
 # Backwards-compatible alias for code that doesn't pass chain_id
@@ -1755,7 +1815,7 @@ def _build_swap_tx(raw_input: str, user_address: str, chain_id: int, solana_addr
         slippage_bps slippage tolerance in basis points (default 100 EVM / 50 SOL)
     """
     try:
-        params: dict[str, Any] = json.loads(raw_input)
+        params: dict[str, Any] = _parse_tool_json(raw_input)
     except json.JSONDecodeError as exc:
         return json.dumps({"status": "error", "message": f"JSON parse error: {exc}"})
 
@@ -1793,7 +1853,7 @@ def _build_transfer_transaction(raw_input: str, chain_id: int = 56) -> str:
         decimals       optional — auto-resolved for known tokens (default 18)
     """
     try:
-        params: dict[str, Any] = json.loads(raw_input)
+        params: dict[str, Any] = _parse_tool_json(raw_input)
     except json.JSONDecodeError as exc:
         return json.dumps({"status": "error", "message": f"JSON parse error: {exc}"})
 
@@ -1949,7 +2009,11 @@ Choose tools based on intent — you are an intelligent advisor, not a router. C
   To check a specific chain: input "{user_address or solana_address}|<chain>"
   Chain keywords: eth, bnb, polygon, arbitrum, optimism, base, avalanche, zksync,
   linea, scroll, mantle, fantom, gnosis, celo, cronos, solana
-  NEVER call this before a swap — build_swap_tx handles balance lookup automatically.
+  For SINGLE swaps or bridges where the user explicitly names the chain and amount:
+  do NOT check balance — just execute the transaction.
+  For MULTI-STEP or COMPOUND requests (e.g. "swap X and bridge Y") where the user
+  does NOT explicitly state which chain holds the tokens: CALL get_wallet_balance FIRST
+  to discover which chain the token is on, then use that chain for the swap/bridge.
 
 • get_token_price — Current USD price of any token. Input: symbol like "BNB" or "bitcoin".
 
@@ -2036,14 +2100,35 @@ When the user asks for any of these, IMMEDIATELY respond with a helpful explanat
 3. Suggest what you CAN do instead (e.g. "I can find the best pool and give you the direct link to add liquidity on the protocol's website")
 NEVER loop trying different tools when the action is not supported — answer directly.
 
+━━━ COMPOUND / MULTI-STEP ACTIONS ━━━
+
+When the user asks for multiple actions in one message (e.g. "swap X and then bridge Y" or "swap X to Y and bridge to Z"):
+1. IF the user does NOT explicitly state which chain holds the token:
+   CALL get_wallet_balance FIRST to discover which chain has the token.
+   Use that discovered chain as the source chain for the swap/bridge.
+   Do NOT assume the active session chain_id — the user's tokens may be on a different chain.
+2. Execute the FIRST action (e.g. swap) on the discovered source chain.
+3. Then execute the SECOND action (e.g. bridge) from that same chain.
+4. If BOTH succeed, return a plain-text Final Answer (NOT raw JSON) explaining:
+   - The first transaction is ready (describe what it does)
+   - The second transaction is ready (describe what it does)
+   - Ask the user to confirm which one to execute first
+5. If only one succeeds, explain which one worked and what went wrong with the other.
+6. NEVER return raw transaction JSON for compound actions — always use plain text so the user can choose the order.
+
+For single-action requests, follow the normal rules below.
+
 ━━━ RESPONSE FORMAT RULES (CRITICAL) ━━━
 
-A. TRANSACTIONS (build_solana_swap / build_swap_tx / build_transfer_tx / build_stake_tx / build_deposit_lp_tx / build_bridge_tx):
-   If the tool returns JSON with "status":"ok", copy the ENTIRE JSON object verbatim as your Final Answer.
+A. SINGLE TRANSACTIONS (build_solana_swap / build_swap_tx / build_transfer_tx / build_stake_tx / build_deposit_lp_tx / build_bridge_tx):
+   ONLY when the request is a SINGLE action. If the tool returns JSON with "status":"ok", copy the ENTIRE JSON object verbatim as your Final Answer.
    No markdown, no text before or after — just the raw JSON.
    Example: Final Answer: {{{{"type":"solana_swap_proposal","swapTransaction":"...",...}}}}
    If the tool returns an error (status:"error"), explain the issue in plain text and suggest alternatives
    (e.g. search DexScreener for the token address, try a different chain, ask user to confirm the symbol).
+   
+   IMPORTANT: If this is a compound/multi-step request, NEVER return raw JSON even if the tool succeeds.
+   Use plain text to explain what was prepared and ask the user to proceed.
 
 B. LISTS WITH DATA (search_dexscreener_pairs, find_liquidity_pool, get_defi_analytics — any list of entities):
    You MUST return a JSON object with type "universal_cards". Never use Markdown lists!
@@ -2336,7 +2421,7 @@ def _build_stake_tx(raw: str, user_address: str, default_chain_id: int, solana_a
     Input JSON keys: token (str), protocol (str, optional), amount (str in wei or "all"), chain_id (int, optional).
     """
     try:
-        params = json.loads(raw) if isinstance(raw, str) else raw
+        params = _parse_tool_json(raw)
     except json.JSONDecodeError:
         return json.dumps({"status": "error", "message": f"Invalid JSON input: {raw}"})
 
@@ -2458,7 +2543,7 @@ def _build_deposit_lp_tx(raw: str, user_address: str, default_chain_id: int) -> 
     Input JSON keys: token_in (str), pool_address (str - LP token/pool contract), amount (str in wei or "all"), chain_id (int, optional).
     """
     try:
-        params = json.loads(raw) if isinstance(raw, str) else raw
+        params = _parse_tool_json(raw)
     except json.JSONDecodeError:
         return json.dumps({"status": "error", "message": f"Invalid JSON input: {raw}"})
 
@@ -2509,7 +2594,7 @@ def _build_bridge_tx(raw: str, user_address: str, default_chain_id: int, solana_
                      dst_chain_id (int), recipient (str, optional - defaults to user_address).
     """
     try:
-        params = json.loads(raw) if isinstance(raw, str) else raw
+        params = _parse_tool_json(raw)
     except json.JSONDecodeError:
         return json.dumps({"status": "error", "message": f"Invalid JSON input: {raw}"})
 
@@ -2540,9 +2625,17 @@ def _build_bridge_tx(raw: str, user_address: str, default_chain_id: int, solana_
     if src_chain == dst_chain:
         return json.dumps({"status": "error", "message": "Source and destination chains are the same. Use build_swap_tx for same-chain operations."})
     if not sender:
-        return json.dumps({"status": "error", "message": "No source wallet connected for this bridge. Connect the correct MetaMask or Phantom wallet first."})
+        src_chain_name = "Solana" if src_chain == _DEBRIDGE_SOLANA_CHAIN_ID else "EVM"
+        return json.dumps({
+            "status": "error",
+            "message": f"No {src_chain_name} source wallet connected. Please connect {'Phantom' if src_chain == _DEBRIDGE_SOLANA_CHAIN_ID else 'MetaMask'} to bridge from {src_chain_name}.",
+        })
     if not recipient:
-        return json.dumps({"status": "error", "message": "No destination recipient is available for this bridge. Connect a wallet on the destination side or provide a recipient address explicitly."})
+        dst_chain_name = "Solana" if dst_chain == _DEBRIDGE_SOLANA_CHAIN_ID else "EVM"
+        return json.dumps({
+            "status": "error",
+            "message": f"No {dst_chain_name} destination wallet connected. Please connect {'Phantom' if dst_chain == _DEBRIDGE_SOLANA_CHAIN_ID else 'MetaMask'} on the destination side or provide a recipient address.",
+        })
 
     if src_chain == _DEBRIDGE_SOLANA_CHAIN_ID and not _is_valid_solana_address(sender):
         return json.dumps({"status": "error", "message": "Please connect a valid Solana source wallet address before bridging from Solana."})
@@ -3854,7 +3947,7 @@ def build_solana_swap(raw: str) -> str:
         in_symbol        input token symbol (best-effort)
     """
     try:
-        params = json.loads(raw)
+        params = _parse_tool_json(raw)
     except json.JSONDecodeError as exc:
         return _solana_swap_error(f"Invalid JSON input: {exc}")
 
@@ -4049,8 +4142,8 @@ def find_liquidity_pool(raw: str) -> str:
         2. DexScreener search — fallback for new tokens / meme coins not in DefiLlama.
     """
     try:
-        params   = json.loads(raw)
-        query    = str(params.get("query", "")).strip()
+        params    = _parse_tool_json(raw)
+        query     = str(params.get("query", "")).strip()
         chain_raw = str(params.get("chain_id", "")).strip().lower()
     except (json.JSONDecodeError, AttributeError):
         query     = str(raw).strip()
