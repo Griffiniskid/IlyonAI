@@ -265,6 +265,15 @@ class Settings(BaseSettings):
                                        description="Comma-separated chrome/moz extension IDs")
 
     # ═══════════════════════════════════════════════════════════════════════════
+    # SENTINEL-ASSISTANT FUSION CONFIGURATION
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    AGENT_BACKEND: str = Field("sentinel", env="AGENT_BACKEND", description="Backend agent to use: sentinel or assistant")
+    SENTINEL_API_TARGET: str = Field("http://localhost:8080", env="SENTINEL_API_TARGET", description="Sentinel API base URL")
+    ASSISTANT_API_TARGET: str = Field("http://localhost:8000", env="ASSISTANT_API_TARGET", description="Assistant API base URL")
+    OPTIMIZER_ENABLED: bool = Field(False, env="OPTIMIZER_ENABLED", description="Enable optimizer service")
+
+    # ═══════════════════════════════════════════════════════════════════════════
     # AGENT PLATFORM SERVICE CREDS
     # ═══════════════════════════════════════════════════════════════════════════
 
