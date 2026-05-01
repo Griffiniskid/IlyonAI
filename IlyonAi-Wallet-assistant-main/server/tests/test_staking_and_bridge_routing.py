@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from app.agents.crypto_agent import _build_bridge_tx, _build_stake_tx, _resolve_token_metadata, build_solana_swap, get_staking_options
+from app.agents.crypto_agent import _build_bridge_tx, _build_stake_tx, _parse_tool_json, _resolve_token_metadata, build_solana_swap, get_staking_options
 from app.api.endpoints import _extract_chain_alias, _format_direct_swap_result, _try_direct_balance, _try_direct_bridge, _try_direct_stake, _try_direct_staking_info, _try_direct_swap, _try_direct_swap_clarification, _try_direct_transfer_clarification
 
 
@@ -636,6 +636,82 @@ class BridgeWalletErrorTests(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertIn("connect", result["message"].lower())
         self.assertIn("phantom", result["message"].lower())
+
+
+class TolerantToolJsonParserTests(unittest.TestCase):
+    """LLMs sometimes append commentary or wrap output in markdown fences.
+    The tool-input parser must tolerate this so multi-step flows
+    (e.g. "swap X then bridge it") don't fail with 'Invalid JSON input'.
+    """
+
+    def test_parses_plain_json(self):
+        self.assertEqual(
+            _parse_tool_json('{"token_in":"USDC","amount":"5000000"}'),
+            {"token_in": "USDC", "amount": "5000000"},
+        )
+
+    def test_strips_trailing_llm_commentary(self):
+        # Exact production failure payload (Image 2):
+        raw = (
+            '{"token_in":"USDC","amount":"9996215","src_chain_id":1,"dst_chain_id":56}'
+            "\n\n(Note: I used the approximate output amount 9.996215 USDC "
+            "converted to smallest units 9,996,215 for the bridge amount.)"
+        )
+        result = _parse_tool_json(raw)
+        self.assertEqual(result["token_in"], "USDC")
+        self.assertEqual(result["amount"], "9996215")
+        self.assertEqual(result["src_chain_id"], 1)
+        self.assertEqual(result["dst_chain_id"], 56)
+
+    def test_strips_markdown_code_fence(self):
+        raw = '```json\n{"token":"ETH","amount":"all"}\n```'
+        self.assertEqual(_parse_tool_json(raw), {"token": "ETH", "amount": "all"})
+
+    def test_strips_unlabeled_code_fence(self):
+        raw = '```\n{"token":"ETH","amount":"all"}\n```'
+        self.assertEqual(_parse_tool_json(raw), {"token": "ETH", "amount": "all"})
+
+    def test_extracts_first_json_when_prose_after(self):
+        raw = '{"a":1} then I will follow up with another tool call.'
+        self.assertEqual(_parse_tool_json(raw), {"a": 1})
+
+    def test_passes_through_dict(self):
+        self.assertEqual(_parse_tool_json({"token": "ETH"}), {"token": "ETH"})
+
+    def test_raises_on_no_json(self):
+        with self.assertRaises(json.JSONDecodeError):
+            _parse_tool_json("just some prose, no JSON here")
+
+    def test_raises_on_empty(self):
+        with self.assertRaises(json.JSONDecodeError):
+            _parse_tool_json("")
+
+
+class BridgeToolToleratesLlmCommentaryTests(unittest.TestCase):
+    """End-to-end: _build_bridge_tx must not return 'Invalid JSON input'
+    when the LLM appends commentary after the JSON arguments."""
+
+    def test_build_bridge_tx_accepts_trailing_commentary(self):
+        raw = (
+            '{"token_in":"USDC","amount":"9996215","src_chain_id":1,"dst_chain_id":56}'
+            "\n\n(Note: I used the approximate output amount 9.996215 USDC "
+            "converted to smallest units 9,996,215 for the bridge amount.)"
+        )
+
+        # We don't need the deBridge API to actually return — we just need
+        # to confirm the JSON-parse step no longer rejects this payload.
+        result = json.loads(_build_bridge_tx(
+            raw,
+            "0x1111111111111111111111111111111111111111",
+            1,
+            "",
+        ))
+
+        # Before fix: status=error, message starts with "Invalid JSON input".
+        # After fix: parsing succeeds; we may get a different downstream error
+        # (e.g. unresolved token, network), but NOT "Invalid JSON input".
+        if result.get("status") == "error":
+            self.assertNotIn("Invalid JSON input", result.get("message", ""))
 
 
 if __name__ == "__main__":

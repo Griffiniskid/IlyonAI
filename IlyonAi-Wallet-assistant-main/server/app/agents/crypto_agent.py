@@ -97,6 +97,48 @@ def _chain_name(chain_id: int) -> str:
 def _native_symbol(chain_id: int) -> str:
     return _CHAIN_META.get(chain_id, {}).get("native", "ETH")
 
+
+# ---------------------------------------------------------------------------
+# Tolerant JSON parser for LLM tool inputs.
+# LLMs frequently emit a valid JSON object followed by trailing prose
+# ("(Note: I converted ...)") or wrap output in markdown code fences.
+# Strict json.loads rejects this with "Extra data", which surfaces to the
+# user as an unhelpful "Invalid JSON input" error and breaks multi-step
+# flows like "swap X then bridge it".
+#
+# This helper extracts the first complete JSON object/array from `raw`
+# using JSONDecoder.raw_decode and ignores trailing commentary.
+# ---------------------------------------------------------------------------
+_JSON_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.IGNORECASE)
+
+
+def _parse_tool_json(raw: Any) -> Any:
+    """Parse JSON tool input, tolerating markdown fences and trailing prose.
+
+    Raises json.JSONDecodeError if no JSON object/array can be extracted.
+    """
+    if not isinstance(raw, str):
+        return raw
+    text = raw.strip()
+    if not text:
+        raise json.JSONDecodeError("Empty input", text, 0)
+    # Strip surrounding markdown code fences (```json ... ```).
+    text = _JSON_FENCE_RE.sub("", text).strip()
+    # Find the first '{' or '[' and decode from there using raw_decode,
+    # which stops at the end of the first complete JSON value and ignores
+    # any trailing characters (e.g. LLM commentary appended after the JSON).
+    start = -1
+    for idx, ch in enumerate(text):
+        if ch in "{[":
+            start = idx
+            break
+    if start == -1:
+        raise json.JSONDecodeError("No JSON object found", text, 0)
+    decoder = json.JSONDecoder()
+    obj, _end = decoder.raw_decode(text, start)
+    return obj
+
+
 # ---------------------------------------------------------------------------
 # Multi-chain token registry — indexed by chain_id
 # Allows build_transfer_tx to resolve addresses without any external calls.
@@ -1755,7 +1797,7 @@ def _build_swap_tx(raw_input: str, user_address: str, chain_id: int, solana_addr
         slippage_bps slippage tolerance in basis points (default 100 EVM / 50 SOL)
     """
     try:
-        params: dict[str, Any] = json.loads(raw_input)
+        params: dict[str, Any] = _parse_tool_json(raw_input)
     except json.JSONDecodeError as exc:
         return json.dumps({"status": "error", "message": f"JSON parse error: {exc}"})
 
@@ -1793,7 +1835,7 @@ def _build_transfer_transaction(raw_input: str, chain_id: int = 56) -> str:
         decimals       optional — auto-resolved for known tokens (default 18)
     """
     try:
-        params: dict[str, Any] = json.loads(raw_input)
+        params: dict[str, Any] = _parse_tool_json(raw_input)
     except json.JSONDecodeError as exc:
         return json.dumps({"status": "error", "message": f"JSON parse error: {exc}"})
 
@@ -2353,7 +2395,7 @@ def _build_stake_tx(raw: str, user_address: str, default_chain_id: int, solana_a
     Input JSON keys: token (str), protocol (str, optional), amount (str in wei or "all"), chain_id (int, optional).
     """
     try:
-        params = json.loads(raw) if isinstance(raw, str) else raw
+        params = _parse_tool_json(raw)
     except json.JSONDecodeError:
         return json.dumps({"status": "error", "message": f"Invalid JSON input: {raw}"})
 
@@ -2475,7 +2517,7 @@ def _build_deposit_lp_tx(raw: str, user_address: str, default_chain_id: int) -> 
     Input JSON keys: token_in (str), pool_address (str - LP token/pool contract), amount (str in wei or "all"), chain_id (int, optional).
     """
     try:
-        params = json.loads(raw) if isinstance(raw, str) else raw
+        params = _parse_tool_json(raw)
     except json.JSONDecodeError:
         return json.dumps({"status": "error", "message": f"Invalid JSON input: {raw}"})
 
@@ -2526,7 +2568,7 @@ def _build_bridge_tx(raw: str, user_address: str, default_chain_id: int, solana_
                      dst_chain_id (int), recipient (str, optional - defaults to user_address).
     """
     try:
-        params = json.loads(raw) if isinstance(raw, str) else raw
+        params = _parse_tool_json(raw)
     except json.JSONDecodeError:
         return json.dumps({"status": "error", "message": f"Invalid JSON input: {raw}"})
 
@@ -3879,7 +3921,7 @@ def build_solana_swap(raw: str) -> str:
         in_symbol        input token symbol (best-effort)
     """
     try:
-        params = json.loads(raw)
+        params = _parse_tool_json(raw)
     except json.JSONDecodeError as exc:
         return _solana_swap_error(f"Invalid JSON input: {exc}")
 
@@ -4074,8 +4116,8 @@ def find_liquidity_pool(raw: str) -> str:
         2. DexScreener search — fallback for new tokens / meme coins not in DefiLlama.
     """
     try:
-        params   = json.loads(raw)
-        query    = str(params.get("query", "")).strip()
+        params    = _parse_tool_json(raw)
+        query     = str(params.get("query", "")).strip()
         chain_raw = str(params.get("chain_id", "")).strip().lower()
     except (json.JSONDecodeError, AttributeError):
         query     = str(raw).strip()
