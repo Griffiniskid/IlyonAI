@@ -620,16 +620,24 @@ def _try_direct_compound_swap_bridge(
         })
 
     # ── Return combined plain-text response ──────────────────────────
-    src_name = "Solana" if src_chain == 101 else f"Chain {src_chain}"
-    dst_name = "Solana" if dst_chain == 101 else f"Chain {dst_chain}"
+    _CHAIN_NAMES = {
+        1: "Ethereum", 56: "BNB Smart Chain", 137: "Polygon",
+        42161: "Arbitrum", 10: "Optimism", 8453: "Base",
+        43114: "Avalanche", 101: "Solana",
+    }
+    src_name = _CHAIN_NAMES.get(src_chain, f"Chain {src_chain}")
+    dst_name = _CHAIN_NAMES.get(dst_chain, f"Chain {dst_chain}")
 
     swap_desc = f"Swap {amount_str} {token_in} to {token_out} on {src_name}"
     bridge_desc = f"Bridge {token_out} from {src_name} to {dst_name}"
 
     if swap_data.get("type") == "solana_swap_proposal":
-        out_amt = swap_data.get("out_amount", "?")
+        out_amt_raw = swap_data.get("out_amount", 0)
         out_sym = swap_data.get("out_symbol", token_out)
-        swap_desc = f"Swap {amount_str} {token_in} to ~{out_amt} {out_sym} on Solana"
+        # Convert raw amount to human-readable for display
+        out_decimals = 9 if out_sym == "SOL" else 6  # Most SPL tokens use 6
+        out_amt_human = round(int(out_amt_raw) / (10 ** out_decimals), 4) if out_amt_raw else "?"
+        swap_desc = f"Swap {amount_str} {token_in} to ~{out_amt_human} {out_sym} on Solana"
 
     return json.dumps({
         "status": "ok",
