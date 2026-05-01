@@ -4,12 +4,19 @@ import { AssistantBubble, renderAssistantMarkdown } from "./AssistantBubble";
 import { UserBubble } from "./UserBubble";
 import { ReasoningAccordion } from "./ReasoningAccordion";
 import { CardRenderer } from "./cards/CardRenderer";
+import { StepStatusCard } from "./cards/StepStatusCard";
 import type { AgentMessage } from "@/hooks/useAgentStream";
-import type { CardFrame, ThoughtFrame, ToolFrame } from "@/types/agent";
+import type { CardFrame, PlanCompleteFrame, StepStatusFrame, ThoughtFrame, ToolFrame } from "@/types/agent";
 
 interface Props {
   messages: AgentMessage[];
-  currentSteps: { thoughts: ThoughtFrame[]; tools: ToolFrame[]; cards: CardFrame[] };
+  currentSteps: {
+    thoughts: ThoughtFrame[];
+    tools: ToolFrame[];
+    cards: CardFrame[];
+    stepStatuses?: StepStatusFrame[];
+    planCompletions?: PlanCompleteFrame[];
+  };
   isStreaming: boolean;
 }
 
@@ -154,15 +161,19 @@ export function MessageList({ messages, currentSteps, isStreaming }: Props) {
             }
           : null;
         return (
-          <AssistantParagraphs
-            key={i}
-            content={msg.content}
-            cards={msg.cards}
-            reasoning={reasoning}
-          />
+          <div key={i} className="space-y-3">
+            <AssistantParagraphs
+              content={msg.content}
+              cards={msg.cards}
+              reasoning={reasoning}
+            />
+            {msg.stepStatuses?.map((frame) => (
+              <StepStatusCard key={`${frame.plan_id}-${frame.step_id}-${frame.status}-${frame.tx_hash ?? ""}`} frame={frame} />
+            ))}
+          </div>
         );
       })}
-      {isStreaming && (currentSteps.thoughts.length > 0 || currentSteps.cards.length > 0) && (
+      {isStreaming && (currentSteps.thoughts.length > 0 || currentSteps.cards.length > 0 || (currentSteps.stepStatuses?.length ?? 0) > 0) && (
         <div className="space-y-3">
           {currentSteps.thoughts.length > 0 && (
             <ReasoningAccordion
@@ -173,6 +184,9 @@ export function MessageList({ messages, currentSteps, isStreaming }: Props) {
           )}
           {currentSteps.cards.map((c) => (
             <CardRenderer key={c.card_id} card={c} />
+          ))}
+          {currentSteps.stepStatuses?.map((frame) => (
+            <StepStatusCard key={`${frame.plan_id}-${frame.step_id}-${frame.status}-${frame.tx_hash ?? ""}`} frame={frame} />
           ))}
         </div>
       )}

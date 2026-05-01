@@ -16,55 +16,19 @@ import type {
   BridgePayload,
   PairListPayload,
   SentinelBlock,
-  ShieldBlock,
 } from "@/types/agent";
-import { Shield, ShieldCheck, ShieldAlert, ShieldX, TrendingUp, TrendingDown, Minus, ExternalLink } from "lucide-react";
+import { TrendingUp, TrendingDown, ExternalLink } from "lucide-react";
 import { AllocationCard as DemoAllocationCard } from "./AllocationCard";
 import { SentinelMatrixCard as DemoSentinelMatrixCard } from "./SentinelMatrixCard";
 import { ExecutionPlanCard as DemoExecutionPlanCard } from "./ExecutionPlanCard";
+import { SentinelBadge } from "./SentinelBadge";
+import { ShieldBadge } from "./ShieldBadge";
 
 interface Props {
   card: CardFrame;
 }
 
 /* ── Sentinel / Shield Helpers ────────────────────────────────────────── */
-
-function SentinelBadge({ sentinel }: { sentinel?: SentinelBlock | null }) {
-  if (!sentinel) return null;
-  const score = sentinel.sentinel || 0;
-  const color = score >= 80 ? "text-emerald-400 bg-emerald-500/15 border-emerald-500/30" :
-                score >= 60 ? "text-yellow-400 bg-yellow-500/15 border-yellow-500/30" :
-                score >= 40 ? "text-orange-400 bg-orange-500/15 border-orange-500/30" :
-                "text-red-400 bg-red-500/15 border-red-500/30";
-  
-  return (
-    <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-xs font-medium ${color}`}>
-      <Shield className="h-3 w-3" />
-      <span>Sentinel {score.toFixed(0)}</span>
-    </div>
-  );
-}
-
-function ShieldBadge({ shield }: { shield?: ShieldBlock | null }) {
-  if (!shield) return null;
-  const grade = shield.grade || "C";
-  const verdict = shield.verdict || "CAUTION";
-  const color = verdict === "SAFE" ? "text-emerald-400 bg-emerald-500/15 border-emerald-500/30" :
-                verdict === "CAUTION" ? "text-yellow-400 bg-yellow-500/15 border-yellow-500/30" :
-                verdict === "RISKY" ? "text-orange-400 bg-orange-500/15 border-orange-500/30" :
-                "text-red-400 bg-red-500/15 border-red-500/30";
-  
-  const icon = verdict === "SAFE" ? <ShieldCheck className="h-3 w-3" /> :
-               verdict === "DANGEROUS" ? <ShieldX className="h-3 w-3" /> :
-               <ShieldAlert className="h-3 w-3" />;
-  
-  return (
-    <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-xs font-medium ${color}`}>
-      {icon}
-      <span>{grade} - {verdict}</span>
-    </div>
-  );
-}
 
 function ScoringBar({ sentinel }: { sentinel?: SentinelBlock | null }) {
   if (!sentinel) return null;

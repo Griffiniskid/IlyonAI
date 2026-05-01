@@ -2,7 +2,20 @@
 import { useState, useCallback, useEffect } from "react";
 import { streamAgent } from "@/lib/agent-client";
 import { loadGuestSession, touchGuestSession } from "@/lib/agent-sessions";
-import type { SSEFrame, ThoughtFrame, ToolFrame, CardFrame, FinalFrame } from "@/types/agent";
+import { mergeStepStatus } from "./useExecutionPlan";
+import type { SSEFrame, ThoughtFrame, ToolFrame, CardFrame, FinalFrame, StepStatusFrame, PlanCompleteFrame, ExecutionPlanV2Payload } from "@/types/agent";
+
+interface AgentCurrentSteps {
+  thoughts: ThoughtFrame[];
+  tools: ToolFrame[];
+  cards: CardFrame[];
+  stepStatuses: StepStatusFrame[];
+  planCompletions: PlanCompleteFrame[];
+}
+
+function emptyCurrentSteps(): AgentCurrentSteps {
+  return { thoughts: [], tools: [], cards: [], stepStatuses: [], planCompletions: [] };
+}
 
 interface AgentMessage {
   role: "user" | "assistant";
@@ -10,25 +23,25 @@ interface AgentMessage {
   cards: CardFrame[];
   thoughts: ThoughtFrame[];
   tools: ToolFrame[];
+  stepStatuses?: StepStatusFrame[];
+  planCompletions?: PlanCompleteFrame[];
   elapsed_ms?: number;
 }
 
 export function useAgentStream(sessionId: string, token: string | null) {
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [currentSteps, setCurrentSteps] = useState<{ thoughts: ThoughtFrame[]; tools: ToolFrame[]; cards: CardFrame[] }>({
-    thoughts: [], tools: [], cards: [],
-  });
+  const [currentSteps, setCurrentSteps] = useState<AgentCurrentSteps>(emptyCurrentSteps);
 
   useEffect(() => {
     if (token) {
       setMessages([]);
-      setCurrentSteps({ thoughts: [], tools: [], cards: [] });
+      setCurrentSteps(emptyCurrentSteps());
       return;
     }
     const session = loadGuestSession(sessionId);
     setMessages(session?.messages ?? []);
-    setCurrentSteps({ thoughts: [], tools: [], cards: [] });
+    setCurrentSteps(emptyCurrentSteps());
   }, [sessionId, token]);
 
   useEffect(() => {
@@ -41,7 +54,7 @@ export function useAgentStream(sessionId: string, token: string | null) {
     // Add user message
     setMessages(prev => [...prev, { role: "user", content: message, cards: [], thoughts: [], tools: [] }]);
 
-    const steps = { thoughts: [] as ThoughtFrame[], tools: [] as ToolFrame[], cards: [] as CardFrame[] };
+    const steps = emptyCurrentSteps();
     let finalContent = "";
     let elapsedMs = 0;
 
@@ -55,6 +68,20 @@ export function useAgentStream(sessionId: string, token: string | null) {
           setCurrentSteps({ ...steps });
         } else if (frame.kind === "card") {
           steps.cards.push(frame as CardFrame);
+          setCurrentSteps({ ...steps });
+        } else if (frame.kind === "step_status") {
+          const statusFrame = frame as StepStatusFrame;
+          steps.stepStatuses.push(statusFrame);
+          steps.cards = steps.cards.map((card) => {
+            if (card.card_type !== "execution_plan_v2") return card;
+            return {
+              ...card,
+              payload: mergeStepStatus(card.payload as unknown as ExecutionPlanV2Payload, statusFrame) as unknown as Record<string, unknown>,
+            };
+          });
+          setCurrentSteps({ ...steps });
+        } else if (frame.kind === "plan_complete") {
+          steps.planCompletions.push(frame as PlanCompleteFrame);
           setCurrentSteps({ ...steps });
         } else if (frame.kind === "final") {
           const f = frame as FinalFrame;
@@ -76,9 +103,10 @@ export function useAgentStream(sessionId: string, token: string | null) {
 
     setMessages(prev => [...prev, {
       role: "assistant", content: finalContent, cards: steps.cards,
-      thoughts: steps.thoughts, tools: steps.tools, elapsed_ms: elapsedMs,
+      thoughts: steps.thoughts, tools: steps.tools, stepStatuses: steps.stepStatuses,
+      planCompletions: steps.planCompletions, elapsed_ms: elapsedMs,
     }]);
-    setCurrentSteps({ thoughts: [], tools: [], cards: [] });
+    setCurrentSteps(emptyCurrentSteps());
     setIsStreaming(false);
   }, [sessionId, token]);
 

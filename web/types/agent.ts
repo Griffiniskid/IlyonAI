@@ -283,6 +283,25 @@ export interface CardFrame {
   payload: Record<string, unknown>;
 }
 
+export interface StepStatusFrame {
+  kind: "step_status";
+  plan_id: string;
+  step_id: string;
+  status: "pending" | "ready" | "signing" | "broadcast" | "confirmed" | "failed" | "skipped";
+  order: number;
+  tx_hash?: string | null;
+  error?: string | null;
+  event?: "step_status";
+}
+
+export interface PlanCompleteFrame {
+  kind: "plan_complete";
+  plan_id: string;
+  status: "complete" | "aborted" | "failed" | "expired";
+  payload: Record<string, unknown>;
+  event?: "plan_complete";
+}
+
 export interface FinalFrame {
   kind: "final";
   content: string;
@@ -296,4 +315,4 @@ export interface DoneFrame {
 }
 
 export type SSEFrame =
-  | ThoughtFrame | ToolFrame | ObservationFrame | CardFrame | FinalFrame | DoneFrame;
+  | ThoughtFrame | ToolFrame | ObservationFrame | CardFrame | StepStatusFrame | PlanCompleteFrame | FinalFrame | DoneFrame;
