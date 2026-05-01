@@ -399,6 +399,13 @@ class PlanCompleteFrame(_Strict):
     event: Literal["plan_complete"] = "plan_complete"
 
 
+class PlanBlockedFrame(_Strict):
+    plan_id: str
+    reasons: list[str]
+    severity: Literal["critical"] = "critical"
+    event: Literal["plan_blocked"] = "plan_blocked"
+
+
 class FinalFrame(_Strict):
     content: str
     card_ids: list[str]
@@ -417,6 +424,7 @@ SSEFrame = Union[
     CardFrame,
     StepStatusFrame,
     PlanCompleteFrame,
+    PlanBlockedFrame,
     FinalFrame,
     DoneFrame,
 ]
