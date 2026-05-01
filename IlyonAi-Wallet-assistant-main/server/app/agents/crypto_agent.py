@@ -83,6 +83,7 @@ _CHAIN_META: Final[dict[int, dict[str, str]]] = {
     100:    {"name": "Gnosis",            "native": "xDAI", "native_name": "xDAI"},
     42220:  {"name": "Celo",              "native": "CELO", "native_name": "CELO"},
     25:     {"name": "Cronos",            "native": "CRO",  "native_name": "CRO"},
+    101:    {"name": "Solana",            "native": "SOL",  "native_name": "SOL"},
 }
 
 # Maps a unique native symbol → canonical chain_id (for auto-detecting chain from token)
@@ -1991,7 +1992,11 @@ Choose tools based on intent — you are an intelligent advisor, not a router. C
   To check a specific chain: input "{user_address or solana_address}|<chain>"
   Chain keywords: eth, bnb, polygon, arbitrum, optimism, base, avalanche, zksync,
   linea, scroll, mantle, fantom, gnosis, celo, cronos, solana
-  NEVER call this before a swap — build_swap_tx handles balance lookup automatically.
+  For SINGLE swaps or bridges where the user explicitly names the chain and amount:
+  do NOT check balance — just execute the transaction.
+  For MULTI-STEP or COMPOUND requests (e.g. "swap X and bridge Y") where the user
+  does NOT explicitly state which chain holds the tokens: CALL get_wallet_balance FIRST
+  to discover which chain the token is on, then use that chain for the swap/bridge.
 
 • get_token_price — Current USD price of any token. Input: symbol like "BNB" or "bitcoin".
 
@@ -2081,14 +2086,18 @@ NEVER loop trying different tools when the action is not supported — answer di
 ━━━ COMPOUND / MULTI-STEP ACTIONS ━━━
 
 When the user asks for multiple actions in one message (e.g. "swap X and then bridge Y" or "swap X to Y and bridge to Z"):
-1. Execute the FIRST action (e.g. swap)
-2. Then execute the SECOND action (e.g. bridge)
-3. If BOTH succeed, return a plain-text Final Answer (NOT raw JSON) explaining:
+1. IF the user does NOT explicitly state which chain holds the token:
+   CALL get_wallet_balance FIRST to discover which chain has the token.
+   Use that discovered chain as the source chain for the swap/bridge.
+   Do NOT assume the active session chain_id — the user's tokens may be on a different chain.
+2. Execute the FIRST action (e.g. swap) on the discovered source chain.
+3. Then execute the SECOND action (e.g. bridge) from that same chain.
+4. If BOTH succeed, return a plain-text Final Answer (NOT raw JSON) explaining:
    - The first transaction is ready (describe what it does)
    - The second transaction is ready (describe what it does)
    - Ask the user to confirm which one to execute first
-4. If only one succeeds, explain which one worked and what went wrong with the other.
-5. NEVER return raw transaction JSON for compound actions — always use plain text so the user can choose the order.
+5. If only one succeeds, explain which one worked and what went wrong with the other.
+6. NEVER return raw transaction JSON for compound actions — always use plain text so the user can choose the order.
 
 For single-action requests, follow the normal rules below.
 

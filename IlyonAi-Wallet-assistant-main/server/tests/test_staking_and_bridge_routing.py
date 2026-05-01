@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from app.agents.crypto_agent import _build_bridge_tx, _build_stake_tx, _parse_tool_json, _resolve_token_metadata, build_solana_swap, get_staking_options
+from app.agents.crypto_agent import _build_bridge_tx, _build_stake_tx, _chain_name, _parse_tool_json, _resolve_token_metadata, build_solana_swap, get_staking_options
 from app.api.endpoints import _extract_chain_alias, _format_direct_swap_result, _try_direct_balance, _try_direct_bridge, _try_direct_stake, _try_direct_staking_info, _try_direct_swap, _try_direct_swap_clarification, _try_direct_transfer_clarification
 
 
@@ -712,6 +712,37 @@ class BridgeToolToleratesLlmCommentaryTests(unittest.TestCase):
         # (e.g. unresolved token, network), but NOT "Invalid JSON input".
         if result.get("status") == "error":
             self.assertNotIn("Invalid JSON input", result.get("message", ""))
+
+
+class ChainMetaTests(unittest.TestCase):
+    """Chain 101 (Solana) must be present in _CHAIN_META so the system prompt
+    correctly identifies Solana instead of saying 'Chain 101'.
+    """
+
+    def test_solana_chain_name(self):
+        self.assertEqual(_chain_name(101), "Solana")
+
+    def test_solana_native_symbol(self):
+        from app.agents.crypto_agent import _native_symbol
+        self.assertEqual(_native_symbol(101), "SOL")
+
+
+class SystemPromptTests(unittest.TestCase):
+    """The system prompt must correctly identify Solana and instruct the LLM
+    to check balances for compound actions when the source chain is ambiguous.
+    """
+
+    def test_system_prompt_names_solana(self):
+        from app.agents.crypto_agent import _build_system_prompt
+        prompt = _build_system_prompt(101, "0x1111111111111111111111111111111111111111", "SoL4naPubKey")
+        self.assertIn("Solana", prompt)
+        self.assertNotIn("Chain 101", prompt)
+
+    def test_system_prompt_mentions_balance_discovery(self):
+        from app.agents.crypto_agent import _build_system_prompt
+        prompt = _build_system_prompt(1, "0x1111111111111111111111111111111111111111", "")
+        self.assertIn("get_wallet_balance FIRST", prompt)
+        self.assertIn("discover which chain has the token", prompt)
 
 
 if __name__ == "__main__":
