@@ -545,25 +545,13 @@ def _try_direct_compound_swap_bridge(
     swap_result = ""
     if src_chain == 101 and sol_wallet:
         # Solana swap via Jupiter
-        # Resolve token decimals for amount conversion
-        from app.agents.crypto_agent import _resolve_token_metadata
-        try:
-            _, src_decimals, _ = _resolve_token_metadata(token_in, 101, sol_wallet)
-        except Exception:
-            src_decimals = 6  # Default for most SPL tokens
-
-        if amount_str not in ("all", "max"):
-            try:
-                raw_amount = str(int(Decimal(amount_str) * (Decimal(10) ** int(src_decimals))))
-            except Exception:
-                raw_amount = amount_str
-        else:
-            raw_amount = amount_str
-
+        # build_solana_swap handles decimal conversion internally when
+        # sell_amount is a human-readable string or small int.
+        # Pass the original human-readable amount so Jupiter can convert it.
         swap_input = json.dumps({
             "sell_token": token_in,
             "buy_token": token_out,
-            "sell_amount": raw_amount,
+            "sell_amount": amount_str if amount_str not in ("all", "max") else amount_str,
             "user_pubkey": sol_wallet,
         })
         swap_result = build_solana_swap(swap_input)
