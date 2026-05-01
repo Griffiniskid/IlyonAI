@@ -230,6 +230,22 @@ _TOKENS_AVAX: Final[dict[str, dict[str, Any]]] = {
     "wavax": {"address": "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7", "decimals": 18},
 }
 
+# Solana — chain 101 (SPL token mint addresses)
+_TOKENS_SOLANA: Final[dict[str, dict[str, Any]]] = {
+    "sol":   {"address": "So11111111111111111111111111111111111111112", "decimals": 9},
+    "usdc":  {"address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "decimals": 6},
+    "usdt":  {"address": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "decimals": 6},
+    "bonk":  {"address": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", "decimals": 5},
+    "jup":   {"address": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN", "decimals": 6},
+    "ray":   {"address": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "decimals": 6},
+    "orca":  {"address": "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE", "decimals": 6},
+    "msol":  {"address": "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So", "decimals": 9},
+    "jito":  {"address": "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn", "decimals": 9},
+    "wbtc":  {"address": "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh", "decimals": 8},
+    "weth":  {"address": "7vfCXTUXx5WJV5JNPkbiAK8A8dbekU6jP6tr4X6NLz4H", "decimals": 8},
+    "pyth":  {"address": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", "decimals": 6},
+}
+
 # Chain-indexed registry
 TOKENS_BY_CHAIN: Final[dict[int, dict[str, dict[str, Any]]]] = {
     1:     _TOKENS_ETH,
@@ -239,6 +255,7 @@ TOKENS_BY_CHAIN: Final[dict[int, dict[str, dict[str, Any]]]] = {
     10:    _TOKENS_OP,
     42161: _TOKENS_ARB,
     43114: _TOKENS_AVAX,
+    101:   _TOKENS_SOLANA,
 }
 
 # Backwards-compatible alias for code that doesn't pass chain_id
