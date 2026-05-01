@@ -37,7 +37,7 @@ const nextConfig = {
   async rewrites() {
     const apiTarget = process.env.API_REWRITE_TARGET || "http://localhost:8080";
     const walletAssistantTarget = process.env.ASSISTANT_API_TARGET || "http://localhost:8000";
-    const agentBackend = process.env.AGENT_BACKEND || "wallet";
+    const agentBackend = process.env.AGENT_BACKEND || "sentinel";
     const agentTarget = agentBackend === "sentinel" ? apiTarget : walletAssistantTarget;
     return [
       { source: "/api/v1/agent-health", destination: `${agentTarget}/health` },

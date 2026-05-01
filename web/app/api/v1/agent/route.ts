@@ -4,7 +4,16 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const ASSISTANT_API_TARGET = process.env.ASSISTANT_API_TARGET || "http://localhost:8000";
+const SENTINEL_API_TARGET = process.env.SENTINEL_API_TARGET || "http://localhost:8080";
 const REQUEST_TIMEOUT_MS = 180_000;
+
+export function _resolveBackendTarget(): string {
+  const backend = process.env.AGENT_BACKEND || "sentinel";
+  if (backend === "wallet") {
+    return process.env.ASSISTANT_API_TARGET || "http://localhost:8000";
+  }
+  return process.env.SENTINEL_API_TARGET || "http://localhost:8080";
+}
 
 function upstreamHeaders(request: NextRequest): Headers {
   const headers = new Headers();
@@ -20,7 +29,8 @@ function upstreamHeaders(request: NextRequest): Headers {
 
 export async function POST(request: NextRequest): Promise<Response> {
   const body = await request.text();
-  const upstream = await fetch(`${ASSISTANT_API_TARGET}/api/v1/agent`, {
+  const target = _resolveBackendTarget();
+  const upstream = await fetch(`${target}/api/v1/agent`, {
     method: "POST",
     headers: upstreamHeaders(request),
     body,
