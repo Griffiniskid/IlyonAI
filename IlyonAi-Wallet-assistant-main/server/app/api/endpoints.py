@@ -388,6 +388,272 @@ def _is_compound_action(query: str) -> bool:
     return any(re.search(pat, lowered) for pat in compound_patterns)
 
 
+def _is_swap_bridge_compound(query: str) -> bool:
+    """Detect swap+bridge compound queries like 'swap X to Y and bridge to Z'."""
+    lowered = (query or "").strip().lower()
+    swap_bridge_patterns = [
+        r"\bswap\b.*\bto\b.*\band\b.*\bbridge\b",
+        r"\bswap\b.*\bto\b.*\bthen\b.*\bbridge\b",
+        r"\bswap\b.*\bbridge\b.*\bto\b",
+    ]
+    return any(re.search(pat, lowered) for pat in swap_bridge_patterns)
+
+
+def _try_direct_compound_swap_bridge(
+    query: str, user_address: str, solana_address: str, chain_id: int
+) -> Optional[str]:
+    """
+    Deterministically handle compound swap+bridge queries.
+    1. Parse swap intent (amount, token_in, token_out)
+    2. Parse bridge destination chain
+    3. Check wallet balances to discover source chain
+    4. Build swap tx on source chain
+    5. Build bridge tx from source chain to destination
+    6. Return combined plain-text response (never raw JSON)
+    """
+    if not _is_swap_bridge_compound(query):
+        return None
+
+    from app.agents.crypto_agent import (
+        _build_bridge_tx,
+        _build_swap_tx,
+        build_solana_swap,
+        _get_balance_via_portfolio,
+        _resolve_bridge_token_metadata,
+        _normalize_bridge_chain_id,
+    )
+
+    q = (query or "").strip()
+    lowered = q.lower()
+
+    # ── Parse swap details ────────────────────────────────────────────
+    # Match: "swap 10 usdt to usdc" or "swap all bnb to usdt"
+    swap_match = re.search(
+        r"swap\s+(?:(all|max|[0-9]*\.?[0-9]+)\s+)?([A-Za-z0-9]+)\s+(?:to|for|into)\s+([A-Za-z0-9]+)",
+        q,
+        re.IGNORECASE,
+    )
+    if not swap_match:
+        return None
+
+    amount_str = (swap_match.group(1) or "all").strip().lower()
+    token_in = swap_match.group(2).upper()
+    token_out = swap_match.group(3).upper()
+
+    # ── Parse bridge destination ──────────────────────────────────────
+    dst_chain = _extract_bridge_dst_chain(q)
+    if not dst_chain:
+        # Try generic chain extraction
+        dst_chain_alias = _extract_chain_alias(q)
+        if dst_chain_alias == "bsc":
+            dst_chain = 56
+        elif dst_chain_alias == "ethereum":
+            dst_chain = 1
+        elif dst_chain_alias == "polygon":
+            dst_chain = 137
+        elif dst_chain_alias == "arbitrum":
+            dst_chain = 42161
+        elif dst_chain_alias == "optimism":
+            dst_chain = 10
+        elif dst_chain_alias == "base":
+            dst_chain = 8453
+        elif dst_chain_alias == "avalanche":
+            dst_chain = 43114
+        elif dst_chain_alias == "solana":
+            dst_chain = 101
+
+    if not dst_chain:
+        return None
+
+    # ── Discover source chain via wallet balances ─────────────────────
+    evm_wallet, sol_wallet = _split_wallet_context(user_address, solana_address)
+
+    # Build balance query
+    balance_input = ""
+    if sol_wallet and evm_wallet:
+        balance_input = f"{sol_wallet},{evm_wallet}"
+    else:
+        balance_input = sol_wallet or evm_wallet
+
+    balance_result = ""
+    if balance_input:
+        try:
+            balance_result = _get_balance_via_portfolio(balance_input, user_address, solana_address)
+            balance_data = json.loads(balance_result)
+        except Exception:
+            balance_data = {}
+    else:
+        balance_data = {}
+
+    # Find which chains have token_in
+    chains_with_token: list[int] = []
+    for chain_bal in balance_data.get("balances", []):
+        chain_name = chain_bal.get("chain", "").lower()
+        # Map chain name to chain_id
+        chain_id_map = {
+            "ethereum": 1, "bnb chain": 56, "bsc": 56, "polygon": 137,
+            "arbitrum": 42161, "optimism": 10, "base": 8453,
+            "avalanche": 43114, "solana": 101,
+        }
+        cid = chain_id_map.get(chain_name, 0)
+        if not cid:
+            continue
+
+        # Check native token
+        native_sym = chain_bal.get("native_symbol", "").upper()
+        if native_sym == token_in:
+            chains_with_token.append(cid)
+            continue
+
+        # Check token list
+        for tok in chain_bal.get("tokens", []):
+            if tok.get("symbol", "").upper() == token_in:
+                chains_with_token.append(cid)
+                break
+
+    # If no balances found, fall back to known token registries
+    if not chains_with_token:
+        from app.agents.crypto_agent import TOKENS_BY_CHAIN
+        for cid, tokens in TOKENS_BY_CHAIN.items():
+            if token_in in {k.upper() for k in tokens.keys()}:
+                chains_with_token.append(cid)
+        # Also check Solana
+        if sol_wallet and token_in in _BRIDGE_SOLANA_TOKENS:
+            chains_with_token.append(101)
+
+    if not chains_with_token:
+        return json.dumps({
+            "status": "error",
+            "message": f"Could not find {token_in} in your wallet or known token registries. Please check your balance or specify the chain explicitly."
+        })
+
+    # Prefer Solana if wallet is connected and token is there
+    src_chain = chains_with_token[0]
+    if 101 in chains_with_token and sol_wallet:
+        src_chain = 101
+    elif chain_id in chains_with_token:
+        src_chain = chain_id
+
+    # Don't bridge to same chain
+    if src_chain == dst_chain:
+        return json.dumps({
+            "status": "error",
+            "message": f"Source and destination chains are the same ({src_chain}). Use a direct swap instead."
+        })
+
+    # ── Build swap tx ────────────────────────────────────────────────
+    swap_result = ""
+    if src_chain == 101 and sol_wallet:
+        # Solana swap via Jupiter
+        # Resolve token decimals for amount conversion
+        from app.agents.crypto_agent import _resolve_token_metadata
+        try:
+            _, src_decimals, _ = _resolve_token_metadata(token_in, 101, sol_wallet)
+        except Exception:
+            src_decimals = 6  # Default for most SPL tokens
+
+        if amount_str not in ("all", "max"):
+            try:
+                raw_amount = str(int(Decimal(amount_str) * (Decimal(10) ** int(src_decimals))))
+            except Exception:
+                raw_amount = amount_str
+        else:
+            raw_amount = amount_str
+
+        swap_input = json.dumps({
+            "sell_token": token_in,
+            "buy_token": token_out,
+            "sell_amount": raw_amount,
+            "user_pubkey": sol_wallet,
+        })
+        swap_result = build_solana_swap(swap_input)
+    else:
+        # EVM swap via Enso
+        swap_input = json.dumps({
+            "chain": "evm",
+            "token_in": token_in,
+            "token_out": token_out,
+            "amount": amount_str,
+            "chain_id": src_chain,
+            "from": evm_wallet,
+        })
+        swap_result = _build_swap_tx(swap_input, evm_wallet, src_chain, sol_wallet)
+
+    swap_data = {}
+    try:
+        swap_data = json.loads(swap_result)
+    except Exception:
+        pass
+
+    if swap_data.get("status") == "error":
+        return json.dumps({
+            "status": "error",
+            "message": f"Swap failed: {swap_data.get('message', 'Unknown error')}"
+        })
+
+    # ── Build bridge tx ──────────────────────────────────────────────
+    # For bridge, use the token_out from the swap as the bridge token_in
+    bridge_token_in = token_out
+
+    # Determine bridge amount: if swap succeeded, use its output amount
+    bridge_amount = "all"
+    if "out_amount" in swap_data:
+        bridge_amount = str(swap_data["out_amount"])
+    elif amount_str not in ("all", "max"):
+        bridge_amount = amount_str
+
+    # Convert to raw units if needed
+    if bridge_amount not in ("all", "max"):
+        try:
+            normalized_chain = _normalize_bridge_chain_id(src_chain, token_in=bridge_token_in, solana_wallet=sol_wallet)
+            _, src_decimals, _ = _resolve_bridge_token_metadata(bridge_token_in, normalized_chain, "")
+            bridge_amount = str(int(Decimal(bridge_amount) * (Decimal(10) ** int(src_decimals or 18))))
+        except Exception:
+            pass  # Let _build_bridge_tx handle validation
+
+    bridge_input = json.dumps({
+        "token_in": bridge_token_in,
+        "amount": bridge_amount,
+        "src_chain_id": src_chain,
+        "dst_chain_id": dst_chain,
+    })
+    bridge_result = _build_bridge_tx(bridge_input, user_address, chain_id, sol_wallet)
+
+    bridge_data = {}
+    try:
+        bridge_data = json.loads(bridge_result)
+    except Exception:
+        pass
+
+    if bridge_data.get("status") == "error":
+        return json.dumps({
+            "status": "error",
+            "message": f"Bridge failed: {bridge_data.get('message', 'Unknown error')}"
+        })
+
+    # ── Return combined plain-text response ──────────────────────────
+    src_name = "Solana" if src_chain == 101 else f"Chain {src_chain}"
+    dst_name = "Solana" if dst_chain == 101 else f"Chain {dst_chain}"
+
+    swap_desc = f"Swap {amount_str} {token_in} to {token_out} on {src_name}"
+    bridge_desc = f"Bridge {token_out} from {src_name} to {dst_name}"
+
+    if swap_data.get("type") == "solana_swap_proposal":
+        out_amt = swap_data.get("out_amount", "?")
+        out_sym = swap_data.get("out_symbol", token_out)
+        swap_desc = f"Swap {amount_str} {token_in} to ~{out_amt} {out_sym} on Solana"
+
+    return json.dumps({
+        "status": "ok",
+        "type": "compound_action",
+        "message": f"I've prepared two transactions for you:\n\n1. {swap_desc}\n2. {bridge_desc}\n\nPlease confirm which one you'd like to execute first. I recommend executing the swap first, then the bridge.",
+        "swap": swap_data,
+        "bridge": bridge_data,
+        "src_chain_id": src_chain,
+        "dst_chain_id": dst_chain,
+    })
+
+
 def _try_direct_staking_info(query: str) -> Optional[str]:
     """Handle informational staking/link queries deterministically."""
     from app.agents.crypto_agent import get_staking_options
@@ -858,6 +1124,31 @@ async def run_agent(
     direct_transfer_clarification = _try_direct_transfer_clarification(direct_query)
     if direct_transfer_clarification:
         return {"session_id": body.session_id, "chat_id": None, "response": direct_transfer_clarification}
+
+    # ── Try compound swap+bridge for multi-step queries ───────────────────────
+    compound_result = _try_direct_compound_swap_bridge(
+        direct_query, evm_wallet, solana_wallet, effective_chain_id
+    )
+    if compound_result:
+        provided_chat_id_early: Optional[str] = getattr(body, "chat_id", None)
+        if current_user:
+            if provided_chat_id_early:
+                chat = db.query(Chat).filter(
+                    Chat.id == provided_chat_id_early, Chat.user_id == current_user.id
+                ).first()
+            else:
+                chat = None
+            if not chat:
+                chat_id = str(uuid.uuid4())
+                chat = Chat(id=chat_id, user_id=current_user.id, title=_auto_title(body.query))
+                db.add(chat)
+                db.flush()
+            db.add(ChatMessage(chat_id=chat.id, role="user", content=body.query))
+            db.add(ChatMessage(chat_id=chat.id, role="assistant", content=compound_result))
+            chat.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            return {"session_id": chat.id, "chat_id": chat.id, "response": compound_result}
+        return {"session_id": body.session_id, "chat_id": None, "response": compound_result}
 
     # ── Try direct swap handling for deterministic swap prompts ───────────────
     direct_swap_result = _try_direct_swap(
