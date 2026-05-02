@@ -1,5 +1,6 @@
 from langchain_core.tools import StructuredTool
 from src.agent.tools._base import ToolCtx
+from src.api.schemas.agent import ToolEnvelope
 
 from .balance import get_wallet_balance
 from .price import get_token_price
