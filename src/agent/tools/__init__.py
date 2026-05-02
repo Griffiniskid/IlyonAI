@@ -1,3 +1,5 @@
+from typing import Any
+
 from langchain_core.tools import StructuredTool
 from src.agent.tools._base import ToolCtx
 from src.api.schemas.agent import ToolEnvelope
