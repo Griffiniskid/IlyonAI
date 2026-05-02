@@ -781,9 +781,34 @@ def _format_tool_result(tool_name: str, result) -> str:
         return _format_balance_response(data)
     elif card_type == "pool" or tool_name == "find_liquidity_pool":
         return _format_pool_response(data)
+    elif card_type == "bridge" or tool_name == "build_bridge_tx":
+        return _format_bridge_response(data)
     else:
         # Generic formatting
         return json.dumps(data, indent=2) if isinstance(data, dict) else str(data)
+
+
+def _format_bridge_response(data: dict) -> str:
+    src = data.get("src_chain_id", "source")
+    dst = data.get("dst_chain_id", "destination")
+    amount_in = data.get("amount_in_display") or data.get("amount_in") or data.get("amount") or "requested amount"
+    amount_out = data.get("dst_amount_display") or data.get("amount_out") or "estimated output"
+    fill = data.get("estimated_fill_time_seconds") or data.get("estimated_seconds")
+    router = data.get("router") or "deBridge"
+    lines = [
+        f"**Bridge Quote — chain {src} → chain {dst}**",
+        "",
+        f"Amount in: **{amount_in}**",
+        f"Estimated receive: **{amount_out}**",
+        f"Route: {router}",
+    ]
+    if fill:
+        lines.append(f"Estimated fill time: ~{fill}s")
+    lines.extend([
+        "",
+        "*Review the bridge route, destination chain, and spender in your wallet before signing.*",
+    ])
+    return "\n".join(lines)
 
 
 async def run_ephemeral_turn(
