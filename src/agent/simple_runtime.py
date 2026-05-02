@@ -7,7 +7,7 @@ from typing import AsyncIterator
 
 from src.agent.llm import IlyonChatModel
 from src.agent.streaming import StreamCollector, encode_sse, frame_event_name
-from src.api.schemas.agent import ThoughtFrame, ToolFrame, FinalFrame, DoneFrame, CardFrame
+from src.api.schemas.agent import ThoughtFrame, ToolFrame, FinalFrame, DoneFrame, CardFrame, PlanBlockedFrame
 
 
 # Simple keyword-based intent detection.
@@ -138,6 +138,27 @@ TOKEN_DECIMALS = {
     "MATIC": 18,
     "SOL": 9,
 }
+
+
+def _is_critical_shield(envelope) -> bool:
+    """Return True when a ToolEnvelope carries a critical Shield verdict or grade."""
+    shield = getattr(envelope, "shield", None)
+    if shield is None:
+        return False
+    verdict = (getattr(shield, "verdict", "") or "").upper()
+    grade = (getattr(shield, "grade", "") or "").upper()
+    return verdict == "SCAM" or grade == "F"
+
+
+def _emit_plan_blocked_if_critical(envelope, *, plan_id: str):
+    """Yield SSE-shaped dicts when a shield is critical.
+
+    Used by simple_runtime to short-circuit the signing flow.
+    """
+    if not _is_critical_shield(envelope):
+        return
+    reasons = list(getattr(envelope.shield, "reasons", []) or [])
+    yield {"plan_id": plan_id, "reasons": reasons, "severity": "critical"}
 
 
 def _parse_amount(text: str) -> float:
@@ -843,6 +864,23 @@ async def run_ephemeral_turn(
                         env = ToolEnvelope.model_validate_json(tool_result)
                     except Exception:
                         env = None
+                # Critical Shield short-circuit
+                if env is not None and _is_critical_shield(env):
+                    blocked = PlanBlockedFrame(
+                        plan_id=env.card_id or "tool-block",
+                        reasons=list(env.shield.reasons or []),
+                        severity="critical",
+                    )
+                    collector._queue.append(blocked)
+                    final_content = (
+                        "Blocked: this transaction triggered a critical Shield "
+                        "warning and will not be signed.\n\n"
+                        f"Reasons:\n- " + "\n- ".join(env.shield.reasons or [])
+                    )
+                    collector.emit_final(final_content, [])
+                    for frame in collector.drain():
+                        yield encode_sse(frame_event_name(frame), frame.model_dump())
+                    return
                 if env is not None and env.ok:
                     for trace in (env.data.get("analysis_trace", []) if env.data else []):
                         collector._step += 1

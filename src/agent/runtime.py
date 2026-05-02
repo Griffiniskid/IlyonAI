@@ -12,7 +12,7 @@ from src.agent.llm import IlyonChatModel
 from src.agent.streaming import StreamCollector, encode_sse, frame_event_name
 from src.agent.session import PersistentWindowMemory
 from src.storage.chat import get_chat, append_message, create_chat
-from src.api.schemas.agent import CardFrame, ThoughtFrame, ToolEnvelope
+from src.api.schemas.agent import CardFrame, ThoughtFrame, ToolEnvelope, PlanBlockedFrame
 
 SYSTEM_PROMPT = PromptTemplate.from_template(
     """You are Ilyon Sentinel's crypto agent. You answer questions about
@@ -152,6 +152,28 @@ async def run_turn(
                     if isinstance(raw, str)
                     else None
                 )
+                # Critical Shield short-circuit
+                if env is not None:
+                    shield = getattr(env, "shield", None)
+                    if shield is not None:
+                        verdict = (getattr(shield, "verdict", "") or "").upper()
+                        grade = (getattr(shield, "grade", "") or "").upper()
+                        if verdict == "SCAM" or grade == "F":
+                            blocked = PlanBlockedFrame(
+                                plan_id=env.card_id or "tool-block",
+                                reasons=list(shield.reasons or []),
+                                severity="critical",
+                            )
+                            collector._queue.append(blocked)
+                            final_text = (
+                                "Blocked: this transaction triggered a critical Shield "
+                                "warning and will not be signed.\n\n"
+                                f"Reasons:\n- " + "\n- ".join(shield.reasons or [])
+                            )
+                            collector.emit_final(final_text, [])
+                            for frame in collector.drain():
+                                yield encode_sse(frame_event_name(frame), frame.model_dump())
+                            return
                 if env and env.card_type and env.card_payload is not None:
                     collector.emit_card(env.card_id, env.card_type, env.card_payload)
                 if env and env.extra_cards:
