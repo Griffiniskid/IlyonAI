@@ -1,3 +1,4 @@
+"""Translate optimizer moves into the same intent shape that compose_plan expects."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -38,6 +39,22 @@ def move_to_plan(move: dict[str, Any]) -> RebalancePlanCard:
     return RebalancePlanCard(card_type="execution_plan_v2", payload=plan)
 
 
-def build_rebalance_intent(moves: list[dict]) -> dict:
-    """Placeholder — Task 3.2 replaces with real intent synthesis."""
-    raise NotImplementedError("build_rebalance_intent not yet implemented")
+def build_rebalance_intent(moves: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build a plan intent from optimizer delta moves."""
+    steps: list[dict[str, Any]] = []
+    for i, move in enumerate(moves, start=1):
+        to = move.get("to") or {}
+        steps.append({
+            "action": "stake" if to.get("apy", 0) > 0 else "transfer",
+            "params": {
+                "token": to.get("token", "?"),
+                "protocol": to.get("protocol", "?"),
+                "chain_id": to.get("chain_id", 1),
+                "amount": str(to.get("usd", "0")),
+                "amount_usd": to.get("usd", 0),
+            },
+        })
+    return {
+        "title": "Portfolio rebalance",
+        "steps": steps,
+    }
