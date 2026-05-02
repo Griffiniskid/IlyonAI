@@ -25,6 +25,12 @@ services:
         condition: service_healthy
     volumes:
       - ${LOGS_DIR:-./logs/prod}:/app/logs
+      - ./IlyonAi-Wallet-assistant-main/server:/app/IlyonAi-Wallet-assistant-main/server:ro
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      WEB_API_PORT: ${API_CONTAINER_PORT:-8080}
+      ACTIONS_API_PORT: ${API_CONTAINER_PORT:-8080}
+      PYTHONPATH: /app:/app/IlyonAi-Wallet-assistant-main/server
     ports:
       - "${API_HOST_PORT:-8080}:${API_CONTAINER_PORT:-8080}"
     healthcheck:
