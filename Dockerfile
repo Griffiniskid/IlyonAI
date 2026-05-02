@@ -14,6 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
+# Install wallet assistant dependencies (needed for direct imports)
+COPY IlyonAi-Wallet-assistant-main/server/requirements.txt ./assistant-requirements.txt
+RUN pip install --no-cache-dir --user -r assistant-requirements.txt || true
+
 
 # Production image
 FROM python:3.11-slim
