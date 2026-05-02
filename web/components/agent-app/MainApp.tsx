@@ -478,6 +478,138 @@ function resolveStructuredContent(text: string) {
   return { swapPreview, balanceData, poolData, universalCards };
 }
 
+function fmtCardValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "-";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try { return JSON.stringify(value); } catch { return String(value); }
+}
+
+function cardFromPosition(position: Record<string, unknown>, index: number): UniversalCard {
+  return {
+    title: `${fmtCardValue(position.protocol ?? position.project ?? `Position ${index + 1}`)} · ${fmtCardValue(position.asset ?? position.token ?? "Asset")}`,
+    subtitle: `${fmtCardValue(position.chain ?? position.chain_id)} · APY ${fmtCardValue(position.apy)} · Sentinel ${fmtCardValue(position.sentinel)}`,
+    details: {
+      Weight: fmtCardValue(position.weight ? `${position.weight}%` : undefined),
+      Amount: fmtCardValue(position.usd ?? position.amount_usd ?? position.amount),
+      Risk: fmtCardValue(position.risk ?? position.risk_level),
+      Fit: fmtCardValue(position.fit ?? position.strategy_fit),
+      Safety: fmtCardValue(position.safety),
+      Durability: fmtCardValue(position.durability),
+      Exit: fmtCardValue(position.exit),
+      Confidence: fmtCardValue(position.confidence),
+    },
+  };
+}
+
+function cardsFromAgentCard(cardType: string, payload: Record<string, unknown>): UniversalCard[] {
+  if (cardType === "allocation") {
+    const positions = Array.isArray(payload.positions) ? payload.positions : [];
+    const cards = positions
+      .filter((p): p is Record<string, unknown> => !!p && typeof p === "object")
+      .map(cardFromPosition);
+    if (cards.length) return cards;
+  }
+
+  if (cardType === "stake" && Array.isArray(payload.staking_options)) {
+    return payload.staking_options
+      .filter((p): p is Record<string, unknown> => !!p && typeof p === "object")
+      .slice(0, 6)
+      .map((p, i) => ({
+        title: `${fmtCardValue(p.protocol ?? `Staking option ${i + 1}`)} · ${fmtCardValue(p.symbol ?? p.asset ?? "Asset")}`,
+        subtitle: `${fmtCardValue(p.chain)} · APY ${fmtCardValue(p.apy)}% · Risk ${fmtCardValue(p.risk_level)}`,
+        details: {
+          TVL: fmtCardValue(p.tvl_usd ? `$${Number(p.tvl_usd).toLocaleString()}` : undefined),
+          Pool: fmtCardValue(p.pool),
+        },
+      }));
+  }
+
+  if (cardType === "swap_quote") {
+    const sentinel = payload.sentinel as Record<string, unknown> | undefined;
+    const shield = payload.shield as Record<string, unknown> | undefined;
+    return [{
+      title: "Swap quote",
+      subtitle: `${fmtCardValue(payload.rate)} · ${fmtCardValue(payload.router)}`,
+      details: {
+        Pay: fmtCardValue(payload.pay),
+        Receive: fmtCardValue(payload.receive),
+        Sentinel: fmtCardValue(sentinel?.sentinel),
+        Risk: fmtCardValue(sentinel?.risk_level),
+        Shield: fmtCardValue(shield?.verdict),
+      },
+    }];
+  }
+
+  if (cardType === "balance") {
+    return [{
+      title: "Wallet balance",
+      subtitle: fmtCardValue(payload.address),
+      details: {
+        "Total USD": fmtCardValue(payload.total_usd),
+        Tokens: fmtCardValue(Array.isArray(payload.tokens) ? payload.tokens.length : 0),
+        Positions: fmtCardValue(Array.isArray(payload.positions) ? payload.positions.length : 0),
+      },
+    }];
+  }
+
+  if (cardType === "execution_plan" || cardType === "execution_plan_v2") {
+    const steps = Array.isArray(payload.steps) ? payload.steps : [];
+    return [{
+      title: cardType === "execution_plan_v2" ? "Execution plan v2" : "Execution plan",
+      subtitle: `${steps.length || fmtCardValue(payload.total_steps)} steps · Risk gate ${fmtCardValue(payload.risk_gate ?? "clear")}`,
+      details: {
+        "Total gas": fmtCardValue(payload.total_gas ?? payload.total_gas_usd),
+        "Blended Sentinel": fmtCardValue(payload.blended_sentinel ?? payload.weighted_sentinel),
+        "Requires signatures": fmtCardValue(payload.requires_signature_count ?? payload.tx_count),
+        "Double confirm": fmtCardValue(payload.requires_double_confirm),
+      },
+    }];
+  }
+
+  if (cardType === "plan_blocked") {
+    return [{
+      title: "Plan blocked",
+      subtitle: "Sentinel Shield blocked signing",
+      details: {
+        Severity: fmtCardValue(payload.severity),
+        Reasons: fmtCardValue(payload.reasons),
+      },
+    }];
+  }
+
+  return [];
+}
+
+function parseAgentSseResponse(rawBody: string): { response: string; universalCards?: UniversalCardsData | null } | null {
+  if (!rawBody.includes("event:") || !rawBody.includes("data:")) return null;
+
+  let response = "";
+  const cards: UniversalCard[] = [];
+  for (const block of rawBody.split(/\n\n+/)) {
+    const event = block.match(/^event:\s*(.+)$/m)?.[1]?.trim();
+    const dataLine = block.match(/^data:\s*(.+)$/m)?.[1];
+    if (!event || !dataLine) continue;
+    let data: Record<string, unknown>;
+    try { data = JSON.parse(dataLine); } catch { continue; }
+
+    if (event === "final") {
+      response = fmtCardValue(data.content);
+    } else if (event === "error") {
+      response = `Agent error: ${fmtCardValue(data.error)}`;
+    } else if (event === "card") {
+      const cardType = fmtCardValue(data.card_type);
+      const payload = data.payload && typeof data.payload === "object" ? data.payload as Record<string, unknown> : {};
+      cards.push(...cardsFromAgentCard(cardType, payload));
+    }
+  }
+
+  return {
+    response: response || "The agent completed without a final answer.",
+    universalCards: cards.length ? { type: "universal_cards", cards } : null,
+  };
+}
+
 // ── Universal Card List component ───────────────────────────────────────────
 function UniversalCardList({ data }: { data: UniversalCardsData }) {
   return (
@@ -4242,7 +4374,7 @@ export default function MainApp() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let data: any = {};
       try {
-        data = rawBody ? JSON.parse(rawBody) : {};
+        data = parseAgentSseResponse(rawBody) ?? (rawBody ? JSON.parse(rawBody) : {});
       } catch {
         throw new Error(`Server returned a non-JSON response (HTTP ${res.status}).`);
       }
@@ -4260,7 +4392,11 @@ export default function MainApp() {
       setBackendOk(true);
       const responseText = typeof data.response === "string" ? data.response : "*(модель вернула пустой ответ)*";
 
-      const { swapPreview, balanceData, poolData, universalCards } = resolveStructuredContent(responseText);
+      const structured = resolveStructuredContent(responseText);
+      const swapPreview = structured.swapPreview;
+      const balanceData = structured.balanceData;
+      const poolData = structured.poolData;
+      const universalCards = data.universalCards ?? structured.universalCards;
 
       // Update chat state from response
       if (authUser && data.chat_id) {
