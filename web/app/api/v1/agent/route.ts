@@ -27,8 +27,25 @@ function upstreamHeaders(request: NextRequest): Headers {
   return headers;
 }
 
+function normalizeAgentBody(body: string): string {
+  try {
+    const parsed = JSON.parse(body);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return body;
+    const next = { ...parsed } as Record<string, unknown>;
+    if (typeof next.message !== "string" && typeof next.query === "string") {
+      next.message = next.query;
+    }
+    if (typeof next.wallet !== "string" && typeof next.user_address === "string") {
+      next.wallet = next.user_address;
+    }
+    return JSON.stringify(next);
+  } catch {
+    return body;
+  }
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
-  const body = await request.text();
+  const body = normalizeAgentBody(await request.text());
   const target = _resolveBackendTarget();
   const upstream = await fetch(`${target}/api/v1/agent`, {
     method: "POST",
