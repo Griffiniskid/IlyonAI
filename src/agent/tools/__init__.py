@@ -167,6 +167,7 @@ def register_all_tools(services, user_id=0, wallet=None):
             # tool function so required kwargs (e.g. usd_amount) resolve.
             annotations = dict(getattr(tool_fn, "__annotations__", {}))
             annotations.pop("ctx", None)
+            annotations.pop("return", None)
             _run.__annotations__ = annotations
             return _run
 
