@@ -39,7 +39,7 @@ def _get_build_bridge_tx():
 
 
 async def build_bridge_tx(
-    ctx, *, src_chain_id, dst_chain_id, token_in, token_out, amount, from_addr
+    ctx, *, src_chain_id, dst_chain_id, token_in, token_out, amount, from_addr=None
 ):
     """Build a cross-chain bridge transaction via the wallet assistant.
 
@@ -73,6 +73,10 @@ async def build_bridge_tx(
             code="bridge_failed",
             message=f"Failed to import wallet assistant: {exc}",
         )
+
+    from_addr = from_addr or getattr(ctx, "wallet", None) or ""
+    if not from_addr:
+        return err_envelope("bridge_failed", "No wallet address provided for bridge transaction.")
 
     params = {
         "token_in": token_in,

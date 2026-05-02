@@ -78,6 +78,9 @@ INTENT_PATTERNS = {
         r"convert",
         r"trade",
     ],
+    "build_bridge_tx": [
+        r"\bbridge\b",
+    ],
     "get_wallet_balance": [
         r"portfolio",
         r"balance",
@@ -440,6 +443,23 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
                         if amount_match:
                             params["amount"] = amount_match.group(1)
                         params["chain"] = "ethereum"
+                elif tool_name == "build_bridge_tx":
+                    bridge_re = re.compile(
+                        r"bridge\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})"
+                        r"(?:\s+from\s+(?P<src>[A-Za-z ]+?))?\s+to\s+(?P<dst>[A-Za-z ]+)",
+                        re.IGNORECASE,
+                    )
+                    m_bridge = bridge_re.search(message)
+                    if m_bridge:
+                        token = m_bridge.group("token").upper()
+                        src = (m_bridge.group("src") or "ethereum").strip().lower()
+                        dst = m_bridge.group("dst").strip().lower()
+                        dst = re.sub(r"\s+(?:and|then|to|for).*$", "", dst).strip()
+                        params["src_chain_id"] = CHAIN_IDS.get(src, 1)
+                        params["dst_chain_id"] = CHAIN_IDS.get(dst, CHAIN_IDS.get(dst.split()[0], 42161))
+                        params["token_in"] = token
+                        params["token_out"] = token
+                        params["amount"] = _to_base_units(m_bridge.group("amount"), token)
                 elif tool_name == "find_liquidity_pool":
                     # "pool for USDC on Ethereum" / "pool for USDC/WETH"
                     pair_re = re.compile(
