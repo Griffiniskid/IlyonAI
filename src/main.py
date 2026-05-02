@@ -2,6 +2,9 @@
 Ilyon AI - Main entry point for the Web API.
 """
 
+# Bootstrap wallet assistant import aliases before any other imports
+import src.bootstrap_assistant_import  # noqa: F401, E402
+
 import asyncio
 import logging
 import sys
