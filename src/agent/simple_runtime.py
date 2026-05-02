@@ -480,6 +480,9 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
                     params["min_tvl"] = 200_000_000
                     params["min_apy"] = 0.5
                     params["limit"] = 8
+                    chains = _parse_chains(message)
+                    if chains:
+                        params["chain"] = chains[0]
                     # Try to extract an asset filter
                     asset_m = re.search(
                         r"\b(?:for|of)\s+([A-Za-z]{2,8})\b",
