@@ -17,6 +17,7 @@ from .bridge_build import build_bridge_tx
 from .transfer_build import build_transfer_tx
 from .allocate_plan import allocate_plan
 from .update_preference import update_preference
+from .compose_plan import compose_plan
 
 _TOOL_REGISTRY = {
     "get_wallet_balance": (get_wallet_balance, "Get multi-chain wallet balance."),
@@ -81,6 +82,17 @@ _TOOL_REGISTRY = {
             "('conservative'|'balanced'|'aggressive'), preferred_chains (list), "
             "blocked_protocols (list), gas_cap_usd, slippage_cap_bps, "
             "notional_double_confirm_usd, auto_rebalance_opt_in (0|1)."
+        ),
+    ),
+    "compose_plan": (
+        compose_plan,
+        (
+            "Validate a multi-step intent DAG and return an execution plan card. "
+            "Call when the user wants to perform multiple actions in sequence "
+            "(e.g., 'bridge then swap then stake'). Args: intent (dict) with "
+            "'title' and 'steps' list. Each step needs 'action' and 'params'. "
+            "Returns an execution_plan_v2 card with ordered steps, gas estimates, "
+            "dependency graph, and Sentinel risk assessment."
         ),
     ),
 }
