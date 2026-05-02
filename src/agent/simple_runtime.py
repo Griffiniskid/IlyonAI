@@ -9,8 +9,13 @@ from src.agent.llm import IlyonChatModel
 from src.agent.streaming import StreamCollector, encode_sse, frame_event_name
 from src.api.schemas.agent import ThoughtFrame, ToolFrame, FinalFrame, DoneFrame, CardFrame, PlanBlockedFrame
 
-from src.storage.agent_chats import append_message
+from src.storage.agent_chats import append_message, list_messages
 from src.storage.database import get_database
+
+
+# Maximum prior messages loaded into context per turn (user+assistant combined).
+# Keeps prompts bounded while still giving the model multi-turn awareness.
+HISTORY_WINDOW = 12
 
 
 # Simple keyword-based intent detection.
@@ -379,6 +384,38 @@ def _detect_malicious_swap_plan(message: str) -> tuple[str, dict] | None:
             ],
         },
     )
+
+
+# Phrases that mean "execute the previously discussed plan / continue the prior turn".
+# Kept narrow on purpose — only short confirmations, no broad keywords like "do it"
+# that could match unrelated turns.
+FOLLOWUP_PROCEED_PATTERNS = [
+    r"^\s*proceed\b",
+    r"\bproceed\s+with\s+(?:the\s+)?execut",
+    r"\bproceed\s+with\s+(?:the\s+)?(?:plan|allocation|swap|bridge|stake)",
+    r"\b(?:please\s+)?(?:go\s+ahead|continue|carry\s+on)\b.*\bexecut",
+    r"^\s*(?:please\s+)?execute\s+(?:the|it|that|this|plan|allocation)?\b",
+    r"^\s*yes(?:,)?\s*(?:please\s*)?(?:proceed|execute|continue|go\s+ahead)\b",
+    r"^\s*confirm(?:ed)?\b",
+    r"^\s*(?:let'?s|let\s+us)\s+(?:do\s+(?:it|this|that)|proceed|execute|go)\b",
+    r"^\s*(?:approved|approve)\b",
+]
+
+
+def detect_followup_intent(message: str) -> str | None:
+    """Return a normalized follow-up intent label or None.
+
+    Currently emits 'proceed_execution' for confirmation/proceed phrases.
+    The caller is expected to combine this with chat history to determine
+    *which* prior plan or allocation the user is approving.
+    """
+    text = message.strip()
+    if not text:
+        return None
+    for pat in FOLLOWUP_PROCEED_PATTERNS:
+        if re.search(pat, text, re.IGNORECASE):
+            return "proceed_execution"
+    return None
 
 
 def detect_intent(message: str) -> tuple[str, dict] | None:
@@ -815,22 +852,89 @@ def _format_bridge_response(data: dict) -> str:
     return "\n".join(lines)
 
 
+_PLAN_KEYWORDS = (
+    "execution plan",
+    "step execution plan",
+    "allocate",
+    "allocation",
+    "sentinel scoring breakdown",
+    "step-1",
+    "step 1",
+    "review the full plan",
+)
+
+
+def _maybe_replay_followup(*, message: str, history: list[dict]) -> str | None:
+    """If `message` is a confirmation phrase and history shows a prior plan/allocation,
+    return a concise continuation message. Otherwise return None.
+
+    This keeps the assistant on-task instead of falling through to the generic
+    starter ("Hello! I'm ready to help...") when the user types "proceed".
+    """
+    if detect_followup_intent(message) is None:
+        return None
+
+    last_assistant: dict | None = None
+    for entry in reversed(history):
+        if (entry.get("role") == "assistant") and entry.get("content"):
+            last_assistant = entry
+            break
+    if last_assistant is None:
+        return None
+
+    body = (last_assistant.get("content") or "").lower()
+    if not any(kw in body for kw in _PLAN_KEYWORDS):
+        return None
+
+    return (
+        "Confirmed — continuing with the execution plan from the previous step.\n\n"
+        "Each step in the plan must be signed in your wallet before the next one unlocks. "
+        "Open the execution plan card above and approve step 1 to begin; on-chain receipts "
+        "will gate the follow-up steps.\n\n"
+        "If you want to change risk budget, skip a protocol, or rerun the allocation against "
+        "different chains, just say so and I'll regenerate the plan."
+    )
+
+
 async def run_ephemeral_turn(
     *,
     router,
     tools,
     message: str,
     wallet: str | None = None,
+    history: list[dict] | None = None,
 ) -> AsyncIterator[bytes]:
     """Execute one agent turn without DB persistence and yield SSE-encoded frames.
-    
+
     Uses keyword-based intent detection for reliable tool calling.
     Formats tool results directly without LLM for consistent, fast responses.
+
+    history (optional): list of {role, content} dicts representing prior turns
+    in the same session. When provided:
+      * a "proceed/execute" follow-up phrase is replayed against the most
+        recent allocation/plan assistant turn, and
+      * the LLM fallback receives the trailing window as context.
     """
     llm = IlyonChatModel(router=router, model="default")
     collector = StreamCollector()
     started = __import__('time').monotonic()
-    
+
+    # If this is a follow-up confirmation and we have prior context, handle it
+    # before falling through to the keyword intent detector — otherwise
+    # "proceed" would never match anything in INTENT_PATTERNS.
+    if history:
+        replay = _maybe_replay_followup(message=message, history=history)
+        if replay is not None:
+            collector._step += 1
+            collector._queue.append(ThoughtFrame(
+                step_index=collector._step,
+                content="Continuing from the prior allocation/execution plan in this conversation...",
+            ))
+            collector.emit_final(replay, [])
+            for frame in collector.drain():
+                yield encode_sse(frame_event_name(frame), frame.model_dump())
+            return
+
     # Detect intent
     intent = detect_intent(message)
 
@@ -969,20 +1073,30 @@ async def run_ephemeral_turn(
             else:
                 final_content = "I couldn't find the data you're looking for. Please try again or rephrase your question."
         else:
-            # No intent detected, use LLM for general conversation
+            # No intent detected, use LLM for general conversation.
+            # Always include the trailing chat history so multi-turn context is preserved.
             system_msg = """You are Ilyon Sentinel's crypto agent. You help users with DeFi, token prices, swaps, and yield opportunities.
 
 Respond directly to the user in a friendly, professional manner. Do NOT include meta-commentary or reasoning.
+
+You have access to the conversation history above — use it to maintain continuity. If the user references "the plan", "it", "those pools", etc., look back in the conversation for what they mean before asking for clarification.
 
 When discussing crypto assets, mention:
 - Risk levels (LOW, MEDIUM, HIGH) based on market cap and volatility
 - Strategy fit (conservative, balanced, aggressive)
 - General safety tips"""
-            
-            result = await llm._agenerate([
-                type('Msg', (), {'type': 'system', 'content': system_msg})(),
-                type('Msg', (), {'type': 'human', 'content': message})()
-            ])
+
+            llm_messages: list = [type('Msg', (), {'type': 'system', 'content': system_msg})()]
+            for prior in (history or [])[-HISTORY_WINDOW:]:
+                role = prior.get("role")
+                content = prior.get("content") or ""
+                if not content:
+                    continue
+                mtype = "human" if role == "user" else ("ai" if role == "assistant" else "system")
+                llm_messages.append(type('Msg', (), {'type': mtype, 'content': content})())
+            llm_messages.append(type('Msg', (), {'type': 'human', 'content': message})())
+
+            result = await llm._agenerate(llm_messages)
             final_content = result.generations[0].message.content
         
         # Clean up response — skip the meta-commentary stripper for allocation
@@ -1016,18 +1130,49 @@ async def run_simple_turn(
     session_id: str | None = None,
     user_id: int = 0,
 ) -> AsyncIterator[bytes]:
-    """Wrapper around run_ephemeral_turn that persists chat history when authenticated."""
-    if user_id and session_id:
-        db = await get_database()
-        await append_message(db, chat_id=session_id, role="user", content=message)
+    """Wrapper around run_ephemeral_turn that persists chat history and loads
+    prior turns for context.
+
+    Persistence behaviour:
+      * Whenever a `session_id` is provided we both load the prior history
+        for that session and persist the new user/assistant turn. This is
+        what gives the chat its memory — including for guest sessions, which
+        the frontend keys with a stable `clientSessionId` from localStorage.
+      * Errors in the storage layer are swallowed so that a transient DB
+        problem can never block a user-visible response.
+    """
+    history: list[dict] = []
+    db = None
+
+    if session_id:
+        try:
+            db = await get_database()
+            prior_messages = await list_messages(db, chat_id=session_id)
+            history = [
+                {"role": m.role, "content": m.content}
+                for m in prior_messages[-HISTORY_WINDOW:]
+            ]
+        except Exception:
+            history = []
+            db = None
+
+        if db is not None:
+            try:
+                await append_message(db, chat_id=session_id, role="user", content=message)
+            except Exception:
+                pass
 
     final_content_parts: list[str] = []
 
     async for chunk in run_ephemeral_turn(
-        router=router, tools=tools, message=message, wallet=wallet
+        router=router,
+        tools=tools,
+        message=message,
+        wallet=wallet,
+        history=history,
     ):
         yield chunk
-        if user_id and session_id:
+        if db is not None:
             try:
                 decoded = chunk.decode()
                 if "event: final" in decoded:
@@ -1036,8 +1181,7 @@ async def run_simple_turn(
             except Exception:
                 pass
 
-    if user_id and session_id and final_content_parts:
-        db = await get_database()
+    if db is not None and final_content_parts:
         try:
             await append_message(
                 db,
