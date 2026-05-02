@@ -168,20 +168,46 @@ def build_plan(intent: dict) -> ExecutionPlanV2Payload:
     for order, step in enumerate(steps, start=1):
         step.order = order
 
-    hard_block = False
     for step in steps:
-        warnings, blocked = _apply_step_risk(step)
+        warnings, _ = _apply_step_risk(step)
         risk_warnings.extend(warnings)
-        hard_block = hard_block or blocked
+
+    for step in steps:
+        verdict = shield_for_transaction(step.params)
+        if verdict.verdict in {"SCAM"} or (verdict.grade or "") in {"F"}:
+            step.shield_flags = list(set((step.shield_flags or []) + ["critical"]))
+        else:
+            step.shield_flags = list(set((step.shield_flags or []) + (verdict.reasons or [])))
 
     if capped:
         risk_warnings.append("Planner capped at 4 explicit steps; split the remaining actions into a second plan.")
 
     total_gas = sum(step.estimated_gas_usd or 0 for step in steps)
-    sentinel_steps = [step.sentinel.sentinel for step in steps if step.sentinel is not None]
-    blended_sentinel = round(sum(sentinel_steps) / len(sentinel_steps)) if sentinel_steps else None
-    large_notional = any(_amount_usd(step.params) >= 10_000 for step in steps)
-    risk_gate = "hard_block" if hard_block else ("soft_warn" if risk_warnings or large_notional or (blended_sentinel is not None and blended_sentinel < 65) else "clear")
+
+    # Sentinel scoring + risk gate rollup
+    weighted_sum = 0.0
+    weight = 0.0
+    has_critical = False
+    for step in steps:
+        amount_usd = _amount_usd(step.params)
+        if step.sentinel is not None and amount_usd > 0:
+            weighted_sum += step.sentinel.sentinel * amount_usd
+            weight += amount_usd
+        if step.shield_flags and any("critical" in (f or "").lower() for f in step.shield_flags):
+            has_critical = True
+
+    blended = int(weighted_sum / weight) if weight else None
+    if blended is None:
+        sentinel_steps = [step.sentinel.sentinel for step in steps if step.sentinel is not None]
+        blended = round(sum(sentinel_steps) / len(sentinel_steps)) if sentinel_steps else None
+    cross_chain = len({c for c in chains_touched if c}) > 1
+    notional_total_usd = sum(float(s.params.get("amount_usd") or 0) for s in steps)
+    risk_gate = "clear"
+    if has_critical:
+        risk_gate = "hard_block"
+    elif (blended is not None and blended < 65) or cross_chain or notional_total_usd > 10_000:
+        risk_gate = "soft_warn"
+
     return ExecutionPlanV2Payload(
         plan_id=plan_id,
         title=str(intent.get("title") or "Execution plan"),
@@ -189,7 +215,7 @@ def build_plan(intent: dict) -> ExecutionPlanV2Payload:
         total_steps=len(steps),
         total_gas_usd=total_gas,
         total_duration_estimate_s=sum(step.estimated_duration_s or 0 for step in steps),
-        blended_sentinel=blended_sentinel,
+        blended_sentinel=blended,
         requires_signature_count=0 if risk_gate == "hard_block" else sum(1 for step in steps if step.action not in {"wait_receipt", "get_balance"}),
         risk_warnings=risk_warnings,
         risk_gate=risk_gate,
