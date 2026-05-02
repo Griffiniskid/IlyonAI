@@ -217,7 +217,8 @@ export interface PairListPayload {
 export type CardType =
   | "allocation" | "sentinel_matrix" | "execution_plan"
   | "swap_quote" | "pool" | "token" | "position"
-  | "plan" | "execution_plan_v2" | "balance" | "bridge" | "stake" | "market_overview" | "pair_list";
+  | "plan" | "execution_plan_v2" | "balance" | "bridge" | "stake" | "market_overview" | "pair_list"
+  | "sentinel";
 
 export interface AllocationCard { card_id: string; card_type: "allocation"; payload: AllocationPayload; }
 export interface SentinelMatrixCard { card_id: string; card_type: "sentinel_matrix"; payload: SentinelMatrixPayload; }
@@ -233,10 +234,12 @@ export interface BridgeCard { card_id: string; card_type: "bridge"; payload: Bri
 export interface StakeCard { card_id: string; card_type: "stake"; payload: StakePayload; }
 export interface MarketOverviewCard { card_id: string; card_type: "market_overview"; payload: MarketOverviewPayload; }
 export interface PairListCard { card_id: string; card_type: "pair_list"; payload: PairListPayload; }
+export interface SentinelBreakdownCardFrame { card_id: string; card_type: "sentinel"; payload: SentinelBlock; }
 
 export type AgentCard =
   | AllocationCard | SentinelMatrixCard | ExecutionPlanCard | SwapQuoteCard | PoolCard | TokenCard | PositionCard
-  | PlanCard | ExecutionPlanV2Card | BalanceCard | BridgeCard | StakeCard | MarketOverviewCard | PairListCard;
+  | PlanCard | ExecutionPlanV2Card | BalanceCard | BridgeCard | StakeCard | MarketOverviewCard | PairListCard
+  | SentinelBreakdownCardFrame;
 
 export interface ToolError {
   code: string;

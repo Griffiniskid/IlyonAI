@@ -5,6 +5,7 @@ import { UserBubble } from "./UserBubble";
 import { ReasoningAccordion } from "./ReasoningAccordion";
 import { CardRenderer } from "./cards/CardRenderer";
 import { StepStatusCard } from "./cards/StepStatusCard";
+import { ChipPresets } from "./ChipPresets";
 import type { AgentMessage } from "@/hooks/useAgentStream";
 import type { CardFrame, PlanCompleteFrame, StepStatusFrame, ThoughtFrame, ToolFrame } from "@/types/agent";
 
@@ -18,6 +19,7 @@ interface Props {
     planCompletions?: PlanCompleteFrame[];
   };
   isStreaming: boolean;
+  onSelect?: (prompt: string) => void;
 }
 
 function formatTime(d: Date = new Date()): string {
@@ -102,7 +104,7 @@ function AssistantParagraphs({
   );
 }
 
-export function MessageList({ messages, currentSteps, isStreaming }: Props) {
+export function MessageList({ messages, currentSteps, isStreaming, onSelect }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -194,6 +196,11 @@ export function MessageList({ messages, currentSteps, isStreaming }: Props) {
         <div className="flex items-center gap-2 ml-11 text-[11px] text-muted-foreground">
           <span className="h-2 w-2 animate-ping rounded-full bg-purple-400" />
           <span>Thinking…</span>
+        </div>
+      )}
+      {messages.length > 0 && onSelect && (
+        <div className="ml-11">
+          <ChipPresets onSelect={onSelect} disabled={isStreaming} />
         </div>
       )}
       <div ref={bottomRef} />

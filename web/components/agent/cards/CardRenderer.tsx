@@ -23,6 +23,7 @@ import { SentinelMatrixCard as DemoSentinelMatrixCard } from "./SentinelMatrixCa
 import { ExecutionPlanCard as DemoExecutionPlanCard } from "./ExecutionPlanCard";
 import { SentinelBadge } from "./SentinelBadge";
 import { ShieldBadge } from "./ShieldBadge";
+import { SentinelBreakdownCard } from "./SentinelBreakdownCard";
 
 interface Props {
   card: CardFrame;
@@ -570,6 +571,8 @@ export function CardRenderer({ card }: Props) {
       return <BridgeCard payload={payload as unknown as BridgePayload} />;
     case "pair_list":
       return <PairListCard payload={payload as unknown as PairListPayload} />;
+    case "sentinel":
+      return <SentinelBreakdownCard sentinel={payload as unknown as SentinelBlock} />;
     default:
       return <FallbackCard card={card} />;
   }
