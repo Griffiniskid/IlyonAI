@@ -51,7 +51,8 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
         message = normalize_short_swap_query(body.get("message", ""))
 
         from src.storage.database import get_database
-        from src.agent.runtime import run_turn, run_ephemeral_turn
+        from src.agent.runtime import run_turn
+        from src.agent.simple_runtime import run_simple_turn
         from src.ai.router import AIRouter
         from src.agent.tools import register_all_tools
         from sqlalchemy import text
@@ -71,11 +72,13 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
             # Guest mode - no DB persistence, just streaming response
             tools = register_all_tools(services_ns, user_id=0, wallet=wallet or "guest")
             
-            async for chunk in run_ephemeral_turn(
+            async for chunk in run_simple_turn(
                 router=router,
                 tools=tools,
                 message=message,
                 wallet=wallet,
+                session_id=session_id,
+                user_id=user_id,
             ):
                 await response.write(chunk)
         else:

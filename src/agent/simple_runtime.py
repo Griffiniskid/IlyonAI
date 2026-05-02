@@ -9,6 +9,9 @@ from src.agent.llm import IlyonChatModel
 from src.agent.streaming import StreamCollector, encode_sse, frame_event_name
 from src.api.schemas.agent import ThoughtFrame, ToolFrame, FinalFrame, DoneFrame, CardFrame, PlanBlockedFrame
 
+from src.storage.agent_chats import append_message
+from src.storage.database import get_database
+
 
 # Simple keyword-based intent detection.
 # Priority order matters — explanatory intents must outrank allocation/staking keywords.
@@ -950,6 +953,48 @@ When discussing crypto assets, mention:
         import traceback
         error_msg = f"Error: {str(e)}\n{traceback.format_exc()}"
         yield encode_sse("error", {"error": error_msg})
+
+
+async def run_simple_turn(
+    *,
+    router,
+    tools,
+    message: str,
+    wallet: str | None = None,
+    session_id: str | None = None,
+    user_id: int = 0,
+) -> AsyncIterator[bytes]:
+    """Wrapper around run_ephemeral_turn that persists chat history when authenticated."""
+    if user_id and session_id:
+        db = await get_database()
+        await append_message(db, chat_id=session_id, role="user", content=message)
+
+    final_content_parts: list[str] = []
+
+    async for chunk in run_ephemeral_turn(
+        router=router, tools=tools, message=message, wallet=wallet
+    ):
+        yield chunk
+        if user_id and session_id:
+            try:
+                decoded = chunk.decode()
+                if "event: final" in decoded:
+                    payload = decoded.split("\ndata: ", 1)[1].split("\n", 1)[0]
+                    final_content_parts.append(json.loads(payload).get("content", ""))
+            except Exception:
+                pass
+
+    if user_id and session_id and final_content_parts:
+        db = await get_database()
+        try:
+            await append_message(
+                db,
+                chat_id=session_id,
+                role="assistant",
+                content="".join(final_content_parts),
+            )
+        except Exception:
+            pass
 
 
 def _clean_response(content: str) -> str:
