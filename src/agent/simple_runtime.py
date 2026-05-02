@@ -1074,26 +1074,41 @@ async def run_ephemeral_turn(
                 final_content = "I couldn't find the data you're looking for. Please try again or rephrase your question."
         else:
             # No intent detected, use LLM for general conversation.
-            # Always include the trailing chat history so multi-turn context is preserved.
-            system_msg = """You are Ilyon Sentinel's crypto agent. You help users with DeFi, token prices, swaps, and yield opportunities.
+            # When prior history exists, include it so multi-turn context is preserved.
+            base_system = (
+                "You are Ilyon Sentinel's crypto agent. You help users with DeFi, "
+                "token prices, swaps, and yield opportunities.\n\n"
+                "Respond directly to the user in a friendly, professional manner. "
+                "Do NOT include meta-commentary, internal reasoning, or stage directions.\n\n"
+                "When discussing crypto assets, mention:\n"
+                "- Risk levels (LOW, MEDIUM, HIGH) based on market cap and volatility\n"
+                "- Strategy fit (conservative, balanced, aggressive)\n"
+                "- General safety tips"
+            )
 
-Respond directly to the user in a friendly, professional manner. Do NOT include meta-commentary or reasoning.
+            llm_messages: list = []
+            trimmed_history = [
+                p for p in (history or [])[-HISTORY_WINDOW:]
+                if p.get("content")
+            ]
 
-You have access to the conversation history above — use it to maintain continuity. If the user references "the plan", "it", "those pools", etc., look back in the conversation for what they mean before asking for clarification.
+            if trimmed_history:
+                system_msg = (
+                    base_system
+                    + "\n\nThe conversation history below is the same chat session. "
+                    + "Use it for continuity — when the user says 'it', 'the plan', "
+                    + "'those pools', etc., resolve the reference from the history "
+                    + "instead of asking for clarification."
+                )
+                llm_messages.append(type('Msg', (), {'type': 'system', 'content': system_msg})())
+                for prior in trimmed_history:
+                    role = prior.get("role")
+                    content = prior.get("content") or ""
+                    mtype = "human" if role == "user" else ("ai" if role == "assistant" else "system")
+                    llm_messages.append(type('Msg', (), {'type': mtype, 'content': content})())
+            else:
+                llm_messages.append(type('Msg', (), {'type': 'system', 'content': base_system})())
 
-When discussing crypto assets, mention:
-- Risk levels (LOW, MEDIUM, HIGH) based on market cap and volatility
-- Strategy fit (conservative, balanced, aggressive)
-- General safety tips"""
-
-            llm_messages: list = [type('Msg', (), {'type': 'system', 'content': system_msg})()]
-            for prior in (history or [])[-HISTORY_WINDOW:]:
-                role = prior.get("role")
-                content = prior.get("content") or ""
-                if not content:
-                    continue
-                mtype = "human" if role == "user" else ("ai" if role == "assistant" else "system")
-                llm_messages.append(type('Msg', (), {'type': mtype, 'content': content})())
             llm_messages.append(type('Msg', (), {'type': 'human', 'content': message})())
 
             result = await llm._agenerate(llm_messages)
