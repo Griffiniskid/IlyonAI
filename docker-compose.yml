@@ -66,6 +66,8 @@ services:
         NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
         API_REWRITE_TARGET: ${API_REWRITE_TARGET:-http://api:8080}
         ASSISTANT_API_TARGET: ${ASSISTANT_API_TARGET:-http://assistant-api:8000}
+        SENTINEL_API_TARGET: ${API_REWRITE_TARGET:-http://api:8080}
+        AGENT_BACKEND: sentinel
     restart: unless-stopped
     depends_on:
       api:
@@ -78,6 +80,8 @@ services:
       NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
       API_REWRITE_TARGET: ${API_REWRITE_TARGET:-http://api:8080}
       ASSISTANT_API_TARGET: ${ASSISTANT_API_TARGET:-http://assistant-api:8000}
+      SENTINEL_API_TARGET: ${API_REWRITE_TARGET:-http://api:8080}
+      AGENT_BACKEND: sentinel
     ports:
       - "${WEB_HOST_PORT:-3000}:3000"
     healthcheck:
