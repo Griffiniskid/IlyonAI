@@ -36,3 +36,8 @@ def move_to_plan(move: dict[str, Any]) -> RebalancePlanCard:
         }
     )
     return RebalancePlanCard(card_type="execution_plan_v2", payload=plan)
+
+
+def build_rebalance_intent(moves: list[dict]) -> dict:
+    """Placeholder — Task 3.2 replaces with real intent synthesis."""
+    raise NotImplementedError("build_rebalance_intent not yet implemented")

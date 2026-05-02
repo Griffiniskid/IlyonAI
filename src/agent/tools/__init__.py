@@ -18,6 +18,7 @@ from .transfer_build import build_transfer_tx
 from .allocate_plan import allocate_plan
 from .update_preference import update_preference
 from .compose_plan import compose_plan
+from .rebalance_portfolio import rebalance_portfolio
 
 _TOOL_REGISTRY = {
     "get_wallet_balance": (get_wallet_balance, "Get multi-chain wallet balance."),
@@ -93,6 +94,15 @@ _TOOL_REGISTRY = {
             "'title' and 'steps' list. Each step needs 'action' and 'params'. "
             "Returns an execution_plan_v2 card with ordered steps, gas estimates, "
             "dependency graph, and Sentinel risk assessment."
+        ),
+    ),
+    "rebalance_portfolio": (
+        rebalance_portfolio,
+        (
+            "Propose an optimal rebalance plan based on your current holdings. "
+            "Call when the user says 'rebalance my portfolio' or similar. "
+            "Respects the user's risk_budget, preferred_chains, and blocked_protocols "
+            "from agent_preferences. Returns an ExecutionPlanV2Card."
         ),
     ),
 }
