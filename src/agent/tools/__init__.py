@@ -16,6 +16,7 @@ from .lp_build import build_deposit_lp_tx
 from .bridge_build import build_bridge_tx
 from .transfer_build import build_transfer_tx
 from .allocate_plan import allocate_plan
+from .update_preference import update_preference
 
 _TOOL_REGISTRY = {
     "get_wallet_balance": (get_wallet_balance, "Get multi-chain wallet balance."),
@@ -69,6 +70,17 @@ _TOOL_REGISTRY = {
             "chains (optional list). Returns ranked top-5 positions, Sentinel "
             "matrix, and an execution plan — in one call. Do NOT follow up with "
             "other tools for an allocation intent."
+        ),
+    ),
+    "update_preference": (
+        update_preference,
+        (
+            "Persist user preferences across sessions. Call when the user says "
+            "'set my slippage to 30 bps', 'use only Arbitrum and Base', "
+            "'low-risk only', etc. Allowed kwargs: risk_budget "
+            "('conservative'|'balanced'|'aggressive'), preferred_chains (list), "
+            "blocked_protocols (list), gas_cap_usd, slippage_cap_bps, "
+            "notional_double_confirm_usd, auto_rebalance_opt_in (0|1)."
         ),
     ),
 }

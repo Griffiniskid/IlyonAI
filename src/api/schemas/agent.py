@@ -326,7 +326,7 @@ CardType = Literal[
     "allocation", "sentinel_matrix", "execution_plan",
     "swap_quote", "pool", "token", "position", "plan",
     "execution_plan_v2", "balance", "bridge", "stake", "transfer",
-    "market_overview", "pair_list", "lp",
+    "market_overview", "pair_list", "lp", "preferences",
 ]
 
 
