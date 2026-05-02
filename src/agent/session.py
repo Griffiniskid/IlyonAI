@@ -1,7 +1,7 @@
 """Persistent windowed memory that rehydrates from the chat_messages table."""
 from __future__ import annotations
 
-from langchain_classic.memory import ConversationBufferWindowMemory
+from langchain.memory import ConversationBufferWindowMemory
 from langchain_core.messages import AIMessage, HumanMessage
 
 from src.storage.chat import last_messages

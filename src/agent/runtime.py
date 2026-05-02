@@ -5,8 +5,8 @@ import json as _json
 import uuid
 from typing import AsyncIterator
 
-from langchain_classic.agents import AgentExecutor, create_react_agent
-from langchain_classic.prompts import PromptTemplate
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain.prompts import PromptTemplate
 
 from src.agent.llm import IlyonChatModel
 from src.agent.streaming import StreamCollector, encode_sse, frame_event_name
