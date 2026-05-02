@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from src.agent.planner import build_plan
+from src.api.schemas.agent import ToolEnvelope
 from src.agent.tools._base import ToolCtx, err_envelope, ok_envelope
 from src.optimizer.delta import MoveCandidate, should_move
 from src.optimizer.plan_synth import build_rebalance_intent

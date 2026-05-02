@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from src.agent.planner import build_plan
+from src.api.schemas.agent import ToolEnvelope
 from src.agent.tools._base import err_envelope, ok_envelope
 
 

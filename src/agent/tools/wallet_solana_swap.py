@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from src.agent.tools._assistant_bridge import AssistantError, parse_assistant_json
+from src.api.schemas.agent import ToolEnvelope
 from src.agent.tools._base import ToolCtx, err_envelope, ok_envelope
 
 

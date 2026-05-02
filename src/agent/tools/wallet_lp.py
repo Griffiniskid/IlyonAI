@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from src.agent.tools._assistant_bridge import AssistantError, parse_assistant_json
+from src.api.schemas.agent import ToolEnvelope
 from src.agent.tools._base import err_envelope, ok_envelope
 
 
