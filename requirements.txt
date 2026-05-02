@@ -143,3 +143,10 @@ hypothesis>=6.0.0
 
 # APScheduler for optimizer daemon
 apscheduler>=3.10.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LANGCHAIN (agent runtime dependencies)
+# ═══════════════════════════════════════════════════════════════════════════
+
+langchain>=0.3.0
+langchain-core>=0.3.0
