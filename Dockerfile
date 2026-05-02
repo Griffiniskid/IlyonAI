@@ -40,6 +40,11 @@ COPY --from=builder /root/.local /root/.local
 # Make sure scripts in .local are usable
 ENV PATH=/root/.local/bin:$PATH
 
+# Playwright is used by deep website analysis fallbacks. Install the matching
+# Chromium bundle in the runtime image so staging rebuilds do not lose it.
+RUN python -m playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy application code
 COPY src/ ./src/
 

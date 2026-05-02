@@ -29,6 +29,12 @@ def test_detect_intent_routes_sentinel_explanation_away_from_allocate_plan():
     assert intent == ("explain_sentinel_methodology", {})
 
 
+def test_detect_intent_routes_generic_scoring_methodology_to_sentinel():
+    intent = detect_intent("explain your scoring methodology")
+
+    assert intent == ("explain_sentinel_methodology", {})
+
+
 def test_detect_intent_parses_bridge_then_stake_plan():
     intent = detect_intent("bridge 1000 USDC from Ethereum to Arbitrum and stake it on Aave")
 
