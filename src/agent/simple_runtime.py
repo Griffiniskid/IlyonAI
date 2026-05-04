@@ -767,6 +767,8 @@ def _detect_pool_execute_followup(
     message: str, session_id: str | None
 ) -> tuple[str, dict] | None:
     """Resolve "execute this pool X" / "execute the strategy" against session memory."""
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
     if not session_id:
         return None
     if not message:
@@ -776,6 +778,10 @@ def _detect_pool_execute_followup(
         return None
 
     record = _recall_opp_record(str(session_id))
+    _log.warning("[pool-detector] sid=%s record=%s alloc_rows=%s items=%s",
+                 session_id, "yes" if record else "none",
+                 len(record.allocations) if record else 0,
+                 len(record.items) if record else 0)
     if record is None:
         return None
 
