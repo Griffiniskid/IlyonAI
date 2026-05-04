@@ -1172,6 +1172,26 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     if direct is not None:
         return direct
 
+    # Spread+execute one-shot: "spread 500 USDC across 4 pools then execute
+    # through wallet" → allocate_plan now, the runtime auto-chains the
+    # execution-plan composer because 'execute' is in the message.
+    spread_match = re.search(
+        r"\bspread\s+\$?(?P<amount>[\d,]+(?:\.\d+)?)\s*(?P<asset>USDC|USDT|DAI|USDS|USDE|SOL|ETH)\b"
+        r".*?\b(across|over|into)\s+(?P<count>\d{1,2})\b",
+        message, re.IGNORECASE | re.DOTALL,
+    )
+    exec_kw = re.search(r"\b(execute|sign|deploy|run\s+it|fire\s+it|through\s+(my|the)\s+wallet)\b", message, re.IGNORECASE)
+    if spread_match and exec_kw:
+        try:
+            amount = float(spread_match.group("amount").replace(",", ""))
+            return "allocate_plan", {
+                "usd_amount": amount,
+                "risk_budget": "balanced",
+                "asset_hint": spread_match.group("asset").upper(),
+            }
+        except (ValueError, TypeError):
+            pass
+
     # Strategy composer detectors (multi-step yield) win over single-action detectors.
     for detector in (_detect_bridge_then_aave_supply, _detect_swap_then_aave_supply):
         detected = detector(message)
