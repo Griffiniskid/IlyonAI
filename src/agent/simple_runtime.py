@@ -1798,10 +1798,20 @@ async def run_ephemeral_turn(
                                 total, sid,
                             )
                             if allocs:
+                                total_f: float | None = None
+                                if total is not None:
+                                    try:
+                                        cleaned_total = (
+                                            str(total).replace("$", "").replace(",", "").strip().split()[0]
+                                            if isinstance(total, str) else total
+                                        )
+                                        total_f = float(cleaned_total)
+                                    except (ValueError, TypeError, IndexError):
+                                        total_f = None
                                 _remember_allocation(
                                     sid,
                                     allocs,
-                                    total_usd=float(total) if total else None,
+                                    total_usd=total_f,
                                     asset_hint=(env_data.get("asset_hint")
                                                 or payload.get("asset_hint")),
                                 )
