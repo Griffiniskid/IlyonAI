@@ -1765,6 +1765,15 @@ async def run_ephemeral_turn(
                         sid = str(session_id) if session_id else None
                         env_data = getattr(env, "data", None) or {}
                         payload = env.card_payload if isinstance(env.card_payload, dict) else {}
+                        import logging as _logging
+                        _logging.getLogger(__name__).warning(
+                            "[opp-memory] tool=%s sid=%s data_keys=%s payload_keys=%s positions=%s primary_candidates=%s",
+                            tool_name, sid,
+                            list(env_data.keys()) if isinstance(env_data, dict) else type(env_data),
+                            list(payload.keys()) if isinstance(payload, dict) else type(payload),
+                            len((env_data.get("positions") or payload.get("positions") or [])) if isinstance(env_data, dict) else 0,
+                            len((env_data.get("primary_candidates") or [])) if isinstance(env_data, dict) else 0,
+                        )
                         if sid and tool_name == "search_defi_opportunities":
                             items = (env_data.get("primary_candidates")
                                      or payload.get("items") or [])
