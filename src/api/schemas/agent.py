@@ -298,12 +298,129 @@ class PairListCard(_CardBase):
     payload: PairListPayload
 
 
+class DefiOpportunityLink(_Strict):
+    label: str
+    url: str
+
+
+class DefiOpportunityItem(_Strict):
+    protocol: str
+    symbol: Optional[str] = None
+    chain: Optional[str] = None
+    product_type: Optional[str] = None
+    apy: Optional[float] = None
+    apy_base: Optional[float] = None
+    apy_reward: Optional[float] = None
+    tvl_usd: Optional[float] = None
+    volume_24h_usd: Optional[float] = None
+    risk_level: Optional[str] = None
+    executable: Optional[bool] = None
+    adapter_id: Optional[str] = None
+    unsupported_reason: Optional[str] = None
+    links: list[DefiOpportunityLink] = Field(default_factory=list)
+    pool_id: Optional[str] = None
+
+
+class DefiOpportunitiesPayload(_Strict):
+    objective: Optional[str] = None
+    target_apy: Optional[float] = None
+    apy_band: Optional[list[Optional[float]]] = None
+    risk_levels: list[str] = Field(default_factory=list)
+    chains: list[str] = Field(default_factory=list)
+    execution_requested: bool = False
+    items: list[DefiOpportunityItem] = Field(default_factory=list)
+    excluded_count: int = 0
+    blockers: list[dict] = Field(default_factory=list)
+
+
+class DefiOpportunitiesCard(_CardBase):
+    card_type: Literal["defi_opportunities"]
+    payload: DefiOpportunitiesPayload
+
+
+class ExecutionPlanV3StepTransaction(_Strict):
+    chain_kind: Literal["evm", "solana"]
+    chain_id: Optional[int] = None
+    to: Optional[str] = None
+    data: Optional[str] = None
+    value: Optional[str] = None
+    gas: Optional[str] = None
+    serialized: Optional[str] = None
+    spender: Optional[str] = None
+
+
+class ExecutionPlanV3Step(_Strict):
+    step_id: str
+    index: int
+    action: Literal[
+        "approve", "swap", "bridge", "deposit_lp", "supply", "stake",
+        "wait_receipt", "verify_balance", "claim_rewards", "compound_rewards",
+        "withdraw",
+    ]
+    title: str
+    description: str
+    chain: str
+    wallet: Literal["MetaMask", "Phantom", "WalletConnect"]
+    protocol: str
+    asset_in: Optional[str] = None
+    asset_out: Optional[str] = None
+    amount_in: Optional[str] = None
+    amount_out: Optional[str] = None
+    slippage_bps: Optional[int] = None
+    gas_estimate_usd: Optional[float] = None
+    duration_estimate_s: Optional[int] = None
+    depends_on: list[str] = Field(default_factory=list)
+    status: Literal["blocked", "pending", "ready", "signing", "submitted", "confirmed", "failed", "skipped"] = "pending"
+    blocker_codes: list[str] = Field(default_factory=list)
+    transaction: Optional[ExecutionPlanV3StepTransaction] = None
+    receipt: Optional[dict] = None
+    risk_warnings: list[str] = Field(default_factory=list)
+
+
+class ExecutionPlanV3Blocker(_Strict):
+    code: str
+    severity: Literal["info", "warning", "blocker"]
+    title: str
+    detail: str
+    affected_step_ids: list[str] = Field(default_factory=list)
+    recoverable: bool = True
+    cta: Optional[str] = None
+
+
+class ExecutionPlanV3Totals(_Strict):
+    estimated_gas_usd: float = 0.0
+    estimated_duration_s: int = 0
+    signatures_required: int = 0
+    chains_touched: list[str] = Field(default_factory=list)
+    assets_required: dict[str, str] = Field(default_factory=dict)
+
+
+class ExecutionPlanV3Payload(_Strict):
+    plan_id: str
+    title: str
+    summary: str
+    status: Literal["draft", "blocked", "ready", "executing", "complete", "failed", "aborted"] = "draft"
+    risk_gate: Literal["clear", "soft_warn", "hard_block"] = "clear"
+    requires_double_confirm: bool = False
+    blockers: list[ExecutionPlanV3Blocker] = Field(default_factory=list)
+    steps: list[ExecutionPlanV3Step] = Field(default_factory=list)
+    totals: ExecutionPlanV3Totals = Field(default_factory=ExecutionPlanV3Totals)
+    research_thesis: Optional[str] = None
+    strategy_id: Optional[str] = None
+
+
+class ExecutionPlanV3Card(_CardBase):
+    card_type: Literal["execution_plan_v3"]
+    payload: ExecutionPlanV3Payload
+
+
 _CardUnion = Annotated[
     Union[
         AllocationCard, SentinelMatrixCard, ExecutionPlanCard,
         SwapQuoteCard, PoolCard, TokenCard,
         PositionCard, PlanCard, ExecutionPlanV2Card, BalanceCard, BridgeCard,
         StakeCard, MarketOverviewCard, PairListCard,
+        DefiOpportunitiesCard, ExecutionPlanV3Card,
     ],
     Field(discriminator="card_type"),
 ]
@@ -325,8 +442,9 @@ class AgentCard(_Strict):
 CardType = Literal[
     "allocation", "sentinel_matrix", "execution_plan",
     "swap_quote", "pool", "token", "position", "plan",
-    "execution_plan_v2", "balance", "bridge", "stake", "transfer",
+    "execution_plan_v2", "execution_plan_v3", "balance", "bridge", "stake", "transfer",
     "market_overview", "pair_list", "lp", "preferences",
+    "defi_opportunities",
     "text", "no_change",
 ]
 

@@ -1591,10 +1591,16 @@ async def run_ephemeral_turn(
     collector = StreamCollector()
     started = __import__('time').monotonic()
 
+    # Pool-execution memory follow-up runs FIRST — before the generic
+    # "proceed/execute" replay — so "execute this pool X" or
+    # "execute the transactions through my wallet" build a real
+    # ExecutionPlanV3 instead of falling into the stub replay text.
+    early_pool_intent = _detect_pool_execute_followup(message, session_id)
+
     # If this is a follow-up confirmation and we have prior context, handle it
     # before falling through to the keyword intent detector — otherwise
     # "proceed" would never match anything in INTENT_PATTERNS.
-    if history:
+    if history and early_pool_intent is None:
         replay = _maybe_replay_followup(message=message, history=history)
         if replay is not None:
             collector._step += 1
@@ -1607,10 +1613,9 @@ async def run_ephemeral_turn(
                 yield encode_sse(frame_event_name(frame), frame.model_dump())
             return
 
-    # Pool-execution follow-up: "execute this pool X" / "execute the strategy"
-    # against opportunities/allocations stored from the prior turn — runs FIRST
-    # so a prior search/allocation never falls through to a generic re-search.
-    intent = _detect_pool_execute_followup(message, session_id)
+    # Pool-execution follow-up resolved earlier; re-use it without re-running
+    # the regex / memory lookup.
+    intent = early_pool_intent
     # Strategy follow-up: replay last yield plan if user typed "execute it / reinvest / rebalance".
     if intent is None:
         intent = _resolve_strategy_followup(message, session_id)
