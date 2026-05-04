@@ -320,6 +320,34 @@ def _pre_tool_reasoning(tool_name: str, tool_input: dict, message: str) -> list[
             "Verifying adapter coverage for the destination protocol/action/chain.",
             "Producing one ExecutionPlanV3 with per-step depends_on so the wallet sees a single signing flow.",
         ]
+    if tool_name == "analyze_token_full_sentinel":
+        return [
+            f"Routed token analysis request: {_short_json(tool_input)}.",
+            "Resolving chain, kicking off TokenAnalyzer (security + liquidity + holders + AI).",
+            "Aggregating Sentinel safety, distribution, honeypot, deployer, and behavioral scores.",
+            "Highlighting strongest signals and weakest assumptions before writing the answer.",
+        ]
+    if tool_name == "track_whales":
+        return [
+            f"Parsed whale-tracking request: {_short_json(tool_input)}.",
+            "Pulling recent whale transactions across Helius (Solana) and Moralis (EVM) feeds.",
+            "Filtering by chain, time-window, and USD threshold before summarizing.",
+            "Flagging the loudest moves and aggregating buy/sell pressure.",
+        ]
+    if tool_name == "get_smart_money_hub":
+        return [
+            f"Parsed smart-money hub request: {_short_json(tool_input)}.",
+            "Fetching top wallets, recent accumulations, trending tokens, and conviction picks.",
+            "Ranking by alpha quality and conviction strength rather than raw size.",
+            "Surfacing the strongest signals with caveats.",
+        ]
+    if tool_name == "get_shield_check":
+        return [
+            f"Parsed Shield wallet/contract scan: {_short_json(tool_input)}.",
+            "Pulling approval graph and on-chain risk findings for the address.",
+            "Cross-referencing known scam contracts, phishing approvals, and concentration risk.",
+            "Preparing a verdict with recommended revoke targets.",
+        ]
     if tool_name == "find_liquidity_pool":
         return [
             f"Parsed liquidity-pool search: {_short_json(tool_input)}.",
@@ -898,6 +926,95 @@ def _amount_from_record(record) -> str | None:
     return None
 
 
+_TOKEN_ADDR_RE = re.compile(
+    r"\b((?:0x[a-fA-F0-9]{40})|(?:[1-9A-HJ-NP-Za-km-z]{32,44}))\b"
+)
+_ANALYZE_TOKEN_RE = re.compile(
+    r"\b(analy[sz]e|analysis\s+of|analyze\s+this|sentinel\s+report|risk\s+report|risk\s+score|"
+    r"shield\s+(?:check|scan|report)|deep\s+dive|safety\s+check|rugpull\s+check|honeypot\s+check)\b",
+    re.IGNORECASE,
+)
+_WHALE_RE = re.compile(
+    r"\b(whale|whales|whale\s+activity|biggest\s+(?:buy|sell|trade|move)|big\s+wallet|"
+    r"large\s+holders?|top\s+wallet\s+activity)\b",
+    re.IGNORECASE,
+)
+_HUB_RE = re.compile(
+    r"\b(smart[- ]?money|smart\s+money\s+hub|smart[- ]?money\s+(?:wallets?|signals?|picks?)|"
+    r"sol\s+hub|solana\s+(?:smart|hub))\b",
+    re.IGNORECASE,
+)
+_SHIELD_RE = re.compile(
+    r"\b(shield(?:\s+(?:check|scan|report|wallet|approvals|status))?|approvals?\s+scan|"
+    r"approval\s+risk|revoke\s+(?:risky\s+)?approvals?|wallet\s+security)\b",
+    re.IGNORECASE,
+)
+_CHAIN_HINT_RE = re.compile(
+    r"\bon\s+(ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|solana)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_token_address(message: str) -> str | None:
+    if not message:
+        return None
+    for match in _TOKEN_ADDR_RE.finditer(message):
+        addr = match.group(1)
+        # Heuristic: strip noise; prefer EVM 0x first, otherwise the longest base58 token
+        if addr.startswith("0x") and len(addr) == 42:
+            return addr
+    # No 0x found; pick the longest base58 candidate
+    candidates = [m.group(1) for m in _TOKEN_ADDR_RE.finditer(message) if not m.group(1).startswith("0x")]
+    if candidates:
+        candidates.sort(key=len, reverse=True)
+        return candidates[0]
+    return None
+
+
+def _detect_sentinel_features(message: str) -> tuple[str, dict] | None:
+    if not message:
+        return None
+    chain_match = _CHAIN_HINT_RE.search(message)
+    chain = chain_match.group(1).lower() if chain_match else None
+
+    addr = _extract_token_address(message)
+    # Token analyzer: any analyze/scan/sentinel-report verb + a token address.
+    if addr and _ANALYZE_TOKEN_RE.search(message):
+        return "analyze_token_full_sentinel", {"address": addr, "chain": chain, "mode": "standard"}
+    # Bare token address ("scan this token <addr>", "<addr> safety") → still analyze.
+    if addr and re.search(r"\b(scan|check|safe|safety|rug|honeypot|inspect|tell\s+me\s+about)\b", message, re.IGNORECASE):
+        return "analyze_token_full_sentinel", {"address": addr, "chain": chain, "mode": "standard"}
+
+    # Shield wallet/contract scan.
+    if _SHIELD_RE.search(message):
+        target = addr
+        if not target:
+            wallet_match = re.search(r"\b(0x[a-fA-F0-9]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})\b", message)
+            if wallet_match:
+                target = wallet_match.group(1)
+        if target:
+            return "get_shield_check", {"address": target, "chain": chain}
+
+    # Smart-money hub.
+    if _HUB_RE.search(message):
+        return "get_smart_money_hub", {"chain": chain or "solana", "limit": 10}
+
+    # Whale tracking.
+    if _WHALE_RE.search(message):
+        params: dict = {"limit": 10, "hours": 24}
+        if chain:
+            params["chain"] = chain
+        # Allow "whales in last 6 hours" / "last 48h" patterns.
+        h_match = re.search(r"\blast\s+(\d{1,3})\s*(?:h|hour|hours)\b", message, re.IGNORECASE)
+        if h_match:
+            try:
+                params["hours"] = max(1, min(int(h_match.group(1)), 168))
+            except ValueError:
+                pass
+        return "track_whales", params
+    return None
+
+
 def _defi_intent_to_tool(intent: DefiIntent) -> tuple[str, dict] | None:
     if intent.intent == "allocate_strategy":
         params: dict = {
@@ -943,6 +1060,13 @@ def _defi_intent_to_tool(intent: DefiIntent) -> tuple[str, dict] | None:
 def detect_intent(message: str) -> tuple[str, dict] | None:
     """Detect intent and extract parameters from user message."""
     message_lower = message.lower()
+
+    # Sentinel feature surface (analyze, whale, hub, shield) wins over the
+    # generic analytics router so "analyze this token <addr>" routes to the
+    # full Sentinel analyzer, not the market overview tool.
+    sentinel_intent = _detect_sentinel_features(message)
+    if sentinel_intent is not None:
+        return sentinel_intent
 
     # Strategy composer detectors (multi-step yield) win over single-action detectors.
     for detector in (_detect_bridge_then_aave_supply, _detect_swap_then_aave_supply):
@@ -1443,6 +1567,19 @@ def _format_tool_result(tool_name: str, result) -> str:
         return _format_opportunity_search_response(data)
     if tool_name in {"build_yield_execution_plan", "build_yield_strategy_plan", "build_allocation_execution_plan"} or card_type == "execution_plan_v3":
         return _format_execution_plan_v3_response(data)
+    if tool_name in {"analyze_token_full_sentinel", "track_whales", "get_smart_money_hub", "get_shield_check"}:
+        # These tools emit a markdown text payload; surface it directly.
+        try:
+            payload_obj = getattr(env, "card_payload", None) if hasattr(env, "card_payload") else None
+        except Exception:
+            payload_obj = None
+        if isinstance(payload_obj, dict) and payload_obj.get("text"):
+            return payload_obj["text"]
+        if isinstance(data, dict):
+            for key in ("text", "summary", "content"):
+                if isinstance(data.get(key), str) and data[key].strip():
+                    return data[key]
+        return json.dumps(data, indent=2) if isinstance(data, dict) else str(data)
     if card_type == "token" or tool_name == "get_token_price":
         return _format_price_response(data)
     elif card_type == "stake" or tool_name == "get_staking_options":

@@ -23,6 +23,12 @@ from .allocate_plan import allocate_plan
 from .build_yield_execution_plan import build_yield_execution_plan
 from .build_yield_strategy_plan import build_yield_strategy_plan
 from .build_allocation_execution_plan import build_allocation_execution_plan
+from .sentinel_features import (
+    analyze_token_full_sentinel,
+    track_whales,
+    get_smart_money_hub,
+    get_shield_check,
+)
 from .update_preference import update_preference
 from .compose_plan import compose_plan
 from .rebalance_portfolio import rebalance_portfolio
@@ -152,6 +158,41 @@ _TOOL_REGISTRY = {
             "Args: allocations (list of {chain,protocol,action,asset_in,amount_in,symbol}), "
             "default_asset (e.g. 'USDC'), slippage_bps. Each row produces its own "
             "deposit step (and prerequisite approve) wired as one signable plan."
+        ),
+    ),
+    "analyze_token_full_sentinel": (
+        analyze_token_full_sentinel,
+        (
+            "Run the FULL Sentinel token analyzer on a specific address. "
+            "Returns Sentinel score, grade, verdict, safety/liquidity/distribution/honeypot scores, "
+            "AI red/green flags, holder concentration, and security flags (mint authority, "
+            "freeze authority, liquidity lock, taxes, renounced, verified). Args: "
+            "address (required, mint or 0x...), chain (auto-detected if omitted), "
+            "mode ('quick'|'standard'|'full', default 'standard')."
+        ),
+    ),
+    "track_whales": (
+        track_whales,
+        (
+            "Surface recent whale transactions across supported chains. "
+            "Args: chain (optional — solana/ethereum/base/etc, omit for multi-chain), "
+            "hours (default 24), limit (default 10, max 25). Returns whale events: "
+            "action, token, USD size, wallet."
+        ),
+    ),
+    "get_smart_money_hub": (
+        get_smart_money_hub,
+        (
+            "Solana smart-money hub overview: top wallets, fresh accumulations, "
+            "trending tokens, conviction picks. Args: chain (default 'solana'), "
+            "limit (default 10)."
+        ),
+    ),
+    "get_shield_check": (
+        get_shield_check,
+        (
+            "Shield risk assessment for a wallet or contract. Returns verdict + "
+            "risky approvals/findings. Args: address (required), chain (optional)."
         ),
     ),
 }
