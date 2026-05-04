@@ -107,6 +107,39 @@ def test_sentinel_smart_money_hub_routing():
     assert tool == "get_smart_money_hub"
 
 
+def test_direct_yield_execute_raydium_solana():
+    from src.agent.simple_runtime import detect_intent
+    intent = detect_intent("sign deposit_lp on raydium-amm SPACEX-WSOL on solana with 0.5 SOL")
+    assert intent is not None
+    tool, params = intent
+    assert tool == "build_yield_execution_plan"
+    assert params["chain"] == "solana"
+    assert params["protocol"] == "raydium-amm"
+    assert params["asset_in"] == "SOL"
+    assert params["amount_in"] == "0.5"
+
+
+def test_direct_yield_execute_compound_v3_base():
+    from src.agent.simple_runtime import detect_intent
+    intent = detect_intent("deposit 50 USDC into compound v3 on base")
+    assert intent is not None
+    tool, params = intent
+    assert tool == "build_yield_execution_plan"
+    assert params["chain"] == "base"
+    assert params["protocol"] == "compound-v3"
+    assert params["amount_in"] == "50"
+
+
+def test_direct_yield_execute_marinade_no_chain_hint():
+    from src.agent.simple_runtime import detect_intent
+    intent = detect_intent("execute marinade with 2 SOL")
+    assert intent is not None
+    _, params = intent
+    assert params["chain"] == "solana"
+    assert params["protocol"] == "marinade"
+    assert params["action"] == "stake"
+
+
 def test_sentinel_shield_with_address_routing():
     detected = _detect_sentinel_features(
         "shield check 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"

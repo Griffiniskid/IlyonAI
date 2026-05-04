@@ -791,6 +791,103 @@ def _action_for_product_type(product_type: str | None) -> str:
     return "supply"
 
 
+_DIRECT_EXEC_VERB = re.compile(
+    r"\b(execute|sign|run|deploy|deposit|supply|stake|provide\s+lp)\b",
+    re.IGNORECASE,
+)
+_DIRECT_EXEC_PROTOCOL = re.compile(
+    r"\b(?P<protocol>aave(?:[- ]?v3)?|compound(?:[- ]?v3)?|lido|spark(?:[- ]?protocol)?|"
+    r"ether-fi|ether\.fi|etherfi|frax(?:[- ]?ether)?|rocket-?pool|stader|"
+    r"yearn(?:[- ]?finance)?|morpho(?:[- ]?blue)?|sky-?lending|"
+    r"convex(?:[- ]?finance)?|pendle|ethena|stargate|origin-?ether|moonwell|velodrome|gmx|"
+    r"raydium(?:[- ]?amm|[- ]?clmm)?|orca(?:[- ]?whirlpools)?|meteora(?:[- ]?dlmm)?|"
+    r"marinade(?:[- ]?finance)?|jito(?:[- ]?liquid-?staking)?|sanctum(?:[- ]?infinity)?|"
+    r"kamino(?:[- ]?lend|[- ]?finance)?|drift|lulo)\b",
+    re.IGNORECASE,
+)
+_DIRECT_EXEC_AMOUNT_ASSET = re.compile(
+    r"(?P<amount>[\d,]+(?:\.\d+)?)\s*(?P<asset>USDC|USDT|DAI|USDS|USDE|SOL|ETH|WETH|BTC|WBTC|MATIC|AVAX|BNB|MSOL|JITOSOL|EETH|RETH)\b",
+    re.IGNORECASE,
+)
+_PROTOCOL_CHAIN_HINTS = {
+    "raydium": "solana", "raydium-amm": "solana", "raydium-clmm": "solana",
+    "orca": "solana", "orca-whirlpools": "solana",
+    "meteora": "solana", "meteora-dlmm": "solana",
+    "marinade": "solana", "marinade-finance": "solana",
+    "jito": "solana", "jito-liquid-staking": "solana",
+    "sanctum": "solana", "sanctum-infinity": "solana",
+    "kamino": "solana", "kamino-lend": "solana", "kamino-finance": "solana",
+    "drift": "solana", "lulo": "solana",
+}
+_PROTOCOL_ACTION_HINTS = {
+    "raydium": "deposit_lp", "raydium-amm": "deposit_lp", "raydium-clmm": "deposit_lp",
+    "orca": "deposit_lp", "orca-whirlpools": "deposit_lp",
+    "meteora": "deposit_lp", "meteora-dlmm": "deposit_lp",
+    "uniswap-v3": "deposit_lp", "uniswap-v4": "deposit_lp",
+    "marinade": "stake", "marinade-finance": "stake",
+    "jito": "stake", "jito-liquid-staking": "stake",
+    "lido": "stake", "rocket-pool": "stake", "rocketpool": "stake",
+    "ether-fi": "stake", "ether.fi": "stake", "etherfi": "stake",
+    "stader": "stake",
+    "sanctum": "stake", "sanctum-infinity": "stake",
+    "kamino": "supply", "kamino-lend": "supply",
+}
+
+
+def _normalize_protocol_slug(raw: str) -> str:
+    s = raw.lower().strip().replace(" ", "-").replace(".", "-")
+    s = re.sub(r"-+", "-", s)
+    return s
+
+
+def _detect_direct_yield_execute(message: str) -> tuple[str, dict] | None:
+    """Match 'sign deposit_lp on raydium-amm X SOL on solana with 0.5'/'execute supply 100 USDC on aave v3' etc.
+
+    Composes 3 independent regex matches (verb / protocol / amount+asset)
+    so word order doesn't matter, then resolves chain + action via hints.
+    """
+    if not message:
+        return None
+    if not _DIRECT_EXEC_VERB.search(message):
+        return None
+    proto_match = _DIRECT_EXEC_PROTOCOL.search(message)
+    if not proto_match:
+        return None
+    amount_match = _DIRECT_EXEC_AMOUNT_ASSET.search(message)
+    if not amount_match:
+        return None
+
+    protocol = _normalize_protocol_slug(proto_match.group("protocol"))
+    amount = amount_match.group("amount").replace(",", "")
+    asset = amount_match.group("asset").upper()
+
+    chain_match = re.search(
+        r"\b(ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|solana)\b",
+        message, re.IGNORECASE,
+    )
+    chain = chain_match.group(1).lower() if chain_match else _PROTOCOL_CHAIN_HINTS.get(protocol)
+    if not chain:
+        chain = "ethereum"
+
+    action_hint = _PROTOCOL_ACTION_HINTS.get(protocol)
+    if action_hint is None:
+        if re.search(r"\b(stake|staking)\b", message, re.IGNORECASE):
+            action_hint = "stake"
+        elif re.search(r"\b(deposit_lp|provide\s+lp|\blp\b)\b", message, re.IGNORECASE):
+            action_hint = "deposit_lp"
+        else:
+            action_hint = "supply"
+
+    return "build_yield_execution_plan", {
+        "chain": chain,
+        "protocol": protocol,
+        "action": action_hint,
+        "asset_in": asset,
+        "amount_in": amount,
+        "research_thesis": "Direct execution from explicit chat command.",
+    }
+
+
 def _detect_pool_execute_followup(
     message: str, session_id: str | None
 ) -> tuple[str, dict] | None:
@@ -1068,6 +1165,12 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     sentinel_intent = _detect_sentinel_features(message)
     if sentinel_intent is not None:
         return sentinel_intent
+
+    # Direct yield execute: "sign deposit_lp on raydium-amm SPACEX-WSOL on
+    # solana with 0.5 SOL" / "execute supply 100 USDC on aave v3".
+    direct = _detect_direct_yield_execute(message)
+    if direct is not None:
+        return direct
 
     # Strategy composer detectors (multi-step yield) win over single-action detectors.
     for detector in (_detect_bridge_then_aave_supply, _detect_swap_then_aave_supply):
