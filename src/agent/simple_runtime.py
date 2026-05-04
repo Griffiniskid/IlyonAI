@@ -795,6 +795,10 @@ def _detect_pool_execute_followup(
             return "build_allocation_execution_plan", {
                 "allocations": rows,
                 "default_asset": default_asset,
+                "default_amount_total": (
+                    asked_amount or
+                    (str(int(record.last_amount_usd)) if record.last_amount_usd else None)
+                ),
                 "title_hint": f"Allocation execution ({len(rows)} pools)",
             }
 
@@ -1771,7 +1775,9 @@ async def run_ephemeral_turn(
                                       or payload.get("allocations")
                                       or env_data.get("positions")
                                       or payload.get("positions") or [])
-                            total = (env_data.get("usd_amount")
+                            total = (env_data.get("total_usd")
+                                     or env_data.get("usd_amount")
+                                     or payload.get("total_usd")
                                      or payload.get("usd_amount"))
                             if allocs:
                                 _remember_allocation(
