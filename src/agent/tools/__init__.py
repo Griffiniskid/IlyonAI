@@ -12,6 +12,7 @@ from .solana_swap import build_solana_swap
 from .market_overview import get_defi_market_overview
 from .analytics import get_defi_analytics
 from .staking import get_staking_options
+from .search_defi_opportunities import search_defi_opportunities
 from .dex_search import search_dexscreener_pairs
 from .pool_find import find_liquidity_pool
 from .stake_build import build_stake_tx
@@ -19,6 +20,9 @@ from .lp_build import build_deposit_lp_tx
 from .bridge_build import build_bridge_tx
 from .transfer_build import build_transfer_tx
 from .allocate_plan import allocate_plan
+from .build_yield_execution_plan import build_yield_execution_plan
+from .build_yield_strategy_plan import build_yield_strategy_plan
+from .build_allocation_execution_plan import build_allocation_execution_plan
 from .update_preference import update_preference
 from .compose_plan import compose_plan
 from .rebalance_portfolio import rebalance_portfolio
@@ -43,6 +47,15 @@ _TOOL_REGISTRY = {
     "get_staking_options": (
         get_staking_options,
         "List liquid-staking and staking options.",
+    ),
+    "search_defi_opportunities": (
+        search_defi_opportunities,
+        (
+            "Constraint-aware DeFi opportunity search. Use for pool, farm, vault, lending, "
+            "or APY requests where user specifies risk, APY target, chain, search/research, "
+            "or execution readiness. Returns matched candidates, excluded reasons, source trace, "
+            "and blockers when execution is requested but no verified adapter exists."
+        ),
     ),
     "search_dexscreener_pairs": (
         search_dexscreener_pairs,
@@ -108,11 +121,44 @@ _TOOL_REGISTRY = {
             "from agent_preferences. Returns an ExecutionPlanV2Card."
         ),
     ),
+    "build_yield_execution_plan": (
+        build_yield_execution_plan,
+        (
+            "Build a real ExecutionPlanV3 (approve + supply / deposit) for a specific "
+            "yield protocol via the adapter registry. Call when the user wants to "
+            "execute a specific yield action like 'supply 100 USDC to Aave V3'. Args: "
+            "chain, protocol, action ('supply'|'deposit_lp'|'stake'), asset_in, "
+            "amount_in, optional asset_out, slippage_bps, inventory."
+        ),
+    ),
+    "build_yield_strategy_plan": (
+        build_yield_strategy_plan,
+        (
+            "Compose a multi-step yield strategy: prerequisite bridge/swap + approve + "
+            "deposit, all linked into ONE ExecutionPlanV3 the user signs in order. "
+            "Call when the user says 'bridge X to chain Y and supply to Aave', "
+            "'swap WETH to USDC then deposit to Aave V3', or any combined route. Args: "
+            "deposit_chain, deposit_protocol, deposit_action, deposit_asset, "
+            "deposit_amount, optional source_chain, source_asset, source_amount, "
+            "research_thesis."
+        ),
+    ),
+    "build_allocation_execution_plan": (
+        build_allocation_execution_plan,
+        (
+            "Compose ONE ExecutionPlanV3 from a list of allocation rows produced "
+            "by allocate_plan. Call after the user says 'execute the transactions "
+            "through my wallet', 'execute the strategy', or 'sign these allocations'. "
+            "Args: allocations (list of {chain,protocol,action,asset_in,amount_in,symbol}), "
+            "default_asset (e.g. 'USDC'), slippage_bps. Each row produces its own "
+            "deposit step (and prerequisite approve) wired as one signable plan."
+        ),
+    ),
 }
 
 
-def register_all_tools(services, user_id=0, wallet=None):
-    ctx = ToolCtx(services=services, user_id=user_id, wallet=wallet)
+def register_all_tools(services, user_id=0, wallet=None, session_id=None):
+    ctx = ToolCtx(services=services, user_id=user_id, wallet=wallet, session_id=session_id)
     tools = []
     for name, (fn, desc) in _TOOL_REGISTRY.items():
 

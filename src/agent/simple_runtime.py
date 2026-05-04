@@ -5,12 +5,19 @@ import json
 import re
 from typing import AsyncIterator
 
+from src.agent.intent.defi_intent import DefiIntent, parse_defi_intent
 from src.agent.llm import IlyonChatModel
 from src.agent.streaming import StreamCollector, encode_sse, frame_event_name
-from src.api.schemas.agent import ThoughtFrame, ToolFrame, FinalFrame, DoneFrame, CardFrame, PlanBlockedFrame
+from src.api.schemas.agent import ThoughtFrame, ToolFrame, ObservationFrame, FinalFrame, DoneFrame, CardFrame, PlanBlockedFrame
 
 from src.storage.agent_chats import append_message, list_messages
 from src.storage.database import get_database
+from src.defi.strategy.opportunity_memory import (
+    find_opportunity as _recall_pool,
+    recall as _recall_opp_record,
+    remember_allocation as _remember_allocation,
+    remember_opportunities as _remember_opportunities,
+)
 
 
 # Maximum prior messages loaded into context per turn (user+assistant combined).
@@ -233,6 +240,214 @@ def _to_base_units(amount: str, token: str) -> str:
     return str(int(raw or "0") * (10 ** decimals))
 
 
+def _short_json(value: dict | None) -> str:
+    if not value:
+        return "{}"
+    try:
+        return json.dumps(value, sort_keys=True)[:220]
+    except Exception:
+        return str(value)[:220]
+
+
+def _pre_tool_reasoning(tool_name: str, tool_input: dict, message: str) -> list[str]:
+    amount = tool_input.get("usd_amount")
+    risk = tool_input.get("risk_budget", "balanced")
+    chains = tool_input.get("chains") or []
+    if tool_name == "allocate_plan":
+        chain_text = f" across {', '.join(chains)}" if chains else " across supported chains"
+        amount_text = f"${amount:,.0f}" if isinstance(amount, (int, float)) else "the requested capital"
+        return [
+            f"Parsed intent: allocate {amount_text} across staking + yield, {risk} risk-weighted{chain_text}.",
+            "Preparing live opportunity search across DefiLlama and the Sentinel DeFi intelligence engine.",
+            "Applying hard filters before ranking: minimum TVL, sufficient operating history, sane APY, and supported chain coverage.",
+            "Scoring candidates with Sentinel dimensions: Safety x Yield durability x Exit liquidity x Confidence.",
+        ]
+    if tool_name == "simulate_swap":
+        return [
+            f"Parsed swap intent: {_short_json(tool_input)}.",
+            "Resolving token pair, chain, and amount before requesting a route quote.",
+            "Checking quote quality: route source, expected output, price impact, gas, and slippage assumptions.",
+            "Preparing wallet-safe signing guidance; the agent never touches private keys.",
+        ]
+    if tool_name == "build_bridge_tx":
+        return [
+            f"Parsed bridge intent: {_short_json(tool_input)}.",
+            "Resolving source chain, destination chain, token decimals, and bridge route constraints.",
+            "Checking bridge risk surface: fill time, route liquidity, destination correctness, and spender exposure.",
+            "Preparing bridge signing guidance with wallet confirmation gates.",
+        ]
+    if tool_name == "compose_plan":
+        return [
+            "Parsed a multi-step execution request and decomposed it into ordered actions.",
+            "Resolving dependencies between steps so later actions wait for prior receipts or received amounts.",
+            "Checking chain, token, protocol, and spender assumptions before any wallet prompt exists.",
+            "Applying Sentinel and Shield gates before exposing any signing path.",
+            "Composing an execution plan card with per-step status, gas, wallet requirements, and dependency locks.",
+        ]
+    if tool_name == "get_staking_options":
+        return [
+            f"Parsed staking/yield search: {_short_json(tool_input)}.",
+            "Querying yield pools and filtering for TVL depth, APY sanity, chain fit, and token relevance.",
+            "Ranking opportunities by sustainable yield, exit liquidity, and Sentinel risk posture.",
+            "Preparing pool cards so the user can compare yield against risk instead of chasing APY alone.",
+        ]
+    if tool_name == "search_defi_opportunities":
+        return [
+            f"Parsed constraint-aware DeFi search: {_short_json(tool_input)}.",
+            "Separating research, allocation, and execution intent before selecting a tool.",
+            "Applying hard APY, risk, chain, and TVL filters from the user's exact request.",
+            "Checking execution readiness separately so unsupported pools never get fake signing buttons.",
+        ]
+    if tool_name == "build_yield_execution_plan":
+        return [
+            f"Parsed direct yield execution: {_short_json(tool_input)}.",
+            "Confirming adapter coverage and producing real unsigned approve + supply calldata.",
+            "Running wallet preflight (balance / gas / allowance) before exposing any signing button.",
+            "Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt.",
+        ]
+    if tool_name == "build_allocation_execution_plan":
+        rows = tool_input.get("allocations") or []
+        return [
+            f"Composing one ExecutionPlanV3 across {len(rows)} allocation rows.",
+            "Building real approve + deposit calldata per row via the adapter registry.",
+            "Wiring per-chain dependency chains so each step unlocks only after the prior on-chain receipt.",
+            "Skipping rows without verified adapters and surfacing them as warnings instead of fake buttons.",
+        ]
+    if tool_name == "build_yield_strategy_plan":
+        return [
+            f"Composing yield strategy: {_short_json(tool_input)}.",
+            "Wiring prerequisite swap/bridge into the deposit step before any wallet signature.",
+            "Verifying adapter coverage for the destination protocol/action/chain.",
+            "Producing one ExecutionPlanV3 with per-step depends_on so the wallet sees a single signing flow.",
+        ]
+    if tool_name == "find_liquidity_pool":
+        return [
+            f"Parsed liquidity-pool search: {_short_json(tool_input)}.",
+            "Resolving pair defaults and chain scope before searching DEX liquidity.",
+            "Ranking pools by liquidity depth, route availability, and exit practicality.",
+            "Flagging pool-selection caveats such as pair fragmentation and impermanent-loss exposure.",
+        ]
+    if tool_name == "get_wallet_balance":
+        return [
+            "Parsed wallet/portfolio request and resolved the best available wallet address.",
+            "Aggregating supported-chain balances across EVM and Solana providers where available.",
+            "Checking for missing-chain or rate-limit caveats before summarizing holdings.",
+            "Preparing next-action guidance based on tracked assets and empty-wallet cases.",
+        ]
+    if tool_name == "get_token_price":
+        return [
+            f"Parsed token market request: {_short_json(tool_input)}.",
+            "Resolving token identity across live price feeds before trusting the ticker symbol.",
+            "Checking liquidity depth, 24h movement, and source quality so the quote is not a thin-pair artifact.",
+            "Preparing price context with market caveats instead of a naked number.",
+        ]
+    if tool_name == "get_defi_market_overview":
+        return [
+            "Parsed DeFi market overview request.",
+            "Aggregating protocol-level TVL, category, and short-term change data.",
+            "Ranking protocols by liquidity depth, market relevance, and trend signal before summarizing.",
+            "Separating broad market signal from action-ready opportunities so recommendations stay risk-aware.",
+        ]
+    if tool_name == "get_defi_analytics":
+        return [
+            f"Parsed DeFi analytics request: {_short_json(tool_input)}.",
+            "Selecting protocol, pool, or market analytics mode from the query shape.",
+            "Checking TVL, APY, liquidity, volatility, and Sentinel score context before summarizing.",
+            "Preparing an analyst-style answer with caveats, strongest signals, and next action.",
+        ]
+    if tool_name == "search_dexscreener_pairs":
+        return [
+            f"Parsed DEX pair search: {_short_json(tool_input)}.",
+            "Resolving query terms against live DexScreener pairs and chain aliases.",
+            "Ranking candidates by liquidity depth, volume quality, freshness, and route usefulness.",
+            "Preparing pair cards with enough context to avoid clicking shallow or misleading markets.",
+        ]
+    return [
+        f"Parsed request and selected tool `{tool_name}` with inputs {_short_json(tool_input)}.",
+        "Checking available data sources and risk context before answering.",
+        "Preparing a concise result with next-step guidance.",
+    ]
+
+
+def _post_tool_reasoning(tool_name: str, env) -> list[str]:
+    data = getattr(env, "data", None) or {}
+    trace = [str(line) for line in data.get("analysis_trace", []) if line]
+    if trace:
+        return trace
+    if tool_name == "simulate_swap":
+        impact = data.get("price_impact_pct")
+        return [
+            f"Validated quote output and price impact{f' ({impact}%)' if impact not in (None, '') else ''} before presenting the swap card."
+        ]
+    if tool_name == "build_bridge_tx":
+        return [
+            "Validated bridge route payload and exposed route timing plus wallet-signing requirements.",
+            "Checked source/destination chain assumptions and spender exposure before presenting the bridge card.",
+        ]
+    if tool_name == "get_staking_options":
+        count = len(data.get("staking_options", []) or [])
+        return [
+            f"Selected {count} staking opportunities after liquidity and APY sanity filters.",
+            "Prioritized sustainable yield and exit depth over headline APY.",
+        ]
+    if tool_name == "search_defi_opportunities":
+        candidates = data.get("primary_candidates") or []
+        excluded = data.get("excluded_summary") or []
+        ready = (data.get("execution_readiness_summary") or {}).get("executable_count", 0)
+        return [
+            f"Selected {len(candidates)} candidates that match the requested APY/risk band; excluded {len(excluded)} mismatches.",
+            f"Separated execution-ready opportunities from research-only results; executable count is {ready}.",
+        ]
+    if tool_name == "find_liquidity_pool":
+        count = len(data.get("pools", []) or [])
+        return [
+            f"Selected {count} liquidity pools ranked by depth and route usefulness.",
+            "Flagged liquidity selection caveats before exposing pool-level details.",
+        ]
+    if tool_name == "get_token_price":
+        source = data.get("dex") or data.get("source") or "aggregated feed"
+        liquidity = data.get("liquidity") or data.get("liquidity_usd")
+        liquidity_text = f" (${float(liquidity):,.0f})" if isinstance(liquidity, (int, float)) else ""
+        return [
+            f"Validated live token price against {source}.",
+            f"Checked liquidity context{liquidity_text} before summarizing the market read.",
+        ]
+    if tool_name == "get_wallet_balance":
+        tokens = data.get("tokens") or data.get("balances") or []
+        positions = data.get("positions") or []
+        return [
+            f"Normalized wallet holdings across available providers: {len(tokens) if isinstance(tokens, list) else 'multi-chain'} token rows and {len(positions) if isinstance(positions, list) else 0} DeFi positions.",
+            "Checked missing-chain and empty-wallet caveats before giving portfolio next steps.",
+        ]
+    if tool_name == "get_defi_market_overview":
+        protocols = data.get("protocols") or data.get("items") or []
+        return [
+            f"Condensed market overview from {len(protocols) if isinstance(protocols, list) else 'live'} protocol records.",
+            "Separated broad market context from deployable recommendations so the answer stays decision-safe.",
+        ]
+    if tool_name == "get_defi_analytics":
+        return [
+            "Validated analytics result against Sentinel risk framing before writing the answer.",
+            "Highlighted strongest signals, weakest assumptions, and useful follow-up actions.",
+        ]
+    if tool_name == "search_dexscreener_pairs":
+        pairs = data.get("pairs") or data.get("results") or []
+        return [
+            f"Ranked {len(pairs) if isinstance(pairs, list) else 'live'} DEX pairs by liquidity, volume, and freshness.",
+            "Prepared comparison-ready pair context instead of a raw search dump.",
+        ]
+    return ["Validated tool result and converted it into a risk-aware answer with user-facing next steps."]
+
+
+def _emit_thoughts(collector: StreamCollector, lines: list[str]) -> None:
+    for line in lines:
+        text = str(line).strip()
+        if not text:
+            continue
+        collector._step += 1
+        collector._queue.append(ThoughtFrame(step_index=collector._step, content=text))
+
+
 def _detect_bridge_then_stake(message: str) -> tuple[str, dict] | None:
     pattern = re.compile(
         r"bridge\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})\s+"
@@ -418,17 +633,329 @@ def detect_followup_intent(message: str) -> str | None:
     return None
 
 
+_AAVE_SUPPLY_RE = re.compile(
+    r"(?:supply|deposit|lend)\s+"
+    r"(?P<amount>[\d,]+(?:\.\d+)?)\s*"
+    r"(?P<asset>[A-Za-z]{2,10})"
+    r"(?:.*?(?:to|on|via|into)\s+aave(?:\s*v3)?)?"
+    r"(?:.*?on\s+(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche))?",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+_AAVE_HINT = re.compile(r"\baave\b", re.IGNORECASE)
+
+
+_BRIDGE_THEN_SUPPLY_RE = re.compile(
+    r"bridge\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<asset>[A-Za-z]{2,10})"
+    r"(?:\s+from\s+(?P<src>ethereum|polygon|arbitrum|optimism|base|avalanche|bsc))?"
+    r"\s+to\s+(?P<dst>ethereum|polygon|arbitrum|optimism|base|avalanche|bsc)"
+    r".*?(?:then|and).*?(?:supply|deposit|lend).*?aave",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_SWAP_THEN_SUPPLY_RE = re.compile(
+    r"swap\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<src_asset>[A-Za-z]{2,10})\s+(?:to|for|into)\s+(?P<dst_asset>[A-Za-z]{2,10})"
+    r"(?:\s+on\s+(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche|bsc))?"
+    r".*?(?:then|and).*?(?:supply|deposit|lend).*?aave",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _detect_bridge_then_aave_supply(message: str) -> tuple[str, dict] | None:
+    match = _BRIDGE_THEN_SUPPLY_RE.search(message)
+    if not match:
+        return None
+    return "build_yield_strategy_plan", {
+        "deposit_chain": (match.group("dst") or "base").lower(),
+        "deposit_protocol": "aave-v3",
+        "deposit_action": "supply",
+        "deposit_asset": match.group("asset").upper(),
+        "deposit_amount": match.group("amount").replace(",", ""),
+        "source_chain": (match.group("src") or "ethereum").lower(),
+        "source_asset": match.group("asset").upper(),
+        "source_amount": match.group("amount").replace(",", ""),
+    }
+
+
+def _detect_swap_then_aave_supply(message: str) -> tuple[str, dict] | None:
+    match = _SWAP_THEN_SUPPLY_RE.search(message)
+    if not match:
+        return None
+    chain = (match.group("chain") or "ethereum").lower()
+    return "build_yield_strategy_plan", {
+        "deposit_chain": chain,
+        "deposit_protocol": "aave-v3",
+        "deposit_action": "supply",
+        "deposit_asset": match.group("dst_asset").upper(),
+        "deposit_amount": match.group("amount").replace(",", ""),
+        "source_chain": chain,
+        "source_asset": match.group("src_asset").upper(),
+        "source_amount": match.group("amount").replace(",", ""),
+    }
+
+
+def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
+    """Match prompts like 'supply 100 USDC to Aave V3 on Ethereum' / 'execute Aave USDC supply 100'."""
+    if not _AAVE_HINT.search(message):
+        return None
+    match = _AAVE_SUPPLY_RE.search(message)
+    if not match:
+        # Fallback: 'execute aave (v3) usdc supply 100 on base'
+        alt = re.search(
+            r"aave(?:\s*v3)?[^\d\n]*?(?P<asset>[A-Za-z]{2,10})\s+(?:supply|deposit|lend)\s+(?P<amount>[\d,]+(?:\.\d+)?)(?:\s+on\s+(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche))?",
+            message,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if not alt:
+            return None
+        match = alt
+    asset = match.group("asset").upper()
+    if asset.lower() in {"on", "to", "of"}:
+        return None
+    amount = match.group("amount").replace(",", "")
+    chain_match = match.groupdict().get("chain")
+    chain = (chain_match or "ethereum").lower()
+    return "build_yield_execution_plan", {
+        "chain": chain,
+        "protocol": "aave-v3",
+        "action": "supply",
+        "asset_in": asset,
+        "amount_in": amount,
+    }
+
+
+_POOL_EXECUTE_TRIGGER = re.compile(
+    r"\b(execute|sign|run|deploy|fire|do)\b.*\b("
+    r"this\s+pool|the\s+pool|that\s+pool|pool\s+#?\d+|"
+    r"these\s+pools|the\s+pools|the\s+strategy|the\s+plan|the\s+allocation|"
+    r"transactions?\s+through\s+(my|the)\s+wallet|through\s+(my|the)\s+wallet|"
+    r"the\s+transactions?|all\s+(of\s+)?them|all\s+(the\s+)?pools)\b",
+    re.IGNORECASE,
+)
+_POOL_EXECUTE_HINT = re.compile(
+    r"\b(execute|sign|run|deploy|deposit\s+into|stake\s+to|enter|provide\s+lp)\b",
+    re.IGNORECASE,
+)
+_POOL_REF_INDEX = re.compile(r"#\s*(\d{1,2})|pool\s*(\d{1,2})\b|number\s*(\d{1,2})\b", re.IGNORECASE)
+_POOL_REF_PROTOCOL_PAIR = re.compile(
+    r"([A-Za-z][A-Za-z0-9_-]{2,40})\s+([A-Z][A-Z0-9]{1,9}[\s/-][A-Z0-9]{1,12})",
+)
+_POOL_AMOUNT_RE = re.compile(
+    r"(?:with\s+)?\$?\s*([\d,]+(?:\.\d+)?)\s*(usdc|usdt|dai|usds|usd|sol|eth|bnb|matic|avax|wbtc|btc)?",
+    re.IGNORECASE,
+)
+_ALLOC_TRIGGER = re.compile(
+    r"\b(execute|sign|run|deploy)\b.*\b("
+    r"the\s+(strategy|allocation|plan|transactions?|deposits?|distribution)|"
+    r"transactions?\s+through\s+(my|the)\s+wallet|"
+    r"all\s+(of\s+)?them|all\s+(the\s+)?pools)\b",
+    re.IGNORECASE,
+)
+
+
+def _action_for_product_type(product_type: str | None) -> str:
+    pt = (product_type or "").lower()
+    if pt in {"pool", "lp", "amm", "clmm"}:
+        return "deposit_lp"
+    if pt in {"staking", "stake", "lst"}:
+        return "stake"
+    return "supply"
+
+
+def _detect_pool_execute_followup(
+    message: str, session_id: str | None
+) -> tuple[str, dict] | None:
+    """Resolve "execute this pool X" / "execute the strategy" against session memory."""
+    if not session_id:
+        return None
+    if not message:
+        return None
+    msg = message.strip()
+    if not _POOL_EXECUTE_HINT.search(msg):
+        return None
+
+    record = _recall_opp_record(str(session_id))
+    if record is None:
+        return None
+
+    asset_match = _POOL_AMOUNT_RE.search(msg)
+    asked_amount = asset_match.group(1).replace(",", "") if asset_match else None
+    asked_asset = (asset_match.group(2) or "").upper() if asset_match else None
+
+    # ── Multi-pool / allocation trigger ──────────────────────────────────────
+    if _ALLOC_TRIGGER.search(msg):
+        rows = list(record.allocations or [])
+        if not rows and record.items:
+            # Fall back to top-N items if the user never ran allocate_plan but
+            # has a fresh pool list.
+            rows = record.items[:5]
+        if rows:
+            default_asset = (asked_asset or record.last_asset_hint or "USDC").upper()
+            return "build_allocation_execution_plan", {
+                "allocations": rows,
+                "default_asset": default_asset,
+                "title_hint": f"Allocation execution ({len(rows)} pools)",
+            }
+
+    # ── Single-pool trigger ──────────────────────────────────────────────────
+    if not _POOL_EXECUTE_TRIGGER.search(msg):
+        # Treat "execute pool raydium-amm SPACEX-WSOL" as a pool trigger even
+        # without the literal phrase "this pool".
+        if "execute" not in msg.lower() and "sign" not in msg.lower():
+            return None
+
+    index_match = _POOL_REF_INDEX.search(msg)
+    index_hint: int | None = None
+    if index_match:
+        for grp in index_match.groups():
+            if grp:
+                try:
+                    index_hint = int(grp)
+                except ValueError:
+                    pass
+                break
+
+    protocol_hint: str | None = None
+    symbol_hint: str | None = None
+    pair_match = _POOL_REF_PROTOCOL_PAIR.search(msg)
+    if pair_match:
+        protocol_hint = pair_match.group(1)
+        symbol_hint = pair_match.group(2).replace(" ", "-")
+    else:
+        # Look for a known protocol name token.
+        for token in re.findall(r"[A-Za-z][A-Za-z0-9-]{3,}", msg):
+            tl = token.lower()
+            if tl in {
+                "aave", "compound", "lido", "ethena", "morpho", "spark", "yearn",
+                "convex", "curve", "pendle", "stargate", "frax", "rocketpool",
+                "etherfi", "stader", "raydium", "orca", "kamino", "marinade",
+                "jito", "sanctum", "meteora", "aerodrome", "uniswap", "velodrome",
+                "supernova", "steer", "moonwell", "drift", "lulo",
+            }:
+                protocol_hint = tl
+                break
+
+    chain_hint: str | None = None
+    chain_match = re.search(
+        r"\b(ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|solana|sol)\b",
+        msg, re.IGNORECASE,
+    )
+    if chain_match:
+        chain_hint = chain_match.group(1).lower()
+
+    opp = _recall_pool(
+        str(session_id),
+        protocol_hint=protocol_hint,
+        symbol_hint=symbol_hint,
+        chain_hint=chain_hint,
+        index_hint=index_hint,
+    )
+    if opp is None:
+        return None
+
+    asset_in = (asked_asset or _infer_asset_from_symbol(opp.get("symbol"), opp.get("chain")) or "USDC").upper()
+    amount = asked_amount or _amount_from_record(record) or "100"
+    action = _action_for_product_type(opp.get("product_type"))
+
+    return "build_yield_execution_plan", {
+        "chain": opp.get("chain"),
+        "protocol": opp.get("protocol"),
+        "action": action,
+        "asset_in": asset_in,
+        "amount_in": amount,
+        "research_thesis": (
+            f"Replaying selected pool ({opp.get('protocol')} {opp.get('symbol')} "
+            f"on {opp.get('chain')}) from prior search."
+        ),
+    }
+
+
+def _infer_asset_from_symbol(symbol: str | None, chain: str | None) -> str | None:
+    if not symbol:
+        return None
+    sym = symbol.upper()
+    for stable in ("USDC", "USDT", "DAI", "USDS", "USDE"):
+        if stable in sym:
+            return stable
+    if (chain or "").lower() in {"solana", "sol"} and ("WSOL" in sym or "SOL" in sym):
+        return "SOL"
+    for major in ("WETH", "ETH", "WBTC", "BTC", "MATIC", "AVAX", "BNB"):
+        if major in sym:
+            return "ETH" if major == "WETH" else major
+    return None
+
+
+def _amount_from_record(record) -> str | None:
+    if record is None:
+        return None
+    if record.last_amount_usd:
+        return str(int(record.last_amount_usd))
+    return None
+
+
+def _defi_intent_to_tool(intent: DefiIntent) -> tuple[str, dict] | None:
+    if intent.intent == "allocate_strategy":
+        params: dict = {
+            "usd_amount": intent.amount_usd or 10_000.0,
+            "risk_budget": intent.risk_budget,
+        }
+        if intent.chains:
+            params["chains"] = intent.chains
+        if intent.asset_hint:
+            params["asset_hint"] = intent.asset_hint
+        if intent.target_apy is not None:
+            params["target_apy"] = intent.target_apy
+        if intent.min_apy is not None:
+            params["min_apy"] = intent.min_apy
+        if intent.max_apy is not None:
+            params["max_apy"] = intent.max_apy
+        if intent.risk_levels:
+            params["risk_levels"] = intent.risk_levels
+        return "allocate_plan", params
+
+    if intent.intent not in {"search_defi_opportunities", "execute_yield_strategy"}:
+        return None
+
+    params: dict = {
+        "risk_levels": intent.risk_levels,
+        "product_types": intent.product_types,
+        "chains": intent.chains,
+        "ranking_objective": intent.ranking_objective,
+        "execution_requested": intent.execution_requested,
+        "limit": 8,
+    }
+    if intent.target_apy is not None:
+        params["target_apy"] = intent.target_apy
+    if intent.min_apy is not None:
+        params["min_apy"] = intent.min_apy
+    if intent.max_apy is not None:
+        params["max_apy"] = intent.max_apy
+    if intent.asset_hint:
+        params["asset_hint"] = intent.asset_hint
+    return "search_defi_opportunities", params
+
+
 def detect_intent(message: str) -> tuple[str, dict] | None:
     """Detect intent and extract parameters from user message."""
     message_lower = message.lower()
 
-    multi_step = _detect_bridge_then_stake(message)
-    if multi_step is not None:
-        return multi_step
-    for detector in (_detect_swap_then_lp, _detect_stake_amount_plan, _detect_malicious_swap_plan, _detect_transfer_plan):
+    # Strategy composer detectors (multi-step yield) win over single-action detectors.
+    for detector in (_detect_bridge_then_aave_supply, _detect_swap_then_aave_supply):
         detected = detector(message)
         if detected is not None:
             return detected
+    multi_step = _detect_bridge_then_stake(message)
+    if multi_step is not None:
+        return multi_step
+    for detector in (_detect_aave_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_malicious_swap_plan, _detect_transfer_plan):
+        detected = detector(message)
+        if detected is not None:
+            return detected
+
+    defi_tool = _defi_intent_to_tool(parse_defi_intent(message))
+    if defi_tool is not None:
+        return defi_tool
 
     for tool_name, patterns in INTENT_PATTERNS.items():
         for pattern in patterns:
@@ -791,6 +1318,104 @@ def _format_sentinel_methodology_response() -> str:
     )
 
 
+def _format_execution_plan_v3_response(data: dict) -> str:
+    plan = data.get("plan") or data
+    steps = plan.get("steps") or []
+    blockers = plan.get("blockers") or []
+    title = plan.get("title") or "Yield Execution Plan"
+    summary = plan.get("summary") or ""
+    status = plan.get("status") or "draft"
+    lines = [f"**{title}** — {summary}"]
+    lines.append(f"Status: `{status}` · {plan.get('totals', {}).get('signatures_required', 0)} signature(s) required.")
+    if steps:
+        lines.append("")
+        lines.append("**Steps**")
+        for step in steps:
+            ready_marker = "▶ " if step.get("status") == "ready" else "· "
+            asset = step.get("asset_in") or ""
+            amount = step.get("amount_in") or ""
+            head = f"{ready_marker}Step {step.get('index')} — {step.get('action')}"
+            if amount and asset:
+                head += f" {amount} {asset}"
+            head += f" on {step.get('chain')} via {step.get('protocol')} ({step.get('status')})"
+            lines.append(head)
+    if blockers:
+        lines.append("")
+        lines.append("**Blockers**")
+        for blocker in blockers:
+            lines.append(f"- {blocker.get('title')}: {blocker.get('detail')}")
+        lines.append("")
+        lines.append("No signing button is shown until every blocker clears.")
+    elif status == "ready":
+        lines.append("")
+        lines.append("Open the Execution Plan card above and sign step 1 in your wallet to begin.")
+    return "\n".join(lines).strip()
+
+
+def _format_opportunity_search_response(data: dict) -> str:
+    candidates = data.get("primary_candidates") or []
+    blockers = data.get("execution_blockers") or []
+    if not candidates:
+        return (
+            "I couldn't find credible DeFi opportunities matching those exact APY, risk, chain, and TVL constraints. "
+            "I did not fall back to unrelated low-risk pools; loosen the APY band or risk filter if you want broader research."
+        )
+
+    lines = ["**Constraint-Matched DeFi Opportunities**", ""]
+    for index, candidate in enumerate(candidates[:5], 1):
+        apy = candidate.get("apy") or 0
+        tvl = candidate.get("tvl_usd") or 0
+        try:
+            apy_text = f"{float(apy):.1f}%"
+        except (TypeError, ValueError):
+            apy_text = str(apy)
+        try:
+            tvl_text = f"${float(tvl):,.0f}"
+        except (TypeError, ValueError):
+            tvl_text = str(tvl)
+        lines.append(
+            f"{index}. **{_pretty_project(str(candidate.get('protocol') or 'Unknown'))}** — "
+            f"{candidate.get('symbol') or 'Unknown'} on {candidate.get('chain') or 'unknown'}  "
+        )
+        lines.append(f"   APY {apy_text} · TVL {tvl_text} · Risk {candidate.get('risk_level') or 'UNKNOWN'}")
+        urls = candidate.get("source_urls") or {}
+        link_parts: list[str] = []
+        if urls.get("defillama_pool"):
+            link_parts.append(f"[DefiLlama pool]({urls['defillama_pool']})")
+        if urls.get("defillama_protocol"):
+            link_parts.append(f"[Protocol on DefiLlama]({urls['defillama_protocol']})")
+        if urls.get("protocol_site"):
+            link_parts.append(f"[Protocol site]({urls['protocol_site']})")
+        if link_parts:
+            lines.append(f"   Links: {' · '.join(link_parts)}")
+        reason = candidate.get("unsupported_reason")
+        if candidate.get("executable"):
+            adapter = candidate.get("adapter_id") or "executable adapter"
+            lines.append(f"   Execution: ready via {adapter}")
+        elif reason:
+            lines.append(f"   Execution: routed via closest-executable alternative — {reason}")
+        lines.append("")
+
+    excluded = data.get("excluded_summary") or []
+    if excluded:
+        lines.append(
+            f"Excluded {len(excluded)} candidates that violated the requested risk, APY, chain, or TVL constraints."
+        )
+        lines.append("")
+
+    if blockers:
+        lines.append("**Execution Blocked**")
+        for blocker in blockers:
+            lines.append(f"- {blocker.get('title')}: {blocker.get('detail')}")
+        lines.append("")
+        lines.append("No signing button shown because no verified adapter can build unsigned transactions for this path yet.")
+    elif data.get("execution_requested"):
+        ready = (data.get("execution_readiness_summary") or {}).get("executable_count", 0)
+        lines.append(f"Execution readiness: {ready} candidate(s) have adapter support.")
+
+    return "\n".join(lines).strip()
+
+
 def _format_tool_result(tool_name: str, result) -> str:
     """Format any tool result into natural language."""
     # Handle ToolEnvelope objects
@@ -810,6 +1435,10 @@ def _format_tool_result(tool_name: str, result) -> str:
     
     if card_type == "allocation" or tool_name == "allocate_plan":
         return _format_allocate_response(data)
+    if tool_name == "search_defi_opportunities":
+        return _format_opportunity_search_response(data)
+    if tool_name in {"build_yield_execution_plan", "build_yield_strategy_plan", "build_allocation_execution_plan"} or card_type == "execution_plan_v3":
+        return _format_execution_plan_v3_response(data)
     if card_type == "token" or tool_name == "get_token_price":
         return _format_price_response(data)
     elif card_type == "stake" or tool_name == "get_staking_options":
@@ -896,6 +1525,48 @@ def _maybe_replay_followup(*, message: str, history: list[dict]) -> str | None:
     )
 
 
+_STRATEGY_FOLLOWUP_RE = re.compile(
+    r"\b(execute it|execute the plan|run it|sign it|do it|reinvest|compound( this| it)?|rebalance( it| this)?|proceed with execution)\b",
+    re.IGNORECASE,
+)
+
+
+def _resolve_strategy_followup(message: str, session_id: str | None) -> tuple[str, dict] | None:
+    if not session_id:
+        return None
+    if not _STRATEGY_FOLLOWUP_RE.search(message or ""):
+        return None
+    from src.defi.strategy.memory import recall_strategy
+    record = recall_strategy(str(session_id))
+    if record is None:
+        return None
+    constraints = dict(record.constraints or {})
+    if "deposit_chain" in constraints:
+        params = {
+            "deposit_chain": constraints.get("deposit_chain"),
+            "deposit_protocol": constraints.get("deposit_protocol"),
+            "deposit_action": constraints.get("deposit_action"),
+            "deposit_asset": constraints.get("deposit_asset"),
+            "deposit_amount": constraints.get("deposit_amount"),
+            "research_thesis": f"Replaying prior strategy ({record.intent_summary}).",
+        }
+        for key in ("source_chain", "source_asset", "source_amount", "slippage_bps"):
+            value = constraints.get(key)
+            if value is not None:
+                params[key] = value
+        return "build_yield_strategy_plan", params
+    if "chain" in constraints and "protocol" in constraints:
+        return "build_yield_execution_plan", {
+            "chain": constraints["chain"],
+            "protocol": constraints["protocol"],
+            "action": constraints["action"],
+            "asset_in": constraints["asset_in"],
+            "amount_in": constraints["amount_in"],
+            "research_thesis": f"Replaying prior strategy ({record.intent_summary}).",
+        }
+    return None
+
+
 async def run_ephemeral_turn(
     *,
     router,
@@ -903,6 +1574,7 @@ async def run_ephemeral_turn(
     message: str,
     wallet: str | None = None,
     history: list[dict] | None = None,
+    session_id: str | None = None,
 ) -> AsyncIterator[bytes]:
     """Execute one agent turn without DB persistence and yield SSE-encoded frames.
 
@@ -935,8 +1607,15 @@ async def run_ephemeral_turn(
                 yield encode_sse(frame_event_name(frame), frame.model_dump())
             return
 
-    # Detect intent
-    intent = detect_intent(message)
+    # Pool-execution follow-up: "execute this pool X" / "execute the strategy"
+    # against opportunities/allocations stored from the prior turn — runs FIRST
+    # so a prior search/allocation never falls through to a generic re-search.
+    intent = _detect_pool_execute_followup(message, session_id)
+    # Strategy follow-up: replay last yield plan if user typed "execute it / reinvest / rebalance".
+    if intent is None:
+        intent = _resolve_strategy_followup(message, session_id)
+    if intent is None:
+        intent = detect_intent(message)
 
     try:
         final_content = ""
@@ -946,16 +1625,14 @@ async def run_ephemeral_turn(
             tool_name, tool_input = intent
 
             if tool_name == "explain_sentinel_methodology":
-                collector._step += 1
-                collector._queue.append(ThoughtFrame(
-                    step_index=collector._step,
-                    content="Grounding the response in the live Sentinel scoring model..."
-                ))
-                collector._step += 1
-                collector._queue.append(ThoughtFrame(
-                    step_index=collector._step,
-                    content="Summarizing Safety, Yield Durability, Exit Liquidity, Confidence, and weighting rules..."
-                ))
+                _emit_thoughts(collector, [
+                    "Parsed Sentinel methodology request and selected explanation mode.",
+                    "Grounding the response in the live Sentinel scoring model rather than a generic APY ranking.",
+                    "Mapping the four core dimensions: Safety, Yield Durability, Exit Liquidity, and Confidence.",
+                    "Adding how risk level, strategy fit, Shield flags, and score caps affect deployability.",
+                ])
+                for frame in collector.drain():
+                    yield encode_sse(frame_event_name(frame), frame.model_dump())
                 final_content = _format_sentinel_methodology_response()
                 elapsed = int((__import__('time').monotonic() - started) * 1000)
                 collector.emit_final(final_content, [])
@@ -966,12 +1643,13 @@ async def run_ephemeral_turn(
             if tool_name == "compose_plan":
                 from src.agent.planner import build_plan
 
-                collector._step += 1
-                collector._queue.append(ThoughtFrame(
-                    step_index=collector._step,
-                    content="Decomposing the request into a safe, ordered execution plan..."
-                ))
+                _emit_thoughts(collector, _pre_tool_reasoning(tool_name, tool_input, message))
+                for frame in collector.drain():
+                    yield encode_sse(frame_event_name(frame), frame.model_dump())
                 plan = build_plan(tool_input)
+                _emit_thoughts(collector, [
+                    f"Built {plan.total_steps}-step execution graph with receipt gates, wallet requirements, and Sentinel risk state.",
+                ])
                 collector._queue.append(CardFrame(
                     step_index=collector._step,
                     card_id=plan.plan_id,
@@ -987,28 +1665,39 @@ async def run_ephemeral_turn(
                     yield encode_sse(frame_event_name(frame), frame.model_dump())
                 return
             
-            # Emit thought about tool usage
-            collector._step += 1
-            collector._queue.append(ThoughtFrame(
-                step_index=collector._step,
-                content=f'Fetching {tool_name.replace("_", " ")}...'
-            ))
+            _emit_thoughts(collector, _pre_tool_reasoning(tool_name, tool_input, message))
+            for frame in collector.drain():
+                yield encode_sse(frame_event_name(frame), frame.model_dump())
             
             # Find and execute tool
             tool_result = None
             for tool in tools:
                 if tool.name == tool_name:
+                    collector._queue.append(ToolFrame(
+                        step_index=collector._step,
+                        name=tool_name,
+                        args=tool_input,
+                    ))
+                    for frame in collector.drain():
+                        yield encode_sse(frame_event_name(frame), frame.model_dump())
                     try:
                         tool_result = await tool.ainvoke(tool_input)
-                        
-                        # Emit tool frame
-                        collector._queue.append(ToolFrame(
+                        collector._queue.append(ObservationFrame(
                             step_index=collector._step,
                             name=tool_name,
-                            args=tool_input
+                            ok=True,
+                            error=None,
                         ))
                     except Exception as e:
+                        collector._queue.append(ObservationFrame(
+                            step_index=collector._step,
+                            name=tool_name,
+                            ok=False,
+                            error={"code": type(e).__name__, "message": str(e)},
+                        ))
                         tool_result = {"ok": False, "error": {"message": str(e)}}
+                    for frame in collector.drain():
+                        yield encode_sse(frame_event_name(frame), frame.model_dump())
                     break
             
             # Format tool result directly (no LLM call for formatting)
@@ -1041,12 +1730,7 @@ async def run_ephemeral_turn(
                         yield encode_sse(frame_event_name(frame), frame.model_dump())
                     return
                 if env is not None and env.ok:
-                    for trace in (env.data.get("analysis_trace", []) if env.data else []):
-                        collector._step += 1
-                        collector._queue.append(ThoughtFrame(
-                            step_index=collector._step,
-                            content=str(trace),
-                        ))
+                    _emit_thoughts(collector, _post_tool_reasoning(tool_name, env))
                     # Push primary card
                     if env.card_type and env.card_payload is not None:
                         collector._queue.append(CardFrame(
@@ -1065,6 +1749,41 @@ async def run_ephemeral_turn(
                             payload=extra.payload,
                         ))
                         card_ids_for_final.append(extra.card_id)
+                    # Persist opportunity / allocation list so a follow-up like
+                    # "execute this pool X" can resolve chain/protocol/asset/amount
+                    # without re-running the search.
+                    try:
+                        sid = str(session_id) if session_id else None
+                        env_data = getattr(env, "data", None) or {}
+                        payload = env.card_payload if isinstance(env.card_payload, dict) else {}
+                        if sid and tool_name == "search_defi_opportunities":
+                            items = (env_data.get("primary_candidates")
+                                     or payload.get("items") or [])
+                            if items:
+                                _remember_opportunities(sid, items)
+                        if sid and tool_name == "allocate_plan":
+                            allocs = (env_data.get("allocations")
+                                      or payload.get("allocations")
+                                      or env_data.get("positions")
+                                      or payload.get("positions") or [])
+                            total = (env_data.get("usd_amount")
+                                     or payload.get("usd_amount"))
+                            if allocs:
+                                _remember_allocation(
+                                    sid,
+                                    allocs,
+                                    total_usd=float(total) if total else None,
+                                    asset_hint=(env_data.get("asset_hint")
+                                                or payload.get("asset_hint")),
+                                )
+                            # Allocation cards usually carry the underlying pools
+                            # too — also remember them as a candidate list.
+                            pool_items = (env_data.get("primary_candidates")
+                                          or payload.get("items") or allocs or [])
+                            if pool_items:
+                                _remember_opportunities(sid, pool_items)
+                    except Exception:
+                        pass
                     final_content = _format_tool_result(tool_name, env)
                 elif isinstance(tool_result, dict):
                     final_content = _format_tool_result(tool_name, tool_result)
@@ -1075,6 +1794,13 @@ async def run_ephemeral_turn(
         else:
             # No intent detected, use LLM for general conversation.
             # When prior history exists, include it so multi-turn context is preserved.
+            _emit_thoughts(collector, [
+                "No deterministic DeFi tool matched the request; switching to contextual reasoning mode.",
+                "Reviewing recent chat context and user intent before answering.",
+                "Applying Sentinel-style risk framing where the answer touches crypto assets or protocols.",
+            ])
+            for frame in collector.drain():
+                yield encode_sse(frame_event_name(frame), frame.model_dump())
             base_system = (
                 "You are Ilyon Sentinel's crypto agent. You help users with DeFi, "
                 "token prices, swaps, and yield opportunities.\n\n"
@@ -1185,6 +1911,7 @@ async def run_simple_turn(
         message=message,
         wallet=wallet,
         history=history,
+        session_id=session_id,
     ):
         yield chunk
         if db is not None:
@@ -1219,6 +1946,8 @@ def _clean_response(content: str) -> str:
     
     # Remove meta-commentary patterns
     meta_patterns = [
+        r'^(We|I)\s+need\s+to\s+answer\b.*?(?=\n\n|With\s+\*\*|Here\s+is|Here\s+are|The\s+answer\s+is|You\s+would|Estimated|Based\s+on|$)',
+        r'^(Need\s+to\s+(?:calculate|compute|answer)|Let\'s\s+compute|Let\'s\s+calculate)\b.*?(?=\n\n|With\s+\*\*|Here\s+is|Here\s+are|The\s+answer\s+is|You\s+would|Estimated|Based\s+on|$)',
         r'^(Okay|OK|Alright|Sure|Well|So|Now|Let me|I\'ll|I will|I should|I need to|I think|I believe|I suppose|I guess)\b[^.]*\.\s*',
         r'^(The user is|User is|They are|This user)\b[^.]*\.\s*',
         r'^(Here is|Here are|Below is|Below are)\b[^.]*\.\s*',
