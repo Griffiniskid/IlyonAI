@@ -1570,11 +1570,8 @@ def _format_tool_result(tool_name: str, result) -> str:
         return _format_execution_plan_v3_response(data)
     if tool_name in {"analyze_token_full_sentinel", "track_whales", "get_smart_money_hub", "get_shield_check"}:
         # These tools emit a markdown text payload; surface it directly.
-        try:
-            payload_obj = getattr(env, "card_payload", None) if hasattr(env, "card_payload") else None
-        except Exception:
-            payload_obj = None
-        if isinstance(payload_obj, dict) and payload_obj.get("text"):
+        payload_obj = getattr(result, "card_payload", None) if hasattr(result, "card_payload") else None
+        if isinstance(payload_obj, dict) and isinstance(payload_obj.get("text"), str):
             return payload_obj["text"]
         if isinstance(data, dict):
             for key in ("text", "summary", "content"):
