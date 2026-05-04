@@ -978,14 +978,8 @@ def _detect_sentinel_features(message: str) -> tuple[str, dict] | None:
     chain = chain_match.group(1).lower() if chain_match else None
 
     addr = _extract_token_address(message)
-    # Token analyzer: any analyze/scan/sentinel-report verb + a token address.
-    if addr and _ANALYZE_TOKEN_RE.search(message):
-        return "analyze_token_full_sentinel", {"address": addr, "chain": chain, "mode": "standard"}
-    # Bare token address ("scan this token <addr>", "<addr> safety") → still analyze.
-    if addr and re.search(r"\b(scan|check|safe|safety|rug|honeypot|inspect|tell\s+me\s+about)\b", message, re.IGNORECASE):
-        return "analyze_token_full_sentinel", {"address": addr, "chain": chain, "mode": "standard"}
 
-    # Shield wallet/contract scan.
+    # Shield wallet/contract scan FIRST — the "shield" keyword is unambiguous.
     if _SHIELD_RE.search(message):
         target = addr
         if not target:
@@ -994,6 +988,13 @@ def _detect_sentinel_features(message: str) -> tuple[str, dict] | None:
                 target = wallet_match.group(1)
         if target:
             return "get_shield_check", {"address": target, "chain": chain}
+
+    # Token analyzer: any analyze/scan/sentinel-report verb + a token address.
+    if addr and _ANALYZE_TOKEN_RE.search(message):
+        return "analyze_token_full_sentinel", {"address": addr, "chain": chain, "mode": "standard"}
+    # Bare token address ("scan this token <addr>", "<addr> safety") → still analyze.
+    if addr and re.search(r"\b(scan|check|safe|safety|rug|honeypot|inspect|tell\s+me\s+about)\b", message, re.IGNORECASE):
+        return "analyze_token_full_sentinel", {"address": addr, "chain": chain, "mode": "standard"}
 
     # Smart-money hub.
     if _HUB_RE.search(message):
