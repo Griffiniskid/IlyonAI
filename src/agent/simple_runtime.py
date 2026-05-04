@@ -767,8 +767,6 @@ def _detect_pool_execute_followup(
     message: str, session_id: str | None
 ) -> tuple[str, dict] | None:
     """Resolve "execute this pool X" / "execute the strategy" against session memory."""
-    import logging as _logging
-    _log = _logging.getLogger(__name__)
     if not session_id:
         return None
     if not message:
@@ -778,10 +776,6 @@ def _detect_pool_execute_followup(
         return None
 
     record = _recall_opp_record(str(session_id))
-    _log.warning("[pool-detector] sid=%s record=%s alloc_rows=%s items=%s",
-                 session_id, "yes" if record else "none",
-                 len(record.allocations) if record else 0,
-                 len(record.items) if record else 0)
     if record is None:
         return None
 
@@ -1771,13 +1765,6 @@ async def run_ephemeral_turn(
                         sid = str(session_id) if session_id else None
                         env_data = getattr(env, "data", None) or {}
                         payload = env.card_payload if isinstance(env.card_payload, dict) else {}
-                        import logging as _logging
-                        _logging.getLogger(__name__).warning(
-                            "[opp-memory] tool=%s sid=%s data_keys=%s payload_keys=%s",
-                            tool_name, sid,
-                            list(env_data.keys()) if isinstance(env_data, dict) else type(env_data),
-                            list(payload.keys()) if isinstance(payload, dict) else type(payload),
-                        )
                         if sid and tool_name == "search_defi_opportunities":
                             items = (env_data.get("primary_candidates")
                                      or payload.get("items") or [])
@@ -1792,11 +1779,6 @@ async def run_ephemeral_turn(
                                      or env_data.get("usd_amount")
                                      or payload.get("total_usd")
                                      or payload.get("usd_amount"))
-                            _logging.getLogger(__name__).warning(
-                                "[opp-memory] allocate_plan storing rows=%s total=%s sid=%s",
-                                len(allocs) if isinstance(allocs, list) else type(allocs),
-                                total, sid,
-                            )
                             if allocs:
                                 total_f: float | None = None
                                 if total is not None:
@@ -1814,12 +1796,6 @@ async def run_ephemeral_turn(
                                     total_usd=total_f,
                                     asset_hint=(env_data.get("asset_hint")
                                                 or payload.get("asset_hint")),
-                                )
-                                _post = _recall_opp_record(sid)
-                                _logging.getLogger(__name__).warning(
-                                    "[opp-memory] post-remember alloc=%s items=%s",
-                                    len(_post.allocations) if _post else 0,
-                                    len(_post.items) if _post else 0,
                                 )
                             # Allocation cards usually carry the underlying pools
                             # too — also remember them as a candidate list.
