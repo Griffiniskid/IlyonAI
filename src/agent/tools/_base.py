@@ -10,6 +10,7 @@ class ToolCtx:
     services: Any
     user_id: int
     wallet: str | None
+    session_id: str | None = None
 
 
 def ok_envelope(*, data, card_type=None, card_payload=None):
