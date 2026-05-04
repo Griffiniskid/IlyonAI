@@ -1773,12 +1773,10 @@ async def run_ephemeral_turn(
                         payload = env.card_payload if isinstance(env.card_payload, dict) else {}
                         import logging as _logging
                         _logging.getLogger(__name__).warning(
-                            "[opp-memory] tool=%s sid=%s data_keys=%s payload_keys=%s positions=%s primary_candidates=%s",
+                            "[opp-memory] tool=%s sid=%s data_keys=%s payload_keys=%s",
                             tool_name, sid,
                             list(env_data.keys()) if isinstance(env_data, dict) else type(env_data),
                             list(payload.keys()) if isinstance(payload, dict) else type(payload),
-                            len((env_data.get("positions") or payload.get("positions") or [])) if isinstance(env_data, dict) else 0,
-                            len((env_data.get("primary_candidates") or [])) if isinstance(env_data, dict) else 0,
                         )
                         if sid and tool_name == "search_defi_opportunities":
                             items = (env_data.get("primary_candidates")
@@ -1794,6 +1792,11 @@ async def run_ephemeral_turn(
                                      or env_data.get("usd_amount")
                                      or payload.get("total_usd")
                                      or payload.get("usd_amount"))
+                            _logging.getLogger(__name__).warning(
+                                "[opp-memory] allocate_plan storing rows=%s total=%s sid=%s",
+                                len(allocs) if isinstance(allocs, list) else type(allocs),
+                                total, sid,
+                            )
                             if allocs:
                                 _remember_allocation(
                                     sid,
@@ -1801,6 +1804,12 @@ async def run_ephemeral_turn(
                                     total_usd=float(total) if total else None,
                                     asset_hint=(env_data.get("asset_hint")
                                                 or payload.get("asset_hint")),
+                                )
+                                _post = _recall_opp_record(sid)
+                                _logging.getLogger(__name__).warning(
+                                    "[opp-memory] post-remember alloc=%s items=%s",
+                                    len(_post.allocations) if _post else 0,
+                                    len(_post.items) if _post else 0,
                                 )
                             # Allocation cards usually carry the underlying pools
                             # too — also remember them as a candidate list.
