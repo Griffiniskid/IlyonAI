@@ -49,6 +49,12 @@ const nextConfig = {
       { source: "/api/v1/bridge-status/:path*", destination: `${walletAssistantTarget}/api/v1/bridge-status/:path*` },
       { source: "/api/portfolio/:path*", destination: `${walletAssistantTarget}/api/portfolio/:path*` },
       { source: "/api/:path*", destination: `${apiTarget}/api/:path*` },
+      // Solana Actions / Blinks — Phantom dial-actions and Twitter
+      // unfurlers hit these directly on the bare domain.
+      { source: "/.well-known/actions.json", destination: `${apiTarget}/.well-known/actions.json` },
+      { source: "/actions.json", destination: `${apiTarget}/actions.json` },
+      { source: "/actions/:path*", destination: `${apiTarget}/actions/:path*` },
+      { source: "/blinks/:path*", destination: `${apiTarget}/blinks/:path*` },
     ];
   },
 };
