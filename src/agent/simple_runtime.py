@@ -2044,6 +2044,83 @@ async def run_ephemeral_turn(
                     except Exception:
                         pass
                     final_content = _format_tool_result(tool_name, env)
+
+                    # Auto-chain: when the user said "spread 500 USDC across X
+                    # pools then execute through wallet" / "allocate ... and
+                    # sign" — run build_allocation_execution_plan as a follow-up
+                    # call within the same turn so the user gets ONE card with
+                    # signable steps instead of having to ask twice.
+                    if tool_name == "allocate_plan" and re.search(
+                        r"\b(execute|sign|deploy|run\s+it|fire\s+it|through\s+(my|the)\s+wallet)\b",
+                        message, re.IGNORECASE,
+                    ):
+                        try:
+                            allocs_for_chain = (
+                                (env_data.get("positions") or [])
+                                or (payload.get("positions") or [])
+                            )
+                            total_for_chain = (
+                                env_data.get("total_usd")
+                                or payload.get("total_usd")
+                            )
+                            asset_hint_for_chain = (
+                                env_data.get("asset_hint")
+                                or payload.get("asset_hint")
+                                or "USDC"
+                            )
+                            if allocs_for_chain:
+                                exec_tool = next(
+                                    (t for t in tools if t.name == "build_allocation_execution_plan"),
+                                    None,
+                                )
+                                if exec_tool is not None:
+                                    chain_args = {
+                                        "allocations": allocs_for_chain,
+                                        "default_asset": asset_hint_for_chain,
+                                        "default_amount_total": total_for_chain,
+                                        "title_hint": f"Allocation execution ({len(allocs_for_chain)} pools)",
+                                    }
+                                    collector._step += 1
+                                    _emit_thoughts(collector, _pre_tool_reasoning(
+                                        "build_allocation_execution_plan", chain_args, message,
+                                    ))
+                                    collector._queue.append(ToolFrame(
+                                        step_index=collector._step,
+                                        name="build_allocation_execution_plan",
+                                        args=chain_args,
+                                    ))
+                                    chain_result = await exec_tool.coroutine(chain_args)
+                                    chain_env: ToolEnvelope | None = None
+                                    if isinstance(chain_result, ToolEnvelope):
+                                        chain_env = chain_result
+                                    elif isinstance(chain_result, str):
+                                        try:
+                                            chain_env = ToolEnvelope.model_validate_json(chain_result)
+                                        except Exception:
+                                            chain_env = None
+                                    if chain_env is not None and chain_env.ok:
+                                        collector._queue.append(ObservationFrame(
+                                            step_index=collector._step,
+                                            name="build_allocation_execution_plan",
+                                            ok=True,
+                                            error=None,
+                                        ))
+                                        if chain_env.card_type and chain_env.card_payload is not None:
+                                            collector._queue.append(CardFrame(
+                                                step_index=collector._step,
+                                                card_id=chain_env.card_id,
+                                                card_type=chain_env.card_type,
+                                                payload=chain_env.card_payload,
+                                            ))
+                                            card_ids_for_final.append(chain_env.card_id)
+                                        plan_summary = _format_execution_plan_v3_response(chain_env.data or {})
+                                        final_content = (
+                                            final_content
+                                            + "\n\n---\n\n"
+                                            + plan_summary
+                                        )
+                        except Exception:
+                            pass
                 elif isinstance(tool_result, dict):
                     final_content = _format_tool_result(tool_name, tool_result)
                 else:
