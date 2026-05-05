@@ -744,9 +744,10 @@ def _detect_sentinel_chat_tools(message: str) -> tuple[str, dict] | None:
     can't drift into 'contextual reasoning' mode for them.
     """
     text = message.strip()
-    # Skip when the message is clearly a wallet/balance/swap/bridge ask —
-    # those have higher-priority detectors further down.
-    if re.search(r"\b(my\s+(?:wallet|balance|portfolio|holdings|assets)|portfolio|holdings|swap|bridge|allocate|distribute)\b", text, re.I):
+    # Skip only when the *primary verb* of the message is wallet/swap/bridge/
+    # allocate. Mentions of "wallet" inside a shield-style ask must NOT
+    # short-circuit the sentinel router.
+    if re.match(r"^\s*(my\s+(?:wallet|balance|portfolio|holdings|assets)\b|what\s+is\s+my\b|swap\s|bridge\s|allocate\s|distribute\s|deploy\s+\$?\d|portfolio\b|holdings\b)", text, re.I):
         return None
     # 1. analyze_token
     m = _ANALYZE_TOKEN_RE.search(text)
