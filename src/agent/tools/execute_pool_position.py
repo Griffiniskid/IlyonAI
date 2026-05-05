@@ -74,6 +74,10 @@ async def _resolve_protocol_pair(
     proto_norm = protocol.lower().replace("_", "-").strip()
     pair_norm = pair.upper().replace("/", "-").replace("_", "-").strip()
     chain_norm = chain.lower() if chain else None
+    # When no protocol hint and the "protocol" looks like a pair already
+    # (e.g. user passed "SPACEX-WSOL" alone), drop the protocol filter and
+    # match by symbol only.
+    proto_filter_active = bool(proto_norm) and "-" not in proto_norm and "_" not in proto_norm and len(proto_norm) <= 32
     async with aiohttp.ClientSession(timeout=_LLAMA_TIMEOUT) as sess:
         async with sess.get(_DEFILLAMA_POOLS_URL) as resp:
             if resp.status != 200:
@@ -85,7 +89,7 @@ async def _resolve_protocol_pair(
                 project = str(entry.get("project", "")).lower()
                 symbol = str(entry.get("symbol", "")).upper().replace("/", "-")
                 ec = str(entry.get("chain", "")).lower()
-                if proto_norm not in project and project not in proto_norm:
+                if proto_filter_active and proto_norm not in project and project not in proto_norm:
                     continue
                 if pair_norm and pair_norm not in symbol:
                     continue
@@ -100,12 +104,18 @@ async def _resolve_protocol_pair(
 
 def _split_protocol_pair(arg: str) -> tuple[str, str]:
     """Accept 'raydium-amm · SPACEX-WSOL', 'raydium-amm SPACEX-WSOL',
-    'raydium-amm/SPACEX-WSOL', etc.
+    'raydium-amm/SPACEX-WSOL', or a bare 'SPACEX-WSOL' pair.
     """
-    cleaned = arg.replace("·", " ").replace("/", " ").replace("|", " ").strip()
+    cleaned = arg.replace("·", " ").replace("|", " ").strip()
     parts = [p for p in re.split(r"\s+", cleaned) if p]
-    if len(parts) < 2:
-        return cleaned, ""
+    if len(parts) == 0:
+        return "", ""
+    if len(parts) == 1:
+        only = parts[0]
+        # If it has a separator it's already a pair; treat protocol as empty.
+        if any(sep in only for sep in ("-", "/", "_")) and only.isupper():
+            return "", only
+        return only, ""
     # If first chunk hyphenated like "raydium-amm" keep it intact.
     return parts[0], parts[-1]
 
