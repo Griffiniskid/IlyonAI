@@ -47,12 +47,33 @@ const meteora = require("./adapters/meteora");
 const raydium = require("./adapters/raydium");
 
 registerAdapter("kamino", kamino);
+registerAdapter("kamino-liquidity", kamino);
+registerAdapter("kamino-vault", kamino);
 registerAdapter("orca", orca);
+registerAdapter("orca-clmm", orca);
 registerAdapter("marinade", marinade);
+registerAdapter("marinade-native", marinade);
 registerAdapter("jito", jito);
 registerAdapter("sanctum", sanctum);
+registerAdapter("sanctum-liquid-staking", sanctum);
 registerAdapter("meteora", meteora);
+registerAdapter("meteora-vault", meteora);
+registerAdapter("meteora-amm", meteora);
 registerAdapter("raydium", raydium);
+registerAdapter("raydium-amm-v3", raydium);
+registerAdapter("raydium-cp", raydium);
+// Generic Solana-DEX fallback: when DefiLlama returns a project name we
+// don't have a dedicated SDK for (drift, lulo, save, lifinity, etc.) use
+// the Raydium adapter's prep-swap path so the user still gets a signable
+// Jupiter route into one of the underlying assets.
+registerAdapter("drift", raydium);
+registerAdapter("lulo", raydium);
+registerAdapter("lulo-finance", raydium);
+registerAdapter("save", raydium);
+registerAdapter("save-finance", raydium);
+registerAdapter("lifinity", raydium);
+registerAdapter("lifinity-v2", raydium);
+registerAdapter("solend", raydium);
 
 function resolveAdapter(name) {
   if (!name) return null;

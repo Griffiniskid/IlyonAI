@@ -38,15 +38,17 @@ class SolanaYieldBuilderAdapter:
     adapter_id: str = "solana-yield-builder"
     chains: frozenset[str] = frozenset({"solana", "sol"})
     protocols: frozenset[str] = frozenset({
-        "kamino", "kamino-lend", "kamino-finance", "kamino-vault",
-        "orca", "orca-dex", "orca-whirlpools",
-        "meteora", "meteora-dlmm",
-        "raydium", "raydium-amm", "raydium-clmm",
-        "marinade", "marinade-finance",
+        "kamino", "kamino-lend", "kamino-finance", "kamino-vault", "kamino-liquidity",
+        "orca", "orca-dex", "orca-whirlpools", "orca-clmm",
+        "meteora", "meteora-dlmm", "meteora-vault", "meteora-amm",
+        "raydium", "raydium-amm", "raydium-clmm", "raydium-amm-v3", "raydium-cp",
+        "marinade", "marinade-finance", "marinade-native",
         "jito", "jito-liquid-staking",
-        "sanctum", "sanctum-infinity",
-        "drift",
-        "lulo",
+        "sanctum", "sanctum-infinity", "sanctum-liquid-staking",
+        "drift", "drift-perps", "drift-spot",
+        "lulo", "lulo-finance",
+        "save", "save-finance",
+        "lifinity", "lifinity-v2",
     })
     actions: frozenset[str] = frozenset({
         "supply", "deposit", "stake", "deposit_lp",

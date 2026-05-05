@@ -701,10 +701,14 @@ def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] |
                     pool_ref = f"{proto} {asset}"
     if not pool_ref:
         return None
-    return "execute_pool_position", {
+    params: dict = {
         "pool": pool_ref,
         "amount": intent.amount_usd or 100.0,
     }
+    chain_hint_match = re.search(r"\bon\s+(solana|ethereum|polygon|arbitrum|base|optimism|bsc|avalanche)\b", text, re.I)
+    if chain_hint_match:
+        params["chain"] = chain_hint_match.group(1).lower()
+    return "execute_pool_position", params
 
 
 def _defi_intent_to_tool(intent: DefiIntent) -> tuple[str, dict] | None:

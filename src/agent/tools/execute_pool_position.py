@@ -74,11 +74,30 @@ async def _resolve_protocol_pair(
     proto_norm = protocol.lower().replace("_", "-").strip()
     pair_norm = pair.upper().replace("/", "-").replace("_", "-").strip()
     chain_norm = chain.lower() if chain else None
-    # Drop protocol filter only when no protocol hint at all OR the slot
-    # is a pair like 'SPACEX-WSOL' (no protocol-style prefix). Real
-    # multi-word protocol slugs like 'meteora-dlmm' MUST be enforced.
     looks_like_pair = bool(proto_norm) and "-" in proto_norm and proto_norm.replace("-", "").isupper()
     proto_filter_active = bool(proto_norm) and not looks_like_pair
+    # When no protocol hint and no chain hint, bias toward chains we have
+    # adapters for, in priority order. Avoids resolving 'USDC-WSOL' to
+    # cetus-clmm on Sui when Orca/Raydium on Solana are the right hits.
+    SUPPORTED_CHAIN_BIAS = {
+        "solana": 1.4,
+        "ethereum": 1.3,
+        "polygon": 1.2,
+        "arbitrum": 1.2,
+        "base": 1.2,
+        "optimism": 1.1,
+        "bsc": 1.05,
+        "avalanche": 1.0,
+    }
+    # Protocol-implied chain when not given.
+    SOLANA_PROTOS = {"raydium", "orca", "meteora", "kamino", "marinade", "jito", "sanctum", "drift", "lulo"}
+    EVM_PROTOS = {"aave", "compound", "yearn", "lido", "rocket-pool", "ether.fi", "morpho", "spark", "curve", "convex", "pendle", "stargate", "frax"}
+    if not chain_norm and proto_norm:
+        head = proto_norm.split("-")[0]
+        if head in SOLANA_PROTOS:
+            chain_norm = "solana"
+        elif head in EVM_PROTOS:
+            pass
     async with aiohttp.ClientSession(timeout=_LLAMA_TIMEOUT) as sess:
         async with sess.get(_DEFILLAMA_POOLS_URL) as resp:
             if resp.status != 200:
@@ -92,14 +111,16 @@ async def _resolve_protocol_pair(
                 ec = str(entry.get("chain", "")).lower()
                 if proto_filter_active and proto_norm not in project and project not in proto_norm:
                     continue
-                if pair_norm and pair_norm not in symbol:
-                    continue
                 if chain_norm and chain_norm not in ec:
                     continue
+                if pair_norm and pair_norm not in symbol:
+                    continue
                 tvl = float(entry.get("tvlUsd") or 0)
-                if tvl > best_tvl:
+                bias = SUPPORTED_CHAIN_BIAS.get(ec, 0.7)
+                score = tvl * bias
+                if score > best_tvl:
                     best = entry
-                    best_tvl = tvl
+                    best_tvl = score
             return best
 
 
@@ -147,6 +168,7 @@ async def execute_pool_position(
     pool: str,
     amount: Any,
     asset_in: str | None = None,
+    chain: str | None = None,
     user_address: str | None = None,
     slippage_bps: int = 50,
     research_thesis: str | None = None,
@@ -177,13 +199,13 @@ async def execute_pool_position(
         meta = await _fetch_pool_meta(pool_arg)
     else:
         protocol_hint, pair_hint = _split_protocol_pair(pool_arg)
-        meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=None)
+        meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=chain)
         # Fallback: drop the protocol filter and re-scan by pair only.
         if not meta and pair_hint:
-            meta = await _resolve_protocol_pair("", pair_hint, chain=None)
+            meta = await _resolve_protocol_pair("", pair_hint, chain=chain)
         # Second fallback: search DefiLlama by symbol prefix loosely.
         if not meta and protocol_hint and not pair_hint:
-            meta = await _resolve_protocol_pair("", protocol_hint, chain=None)
+            meta = await _resolve_protocol_pair("", protocol_hint, chain=chain)
 
     if not meta:
         return err_envelope(
