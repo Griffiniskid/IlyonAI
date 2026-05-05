@@ -37,20 +37,17 @@ _CHAIN_SHORT_TO_FULL = {
 
 async def _bake_step_transactions(ctx, steps: list[dict], positions: list) -> list[dict]:
     """For each allocation step, call execute_pool_position to obtain a real
-    unsigned transaction and embed it on the step. Failures are non-fatal:
-    the step keeps a textual blocker so the front-end can show a clear
-    'Sign manually via Execute button' fallback instead of a dead button.
+    unsigned transaction and embed it on the step — in parallel for speed.
     """
     from src.agent.tools.execute_pool_position import execute_pool_position
-    out: list[dict] = []
     pos_by_index = {p.rank: p for p in positions}
-    for step in steps:
+
+    async def _bake_one(step: dict) -> dict:
         idx = step.get("index")
         position = pos_by_index.get(idx)
         baked = dict(step)
         if not position:
-            out.append(baked)
-            continue
+            return baked
         pool_ref = f"{position.protocol} {position.asset}".strip()
         try:
             amt_str = str(step.get("amount", "")).replace(",", "").replace("$", "")
@@ -62,7 +59,7 @@ async def _bake_step_transactions(ctx, steps: list[dict], positions: list) -> li
             try:
                 env = await asyncio.wait_for(
                     execute_pool_position(ctx, pool=pool_ref_inner, amount=amount, chain=chain_full),
-                    timeout=25.0,
+                    timeout=12.0,
                 )
                 if env and env.ok and env.card_payload:
                     plan = env.card_payload
@@ -113,7 +110,7 @@ async def _bake_step_transactions(ctx, steps: list[dict], positions: list) -> li
                             amount_in=amount,
                             user_address=getattr(ctx, "evm_wallet", None) or getattr(ctx, "wallet", None),
                         ),
-                        timeout=20.0,
+                        timeout=12.0,
                     )
                     if fallback_env and fallback_env.ok and fallback_env.card_payload:
                         plan = fallback_env.card_payload
@@ -124,14 +121,22 @@ async def _bake_step_transactions(ctx, steps: list[dict], positions: list) -> li
                             baked["target"] = f"{fallback_asset} · Aave V3 (fallback for {position.protocol})"
                             baked["protocol"] = "Aave V3"
                             baked["router"] = "Aave V3"
-                            out.append(baked)
-                            continue
+                            return baked
                 except Exception as exc:  # noqa: BLE001
                     _logger.warning("aave-v3 fallback failed: %s", exc)
                 baked["blocker"] = blocker_text
             else:
                 baked["blocker"] = blocker_text
-        out.append(baked)
+        return baked
+
+    results = await asyncio.gather(*[_bake_one(s) for s in steps], return_exceptions=True)
+    out: list[dict] = []
+    for s, r in zip(steps, results):
+        if isinstance(r, Exception):
+            _logger.warning("bake_one task crashed: %s", r)
+            out.append(dict(s))
+        else:
+            out.append(r)
     return out
 
 
@@ -726,8 +731,20 @@ async def allocate_plan(
     max_apy: float | None = None,
     risk_levels: list[str] | None = None,
 ):
+    try:
+        usd_amount = float(usd_amount)
+    except (TypeError, ValueError):
+        return err_envelope("bad_amount", "usd_amount must be a positive number, e.g. 1000.")
     if usd_amount <= 0:
-        return err_envelope("bad_amount", "usd_amount must be > 0")
+        return err_envelope(
+            "bad_amount",
+            "Allocation needs a positive USD amount (e.g. 'Allocate $1000 across balanced yield strategies').",
+        )
+    if usd_amount > 1_000_000_000:
+        return err_envelope(
+            "bad_amount",
+            "Allocation amount looks unrealistic (>$1B). Try a smaller amount such as $1000-$1M.",
+        )
 
     rb = (risk_budget or "balanced").lower()
     if rb not in {"conservative", "balanced", "aggressive"}:
