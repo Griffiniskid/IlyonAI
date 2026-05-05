@@ -58,32 +58,53 @@ async def _bake_step_transactions(ctx, steps: list[dict], positions: list) -> li
         except (TypeError, ValueError):
             amount = 100.0
         chain_full = _CHAIN_SHORT_TO_FULL.get(position.chain)
-        try:
-            env = await asyncio.wait_for(
-                execute_pool_position(ctx, pool=pool_ref, amount=amount, chain=chain_full),
-                timeout=25.0,
-            )
-            if env and env.ok and env.card_payload:
-                plan = env.card_payload
-                first = (plan.get("steps") or [None])[0] if isinstance(plan, dict) else None
-                if first and first.get("transaction"):
-                    baked["transaction"] = first.get("transaction")
-                    baked["pool_id"] = (plan.get("research_thesis") or "")[:64] or None
-                else:
+        async def _try_bake(pool_ref_inner: str) -> tuple[dict | None, str | None]:
+            try:
+                env = await asyncio.wait_for(
+                    execute_pool_position(ctx, pool=pool_ref_inner, amount=amount, chain=chain_full),
+                    timeout=25.0,
+                )
+                if env and env.ok and env.card_payload:
+                    plan = env.card_payload
+                    first = (plan.get("steps") or [None])[0] if isinstance(plan, dict) else None
+                    if first and first.get("transaction"):
+                        return first.get("transaction"), None
                     blockers = plan.get("blockers") if isinstance(plan, dict) else None
                     if blockers:
                         b0 = blockers[0]
-                        baked["blocker"] = (
+                        return None, (
                             (b0.get("title") or "Adapter blocked") + ": " +
                             (b0.get("detail") or "")[:200]
                         )[:280]
-            elif env and not env.ok:
-                err = getattr(env, "error", None)
-                if err:
-                    baked["blocker"] = f"{err.code}: {err.message[:200]}"
-        except Exception as exc:  # noqa: BLE001
-            _logger.warning("bake_step %s failed: %s", idx, exc)
-            baked["blocker"] = str(exc)[:200]
+                if env and not env.ok:
+                    err = getattr(env, "error", None)
+                    if err:
+                        return None, f"{err.code}: {err.message[:200]}"
+            except Exception as exc:  # noqa: BLE001
+                _logger.warning("bake_step %s failed: %s", idx, exc)
+                return None, str(exc)[:200]
+            return None, None
+
+        tx, blocker_text = await _try_bake(pool_ref)
+        if tx:
+            baked["transaction"] = tx
+        else:
+            # Fallback path: when the original protocol can't bake (Enso
+            # rate-limited, no fungible LP, etc.), try a yield-equivalent
+            # liquid pool on the same chain so the user still gets a
+            # signable transaction. Stable LPs → Aave V3 of the same asset.
+            stable_assets = {"USDC", "USDT", "DAI", "FRAX", "LUSD"}
+            if (position.asset or "").upper() in stable_assets and (chain_full or "").lower() in {"ethereum", "polygon", "arbitrum", "base", "optimism", "avalanche"}:
+                fallback_ref = f"aave-v3 {position.asset.upper()}"
+                tx2, blocker2 = await _try_bake(fallback_ref)
+                if tx2:
+                    baked["transaction"] = tx2
+                    baked["blocker"] = None
+                    baked["target"] = f"{position.asset.upper()} · Aave V3 (fallback for {position.protocol})"
+                else:
+                    baked["blocker"] = blocker_text or blocker2
+            else:
+                baked["blocker"] = blocker_text
         out.append(baked)
     return out
 
