@@ -76,12 +76,22 @@ async def get_wallet_balance(
         get_smart_wallet_balance,
     )
 
-    addr = wallet or ctx.wallet
-    if not addr:
+    evm = getattr(ctx, "evm_wallet", None) or ""
+    sol = getattr(ctx, "solana_wallet", None) or ""
+    primary = wallet or ctx.wallet or ""
+    addrs: list[str] = []
+    seen: set[str] = set()
+    for cand in (primary, evm, sol):
+        cand = (cand or "").strip()
+        if cand and cand.lower() not in seen:
+            addrs.append(cand)
+            seen.add(cand.lower())
+    if not addrs:
         return err_envelope("missing_wallet", "No wallet address provided")
+    addr = ",".join(addrs)
 
-    raw = get_smart_wallet_balance(addr, user_address=addr,
-                                   solana_address=getattr(ctx, "solana_wallet", "") or "")
+    raw = get_smart_wallet_balance(addr, user_address=evm or primary,
+                                   solana_address=sol)
     try:
         parsed = parse_assistant_json(raw)
     except AssistantError as exc:
@@ -94,7 +104,8 @@ async def get_wallet_balance(
         by_chain = parsed.get("by_chain") or parsed.get("chains") or {}
 
     card_payload = {
-        "address": addr,
+        "address": addrs[0],
+        "addresses": addrs,
         "total_usd": parsed.get("total_usd"),
         "by_chain": by_chain,
         "tokens": tokens,
