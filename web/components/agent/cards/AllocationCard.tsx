@@ -1,7 +1,7 @@
 "use client";
 
 import type { AllocationPayload } from "@/types/agent";
-import { ArrowRight, BadgeCheck, Layers3, Network, ShieldCheck, Sparkles, TrendingUp } from "lucide-react";
+import { ArrowRight, BadgeCheck, Layers3, Network, Rocket, ShieldCheck, Sparkles, TrendingUp } from "lucide-react";
 
 interface Props {
   payload: AllocationPayload;
@@ -28,6 +28,15 @@ function StatTile({ label, value, sub }: { label: string; value: string; sub?: s
       {sub && <div className="mt-0.5 text-[11px] text-slate-400">{sub}</div>}
     </div>
   );
+}
+
+function dispatchExecutePosition(position: AllocationPayload["positions"][0]) {
+  if (typeof window === "undefined") return;
+  const ref = `${position.protocol} ${position.asset}`.trim();
+  const usd = String(position.usd || "").replace(/[^0-9.]/g, "");
+  const amount = usd && Number(usd) > 0 ? Number(usd) : 100;
+  const message = `execute_pool_position pool="${ref}" amount=${amount}`;
+  window.dispatchEvent(new CustomEvent("ilyon:execute-pool", { detail: { pool: ref, message } }));
 }
 
 function PositionRow({ position }: { position: AllocationPayload["positions"][0] }) {
@@ -86,6 +95,17 @@ function PositionRow({ position }: { position: AllocationPayload["positions"][0]
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="mt-3 flex justify-end">
+        <button
+          type="button"
+          onClick={() => dispatchExecutePosition(position)}
+          data-testid="allocation-row-execute"
+          className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/40 bg-emerald-300/15 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.18em] text-emerald-50 hover:bg-emerald-300/25"
+        >
+          <Rocket className="h-3 w-3" /> Execute this position
+        </button>
       </div>
     </div>
   );
