@@ -446,6 +446,8 @@ CardType = Literal[
     "market_overview", "pair_list", "lp", "preferences",
     "defi_opportunities",
     "text", "no_change",
+    "sentinel_token_report", "sentinel_pool_report", "sentinel_whale_feed",
+    "sentinel_smart_money_hub", "sentinel_shield_report", "sentinel_entity_card",
 ]
 
 
