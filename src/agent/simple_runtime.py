@@ -686,6 +686,13 @@ def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] |
             sp = re.search(r"\b([A-Z][A-Z0-9.]{0,9}[-/_][A-Z][A-Z0-9.]{0,9})\b", text)
             if sp:
                 pool_ref = sp.group(1)
+            else:
+                # Single-asset deposit phrasing: "USDC on Aave V3", "ETH on Lido".
+                m3 = re.search(r"\b([A-Z]{2,8})\s+(?:on|via|to|into)\s+([A-Za-z][A-Za-z0-9 \-_.]{1,40})", text, re.I)
+                if m3:
+                    asset = m3.group(1).upper()
+                    proto = re.sub(r"\s+", "-", m3.group(2).strip().lower())
+                    pool_ref = f"{proto} {asset}"
     if not pool_ref:
         return None
     return "execute_pool_position", {
