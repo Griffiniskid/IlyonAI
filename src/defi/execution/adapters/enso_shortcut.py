@@ -108,10 +108,13 @@ class EnsoShortcutAdapter:
         "stargate",
         "origin", "origin-ether",
         "moonwell",
-        "velodrome",
+        "velodrome", "aerodrome", "aerodrome-slipstream",
         "gmx",
         "aave-v3", "aave",
         "compound-v3", "compound",
+        "uniswap", "uniswap-v3", "uniswap-v4",
+        "balancer", "balancer-v2", "balancer-v3",
+        "fluid", "fluid-lending",
     })
     actions: frozenset[str] = frozenset({"supply", "deposit", "lend", "stake", "deposit_lp"})
 

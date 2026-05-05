@@ -40,22 +40,27 @@ module.exports = {
         ],
       };
     }
-    const inputMint = resolveMint(asset || "SOL") || SOL_MINT;
+    const inAsset = (asset || "SOL").toUpperCase();
+    const inputMint = resolveMint(inAsset) || SOL_MINT;
     const usdcMint = resolveMint("USDC");
+    const inputIsUsdc = inputMint === usdcMint;
+    const targetMint = inputIsUsdc ? SOL_MINT : usdcMint;
+    const targetSym = inputIsUsdc ? "SOL" : "USDC";
+    const sourceSym = inputIsUsdc ? "USDC" : inAsset;
     const half = (parseFloat(amount || "0") / 2).toString();
     const { tx } = await buildSwap({
       inputMint,
-      outputMint: usdcMint,
+      outputMint: targetMint,
       amount: half,
       user,
       slippageBps,
-      decimals: decimalsFor(asset || "SOL"),
+      decimals: decimalsFor(sourceSym),
     });
     return {
       transactions: [
         {
           b64: tx,
-          summary: `Meteora prep: convert half of ${asset || "SOL"} → USDC for DLMM entry`,
+          summary: `Meteora prep: convert half of ${sourceSym} → ${targetSym} for DLMM entry`,
           description: "Stages capital so opening the Meteora DLMM position is one click in the Meteora app.",
           receiptToken: "USDC",
           feeUsd: 0.01,
