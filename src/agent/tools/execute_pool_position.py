@@ -202,10 +202,14 @@ async def execute_pool_position(
     else:
         protocol_hint, pair_hint = _split_protocol_pair(pool_arg)
         meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=chain)
-        # Fallback: drop the protocol filter and re-scan by pair only.
-        if not meta and pair_hint:
+        # Fallback: try without explicit chain (sometimes infer breaks).
+        if not meta and chain:
+            meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=None)
+        # Last-resort fallback: drop the protocol filter ONLY when no
+        # protocol hint was given. We must never silently swap in a
+        # different protocol when the user named one.
+        if not meta and pair_hint and not protocol_hint:
             meta = await _resolve_protocol_pair("", pair_hint, chain=chain)
-        # Second fallback: search DefiLlama by symbol prefix loosely.
         if not meta and protocol_hint and not pair_hint:
             meta = await _resolve_protocol_pair("", protocol_hint, chain=chain)
 

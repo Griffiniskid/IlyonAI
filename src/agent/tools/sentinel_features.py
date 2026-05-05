@@ -512,7 +512,9 @@ async def analyze_pool(
     else:
         protocol_hint, pair_hint = _split_protocol_pair(pool_arg)
         meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=chain)
-        if not meta and pair_hint:
+        if not meta and chain:
+            meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=None)
+        if not meta and pair_hint and not protocol_hint:
             meta = await _resolve_protocol_pair("", pair_hint, chain=chain)
     if not meta:
         return err_envelope("pool_not_found", f"Could not resolve pool `{pool_arg}` against DefiLlama.")
