@@ -113,8 +113,10 @@ async def _resolve_protocol_pair(
                     continue
                 if chain_norm and chain_norm not in ec:
                     continue
-                if pair_norm and pair_norm not in symbol:
-                    continue
+                if pair_norm:
+                    pair_alt = "-".join(reversed(pair_norm.split("-")))
+                    if pair_norm not in symbol and pair_alt not in symbol:
+                        continue
                 tvl = float(entry.get("tvlUsd") or 0)
                 bias = SUPPORTED_CHAIN_BIAS.get(ec, 0.7)
                 score = tvl * bias

@@ -819,8 +819,23 @@ def _detect_sentinel_chat_tools(message: str) -> tuple[str, dict] | None:
             sp = re.search(r"\b([A-Z][A-Z0-9.]{0,9}[-/_][A-Z][A-Z0-9.]{0,9})\b", text)
             if sp:
                 ref = sp.group(1)
+                # Anchor with a protocol mentioned elsewhere in the message.
+                proto_token = re.search(
+                    r"\b(?i:(raydium-amm|raydium-clmm|raydium|orca-whirlpools|orca-clmm|orca|"
+                    r"meteora-dlmm|meteora|kamino-lend|kamino-liquidity|kamino|marinade|jito|sanctum|drift|"
+                    r"aave-v3|aave|compound-v3|compound|spark|curve|convex|pendle|yearn|"
+                    r"lido|rocket-pool|ether\.fi|frax-ether|frax|stargate|morpho-blue|morpho|moonwell|"
+                    r"stader|gmx|velodrome|aerodrome-slipstream|aerodrome|uniswap-v[34]|uniswap))\b",
+                    text,
+                )
+                if proto_token:
+                    ref = f"{proto_token.group(1).lower()} {ref}"
         if ref:
-            return "analyze_pool_full_sentinel", {"pool": ref}
+            params = {"pool": ref}
+            chain_hint = re.search(r"\bon\s+(solana|ethereum|polygon|arbitrum|base|optimism|bsc|avalanche)\b", text, re.I)
+            if chain_hint:
+                params["chain"] = chain_hint.group(1).lower()
+            return "analyze_pool_full_sentinel", params
     # 3. whale_track
     if _WHALE_RE.search(text):
         params = {}
