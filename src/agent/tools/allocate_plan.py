@@ -94,7 +94,11 @@ async def _bake_step_transactions(ctx, steps: list[dict], positions: list) -> li
             # liquid pool on the same chain so the user still gets a
             # signable transaction. Stable LPs → Aave V3 of the same asset.
             stable_assets = {"USDC", "USDT", "DAI", "FRAX", "LUSD"}
-            if (position.asset or "").upper() in stable_assets and (chain_full or "").lower() in {"ethereum", "polygon", "arbitrum", "base", "optimism", "avalanche"}:
+            asset_upper = (position.asset or "").upper()
+            asset_legs = set(asset_upper.replace("/", "-").replace("_", "-").split("-"))
+            stable_in_asset = next((s for s in stable_assets if s in asset_legs), None)
+            if stable_in_asset and (chain_full or "").lower() in {"ethereum", "polygon", "arbitrum", "base", "optimism", "avalanche"}:
+                fallback_asset = stable_in_asset
                 # Direct Aave V3 path: no DefiLlama lookup, no Enso routing.
                 # Aave V3 adapter builds approve+supply EVM calldata in-process.
                 from src.agent.tools.build_yield_execution_plan import build_yield_execution_plan
@@ -105,7 +109,7 @@ async def _bake_step_transactions(ctx, steps: list[dict], positions: list) -> li
                             chain=chain_full,
                             protocol="aave-v3",
                             action="supply",
-                            asset_in=position.asset.upper(),
+                            asset_in=fallback_asset,
                             amount_in=amount,
                             user_address=getattr(ctx, "evm_wallet", None) or getattr(ctx, "wallet", None),
                         ),
@@ -117,7 +121,7 @@ async def _bake_step_transactions(ctx, steps: list[dict], positions: list) -> li
                         if first and first.get("transaction"):
                             baked["transaction"] = first.get("transaction")
                             baked["blocker"] = None
-                            baked["target"] = f"{position.asset.upper()} · Aave V3 (fallback for {position.protocol})"
+                            baked["target"] = f"{fallback_asset} · Aave V3 (fallback for {position.protocol})"
                             baked["protocol"] = "Aave V3"
                             baked["router"] = "Aave V3"
                             out.append(baked)
