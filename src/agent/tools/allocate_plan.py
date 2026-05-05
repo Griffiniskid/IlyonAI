@@ -21,6 +21,20 @@ from src.allocator.composer import (
 _logger = logging.getLogger(__name__)
 
 
+_CHAIN_SHORT_TO_FULL = {
+    "eth": "ethereum",
+    "mainnet": "ethereum",
+    "arb": "arbitrum",
+    "op": "optimism",
+    "polygon": "polygon",
+    "base": "base",
+    "bsc": "bsc",
+    "avax": "avalanche",
+    "sol": "solana",
+    "solana": "solana",
+}
+
+
 async def _bake_step_transactions(ctx, steps: list[dict], positions: list) -> list[dict]:
     """For each allocation step, call execute_pool_position to obtain a real
     unsigned transaction and embed it on the step. Failures are non-fatal:
@@ -38,21 +52,16 @@ async def _bake_step_transactions(ctx, steps: list[dict], positions: list) -> li
             out.append(baked)
             continue
         pool_ref = f"{position.protocol} {position.asset}".strip()
-        # Resolve a number from amount string ("$350" -> 350, "20.000" -> 20).
         try:
             amt_str = str(step.get("amount", "")).replace(",", "").replace("$", "")
             amount = float(amt_str) if amt_str else 100.0
         except (TypeError, ValueError):
             amount = 100.0
+        chain_full = _CHAIN_SHORT_TO_FULL.get(position.chain)
         try:
             env = await asyncio.wait_for(
-                execute_pool_position(
-                    ctx,
-                    pool=pool_ref,
-                    amount=amount,
-                    chain=position.chain if position.chain in {"solana", "ethereum", "polygon", "arbitrum", "base", "optimism", "bsc", "avalanche"} else None,
-                ),
-                timeout=20.0,
+                execute_pool_position(ctx, pool=pool_ref, amount=amount, chain=chain_full),
+                timeout=25.0,
             )
             if env and env.ok and env.card_payload:
                 plan = env.card_payload
@@ -60,9 +69,21 @@ async def _bake_step_transactions(ctx, steps: list[dict], positions: list) -> li
                 if first and first.get("transaction"):
                     baked["transaction"] = first.get("transaction")
                     baked["pool_id"] = (plan.get("research_thesis") or "")[:64] or None
+                else:
+                    blockers = plan.get("blockers") if isinstance(plan, dict) else None
+                    if blockers:
+                        b0 = blockers[0]
+                        baked["blocker"] = (
+                            (b0.get("title") or "Adapter blocked") + ": " +
+                            (b0.get("detail") or "")[:200]
+                        )[:280]
+            elif env and not env.ok:
+                err = getattr(env, "error", None)
+                if err:
+                    baked["blocker"] = f"{err.code}: {err.message[:200]}"
         except Exception as exc:  # noqa: BLE001
             _logger.warning("bake_step %s failed: %s", idx, exc)
-            baked["blocker"] = str(exc)[:160]
+            baked["blocker"] = str(exc)[:200]
         out.append(baked)
     return out
 
