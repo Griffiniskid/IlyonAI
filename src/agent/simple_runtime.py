@@ -655,6 +655,40 @@ def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
     }
 
 
+_POOL_UUID_RE = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
+_POOL_PROTO_PAIR_RE = re.compile(
+    r"\b(raydium-amm|raydium-clmm|orca-whirlpools|orca|meteora-dlmm|meteora|"
+    r"kamino|marinade|jito|sanctum|drift|aave-v3|compound-v3|spark|curve|convex|pendle|"
+    r"yearn-finance|lido|rocket-pool|ether\.fi|frax-ether|stargate|morpho-blue|moonwell|"
+    r"stader|gmx|velodrome|aerodrome-slipstream|uniswap-v[34]|steer-protocol|zeebu|blackhole-clmm|supernova-cl)"
+    r"[\s·/|-]+([A-Z][A-Z0-9.]*[-_/][A-Z0-9.]+|[A-Z][A-Z0-9]{1,15})",
+    re.I,
+)
+
+
+def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] | None:
+    """Route 'execute pool X' / 'deposit into raydium-amm SPACEX-WSOL' to
+    execute_pool_position when a concrete pool reference is present.
+    """
+    if not intent.execution_requested:
+        return None
+    text = message.strip()
+    pool_ref: str | None = None
+    m = _POOL_UUID_RE.search(text)
+    if m:
+        pool_ref = m.group(0)
+    else:
+        m2 = _POOL_PROTO_PAIR_RE.search(text)
+        if m2:
+            pool_ref = f"{m2.group(1)} {m2.group(2)}"
+    if not pool_ref:
+        return None
+    return "execute_pool_position", {
+        "pool": pool_ref,
+        "amount": intent.amount_usd or 100.0,
+    }
+
+
 def _defi_intent_to_tool(intent: DefiIntent) -> tuple[str, dict] | None:
     if intent.intent == "allocate_strategy":
         params: dict = {
@@ -709,7 +743,11 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
         if detected is not None:
             return detected
 
-    defi_tool = _defi_intent_to_tool(parse_defi_intent(message))
+    parsed_intent = parse_defi_intent(message)
+    pool_exec = _detect_pool_execute(message, parsed_intent)
+    if pool_exec is not None:
+        return pool_exec
+    defi_tool = _defi_intent_to_tool(parsed_intent)
     if defi_tool is not None:
         return defi_tool
 
