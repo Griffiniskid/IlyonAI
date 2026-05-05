@@ -4915,15 +4915,34 @@ export default function MainApp() {
       );
     });
 
+    if (!hasExecutableTransaction) {
+      // No txs baked in. Drive the same one-click flow used by per-row
+      // Execute buttons: kick off execute_pool_position for the first step.
+      // The user signs that step in Phantom/MetaMask; subsequent steps
+      // unlock as they request follow-ups.
+      const firstStep = payload.steps[0] as (ExecutionPlanPayload["steps"][number] & { target?: string; asset?: string; amount?: string }) | undefined;
+      if (firstStep) {
+        const target = (firstStep.target || "").replace(/\s*·\s*/g, " ").trim();
+        const protoPair = target.split(" ").slice(-2).reverse().join(" ");
+        const ref = protoPair || target || `${firstStep.asset || ""}`;
+        const amt = Number(String(firstStep.amount || "100").replace(/[^0-9.]/g, "")) || 100;
+        const message = `execute_pool_position pool="${ref}" amount=${amt}`;
+        showToast(`Building unsigned transaction for ${ref}…`, "info");
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("ilyon:execute-pool", { detail: { pool: ref, message } }));
+        }
+        setActiveTab("chat");
+        return;
+      }
+    }
+
     setExecutionNotice({
-      title: hasExecutableTransaction ? "Wallet transaction build ready" : "Execution needs route-specific transaction build",
-      body: hasExecutableTransaction
-        ? "Review the generated unsigned transaction payloads before opening wallet approval. Nothing is submitted until you approve it in your wallet."
-        : "This Sentinel plan is a strategy proposal, not an unsigned wallet transaction. Real execution requires a route-specific swap, bridge, stake, or deposit transaction build before any wallet prompt can open.",
+      title: "Wallet transaction build ready",
+      body: "Review the generated unsigned transaction payloads before opening wallet approval. Nothing is submitted until you approve it in your wallet.",
       steps: payload.steps,
     });
     setActiveTab("chat");
-    showToast(hasExecutableTransaction ? "Transaction build ready for wallet review." : "Execution is blocked until a transaction route is built.", "info");
+    showToast("Transaction build ready for wallet review.", "info");
   };
 
   const handleRerunAllocation = () => {
