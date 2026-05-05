@@ -21,6 +21,15 @@ from .bridge_build import build_bridge_tx
 from .transfer_build import build_transfer_tx
 from .allocate_plan import allocate_plan
 from .build_yield_execution_plan import build_yield_execution_plan
+from .execute_pool_position import execute_pool_position
+from .sentinel_features import (
+    analyze_pool as analyze_pool_full_sentinel,
+    analyze_token_full_sentinel,
+    get_shield_check,
+    get_smart_money_hub,
+    lookup_entity,
+    track_whales,
+)
 from .update_preference import update_preference
 from .compose_plan import compose_plan
 from .rebalance_portfolio import rebalance_portfolio
@@ -127,6 +136,65 @@ _TOOL_REGISTRY = {
             "execute a specific yield action like 'supply 100 USDC to Aave V3'. Args: "
             "chain, protocol, action ('supply'|'deposit_lp'|'stake'), asset_in, "
             "amount_in, optional asset_out, slippage_bps, inventory."
+        ),
+    ),
+    "execute_pool_position": (
+        execute_pool_position,
+        (
+            "ONE-CLICK pool deposit. Call when the user says 'execute this pool', "
+            "'execute raydium-amm SPACEX-WSOL', 'deposit into pool X', or pastes a "
+            "DefiLlama pool URL/UUID. Resolves the pool's chain, protocol, asset, and "
+            "LP mint via DefiLlama, then builds a real ExecutionPlanV3 the user signs "
+            "in Phantom or MetaMask — same flow as build_swap_tx and build_bridge_tx. "
+            "Args: pool (UUID or 'protocol pair'), amount, optional asset_in, "
+            "optional slippage_bps. Use AFTER allocate_plan or "
+            "search_defi_opportunities when the user wants to actually deposit."
+        ),
+    ),
+    "analyze_token_full_sentinel": (
+        analyze_token_full_sentinel,
+        (
+            "FULL Sentinel token analysis (rugcheck + holders + liquidity + AI score). "
+            "Call when the user says 'analyze token X', pastes a Solana mint or 0x "
+            "contract, or asks 'is X safe / a rug / overvalued'. Args: address, "
+            "optional chain ('solana','ethereum','bsc',...), mode ('quick'|'standard'|'deep')."
+        ),
+    ),
+    "track_whales": (
+        track_whales,
+        (
+            "Recent whale transactions across supported chains. Call on 'show me whales', "
+            "'whale activity in last 6h', 'big buyers of X'. Args: optional chain, hours (default 24), limit."
+        ),
+    ),
+    "get_smart_money_hub": (
+        get_smart_money_hub,
+        (
+            "Smart-money hub for a chain (top wallets, accumulations, conviction picks). "
+            "Default chain: solana. Call on 'smart money', 'top traders', 'conviction picks'. "
+            "Args: chain (default 'solana'), limit."
+        ),
+    ),
+    "get_shield_check": (
+        get_shield_check,
+        (
+            "Sentinel Shield risk scan for a wallet or contract. Call on 'shield this address', "
+            "'is this contract safe', 'check approvals'. Args: address, optional chain."
+        ),
+    ),
+    "lookup_entity": (
+        lookup_entity,
+        (
+            "Resolve a name/ENS/address/fund tag to a Sentinel entity profile. Call on "
+            "'who is X', 'find entity Y', 'is this address tagged'. Args: query."
+        ),
+    ),
+    "analyze_pool_full_sentinel": (
+        analyze_pool_full_sentinel,
+        (
+            "Sentinel-grade pool analysis (APY, TVL, IL risk, DefiLlama outlook). Call on "
+            "'analyze pool X', 'is raydium-amm SPACEX-WSOL safe', 'show pool stats'. Args: "
+            "pool (UUID or 'protocol pair'), optional chain."
         ),
     ),
 }

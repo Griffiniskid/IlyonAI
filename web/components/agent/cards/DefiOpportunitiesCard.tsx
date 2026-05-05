@@ -1,7 +1,7 @@
 "use client";
 
 import type { DefiOpportunitiesPayload, DefiOpportunityItem } from "@/types/agent";
-import { ExternalLink, ShieldAlert, Sparkles, Target } from "lucide-react";
+import { ExternalLink, Rocket, ShieldAlert, Sparkles, Target } from "lucide-react";
 
 interface Props {
   payload: DefiOpportunitiesPayload;
@@ -28,7 +28,20 @@ function riskTone(level?: string | null): string {
   return "border-amber-300/30 bg-amber-300/10 text-amber-100";
 }
 
+function dispatchExecutePool(item: DefiOpportunityItem) {
+  if (typeof window === "undefined") return;
+  const poolRef = (item.pool_id as string | undefined) || `${item.protocol} ${item.symbol || ""}`.trim();
+  const message = `execute_pool_position pool="${poolRef}" amount=100`;
+  // Primary: structured event for MainApp to inject into chat input.
+  window.dispatchEvent(new CustomEvent("ilyon:execute-pool", { detail: { pool: poolRef, item, message } }));
+  // Fallback: copy to clipboard so user can paste if listener missing.
+  if (navigator?.clipboard?.writeText) {
+    navigator.clipboard.writeText(message).catch(() => {});
+  }
+}
+
 function OpportunityRow({ item }: { item: DefiOpportunityItem }) {
+  const canExecute = Boolean(item.executable);
   return (
     <div data-testid="defi-opp-row" className="rounded-3xl border border-white/10 bg-slate-950/55 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -68,15 +81,29 @@ function OpportunityRow({ item }: { item: DefiOpportunityItem }) {
           ))}
         </div>
       )}
-      {item.executable ? (
-        <div className="mt-3 rounded-2xl border border-emerald-300/25 bg-emerald-300/10 p-2 text-xs text-emerald-100">
-          Executable via {item.adapter_id || "verified adapter"}
-        </div>
-      ) : (
-        <div className="mt-3 rounded-2xl border border-amber-300/25 bg-amber-300/10 p-2 text-xs text-amber-100">
-          {item.unsupported_reason || "Routed via closest-executable alternative at sign-time."}
-        </div>
-      )}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => dispatchExecutePool(item)}
+          data-testid="defi-opp-execute"
+          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black uppercase tracking-[0.18em] transition ${
+            canExecute
+              ? "border border-emerald-300/40 bg-emerald-300/15 text-emerald-50 hover:bg-emerald-300/25"
+              : "border border-amber-300/40 bg-amber-300/15 text-amber-50 hover:bg-amber-300/25"
+          }`}
+        >
+          <Rocket className="h-3 w-3" /> Execute
+        </button>
+        {canExecute ? (
+          <span className="text-xs text-emerald-200/80">
+            via {item.adapter_id || "verified adapter"}
+          </span>
+        ) : (
+          <span className="text-xs text-amber-100/80">
+            {item.unsupported_reason || "Routed via closest-executable alternative at sign-time."}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

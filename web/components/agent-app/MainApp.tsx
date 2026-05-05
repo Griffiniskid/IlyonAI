@@ -598,14 +598,41 @@ function cardsFromAgentCard(cardType: string, payload: Record<string, unknown>):
   }
 
   if (cardType === "balance") {
+    const tokens = Array.isArray(payload.tokens) ? (payload.tokens as Array<Record<string, unknown>>) : [];
+    const byChain = (payload.by_chain && typeof payload.by_chain === "object") ? payload.by_chain as Record<string, Record<string, unknown>> : {};
+    const positions = Array.isArray(payload.positions) ? payload.positions as unknown[] : [];
+
+    const details: Record<string, string> = {
+      "Total USD": fmtCardValue(payload.total_usd),
+      Tokens: String(tokens.length),
+      Positions: String(positions.length),
+      Chains: String(Object.keys(byChain).length),
+    };
+
+    const topTokens = tokens
+      .filter((t) => Number(t?.usd ?? 0) >= 0.01)
+      .slice(0, 6);
+    for (const t of topTokens) {
+      const sym = String(t?.symbol ?? "?");
+      const chain = String(t?.chain ?? "");
+      const amt = Number(t?.amount ?? 0);
+      const usd = Number(t?.usd ?? 0);
+      const amtStr = amt >= 1 ? amt.toLocaleString(undefined, { maximumFractionDigits: 4 }) : amt.toPrecision(4);
+      const usdStr = usd >= 1 ? `$${usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : `$${usd.toFixed(4)}`;
+      const label = chain ? `${sym} · ${chain}` : sym;
+      details[label] = `${amtStr} ${sym} (${usdStr})`;
+    }
+
+    for (const [chain, info] of Object.entries(byChain).slice(0, 8)) {
+      const usd = Number(info?.usd ?? 0);
+      if (usd <= 0) continue;
+      details[`Chain · ${chain}`] = `$${usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    }
+
     return [{
       title: "Wallet balance",
       subtitle: fmtCardValue(payload.address),
-      details: {
-        "Total USD": fmtCardValue(payload.total_usd),
-        Tokens: fmtCardValue(Array.isArray(payload.tokens) ? payload.tokens.length : 0),
-        Positions: fmtCardValue(Array.isArray(payload.positions) ? payload.positions.length : 0),
-      },
+      details,
     }];
   }
 
@@ -2567,6 +2594,27 @@ const CSS = `
     color: #d1fae5;
     margin-bottom: 14px;
   }
+  .public-testing-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 12px;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    background: rgba(120, 53, 15, 0.42);
+    padding: 8px 14px;
+    color: #fde68a;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    margin-bottom: 10px;
+  }
+  .public-testing-banner a {
+    color: #fbbf24;
+    font-weight: 800;
+    text-decoration: underline;
+  }
+  .public-testing-banner a:hover { color: #fde68a; }
 
   .top-banner-label {
     display: flex;
@@ -4835,6 +4883,20 @@ export default function MainApp() {
     }
   };
 
+  const sendRef = useRef(send);
+  useEffect(() => { sendRef.current = send; });
+  useEffect(() => {
+    const onExecute = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { pool?: string; message?: string } | undefined;
+      const pool = detail?.pool || "";
+      const message = detail?.message || (pool ? `Execute this pool ${pool} with $100` : "");
+      if (!message) return;
+      void sendRef.current(message);
+    };
+    window.addEventListener("ilyon:execute-pool", onExecute as EventListener);
+    return () => window.removeEventListener("ilyon:execute-pool", onExecute as EventListener);
+  }, []);
+
   const handleStartSigning = (payload: ExecutionPlanPayload) => {
     const hasExecutableTransaction = payload.steps.some((step) => {
       const executableStep = step as ExecutionPlanPayload["steps"][number] & {
@@ -5200,6 +5262,9 @@ export default function MainApp() {
           </div>
 
           <div className="content-canvas">
+            <div className="public-testing-banner">
+              <span>⚠️ Public testing — report bugs to Telegram <a href="https://t.me/griffiniskid" target="_blank" rel="noopener noreferrer">@griffiniskid</a></span>
+            </div>
             <div className="top-banner">
               <div className="top-banner-label" data-agent-build="sentinel-v2-streaming-live">
                 <span>✦</span>

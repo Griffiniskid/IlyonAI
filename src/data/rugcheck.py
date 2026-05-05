@@ -206,9 +206,11 @@ class RugCheckClient:
             # ═══════════════════════════════════════════════════════════════
             # LP LOCK DETECTION - Check 'markets' for locked LP
             # ═══════════════════════════════════════════════════════════════
-            markets = data.get('markets', [])
+            markets = data.get('markets') or []
             for market in markets:
-                lp = market.get('lp', {})
+                if not isinstance(market, dict):
+                    continue
+                lp = market.get('lp') or {}
                 lp_locked_pct = lp.get('lpLockedPct', 0) or 0
 
                 if lp.get('lpLocked', False) or lp_locked_pct > 0:
@@ -225,7 +227,7 @@ class RugCheckClient:
             # ═══════════════════════════════════════════════════════════════
             # LP LOCK DETECTION - Check 'lockerOwners'
             # ═══════════════════════════════════════════════════════════════
-            locker_owners = data.get('lockerOwners', [])
+            locker_owners = data.get('lockerOwners') or []
             if locker_owners and len(locker_owners) > 0:
                 result['lp_locked'] = True
                 logger.info(f"✅ LP Lock via lockerOwners: {len(locker_owners)}")
@@ -238,9 +240,11 @@ class RugCheckClient:
             # ═══════════════════════════════════════════════════════════════
             # RISK FACTORS
             # ═══════════════════════════════════════════════════════════════
-            risks = data.get('risks', [])
-            # Extract risk names, limit to top 5
-            result['risks'] = [r.get('name', '') for r in risks[:5]]
+            risks = data.get('risks') or []
+            result['risks'] = [
+                (r.get('name', '') if isinstance(r, dict) else '')
+                for r in risks[:5]
+            ]
 
             # ═══════════════════════════════════════════════════════════════
             # MINT/FREEZE AUTHORITY

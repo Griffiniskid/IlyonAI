@@ -337,3 +337,83 @@ def _render_shield_summary(raw: dict[str, Any], *, address: str, chain: str | No
     else:
         lines.append("\n(No significant approvals or risks detected.)")
     return "\n".join(lines)
+
+
+async def lookup_entity(
+    ctx,
+    *,
+    query: str,
+):
+    """Resolve a name, ENS, address, or fund tag to a Sentinel entity profile."""
+    if not query:
+        return err_envelope("missing_query", "Pass an address, ENS, fund tag, or name to look up.")
+    qnorm = str(query).strip()
+    raw = await _internal_get(f"/api/v1/entities/{qnorm}")
+    if raw is None:
+        listing = await _internal_get("/api/v1/entities", params={"q": qnorm})
+        if isinstance(listing, dict):
+            entries = listing.get("entities") or []
+            if entries:
+                raw = entries[0]
+    if not raw:
+        return err_envelope("entity_not_found", f"No Sentinel entity profile matched `{qnorm}`.")
+    name = raw.get("name") or raw.get("label") or qnorm
+    tags = raw.get("tags") or raw.get("classifications") or []
+    addrs = raw.get("addresses") or []
+    summary_lines = [f"**Entity — {name}**"]
+    if tags:
+        summary_lines.append("Tags: " + ", ".join(str(t) for t in tags[:8]))
+    if addrs:
+        summary_lines.append(f"Linked addresses: {len(addrs)} (first: `{str(addrs[0])[:14]}…`)")
+    if raw.get("description"):
+        summary_lines.append(str(raw["description"])[:280])
+    return ok_envelope(
+        data={"entity": raw, "query": qnorm},
+        card_type="text",
+        card_payload={"text": "\n".join(summary_lines), "kind": "sentinel_entity"},
+    )
+
+
+async def analyze_pool(
+    ctx,
+    *,
+    pool: str,
+    chain: str | None = None,
+):
+    """Sentinel-grade pool analysis. Accepts DefiLlama pool UUID or 'protocol pair'."""
+    if not pool:
+        return err_envelope("missing_pool", "Pass a DefiLlama pool UUID or 'protocol pair'.")
+    from src.agent.tools.execute_pool_position import (
+        _fetch_pool_meta,
+        _looks_like_pool_id,
+        _resolve_protocol_pair,
+        _split_protocol_pair,
+    )
+    pool_arg = str(pool).strip()
+    if _looks_like_pool_id(pool_arg):
+        meta = await _fetch_pool_meta(pool_arg)
+    else:
+        protocol_hint, pair_hint = _split_protocol_pair(pool_arg)
+        meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=chain)
+    if not meta:
+        return err_envelope("pool_not_found", f"Could not resolve pool `{pool_arg}` against DefiLlama.")
+    apy = meta.get("apy") or meta.get("apyBase")
+    tvl = meta.get("tvlUsd")
+    risk = meta.get("ilRisk") or "medium"
+    lines = [
+        f"**Pool — {meta.get('project','?')} · {meta.get('symbol','?')} on {meta.get('chain','?')}**",
+        f"APY: {apy:.2f}%" if isinstance(apy, (int, float)) else f"APY: {apy or 'n/a'}",
+        f"TVL: {_format_usd(tvl)}",
+        f"IL risk: {risk}",
+    ]
+    if meta.get("predictions"):
+        pred = meta["predictions"]
+        if pred.get("predictedClass"):
+            lines.append(f"DefiLlama outlook: {pred['predictedClass']}")
+    if meta.get("underlyingTokens"):
+        lines.append(f"Underlying tokens: {len(meta['underlyingTokens'])}")
+    return ok_envelope(
+        data={"pool": meta},
+        card_type="text",
+        card_payload={"text": "\n".join(lines), "kind": "sentinel_pool_report"},
+    )

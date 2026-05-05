@@ -146,7 +146,13 @@ class SolanaClient:
                     data = await resp.json()
 
                     if 'error' in data:
-                        logger.warning(f"Helius API error: {data['error']}")
+                        err = data['error']
+                        err_msg = err.get('message', '') if isinstance(err, dict) else str(err)
+                        err_code = err.get('code') if isinstance(err, dict) else None
+                        logger.warning(f"Helius API error: {err}")
+                        if err_code == -32600 or 'Too many accounts' in err_msg:
+                            logger.info(f"Skipping holder fetch for {address[:8]}: mint too large")
+                            return []
                         return []
 
                     result = data.get('result', {})
@@ -439,9 +445,10 @@ class SolanaClient:
         # Try Helius first if available (more reliable, no rate limits)
         if self.helius_api_key:
             helius_holders = await self._get_holders_via_helius(address, limit)
-            if helius_holders:
-                return helius_holders
-            logger.debug("Helius returned no holders, trying standard RPC")
+            # When Helius is configured, trust its answer (incl. empty) and skip
+            # the public-RPC fallback. The fallback otherwise 429s on huge mints
+            # and adds 30+ seconds of retry backoff to every analyzer call.
+            return helius_holders
 
         await self._ensure_connected()
 

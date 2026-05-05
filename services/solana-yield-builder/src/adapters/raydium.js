@@ -39,8 +39,15 @@ module.exports = {
         ],
       };
     }
-    const inputMint = resolveMint(asset || "SOL") || SOL_MINT;
+    const inAsset = (asset || "SOL").toUpperCase();
+    const inputMint = resolveMint(inAsset) || SOL_MINT;
     const usdcMint = resolveMint("USDC");
+    if (inputMint === usdcMint) {
+      throw new Error(
+        "Raydium build needs `extra.lpMint` (LP token mint) when source asset already is USDC. " +
+        "Resolve it from DefiLlama pool metadata before calling /build."
+      );
+    }
     const half = (parseFloat(amount || "0") / 2).toString();
     const { tx } = await buildSwap({
       inputMint,
@@ -48,7 +55,7 @@ module.exports = {
       amount: half,
       user,
       slippageBps,
-      decimals: decimalsFor(asset || "SOL"),
+      decimals: decimalsFor(inAsset),
     });
     return {
       transactions: [
