@@ -178,12 +178,20 @@ async def execute_pool_position(
     else:
         protocol_hint, pair_hint = _split_protocol_pair(pool_arg)
         meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=None)
+        # Fallback: drop the protocol filter and re-scan by pair only.
+        if not meta and pair_hint:
+            meta = await _resolve_protocol_pair("", pair_hint, chain=None)
+        # Second fallback: search DefiLlama by symbol prefix loosely.
+        if not meta and protocol_hint and not pair_hint:
+            meta = await _resolve_protocol_pair("", protocol_hint, chain=None)
 
     if not meta:
         return err_envelope(
             "pool_not_found",
             f"Could not resolve `{pool_arg}` to a DefiLlama pool. "
-            "Use the pool UUID from a search_defi_opportunities result, or 'protocol pair' (e.g. 'raydium-amm SPACEX-WSOL').",
+            "Try a tighter reference: paste the DefiLlama pool UUID, or use 'protocol pair' "
+            "(e.g. 'raydium-amm SPACEX-WSOL'). For Solana memes, the pair must exist as a "
+            "live DefiLlama pool entry.",
         )
 
     chain = str(meta.get("chain", "")).lower()

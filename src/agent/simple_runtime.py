@@ -657,12 +657,11 @@ def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
 
 _POOL_UUID_RE = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
 _POOL_PROTO_PAIR_RE = re.compile(
-    r"\b(raydium-amm|raydium-clmm|orca-whirlpools|orca|meteora-dlmm|meteora|"
+    r"\b(?i:(raydium-amm|raydium-clmm|orca-whirlpools|orca|meteora-dlmm|meteora|"
     r"kamino|marinade|jito|sanctum|drift|aave-v3|compound-v3|spark|curve|convex|pendle|"
     r"yearn-finance|lido|rocket-pool|ether\.fi|frax-ether|stargate|morpho-blue|moonwell|"
-    r"stader|gmx|velodrome|aerodrome-slipstream|uniswap-v[34]|steer-protocol|zeebu|blackhole-clmm|supernova-cl)"
-    r"[\s·/|-]+([A-Z][A-Z0-9.]*[-_/][A-Z0-9.]+|[A-Z][A-Z0-9]{1,15})",
-    re.I,
+    r"stader|gmx|velodrome|aerodrome-slipstream|uniswap-v[34]|steer-protocol|zeebu|blackhole-clmm|supernova-cl))"
+    r"[\s·/|-]+([A-Z][A-Z0-9.]*[-_/][A-Z][A-Z0-9.]+|[A-Z][A-Z0-9]{2,15})",
 )
 
 
