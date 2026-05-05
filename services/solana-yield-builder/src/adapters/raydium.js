@@ -42,31 +42,32 @@ module.exports = {
     const inAsset = (asset || "SOL").toUpperCase();
     const inputMint = resolveMint(inAsset) || SOL_MINT;
     const usdcMint = resolveMint("USDC");
-    if (inputMint === usdcMint) {
-      throw new Error(
-        "Raydium build needs `extra.lpMint` (LP token mint) when source asset already is USDC. " +
-        "Resolve it from DefiLlama pool metadata before calling /build."
-      );
-    }
+    // No lpMint or invalid one: always do a prep-swap into the side that's
+    // *missing* in the user's wallet. If the user already holds USDC, swap
+    // half into SOL to balance the LP. If they hold SOL, swap half into USDC.
+    const inputIsUsdc = inputMint === usdcMint;
+    const targetMint = inputIsUsdc ? SOL_MINT : usdcMint;
+    const targetSym = inputIsUsdc ? "SOL" : "USDC";
+    const sourceSym = inputIsUsdc ? "USDC" : (asset || "SOL");
     const half = (parseFloat(amount || "0") / 2).toString();
     const { tx } = await buildSwap({
       inputMint,
-      outputMint: usdcMint,
+      outputMint: targetMint,
       amount: half,
       user,
       slippageBps,
-      decimals: decimalsFor(inAsset),
+      decimals: decimalsFor(sourceSym),
     });
     return {
       transactions: [
         {
           b64: tx,
-          summary: `Raydium prep: convert half of ${asset || "SOL"} → USDC for LP entry`,
-          description: "Stages capital for adding to a Raydium AMM v4 or CLMM pool.",
-          receiptToken: "USDC",
+          summary: `Raydium prep: convert half of ${sourceSym} → ${targetSym} for LP entry`,
+          description: `Stages capital for adding liquidity to a Raydium AMM v4 / CLMM pool. After this prep tx confirms, finalise the LP add inside the Raydium app for the SPACEX-WSOL or your selected pair.`,
+          receiptToken: targetSym,
           feeUsd: 0.01,
           durationS: 25,
-          warnings: ["Final LP add for Raydium runs in the Raydium app once this prep swap confirms."],
+          warnings: ["Final LP add for Raydium runs in the Raydium app after this prep swap confirms."],
         },
       ],
     };

@@ -24,6 +24,16 @@ _DEFILLAMA_POOL_URL = "https://yields.llama.fi/pool/{pool_id}"
 _DEFILLAMA_POOLS_URL = "https://yields.llama.fi/pools"
 _LLAMA_TIMEOUT = aiohttp.ClientTimeout(total=15)
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+_BASE58_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
+
+
+def _is_solana_pubkey(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    s = value.strip()
+    if s.startswith("0x"):
+        return False
+    return bool(_BASE58_RE.match(s))
 
 
 def _coerce_amount(value: Any) -> Decimal:
@@ -180,15 +190,21 @@ async def execute_pool_position(
     if meta.get("underlyingTokens"):
         extra["underlying_tokens"] = meta.get("underlyingTokens")
     if chain.lower() in {"solana", "sol"}:
-        # Solana yield-builder needs the LP mint when going straight into
-        # an AMM v4 / Whirlpool pool. DefiLlama doesn't always supply it,
-        # but when it does it's usually in `pool_address`.
+        # Solana yield-builder accepts an optional `lpMint` to skip the
+        # prep-swap and route a single one-tx deposit into the LP token.
+        # Only attach it when we have a real base58 Solana mint —
+        # DefiLlama sometimes returns ETH-style hex strings in
+        # `underlyingTokens` for cross-chain mirrors, which would 400 the
+        # sidecar with `Invalid Solana public key`. When unsure, drop the
+        # field and let the adapter fall through to its prep-swap path.
+        candidates = []
         if meta.get("pool_address") or meta.get("poolAddress"):
-            extra["lpMint"] = meta.get("pool_address") or meta.get("poolAddress")
-        elif meta.get("underlyingTokens"):
-            tokens = meta.get("underlyingTokens") or []
-            if tokens:
-                extra["lpMint"] = tokens[0]
+            candidates.append(meta.get("pool_address") or meta.get("poolAddress"))
+        for tok in (meta.get("underlyingTokens") or []):
+            candidates.append(tok)
+        valid = next((c for c in candidates if _is_solana_pubkey(c)), None)
+        if valid:
+            extra["lpMint"] = valid
 
     return await build_yield_execution_plan(
         ctx,

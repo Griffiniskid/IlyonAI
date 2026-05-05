@@ -681,6 +681,11 @@ def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] |
         m2 = _POOL_PROTO_PAIR_RE.search(text)
         if m2:
             pool_ref = f"{m2.group(1)} {m2.group(2)}"
+        else:
+            # Plain symbol pair fallback ("SPACEX-WSOL", "WETH/USDC").
+            sp = re.search(r"\b([A-Z][A-Z0-9.]{0,9}[-/_][A-Z][A-Z0-9.]{0,9})\b", text)
+            if sp:
+                pool_ref = sp.group(1)
     if not pool_ref:
         return None
     return "execute_pool_position", {
@@ -766,8 +771,17 @@ def _detect_sentinel_chat_tools(message: str) -> tuple[str, dict] | None:
     if _ANALYZE_POOL_RE.search(text) and not re.search(r"\bexecute\b|\bdeposit\b", text, re.I):
         u = _POOL_UUID_RE.search(text)
         p = _POOL_PROTO_PAIR_RE.search(text)
-        if u or p:
-            ref = u.group(0) if u else f"{p.group(1)} {p.group(2)}"
+        ref: str | None = None
+        if u:
+            ref = u.group(0)
+        elif p:
+            ref = f"{p.group(1)} {p.group(2)}"
+        else:
+            # Fallback: just a symbol pair like "SPACEX-WSOL" or "WETH/USDC"
+            sp = re.search(r"\b([A-Z][A-Z0-9.]{0,9}[-/_][A-Z][A-Z0-9.]{0,9})\b", text)
+            if sp:
+                ref = sp.group(1)
+        if ref:
             return "analyze_pool_full_sentinel", {"pool": ref}
     # 3. whale_track
     if _WHALE_RE.search(text):
