@@ -724,7 +724,7 @@ def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] |
             pool_ref = f"{proto_token.group(1).lower()} {pool_ref}"
     params: dict = {
         "pool": pool_ref,
-        "amount": intent.amount_usd or 100.0,
+        "amount": intent.amount_usd if (intent.amount_usd is not None and intent.amount_usd > 0) else 100.0,
     }
     chain_hint_match = re.search(r"\bon\s+(solana|ethereum|polygon|arbitrum|base|optimism|bsc|avalanche)\b", text, re.I)
     if chain_hint_match:
@@ -735,7 +735,7 @@ def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] |
 def _defi_intent_to_tool(intent: DefiIntent) -> tuple[str, dict] | None:
     if intent.intent == "allocate_strategy":
         params: dict = {
-            "usd_amount": intent.amount_usd or 10_000.0,
+            "usd_amount": intent.amount_usd if (intent.amount_usd is not None and intent.amount_usd != 0) else 10_000.0,
             "risk_budget": intent.risk_budget,
         }
         if intent.chains:
