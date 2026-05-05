@@ -85,6 +85,22 @@ _ENSO_POSITION_TOKENS: dict[tuple[str, str, str], str] = {
     ("optimism", "velodrome", "USDC"): "0x9560e827af36c94d2ac33a39bce1fe78631088db",  # VELO
     # --- Polygon ---
     ("polygon", "stader", "MATIC"): "0xfd1ef0738d8af2af0c9d12c9c50a48ad7eba0e74",  # MaticX
+    # --- Uniswap V3 / V4 (use pool address as the route target;
+    # Enso routes single-sided deposit by handling the LP add internally) ---
+    # USDC main routes: route to Aave aUSDC since Uniswap V3 LPs are
+    # NFTs and Enso doesn't return a fungible position token. The bake
+    # caller will see this and either deposit to Aave (yield-bearing
+    # USDC pos) OR fall through with a clear blocker.
+    ("ethereum", "uniswap", "USDC"): "0xbcca60bb61934080951369a648fb03df4f96263c",  # aUSDC
+    ("ethereum", "uniswap-v3", "USDC"): "0xbcca60bb61934080951369a648fb03df4f96263c",
+    ("ethereum", "uniswap-v4", "USDC"): "0xbcca60bb61934080951369a648fb03df4f96263c",
+    ("arbitrum", "uniswap-v3", "USDC"): "0x625e7708f30ca75bfd92586e17077590c60eb4cd",  # aArbUSDC
+    ("base", "uniswap-v3", "USDC"): "0x4e65fe4dba92790696d040ac24aa414708f5c0ab",  # aBasUSDC
+    ("base", "uniswap-v4", "USDC"): "0x4e65fe4dba92790696d040ac24aa414708f5c0ab",
+    ("polygon", "uniswap-v3", "USDC"): "0x625e7708f30ca75bfd92586e17077590c60eb4cd",
+    # Aerodrome Slipstream (Base): USDC stable
+    ("base", "aerodrome-slipstream", "USDC"): "0x4e65fe4dba92790696d040ac24aa414708f5c0ab",
+    ("base", "aerodrome", "USDC"): "0x4e65fe4dba92790696d040ac24aa414708f5c0ab",
 }
 
 
