@@ -22,6 +22,7 @@ from .transfer_build import build_transfer_tx
 from .allocate_plan import allocate_plan
 from .build_yield_execution_plan import build_yield_execution_plan
 from .execute_pool_position import execute_pool_position
+from .analyze_dex_pair import analyze_dex_pair
 from .sentinel_features import (
     analyze_pool as analyze_pool_full_sentinel,
     analyze_token_full_sentinel,
@@ -136,6 +137,17 @@ _TOOL_REGISTRY = {
             "execute a specific yield action like 'supply 100 USDC to Aave V3'. Args: "
             "chain, protocol, action ('supply'|'deposit_lp'|'stake'), asset_in, "
             "amount_in, optional asset_out, slippage_bps, inventory."
+        ),
+    ),
+    "analyze_dex_pair": (
+        analyze_dex_pair,
+        (
+            "Auto-detect a pasted address: if it's a DexScreener pair, run pool "
+            "analysis; if it's a token mint, run token analysis. Use whenever "
+            "the user pastes a 32-44 base58 Solana address or a 0x… EVM address "
+            "with phrasings like 'analyze this pair', 'what is this pool', "
+            "'check this pool address', 'analyze this on dexscreener'. Args: "
+            "address, optional chain."
         ),
     ),
     "execute_pool_position": (

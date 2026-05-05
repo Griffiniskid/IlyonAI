@@ -796,15 +796,13 @@ def _detect_sentinel_chat_tools(message: str) -> tuple[str, dict] | None:
     # short-circuit the sentinel router.
     if re.match(r"^\s*(my\s+(?:wallet|balance|portfolio|holdings|assets)\b|what\s+is\s+my\b|swap\s|bridge\s|allocate\s|distribute\s|deploy\s+\$?\d|portfolio\b|holdings\b)", text, re.I):
         return None
-    # 1. analyze_token (also matches "analyze this pool on dexscreener: <mint>"
-    #    and other phrasings around a bare mint).
+    # 1. analyze_token / analyze_dex_pair (also matches "analyze this pool
+    #    on dexscreener: <addr>" and other phrasings around a bare address).
     m = _ANALYZE_TOKEN_RE.search(text)
     bare_addr_match = None
     if not m:
-        # Stand-alone mint with explicit "analyze" verb but no token/pool noun.
         if re.search(r"\b(analyze|check|scan|sentinel|review)\b", text, re.I):
             bare_addr_match = _BARE_MINT_RE.search(text)
-            # Avoid matching a wallet that's also the user's connected one.
             if bare_addr_match:
                 m = bare_addr_match
     if m:
@@ -817,6 +815,11 @@ def _detect_sentinel_chat_tools(message: str) -> tuple[str, dict] | None:
         params: dict = {"address": addr}
         if chain:
             params["chain"] = chain
+        # Pasted with 'pool', 'pair', 'dex', 'dexscreener' → use the
+        # ambiguity-resolving DexScreener probe. Otherwise default to
+        # token analysis.
+        if re.search(r"\b(pool|pair|dex|dexscreener|liquidity)\b", text, re.I):
+            return "analyze_dex_pair", params
         return "analyze_token_full_sentinel", params
     # 2. analyze_pool — only when pool reference present and not already in execute mode
     if _ANALYZE_POOL_RE.search(text) and not re.search(r"\bexecute\b|\bdeposit\b", text, re.I):
