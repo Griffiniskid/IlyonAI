@@ -11,6 +11,8 @@ class ToolCtx:
     user_id: int
     wallet: str | None
     session_id: str | None = None
+    solana_wallet: str | None = None
+    evm_wallet: str | None = None
 
 
 def ok_envelope(*, data, card_type=None, card_payload=None):

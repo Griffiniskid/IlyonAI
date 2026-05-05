@@ -31,7 +31,19 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
 
     body = await request.json()
     session_id = body.get("session_id", "")
-    wallet = request.get("user_wallet") or body.get("wallet")
+    wallet = request.get("user_wallet") or body.get("wallet") or body.get("user_address") or body.get("evm_address")
+    solana_wallet = body.get("solana_wallet") or body.get("solana_address")
+    evm_wallet = body.get("evm_wallet") or body.get("evm_address")
+    # Auto-derive: if `wallet` is base58 Solana, surface as solana_wallet
+    # too. If hex 0x.., surface as evm_wallet.
+    if wallet and not solana_wallet:
+        import re as _re
+        if _re.match(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$", str(wallet)):
+            solana_wallet = wallet
+    if wallet and not evm_wallet and isinstance(wallet, str) and wallet.lower().startswith("0x") and len(wallet) == 42:
+        evm_wallet = wallet
+    # If wallet is EVM-style hex but a solana_wallet was supplied, keep
+    # both so downstream tools can pick the right one per intent.
     user_id = request.get("user_id", 0)
 
     if not agent_gap.allow(user_id, session_id):
@@ -48,7 +60,7 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
     await response.prepare(request)
 
     try:
-        message = normalize_short_swap_query(body.get("message", ""))
+        message = normalize_short_swap_query(body.get("message") or body.get("query") or "")
 
         from src.storage.database import get_database
         from src.agent.runtime import run_turn
@@ -70,8 +82,14 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
         # For authenticated users, use persistent mode
         if not wallet or user_id == 0:
             # Guest mode - no DB persistence, just streaming response
-            tools = register_all_tools(services_ns, user_id=0, wallet=wallet or "guest")
-            
+            tools = register_all_tools(
+                services_ns,
+                user_id=0,
+                wallet=wallet or "guest",
+                solana_wallet=solana_wallet,
+                evm_wallet=evm_wallet,
+            )
+
             async for chunk in run_simple_turn(
                 router=router,
                 tools=tools,
@@ -79,12 +97,20 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
                 wallet=wallet,
                 session_id=session_id,
                 user_id=user_id,
+                solana_wallet=solana_wallet,
+                evm_wallet=evm_wallet,
             ):
                 await response.write(chunk)
         else:
             # Authenticated mode with persistence
-            tools = register_all_tools(services_ns, user_id=user_id, wallet=wallet)
-            
+            tools = register_all_tools(
+                services_ns,
+                user_id=user_id,
+                wallet=wallet,
+                solana_wallet=solana_wallet,
+                evm_wallet=evm_wallet,
+            )
+
             async for chunk in run_turn(
                 db=db,
                 router=router,

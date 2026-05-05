@@ -185,9 +185,13 @@ async def execute_pool_position(
         return err_envelope("invalid_amount", "amount must be a positive decimal value.")
 
     if not user_address:
-        wallet = getattr(ctx, "wallet", None)
-        if wallet:
-            user_address = str(wallet)
+        # Try ctx wallets in order. We re-pick after meta resolves to
+        # ensure we use the right one for the pool's chain.
+        user_address = (
+            getattr(ctx, "wallet", None)
+            or getattr(ctx, "solana_wallet", None)
+            or getattr(ctx, "evm_wallet", None)
+        )
     if not user_address:
         return err_envelope(
             "missing_wallet",
@@ -233,10 +237,21 @@ async def execute_pool_position(
     pool_symbol = str(meta.get("symbol", ""))
     final_asset_in = asset_in or _pick_asset_in(meta)
 
-    # Wallet/chain compatibility preflight. Surface a clear blocker rather
-    # than a cryptic 'invalid address' from the EVM hex parser.
+    # Wallet/chain compatibility preflight. If the primary wallet is the
+    # wrong format for this pool, swap in the matching ctx field before
+    # giving up. Phantom in dual-mode exposes both an EVM hex address and
+    # a Solana base58 pubkey — both come through, just under different
+    # request body fields.
     is_solana_pool = chain in {"solana", "sol"}
     is_evm_pool = chain in {"ethereum", "polygon", "arbitrum", "base", "optimism", "bsc", "avalanche"}
+    if is_solana_pool and not _is_solana_pubkey(user_address):
+        sol_alt = getattr(ctx, "solana_wallet", None)
+        if sol_alt and _is_solana_pubkey(sol_alt):
+            user_address = sol_alt
+    if is_evm_pool and not (isinstance(user_address, str) and user_address.lower().startswith("0x") and len(user_address) == 42):
+        evm_alt = getattr(ctx, "evm_wallet", None)
+        if evm_alt and evm_alt.startswith("0x") and len(evm_alt) == 42:
+            user_address = evm_alt
     user_is_solana = _is_solana_pubkey(user_address)
     user_is_evm = isinstance(user_address, str) and user_address.lower().startswith("0x") and len(user_address) == 42
     if is_solana_pool and not user_is_solana:

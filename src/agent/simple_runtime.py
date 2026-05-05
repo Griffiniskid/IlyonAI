@@ -778,7 +778,11 @@ _WHALE_RE = re.compile(r"\b(whale|whales|big buyer|big sell|large transfer|smart
 _SMART_MONEY_RE = re.compile(r"\b(smart money|conviction picks?|top traders?|alpha hub)\b", re.I)
 _ENTITY_RE = re.compile(r"\b(who is|who are|find entity|tag for|known as|who's)\s+([A-Za-z0-9._\-]{2,60})\b", re.I)
 _SHIELD_RE = re.compile(r"\b(shield|approvals?|drain|risk scan)\b.*\b(0x[a-fA-F0-9]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})\b", re.I)
-_ANALYZE_TOKEN_RE = re.compile(r"\b(analyze|check|scan|sentinel|review)\s+(?:this\s+)?(?:token|coin|mint|contract)?\s*\b(0x[a-fA-F0-9]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})\b", re.I)
+_ANALYZE_TOKEN_RE = re.compile(r"\b(analyze|check|scan|sentinel|review)\s+(?:this\s+)?(?:token|coin|mint|contract|pool)?\s*(?:on\s+(?:dexscreener|dex|solscan|defillama)\s*[:,]?\s*)?\b(0x[a-fA-F0-9]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})\b", re.I)
+# Bare-mint detector: when message contains a Solana base58 mint or 0x EVM
+# address with no accompanying pool/protocol words, default to token analysis.
+_BARE_MINT_RE = re.compile(r"\b(0x[a-fA-F0-9]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})\b")
+_DEX_HINT_RE = re.compile(r"\b(dexscreener|dex screener|solscan|on dex)\b", re.I)
 _ANALYZE_POOL_RE = re.compile(r"\b(analyze|review|stats? for|check)\s+(?:this\s+)?pool\b", re.I)
 
 
@@ -792,10 +796,19 @@ def _detect_sentinel_chat_tools(message: str) -> tuple[str, dict] | None:
     # short-circuit the sentinel router.
     if re.match(r"^\s*(my\s+(?:wallet|balance|portfolio|holdings|assets)\b|what\s+is\s+my\b|swap\s|bridge\s|allocate\s|distribute\s|deploy\s+\$?\d|portfolio\b|holdings\b)", text, re.I):
         return None
-    # 1. analyze_token
+    # 1. analyze_token (also matches "analyze this pool on dexscreener: <mint>"
+    #    and other phrasings around a bare mint).
     m = _ANALYZE_TOKEN_RE.search(text)
+    bare_addr_match = None
+    if not m:
+        # Stand-alone mint with explicit "analyze" verb but no token/pool noun.
+        if re.search(r"\b(analyze|check|scan|sentinel|review)\b", text, re.I):
+            bare_addr_match = _BARE_MINT_RE.search(text)
+            # Avoid matching a wallet that's also the user's connected one.
+            if bare_addr_match:
+                m = bare_addr_match
     if m:
-        addr = m.group(2)
+        addr = m.group(2) if hasattr(m, "groups") and m.groups() and m.lastindex and m.lastindex >= 2 else m.group(0)
         chain_lower = text.lower()
         chain = "solana" if (len(addr) >= 32 and not addr.startswith("0x")) else (
             "ethereum" if "ethereum" in chain_lower else (
@@ -1810,6 +1823,8 @@ async def run_simple_turn(
     wallet: str | None = None,
     session_id: str | None = None,
     user_id: int = 0,
+    solana_wallet: str | None = None,
+    evm_wallet: str | None = None,
 ) -> AsyncIterator[bytes]:
     """Wrapper around run_ephemeral_turn that persists chat history and loads
     prior turns for context.

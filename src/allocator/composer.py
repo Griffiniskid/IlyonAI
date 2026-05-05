@@ -463,6 +463,8 @@ def execution_steps_from_positions(
                 router=p.router,
                 wallet=wallet_by_chain.get(p.chain, "MetaMask"),
                 gas=f"~${gas_usd:,.2f}",
+                step_id=f"alloc_step_{p.rank}",
+                protocol=p.protocol,
             )
         )
     return [s.model_dump() for s in steps]

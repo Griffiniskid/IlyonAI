@@ -4754,7 +4754,21 @@ export default function MainApp() {
       const res = await fetch("/api/v1/agent", {
         method: "POST",
         headers,
-        body: JSON.stringify({ query: normalizedQuery, session_id: currentChatId ?? clientSessionId, chat_id: currentChatId, user_address: connectedWallet ?? "", solana_address: solanaWallet ?? "", chain_id: effectiveChainId, wallet_type: walletType ?? undefined }),
+        body: JSON.stringify({
+          query: normalizedQuery,
+          message: normalizedQuery,
+          session_id: currentChatId ?? clientSessionId,
+          chat_id: currentChatId,
+          user_address: connectedWallet ?? "",
+          solana_address: solanaWallet ?? "",
+          solana_wallet: solanaWallet ?? "",
+          evm_wallet: connectedWallet && /^0x[a-fA-F0-9]{40}$/.test(connectedWallet) ? connectedWallet : "",
+          // Send the right wallet for Solana intent so the backend doesn't
+          // hijack a Phantom EVM-mode hex pubkey when the user wants Solana.
+          wallet: solanaIntent && solanaWallet ? solanaWallet : (connectedWallet ?? ""),
+          chain_id: effectiveChainId,
+          wallet_type: walletType ?? undefined,
+        }),
       });
 
       const contentType = res.headers.get("content-type") || "";
@@ -4897,21 +4911,56 @@ export default function MainApp() {
     return () => window.removeEventListener("ilyon:execute-pool", onExecute as EventListener);
   }, []);
 
-  const handleStartSigning = (payload: ExecutionPlanPayload) => {
-    const hasExecutableTransaction = payload.steps.some((step) => {
-      const executableStep = step as ExecutionPlanPayload["steps"][number] & {
-        rawTx?: unknown;
-        swapTransaction?: unknown;
-        transaction?: unknown;
-        unsignedTx?: unknown;
-        serializedTransaction?: unknown;
-      };
+  const handleStartSigning = async (payload: ExecutionPlanPayload) => {
+    type StepLite = ExecutionPlanPayload["steps"][number] & {
+      rawTx?: unknown;
+      swapTransaction?: unknown;
+      transaction?: { chain_kind?: string; serialized?: string | null; to?: string | null; data?: string | null; value?: string | null };
+      unsignedTx?: unknown;
+      serializedTransaction?: unknown;
+    };
+    // First pass: sign every step that already has a baked unsigned tx,
+    // sequentially. This is the new default path now that allocate_plan
+    // pre-bakes transactions per position.
+    const stepsWithTx = (payload.steps as StepLite[]).filter(s => s.transaction && (s.transaction.serialized || s.transaction.data));
+    if (stepsWithTx.length > 0) {
+      showToast(`Signing ${stepsWithTx.length} step${stepsWithTx.length > 1 ? "s" : ""} sequentially…`, "info");
+      for (const step of stepsWithTx) {
+        const tx = step.transaction!;
+        try {
+          if (tx.chain_kind === "solana" && tx.serialized) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const sol = (window as any)?.phantom?.solana ?? (window as any).solana;
+            if (!sol?.isPhantom) throw new Error("Phantom wallet not found");
+            const { VersionedTransaction } = await import("@solana/web3.js");
+            const bytes = Uint8Array.from(atob(tx.serialized), c => c.charCodeAt(0));
+            const vtx = VersionedTransaction.deserialize(bytes);
+            const { signature } = await sol.signAndSendTransaction(vtx);
+            showToast(`Step ${step.index} signed: ${signature.slice(0, 12)}…`, "success");
+          } else if (tx.chain_kind === "evm" && tx.to && tx.data) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const eth: any = (window as any).ethereum;
+            if (!eth) throw new Error("MetaMask not found");
+            const accs = await eth.request({ method: "eth_accounts" });
+            const params = [{ from: accs[0], to: tx.to, data: tx.data, value: tx.value || "0x0" }];
+            const hash = await eth.request({ method: "eth_sendTransaction", params });
+            showToast(`Step ${step.index} signed: ${String(hash).slice(0, 12)}…`, "success");
+          }
+        } catch (e: unknown) {
+          const msg = (e as { message?: string }).message || "Signing failed";
+          showToast(`Step ${step.index} wallet error: ${msg}`, "error");
+          break;
+        }
+      }
+      return;
+    }
+    const hasExecutableTransaction = (payload.steps as StepLite[]).some((step) => {
       return Boolean(
-        executableStep.rawTx ||
-        executableStep.swapTransaction ||
-        executableStep.transaction ||
-        executableStep.unsignedTx ||
-        executableStep.serializedTransaction
+        step.rawTx ||
+        step.swapTransaction ||
+        step.transaction ||
+        step.unsignedTx ||
+        step.serializedTransaction
       );
     });
 

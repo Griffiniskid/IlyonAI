@@ -200,8 +200,14 @@ _TOOL_REGISTRY = {
 }
 
 
-def register_all_tools(services, user_id=0, wallet=None):
-    ctx = ToolCtx(services=services, user_id=user_id, wallet=wallet)
+def register_all_tools(services, user_id=0, wallet=None, solana_wallet=None, evm_wallet=None):
+    ctx = ToolCtx(
+        services=services,
+        user_id=user_id,
+        wallet=wallet,
+        solana_wallet=solana_wallet,
+        evm_wallet=evm_wallet,
+    )
     tools = []
     for name, (fn, desc) in _TOOL_REGISTRY.items():
 

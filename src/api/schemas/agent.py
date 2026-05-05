@@ -80,6 +80,16 @@ class SentinelMatrixPayload(_CardPayloadBase):
     weighted_sentinel: int = Field(ge=0, le=100)
 
 
+class ExecutionStepTx(_Strict):
+    chain_kind: str
+    chain_id: Optional[int] = None
+    serialized: Optional[str] = None
+    to: Optional[str] = None
+    data: Optional[str] = None
+    value: Optional[str] = None
+    spender: Optional[str] = None
+
+
 class ExecutionStep(_Strict):
     index: int
     verb: str
@@ -90,6 +100,11 @@ class ExecutionStep(_Strict):
     router: str
     wallet: WalletKind
     gas: str
+    step_id: Optional[str] = None
+    protocol: Optional[str] = None
+    pool_id: Optional[str] = None
+    transaction: Optional[ExecutionStepTx] = None
+    blocker: Optional[str] = None
 
 
 class ExecutionPlanPayload(_CardPayloadBase):

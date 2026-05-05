@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, Sequence
 from uuid import uuid4
 
@@ -15,6 +16,55 @@ from src.allocator.composer import (
     total_gas_from_steps,
     wallets_summary_from_steps,
 )
+
+
+_logger = logging.getLogger(__name__)
+
+
+async def _bake_step_transactions(ctx, steps: list[dict], positions: list) -> list[dict]:
+    """For each allocation step, call execute_pool_position to obtain a real
+    unsigned transaction and embed it on the step. Failures are non-fatal:
+    the step keeps a textual blocker so the front-end can show a clear
+    'Sign manually via Execute button' fallback instead of a dead button.
+    """
+    from src.agent.tools.execute_pool_position import execute_pool_position
+    out: list[dict] = []
+    pos_by_index = {p.rank: p for p in positions}
+    for step in steps:
+        idx = step.get("index")
+        position = pos_by_index.get(idx)
+        baked = dict(step)
+        if not position:
+            out.append(baked)
+            continue
+        pool_ref = f"{position.protocol} {position.asset}".strip()
+        # Resolve a number from amount string ("$350" -> 350, "20.000" -> 20).
+        try:
+            amt_str = str(step.get("amount", "")).replace(",", "").replace("$", "")
+            amount = float(amt_str) if amt_str else 100.0
+        except (TypeError, ValueError):
+            amount = 100.0
+        try:
+            env = await asyncio.wait_for(
+                execute_pool_position(
+                    ctx,
+                    pool=pool_ref,
+                    amount=amount,
+                    chain=position.chain if position.chain in {"solana", "ethereum", "polygon", "arbitrum", "base", "optimism", "bsc", "avalanche"} else None,
+                ),
+                timeout=20.0,
+            )
+            if env and env.ok and env.card_payload:
+                plan = env.card_payload
+                first = (plan.get("steps") or [None])[0] if isinstance(plan, dict) else None
+                if first and first.get("transaction"):
+                    baked["transaction"] = first.get("transaction")
+                    baked["pool_id"] = (plan.get("research_thesis") or "")[:64] or None
+        except Exception as exc:  # noqa: BLE001
+            _logger.warning("bake_step %s failed: %s", idx, exc)
+            baked["blocker"] = str(exc)[:160]
+        out.append(baked)
+    return out
 
 
 _AUDIT_PROJECTS = {
@@ -455,6 +505,10 @@ async def _allocate_from_engine(
         weighted_sentinel=summary["weighted_sentinel"],
     )
     steps = execution_steps_from_positions(positions, usd_amount)
+    # Pre-bake real unsigned transactions into each step so the bulk
+    # 'Start signing' and per-row Execute buttons land on a wallet popup
+    # without an extra agent round-trip.
+    steps = await _bake_step_transactions(ctx, steps, positions)
     execution_plan_payload = ExecutionPlanPayload(
         steps=steps,
         total_gas=total_gas_from_steps(steps),
@@ -546,6 +600,7 @@ async def _allocate_from_defillama(
         weighted_sentinel=summary["weighted_sentinel"],
     )
     steps = execution_steps_from_positions(positions, usd_amount)
+    steps = await _bake_step_transactions(ctx, steps, positions)
     execution_plan_payload = ExecutionPlanPayload(
         steps=steps,
         total_gas=total_gas_from_steps(steps),
