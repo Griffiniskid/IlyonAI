@@ -695,12 +695,33 @@ def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] |
                 )
                 if m3:
                     asset = m3.group(1).upper()
-                    proto = re.sub(r"\s+", "-", m3.group(2).strip().lower())
-                    # Drop trailing chain word if present.
+                    proto_raw = m3.group(2).strip().lower()
+                    # Drop trailing chain phrase: "kamino on solana" -> "kamino"
+                    proto_raw = re.sub(
+                        r"\s+(?:on|via)\s+(ethereum|solana|polygon|arbitrum|base|optimism|bsc|avalanche)\b.*$",
+                        "",
+                        proto_raw,
+                    )
+                    proto = re.sub(r"\s+", "-", proto_raw)
                     proto = re.sub(r"-(ethereum|solana|polygon|arbitrum|base|optimism|bsc|avalanche)$", "", proto)
                     pool_ref = f"{proto} {asset}"
     if not pool_ref:
         return None
+    # When pool_ref is a bare pair, scan the message for a protocol mention
+    # to anchor the resolver. Stops 'USDC-WSOL on Orca' from drifting to
+    # Cetus on Sui.
+    if " " not in pool_ref and not _POOL_UUID_RE.match(pool_ref):
+        proto_token = re.search(
+            r"\b(?i:(raydium-amm|raydium-clmm|raydium|orca-whirlpools|orca-clmm|orca|"
+            r"meteora-dlmm|meteora|kamino-lend|kamino-liquidity|kamino|marinade|jito|sanctum|drift|"
+            r"aave-v3|aave|compound-v3|compound|spark|curve|convex|pendle|yearn-finance|yearn|"
+            r"lido|rocket-pool|ether\.fi|frax-ether|frax|stargate|morpho-blue|morpho|moonwell|"
+            r"stader|gmx|velodrome|aerodrome-slipstream|aerodrome|uniswap-v[34]|uniswap|"
+            r"steer-protocol|zeebu|blackhole-clmm|supernova-cl|lulo|save))\b",
+            text,
+        )
+        if proto_token:
+            pool_ref = f"{proto_token.group(1).lower()} {pool_ref}"
     params: dict = {
         "pool": pool_ref,
         "amount": intent.amount_usd or 100.0,
