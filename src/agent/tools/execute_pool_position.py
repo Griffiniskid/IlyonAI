@@ -233,6 +233,51 @@ async def execute_pool_position(
     pool_symbol = str(meta.get("symbol", ""))
     final_asset_in = asset_in or _pick_asset_in(meta)
 
+    # Wallet/chain compatibility preflight. Surface a clear blocker rather
+    # than a cryptic 'invalid address' from the EVM hex parser.
+    is_solana_pool = chain in {"solana", "sol"}
+    is_evm_pool = chain in {"ethereum", "polygon", "arbitrum", "base", "optimism", "bsc", "avalanche"}
+    user_is_solana = _is_solana_pubkey(user_address)
+    user_is_evm = isinstance(user_address, str) and user_address.lower().startswith("0x") and len(user_address) == 42
+    if is_solana_pool and not user_is_solana:
+        from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
+        plan = ExecutionPlanV3.new(
+            title=f"{protocol} deposit",
+            summary=f"Solana pool {protocol} {pool_symbol} requires a Solana wallet.",
+        )
+        plan.add_blocker(ExecutionBlocker(
+            code="wallet_chain_mismatch",
+            severity="blocker",
+            title="Wrong wallet for this pool",
+            detail=(
+                f"This pool is on Solana ({protocol} {pool_symbol}). Your connected wallet "
+                f"`{(user_address or '')[:12]}…` looks EVM (or otherwise non-Solana). "
+                "Switch to a Solana wallet (Phantom in Solana mode) and retry."
+            ),
+            affected_step_ids=[],
+            cta="Connect a Solana wallet (Phantom) to sign this deposit.",
+        ))
+        return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
+    if is_evm_pool and not user_is_evm:
+        from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
+        plan = ExecutionPlanV3.new(
+            title=f"{protocol} deposit",
+            summary=f"EVM pool {protocol} {pool_symbol} on {chain} requires an EVM wallet.",
+        )
+        plan.add_blocker(ExecutionBlocker(
+            code="wallet_chain_mismatch",
+            severity="blocker",
+            title="Wrong wallet for this pool",
+            detail=(
+                f"This pool is on {chain} ({protocol} {pool_symbol}). Your connected wallet "
+                f"`{(user_address or '')[:12]}…` looks Solana (or otherwise non-EVM). "
+                "Switch to MetaMask (or Phantom in EVM mode) and retry."
+            ),
+            affected_step_ids=[],
+            cta="Connect an EVM wallet (MetaMask) to sign this deposit.",
+        ))
+        return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
+
     is_lp = "-" in pool_symbol or "/" in pool_symbol
     action = "deposit_lp" if is_lp else "supply"
 
