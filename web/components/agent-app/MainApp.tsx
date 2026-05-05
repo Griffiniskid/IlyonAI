@@ -4945,6 +4945,64 @@ export default function MainApp() {
     showToast("Transaction build ready for wallet review.", "info");
   };
 
+  const handleSignStep = async (planId: string, stepId: string) => {
+    type StepLite = {
+      step_id?: string;
+      transaction?: {
+        chain_kind?: string;
+        chain_id?: number | null;
+        serialized?: string | null;
+        to?: string | null;
+        data?: string | null;
+        value?: string | null;
+      } | null;
+    };
+    type PlanPayload = { plan_id?: string; steps?: StepLite[] };
+    let step: StepLite | undefined;
+    for (const m of messages) {
+      const cards = m.agentCards || [];
+      for (const c of cards) {
+        if (c.card_type === "execution_plan_v3") {
+          const p = c.payload as PlanPayload;
+          if (p?.plan_id === planId) {
+            step = (p.steps || []).find(s => s.step_id === stepId);
+            if (step) break;
+          }
+        }
+      }
+      if (step) break;
+    }
+    if (!step?.transaction) {
+      showToast("Step has no unsigned transaction yet — re-run the build.", "info");
+      return;
+    }
+    const tx = step.transaction;
+    try {
+      if (tx.chain_kind === "solana" && tx.serialized) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sol = (window as any)?.phantom?.solana ?? (window as any).solana;
+        if (!sol?.isPhantom) throw new Error("Phantom wallet not found");
+        const { VersionedTransaction } = await import("@solana/web3.js");
+        const bytes = Uint8Array.from(atob(tx.serialized), c => c.charCodeAt(0));
+        const vtx = VersionedTransaction.deserialize(bytes);
+        const { signature } = await sol.signAndSendTransaction(vtx);
+        showToast(`Signed: ${signature.slice(0, 12)}…`, "success");
+      } else if (tx.chain_kind === "evm" && tx.to && tx.data) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const eth: any = (window as any).ethereum;
+        if (!eth) throw new Error("MetaMask not found");
+        const params = [{ from: (await eth.request({ method: "eth_accounts" }))[0], to: tx.to, data: tx.data, value: tx.value || "0x0" }];
+        const hash = await eth.request({ method: "eth_sendTransaction", params });
+        showToast(`Signed: ${String(hash).slice(0, 12)}…`, "success");
+      } else {
+        showToast("Unsupported transaction kind on this step.", "info");
+      }
+    } catch (e: unknown) {
+      const msg = (e as { message?: string }).message || "Signing failed";
+      showToast(`Wallet error: ${msg}`, "error");
+    }
+  };
+
   const handleRerunAllocation = () => {
     void send("Re-run the allocation using the latest live market data and rebalance the plan.");
   };
@@ -5515,7 +5573,7 @@ export default function MainApp() {
                           {msg.role === "assistant" && resolvedAgentCards.length > 0 && (
                             <div className="space-y-3 mt-3">
                               {resolvedAgentCards.map((card) => (
-                                <CardRenderer key={card.card_id} card={card} onStartSigning={handleStartSigning} onRerunAllocation={handleRerunAllocation} />
+                                <CardRenderer key={card.card_id} card={card} onStartSigning={handleStartSigning} onRerunAllocation={handleRerunAllocation} onSignStep={handleSignStep} />
                               ))}
                             </div>
                           )}
