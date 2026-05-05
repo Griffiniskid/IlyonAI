@@ -731,6 +731,67 @@ def _defi_intent_to_tool(intent: DefiIntent) -> tuple[str, dict] | None:
     return "search_defi_opportunities", params
 
 
+_WHALE_RE = re.compile(r"\b(whale|whales|big buyer|big sell|large transfer|smart money move)\b", re.I)
+_SMART_MONEY_RE = re.compile(r"\b(smart money|conviction picks?|top traders?|alpha hub)\b", re.I)
+_ENTITY_RE = re.compile(r"\b(who is|who are|find entity|tag for|known as|what is|who's)\s+([A-Za-z0-9._\- ]{2,60})\b", re.I)
+_SHIELD_RE = re.compile(r"\b(shield|approvals?|drain|risk scan)\b.*\b(0x[a-fA-F0-9]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})\b", re.I)
+_ANALYZE_TOKEN_RE = re.compile(r"\b(analyze|check|scan|sentinel|review)\s+(?:this\s+)?(?:token|coin|mint|contract)?\s*\b(0x[a-fA-F0-9]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})\b", re.I)
+_ANALYZE_POOL_RE = re.compile(r"\b(analyze|review|stats? for|check)\s+(?:this\s+)?pool\b", re.I)
+
+
+def _detect_sentinel_chat_tools(message: str) -> tuple[str, dict] | None:
+    """Route Sentinel feature asks to deterministic tools so the LLM
+    can't drift into 'contextual reasoning' mode for them.
+    """
+    text = message.strip()
+    # 1. analyze_token
+    m = _ANALYZE_TOKEN_RE.search(text)
+    if m:
+        addr = m.group(2)
+        chain_lower = text.lower()
+        chain = "solana" if (len(addr) >= 32 and not addr.startswith("0x")) else (
+            "ethereum" if "ethereum" in chain_lower else (
+                "bsc" if "bsc" in chain_lower or "bnb" in chain_lower else (
+                    "polygon" if "polygon" in chain_lower else None)))
+        params: dict = {"address": addr}
+        if chain:
+            params["chain"] = chain
+        return "analyze_token_full_sentinel", params
+    # 2. analyze_pool — only when pool reference present and not already in execute mode
+    if _ANALYZE_POOL_RE.search(text) and not re.search(r"\bexecute\b|\bdeposit\b", text, re.I):
+        u = _POOL_UUID_RE.search(text)
+        p = _POOL_PROTO_PAIR_RE.search(text)
+        if u or p:
+            ref = u.group(0) if u else f"{p.group(1)} {p.group(2)}"
+            return "analyze_pool_full_sentinel", {"pool": ref}
+    # 3. whale_track
+    if _WHALE_RE.search(text):
+        params = {}
+        if "solana" in text.lower():
+            params["chain"] = "solana"
+        elif "ethereum" in text.lower():
+            params["chain"] = "ethereum"
+        m_h = re.search(r"(\d+)\s*h(?:our)?", text, re.I)
+        if m_h:
+            params["hours"] = int(m_h.group(1))
+        return "track_whales", params
+    # 4. smart_money_hub
+    if _SMART_MONEY_RE.search(text):
+        params = {"chain": "solana"}
+        if "ethereum" in text.lower():
+            params["chain"] = "ethereum"
+        return "get_smart_money_hub", params
+    # 5. shield_check
+    m_sh = _SHIELD_RE.search(text)
+    if m_sh:
+        return "get_shield_check", {"address": m_sh.group(2)}
+    # 6. entity_lookup
+    m_ent = _ENTITY_RE.search(text)
+    if m_ent and m_ent.group(2).strip().lower() not in {"the", "this", "that", "x", "y", "it"}:
+        return "lookup_entity", {"query": m_ent.group(2).strip()}
+    return None
+
+
 def detect_intent(message: str) -> tuple[str, dict] | None:
     """Detect intent and extract parameters from user message."""
     message_lower = message.lower()
@@ -742,6 +803,10 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
         detected = detector(message)
         if detected is not None:
             return detected
+
+    sentinel_tool = _detect_sentinel_chat_tools(message)
+    if sentinel_tool is not None:
+        return sentinel_tool
 
     parsed_intent = parse_defi_intent(message)
     pool_exec = _detect_pool_execute(message, parsed_intent)
