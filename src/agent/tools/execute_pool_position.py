@@ -74,10 +74,11 @@ async def _resolve_protocol_pair(
     proto_norm = protocol.lower().replace("_", "-").strip()
     pair_norm = pair.upper().replace("/", "-").replace("_", "-").strip()
     chain_norm = chain.lower() if chain else None
-    # When no protocol hint and the "protocol" looks like a pair already
-    # (e.g. user passed "SPACEX-WSOL" alone), drop the protocol filter and
-    # match by symbol only.
-    proto_filter_active = bool(proto_norm) and "-" not in proto_norm and "_" not in proto_norm and len(proto_norm) <= 32
+    # Drop protocol filter only when no protocol hint at all OR the slot
+    # is a pair like 'SPACEX-WSOL' (no protocol-style prefix). Real
+    # multi-word protocol slugs like 'meteora-dlmm' MUST be enforced.
+    looks_like_pair = bool(proto_norm) and "-" in proto_norm and proto_norm.replace("-", "").isupper()
+    proto_filter_active = bool(proto_norm) and not looks_like_pair
     async with aiohttp.ClientSession(timeout=_LLAMA_TIMEOUT) as sess:
         async with sess.get(_DEFILLAMA_POOLS_URL) as resp:
             if resp.status != 200:
