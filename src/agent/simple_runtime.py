@@ -735,7 +735,7 @@ def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] |
 def _defi_intent_to_tool(intent: DefiIntent) -> tuple[str, dict] | None:
     if intent.intent == "allocate_strategy":
         params: dict = {
-            "usd_amount": intent.amount_usd if (intent.amount_usd is not None and intent.amount_usd != 0) else 10_000.0,
+            "usd_amount": intent.amount_usd if intent.amount_usd is not None else 10_000.0,
             "risk_budget": intent.risk_budget,
         }
         if intent.chains:
@@ -1741,6 +1741,10 @@ async def run_ephemeral_turn(
                         ))
                         card_ids_for_final.append(extra.card_id)
                     final_content = _format_tool_result(tool_name, env)
+                elif env is not None and not env.ok:
+                    err_code = (env.error.code if env.error else "tool_error") or "tool_error"
+                    err_msg = (env.error.message if env.error else "Tool returned an error.") or "Tool returned an error."
+                    final_content = f"I couldn't complete that — **{err_code}**: {err_msg}"
                 elif isinstance(tool_result, dict):
                     final_content = _format_tool_result(tool_name, tool_result)
                 else:
