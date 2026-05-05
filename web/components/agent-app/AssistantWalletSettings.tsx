@@ -5,6 +5,7 @@ import { GlassCard } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Wallet, LogOut, RefreshCw } from "lucide-react";
+import { disconnectPhantomSolana } from "./wallets/phantom";
 
 interface AssistantSession {
   token: string | null;
@@ -32,6 +33,22 @@ function shortAddr(a: string | null) {
 
 function clearAssistantSession() {
   if (typeof window === "undefined") return;
+  // 1. Tell Phantom (and any cached EVM provider) to drop the trusted-site session
+  //    so they don't auto-reconnect on next page load.
+  try {
+    disconnectPhantomSolana();
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    const eth = (window as unknown as { ethereum?: { request?: (args: unknown) => unknown } }).ethereum;
+    eth?.request?.({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] });
+  } catch (_) {
+    /* ignore — provider may not support revokePermissions */
+  }
+  // 2. Block silent re-auth by all auto-connect paths until the user explicitly reconnects.
+  localStorage.setItem("ap_force_disconnect", "1");
+  // 3. Wipe local session keys.
   localStorage.removeItem("ap_token");
   localStorage.removeItem("ap_wallet");
   localStorage.removeItem("ap_sol_wallet");
@@ -40,8 +57,10 @@ function clearAssistantSession() {
   localStorage.removeItem("ap_chat_session");
   localStorage.removeItem("ap_user");
   localStorage.removeItem("ap_display_name");
-  // Notify MainApp (and any sidebar widget) to re-read state.
+  // 4. Notify MainApp (and any sidebar widget) to re-read state. dispatchEvent on
+  //    'storage' only fires across tabs, so also fire a same-tab custom event.
   window.dispatchEvent(new StorageEvent("storage"));
+  window.dispatchEvent(new Event("ap:wallet-cleared"));
 }
 
 export default function AssistantWalletSettings() {

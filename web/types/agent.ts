@@ -174,10 +174,31 @@ export interface ExecutionPlanV2Payload {
   shield?: ShieldBlock | null;
 }
 
+export interface BalanceChainEntry {
+  usd?: number | string;
+  native_symbol?: string;
+  native_amount?: number;
+  native_usd?: number;
+  token_count?: number;
+}
+
+export interface BalanceTokenRow {
+  chain: string;
+  symbol: string;
+  amount: number;
+  usd: number;
+  mint?: string | null;
+  is_native?: boolean;
+}
+
 export interface BalancePayload {
-  wallet: string;
-  total_usd: string;
-  by_chain: Record<string, string>;
+  wallet?: string;
+  address?: string;
+  addresses?: string[];
+  total_usd: number | string | null;
+  by_chain: Record<string, BalanceChainEntry | number | string>;
+  tokens?: BalanceTokenRow[];
+  positions?: Array<Record<string, unknown>>;
   sentinel?: SentinelBlock | null;
   shield?: ShieldBlock | null;
 }

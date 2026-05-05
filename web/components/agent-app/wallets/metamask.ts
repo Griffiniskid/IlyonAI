@@ -73,6 +73,9 @@ export function resolveMetaMaskProvider(): EthProvider {
 }
 
 export async function connectMetaMask(): Promise<MetaMaskSession> {
+  if (typeof localStorage !== "undefined") {
+    localStorage.removeItem("ap_force_disconnect");
+  }
   const eth = resolveMetaMaskProvider();
 
   const accounts = await eth.request({ method: "eth_requestAccounts" }) as string[];

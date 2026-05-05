@@ -40,6 +40,9 @@ export function resolvePhantomEvmProvider(): EthProvider {
 }
 
 export function getStoredPhantomWalletContext(): StoredPhantomWalletContext | null {
+  if (typeof localStorage !== "undefined" && localStorage.getItem("ap_force_disconnect") === "1") {
+    return null;
+  }
   const raw = localStorage.getItem(PHANTOM_CONTEXT_KEY);
   if (raw) {
     try {
@@ -87,6 +90,9 @@ function persistPhantomWalletContext(context: StoredPhantomWalletContext): void 
 }
 
 export async function restorePhantomWalletContext(): Promise<StoredPhantomWalletContext | null> {
+  if (typeof localStorage !== "undefined" && localStorage.getItem("ap_force_disconnect") === "1") {
+    return null;
+  }
   const w = window as unknown as PhantomWindow;
   const solana = w.phantom?.solana;
   if (!solana) return null;
@@ -121,6 +127,9 @@ export async function restorePhantomWalletContext(): Promise<StoredPhantomWallet
 }
 
 export async function connectPhantomSolana(): Promise<PhantomSession> {
+  if (typeof localStorage !== "undefined") {
+    localStorage.removeItem("ap_force_disconnect");
+  }
   const w = window as unknown as PhantomWindow;
 
   if (!w.phantom) {

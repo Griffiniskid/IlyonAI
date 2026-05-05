@@ -234,30 +234,75 @@ function SwapQuoteCard({ payload }: { payload: SwapQuotePayload }) {
 /* ── Balance Card ──────────────────────────────────────────────────── */
 
 function BalanceCard({ payload }: { payload: BalancePayload }) {
-  const chains = Object.entries(payload.by_chain ?? {});
+  const chains = Object.entries(payload.by_chain ?? {}) as Array<[string, unknown]>;
+  const fmtUsd = (n: number | string | null | undefined): string => {
+    if (n === null || n === undefined) return "0.00";
+    const v = typeof n === "string" ? parseFloat(n) : n;
+    if (!Number.isFinite(v)) return "0.00";
+    return v.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+  };
+  const chainUsd = (val: unknown): number => {
+    if (val == null) return 0;
+    if (typeof val === "number") return val;
+    if (typeof val === "string") return parseFloat(val) || 0;
+    if (typeof val === "object" && "usd" in (val as object)) {
+      const u = (val as { usd?: number | string }).usd;
+      return typeof u === "string" ? parseFloat(u) || 0 : (u ?? 0);
+    }
+    return 0;
+  };
+  const chainNative = (val: unknown): string | null => {
+    if (val && typeof val === "object" && "native_symbol" in (val as object)) {
+      const o = val as { native_symbol?: string; native_amount?: number };
+      if (o.native_symbol) {
+        const amt = o.native_amount ?? 0;
+        return `${amt.toLocaleString("en-US", { maximumFractionDigits: 4 })} ${o.native_symbol}`;
+      }
+    }
+    return null;
+  };
+  const wallet = payload.wallet || payload.address || (payload.addresses?.[0] ?? "");
+  const tokens = payload.tokens ?? [];
   return cardShell(
     "Portfolio Balance",
     <>
       <div className="flex items-center justify-between">
         <span className="text-sm text-slate-400">Total Value</span>
-        <span className="text-2xl font-bold text-white">${payload.total_usd}</span>
+        <span className="text-2xl font-bold text-white">${fmtUsd(payload.total_usd)}</span>
       </div>
       {chains.length > 0 && (
         <div className="grid grid-cols-2 gap-2">
-          {chains.map(([chain, val]) => (
-            <div
-              key={chain}
-              className="flex items-center justify-between rounded-lg bg-slate-700/30 px-3 py-2"
-            >
-              <span className="text-xs text-slate-400">{chain}</span>
-              <span className="text-sm font-medium text-slate-200">${val}</span>
+          {chains.map(([chain, val]) => {
+            const native = chainNative(val);
+            return (
+              <div key={chain} className="flex flex-col gap-0.5 rounded-lg bg-slate-700/30 px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-400">{chain}</span>
+                  <span className="text-sm font-medium text-slate-200">${fmtUsd(chainUsd(val))}</span>
+                </div>
+                {native && <span className="text-[10px] text-slate-500">{native}</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {tokens.length > 0 && (
+        <div className="mt-1 max-h-48 overflow-y-auto pr-1 space-y-1">
+          {tokens.slice(0, 12).map((t, i) => (
+            <div key={`${t.chain}-${t.symbol}-${i}`} className="flex items-center justify-between rounded-md bg-slate-800/40 px-2.5 py-1.5 text-xs">
+              <div className="flex items-center gap-2 truncate">
+                <span className="text-slate-300 font-medium">{t.symbol || "?"}</span>
+                <span className="text-slate-500 truncate">{t.chain}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-slate-400">{t.amount.toLocaleString("en-US", { maximumFractionDigits: 4 })}</span>
+                <span className="text-slate-200 font-semibold">${fmtUsd(t.usd)}</span>
+              </div>
             </div>
           ))}
         </div>
       )}
-      <div className="text-xs text-slate-500 font-mono truncate">
-        {payload.wallet}
-      </div>
+      {wallet && <div className="text-xs text-slate-500 font-mono truncate">{wallet}</div>}
     </>,
   );
 }
