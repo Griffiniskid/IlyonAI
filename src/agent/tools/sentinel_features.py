@@ -356,7 +356,20 @@ async def lookup_entity(
             if entries:
                 raw = entries[0]
     if not raw:
-        return err_envelope("entity_not_found", f"No Sentinel entity profile matched `{qnorm}`.")
+        return ok_envelope(
+            data={"entity": None, "query": qnorm},
+            card_type="text",
+            card_payload={
+                "text": (
+                    f"No Sentinel-tagged entity profile matches `{qnorm}` yet. "
+                    "If you have a known address (0x… or Solana mint), pass that "
+                    "instead — entity matching is exact by address. The directory "
+                    "currently covers high-confidence addresses; everyday names "
+                    "like exchanges or funds are added as we expand coverage."
+                ),
+                "kind": "sentinel_entity_empty",
+            },
+        )
     name = raw.get("name") or raw.get("label") or qnorm
     tags = raw.get("tags") or raw.get("classifications") or []
     addrs = raw.get("addresses") or []
