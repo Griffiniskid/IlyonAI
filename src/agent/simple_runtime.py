@@ -76,11 +76,9 @@ INTENT_PATTERNS = {
         r"market data",
     ],
     "get_defi_analytics": [
-        r"analytics",
-        r"analysis",
-        r"analyze",
-        r"protocol",
-        r"compare",
+        r"\banalytics\b",
+        r"\bprotocol stats\b",
+        r"\bcompare protocols?\b",
     ],
     "simulate_swap": [
         r"swap",
@@ -543,11 +541,13 @@ def _detect_stake_amount_plan(message: str) -> tuple[str, dict] | None:
             },
         )
 
-    direct = re.search(r"stake\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})\s+(?:on\s+)?(?P<protocol>[A-Za-z0-9 ._-]+)", message, re.IGNORECASE)
+    direct = re.search(r"stake\s+(?P<sign>-)?(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})\s+(?:on\s+|with\s+)?(?P<protocol>[A-Za-z0-9 ._-]+)", message, re.IGNORECASE)
     if not direct:
         return None
     token = direct.group("token").upper()
     amount = float(direct.group("amount").replace(",", ""))
+    if direct.group("sign") == "-" or amount <= 0 or amount > 1_000_000:
+        return None  # let downstream flag absurd / invalid amounts
     amount_usd = amount * 3000 if token == "ETH" else amount
     return (
         "compose_plan",
@@ -801,7 +801,8 @@ def _detect_sentinel_chat_tools(message: str) -> tuple[str, dict] | None:
     m = _ANALYZE_TOKEN_RE.search(text)
     bare_addr_match = None
     if not m:
-        if re.search(r"\b(analyze|check|scan|sentinel|review)\b", text, re.I):
+        # Trigger token analysis on safety/rug-style asks too, not just verbs
+        if re.search(r"\b(analyze|check|scan|sentinel|review|rug|scam|safe|honeypot|legit|trustworthy|audit)\b", text, re.I):
             bare_addr_match = _BARE_MINT_RE.search(text)
             if bare_addr_match:
                 m = bare_addr_match
