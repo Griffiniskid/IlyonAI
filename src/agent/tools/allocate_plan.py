@@ -95,14 +95,36 @@ async def _bake_step_transactions(ctx, steps: list[dict], positions: list) -> li
             # signable transaction. Stable LPs → Aave V3 of the same asset.
             stable_assets = {"USDC", "USDT", "DAI", "FRAX", "LUSD"}
             if (position.asset or "").upper() in stable_assets and (chain_full or "").lower() in {"ethereum", "polygon", "arbitrum", "base", "optimism", "avalanche"}:
-                fallback_ref = f"aave-v3 {position.asset.upper()}"
-                tx2, blocker2 = await _try_bake(fallback_ref)
-                if tx2:
-                    baked["transaction"] = tx2
-                    baked["blocker"] = None
-                    baked["target"] = f"{position.asset.upper()} · Aave V3 (fallback for {position.protocol})"
-                else:
-                    baked["blocker"] = blocker_text or blocker2
+                # Direct Aave V3 path: no DefiLlama lookup, no Enso routing.
+                # Aave V3 adapter builds approve+supply EVM calldata in-process.
+                from src.agent.tools.build_yield_execution_plan import build_yield_execution_plan
+                try:
+                    fallback_env = await asyncio.wait_for(
+                        build_yield_execution_plan(
+                            ctx,
+                            chain=chain_full,
+                            protocol="aave-v3",
+                            action="supply",
+                            asset_in=position.asset.upper(),
+                            amount_in=amount,
+                            user_address=getattr(ctx, "evm_wallet", None) or getattr(ctx, "wallet", None),
+                        ),
+                        timeout=20.0,
+                    )
+                    if fallback_env and fallback_env.ok and fallback_env.card_payload:
+                        plan = fallback_env.card_payload
+                        first = (plan.get("steps") or [None])[0] if isinstance(plan, dict) else None
+                        if first and first.get("transaction"):
+                            baked["transaction"] = first.get("transaction")
+                            baked["blocker"] = None
+                            baked["target"] = f"{position.asset.upper()} · Aave V3 (fallback for {position.protocol})"
+                            baked["protocol"] = "Aave V3"
+                            baked["router"] = "Aave V3"
+                            out.append(baked)
+                            continue
+                except Exception as exc:  # noqa: BLE001
+                    _logger.warning("aave-v3 fallback failed: %s", exc)
+                baked["blocker"] = blocker_text
             else:
                 baked["blocker"] = blocker_text
         out.append(baked)
