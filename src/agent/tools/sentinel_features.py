@@ -142,10 +142,43 @@ async def analyze_token_full_sentinel(
         f"Sentinel score {score:.0f}/100 (grade {grade}) — verdict {verdict}.",
         "Aggregated safety, liquidity, distribution, holder, AI, and on-chain signals before summarising.",
     ]
+    card_payload = {
+        "address": token.address,
+        "symbol": token.symbol,
+        "chain": chain_label,
+        "score": score,
+        "grade": grade,
+        "verdict": verdict,
+        "price_usd": token.price_usd,
+        "market_cap_usd": token.market_cap,
+        "liquidity_usd": token.liquidity_usd,
+        "volume_24h_usd": token.volume_24h,
+        "rug_probability_pct": token.ai_rug_probability,
+        "security": {
+            "mint_authority_enabled": token.mint_authority_enabled,
+            "freeze_authority_enabled": token.freeze_authority_enabled,
+            "liquidity_locked": token.liquidity_locked,
+            "lp_lock_percent": token.lp_lock_percent,
+            "honeypot_status": token.honeypot_status,
+            "is_honeypot": token.honeypot_is_honeypot,
+            "is_renounced": token.is_renounced,
+            "rugcheck_score": getattr(token, "rugcheck_score", None),
+        },
+        "holders": {
+            "top10_pct": getattr(token, "top10_holder_pct", None) or getattr(token, "top10_pct", None),
+            "top_holder_pct": token.top_holder_pct,
+        },
+        "ai": {
+            "red_flags": list(token.ai_red_flags or [])[:8],
+            "green_flags": list(token.ai_green_flags or [])[:8],
+            "recommendation": token.ai_recommendation,
+        },
+        "recommendation": token.ai_recommendation,
+    }
     return ok_envelope(
         data=payload,
-        card_type="text",
-        card_payload={"text": _render_token_summary(payload), "kind": "sentinel_token_analysis"},
+        card_type="sentinel_token_report",
+        card_payload=card_payload,
     )
 
 
@@ -233,12 +266,23 @@ async def track_whales(
         return err_envelope("whale_unavailable", "Whale feed temporarily unavailable; try again in a moment.")
     items = raw.get("whales") if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
     items = items or []
-    payload = {"items": items, "chain": chain, "hours": params["hours"]}
-    text = _render_whale_summary(items, chain=chain, hours=params["hours"])
+    norm_items = [
+        {
+            "ts": it.get("ts") or it.get("timestamp") or it.get("time"),
+            "action": (it.get("action") or it.get("type") or "tx").lower(),
+            "symbol": it.get("token_symbol") or it.get("symbol") or it.get("token") or "?",
+            "chain": it.get("chain") or chain,
+            "usd_value": it.get("usd_value") or it.get("value_usd") or it.get("amount_usd"),
+            "wallet": it.get("wallet") or it.get("from_address") or it.get("address"),
+            "tx_hash": it.get("tx_hash") or it.get("signature"),
+        }
+        for it in items[:25]
+    ]
+    payload = {"items": norm_items, "chain": chain, "hours": params["hours"]}
     return ok_envelope(
-        data=payload,
-        card_type="text",
-        card_payload={"text": text, "kind": "sentinel_whale_feed"},
+        data={"raw": items, "chain": chain, "hours": params["hours"]},
+        card_type="sentinel_whale_feed",
+        card_payload=payload,
     )
 
 
@@ -266,11 +310,50 @@ async def get_smart_money_hub(
     raw = await _internal_get("/api/v1/smart-money/overview", params={"chain": chain, "limit": min(int(limit or 10), 25)})
     if raw is None:
         return err_envelope("hub_unavailable", "Smart-money hub temporarily unavailable; try again in a moment.")
-    text = _render_hub_summary(raw, chain=chain)
+    def _norm_wallets(items: list[Any]) -> list[dict]:
+        out = []
+        for it in items or []:
+            if not isinstance(it, dict):
+                continue
+            out.append({
+                "address": it.get("address") or it.get("wallet") or "",
+                "usd_value": it.get("usd_value") or it.get("value_usd") or it.get("portfolio_usd"),
+                "pnl_24h": it.get("pnl_24h") or it.get("pnl_pct") or it.get("change_24h"),
+                "tag": it.get("tag") or it.get("label"),
+            })
+        return out
+    def _norm_tokens(items: list[Any]) -> list[dict]:
+        out = []
+        for it in items or []:
+            if not isinstance(it, dict):
+                continue
+            out.append({
+                "symbol": it.get("symbol") or it.get("token") or "",
+                "usd_value": it.get("usd_value") or it.get("value_usd"),
+                "price_change": it.get("price_change") or it.get("change_24h"),
+                "ts": it.get("ts") or it.get("time"),
+                "chain": it.get("chain"),
+            })
+        return out
+    payload = {
+        "chain": chain,
+        "top_wallets": _norm_wallets(raw.get("top_wallets") or raw.get("wallets") or []),
+        "recent_accumulations": _norm_tokens(raw.get("recent_accumulations") or raw.get("accumulations") or []),
+        "trending_tokens": _norm_tokens(raw.get("trending_tokens") or raw.get("trending") or []),
+        "conviction": [
+            {
+                "symbol": c.get("symbol") or c.get("token") or "",
+                "score": c.get("score") or c.get("conviction"),
+                "reason": c.get("reason") or c.get("thesis"),
+            }
+            for c in (raw.get("conviction") or []) if isinstance(c, dict)
+        ],
+        "flow_direction": raw.get("flow_direction"),
+    }
     return ok_envelope(
         data={"raw": raw, "chain": chain},
-        card_type="text",
-        card_payload={"text": text, "kind": "sentinel_smart_money_hub"},
+        card_type="sentinel_smart_money_hub",
+        card_payload=payload,
     )
 
 
@@ -310,11 +393,33 @@ async def get_shield_check(
     raw = await _internal_get(path)
     if raw is None:
         return err_envelope("shield_unavailable", "Shield scan temporarily unavailable.")
-    text = _render_shield_summary(raw, address=address, chain=chain)
+    findings = raw.get("findings") or raw.get("approvals") or []
+    norm_findings = []
+    for f in findings or []:
+        if not isinstance(f, dict):
+            continue
+        norm_findings.append({
+            "spender": f.get("spender") or f.get("contract"),
+            "contract": f.get("contract"),
+            "token": f.get("token"),
+            "symbol": f.get("symbol"),
+            "severity": (f.get("severity") or f.get("risk") or "").lower() or None,
+            "risk": f.get("risk"),
+        })
+    payload = {
+        "address": address,
+        "chain": chain,
+        "verdict": raw.get("verdict"),
+        "risk_score": raw.get("risk_score") or raw.get("risk"),
+        "scanned_at": raw.get("scanned_at"),
+        "summary": raw.get("summary") or {},
+        "approvals": norm_findings,
+        "recommendation": raw.get("recommendation"),
+    }
     return ok_envelope(
         data={"raw": raw, "address": address, "chain": chain},
-        card_type="text",
-        card_payload={"text": text, "kind": "sentinel_shield_report"},
+        card_type="sentinel_shield_report",
+        card_payload=payload,
     )
 
 
@@ -358,32 +463,31 @@ async def lookup_entity(
     if not raw:
         return ok_envelope(
             data={"entity": None, "query": qnorm},
-            card_type="text",
+            card_type="sentinel_entity_card",
             card_payload={
-                "text": (
-                    f"No Sentinel-tagged entity profile matches `{qnorm}` yet. "
+                "query": qnorm,
+                "empty": True,
+                "empty_reason": (
+                    f"No Sentinel-tagged entity profile matches '{qnorm}' yet. "
                     "If you have a known address (0x… or Solana mint), pass that "
-                    "instead — entity matching is exact by address. The directory "
-                    "currently covers high-confidence addresses; everyday names "
-                    "like exchanges or funds are added as we expand coverage."
+                    "instead — entity matching is exact by address."
                 ),
-                "kind": "sentinel_entity_empty",
             },
         )
     name = raw.get("name") or raw.get("label") or qnorm
     tags = raw.get("tags") or raw.get("classifications") or []
     addrs = raw.get("addresses") or []
-    summary_lines = [f"**Entity — {name}**"]
-    if tags:
-        summary_lines.append("Tags: " + ", ".join(str(t) for t in tags[:8]))
-    if addrs:
-        summary_lines.append(f"Linked addresses: {len(addrs)} (first: `{str(addrs[0])[:14]}…`)")
-    if raw.get("description"):
-        summary_lines.append(str(raw["description"])[:280])
     return ok_envelope(
         data={"entity": raw, "query": qnorm},
-        card_type="text",
-        card_payload={"text": "\n".join(summary_lines), "kind": "sentinel_entity"},
+        card_type="sentinel_entity_card",
+        card_payload={
+            "query": qnorm,
+            "name": name,
+            "description": raw.get("description"),
+            "tags": [str(t) for t in tags[:12]],
+            "addresses": [str(a) for a in addrs[:20]],
+            "empty": False,
+        },
     )
 
 
@@ -410,23 +514,27 @@ async def analyze_pool(
         meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=chain)
     if not meta:
         return err_envelope("pool_not_found", f"Could not resolve pool `{pool_arg}` against DefiLlama.")
-    apy = meta.get("apy") or meta.get("apyBase")
-    tvl = meta.get("tvlUsd")
-    risk = meta.get("ilRisk") or "medium"
-    lines = [
-        f"**Pool — {meta.get('project','?')} · {meta.get('symbol','?')} on {meta.get('chain','?')}**",
-        f"APY: {apy:.2f}%" if isinstance(apy, (int, float)) else f"APY: {apy or 'n/a'}",
-        f"TVL: {_format_usd(tvl)}",
-        f"IL risk: {risk}",
-    ]
-    if meta.get("predictions"):
-        pred = meta["predictions"]
-        if pred.get("predictedClass"):
-            lines.append(f"DefiLlama outlook: {pred['predictedClass']}")
-    if meta.get("underlyingTokens"):
-        lines.append(f"Underlying tokens: {len(meta['underlyingTokens'])}")
+    payload_card = {
+        "pool_id": meta.get("pool"),
+        "protocol": meta.get("project"),
+        "symbol": meta.get("symbol"),
+        "chain": meta.get("chain"),
+        "apy": meta.get("apy"),
+        "apy_base": meta.get("apyBase"),
+        "apy_reward": meta.get("apyReward"),
+        "tvl_usd": meta.get("tvlUsd"),
+        "volume_24h_usd": meta.get("volumeUsd1d") or meta.get("volume_24h_usd"),
+        "il_risk": meta.get("ilRisk"),
+        "predicted_class": (meta.get("predictions") or {}).get("predictedClass") if isinstance(meta.get("predictions"), dict) else None,
+        "underlying_tokens": meta.get("underlyingTokens") or [],
+        "links": [
+            {"label": "DefiLlama pool", "url": f"https://defillama.com/yields/pool/{meta.get('pool')}"} if meta.get("pool") else None,
+            {"label": f"{meta.get('project','protocol')} on DefiLlama", "url": f"https://defillama.com/protocol/{meta.get('project')}"} if meta.get("project") else None,
+        ],
+    }
+    payload_card["links"] = [l for l in payload_card["links"] if l]
     return ok_envelope(
         data={"pool": meta},
-        card_type="text",
-        card_payload={"text": "\n".join(lines), "kind": "sentinel_pool_report"},
+        card_type="sentinel_pool_report",
+        card_payload=payload_card,
     )

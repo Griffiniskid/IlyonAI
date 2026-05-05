@@ -28,6 +28,16 @@ import { ExecutionPlanV3Card } from "./ExecutionPlanV3Card";
 import { SentinelBadge } from "./SentinelBadge";
 import { ShieldBadge } from "./ShieldBadge";
 import { SentinelBreakdownCard } from "./SentinelBreakdownCard";
+import { SentinelTokenReportCard } from "./sentinel/SentinelTokenReportCard";
+import { SentinelPoolReportCard } from "./sentinel/SentinelPoolReportCard";
+import { SentinelWhaleFeedCard } from "./sentinel/SentinelWhaleFeedCard";
+import { SentinelSmartMoneyHubCard } from "./sentinel/SentinelSmartMoneyHubCard";
+import { SentinelShieldReportCard } from "./sentinel/SentinelShieldReportCard";
+import { SentinelEntityCard } from "./sentinel/SentinelEntityCard";
+import type {
+  SentinelTokenReportPayload, SentinelPoolReportPayload, SentinelWhaleFeedPayload,
+  SentinelSmartMoneyHubPayload, SentinelShieldReportPayload, SentinelEntityCardPayload,
+} from "@/types/agent";
 
 interface Props {
   card: CardFrame;
@@ -550,6 +560,18 @@ export function CardRenderer({ card, onStartSigning, onRerunAllocation, onSignSt
   const { card_type, payload } = card;
 
   switch (card_type) {
+    case "sentinel_token_report":
+      return <SentinelTokenReportCard payload={payload as unknown as SentinelTokenReportPayload} />;
+    case "sentinel_pool_report":
+      return <SentinelPoolReportCard payload={payload as unknown as SentinelPoolReportPayload} />;
+    case "sentinel_whale_feed":
+      return <SentinelWhaleFeedCard payload={payload as unknown as SentinelWhaleFeedPayload} />;
+    case "sentinel_smart_money_hub":
+      return <SentinelSmartMoneyHubCard payload={payload as unknown as SentinelSmartMoneyHubPayload} />;
+    case "sentinel_shield_report":
+      return <SentinelShieldReportCard payload={payload as unknown as SentinelShieldReportPayload} />;
+    case "sentinel_entity_card":
+      return <SentinelEntityCard payload={payload as unknown as SentinelEntityCardPayload} />;
     case "defi_opportunities":
       return <DefiOpportunitiesCard payload={payload as unknown as DefiOpportunitiesPayload} />;
     case "execution_plan_v3":

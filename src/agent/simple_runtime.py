@@ -1316,9 +1316,103 @@ def _format_tool_result(tool_name: str, result) -> str:
         return _format_pool_response(data)
     elif card_type == "bridge" or tool_name == "build_bridge_tx":
         return _format_bridge_response(data)
+    elif card_type == "sentinel_token_report" or tool_name == "analyze_token_full_sentinel":
+        return _format_sentinel_token_summary(result)
+    elif card_type == "sentinel_pool_report" or tool_name == "analyze_pool_full_sentinel":
+        return _format_sentinel_pool_summary(result)
+    elif card_type == "sentinel_whale_feed" or tool_name == "track_whales":
+        return _format_sentinel_whale_summary(result)
+    elif card_type == "sentinel_smart_money_hub" or tool_name == "get_smart_money_hub":
+        return _format_sentinel_smart_money_summary(result)
+    elif card_type == "sentinel_shield_report" or tool_name == "get_shield_check":
+        return _format_sentinel_shield_summary(result)
+    elif card_type == "sentinel_entity_card" or tool_name == "lookup_entity":
+        return _format_sentinel_entity_summary(result)
     else:
-        # Generic formatting
-        return json.dumps(data, indent=2) if isinstance(data, dict) else str(data)
+        # Generic formatting — never dump raw JSON to chat.
+        return "Tool ran successfully. Open the card above for the full details."
+
+
+def _card(result) -> dict:
+    if hasattr(result, "card_payload"):
+        return getattr(result, "card_payload") or {}
+    if isinstance(result, dict):
+        return result.get("card_payload") or {}
+    return {}
+
+
+def _format_sentinel_token_summary(result) -> str:
+    p = _card(result)
+    sym = p.get("symbol") or (p.get("address") or "")[:8]
+    score = p.get("score")
+    grade = p.get("grade")
+    verdict = p.get("verdict")
+    chain = p.get("chain") or "?"
+    parts = [f"**{sym}** on **{chain}** — Sentinel score **{score}/100** (grade {grade})."]
+    if verdict:
+        parts.append(f"Verdict: **{verdict}**.")
+    sec = p.get("security") or {}
+    if sec.get("liquidity_locked"):
+        parts.append(f"Liquidity locked ({sec.get('lp_lock_percent') or 0}%).")
+    if sec.get("is_honeypot") is False:
+        parts.append("Not a honeypot.")
+    rec = p.get("recommendation")
+    if rec:
+        parts.append(rec)
+    parts.append("Open the report above for the full risk surface.")
+    return " ".join(parts)
+
+
+def _format_sentinel_pool_summary(result) -> str:
+    p = _card(result)
+    return (
+        f"**{p.get('protocol','?')} · {p.get('symbol','?')}** on **{p.get('chain','?')}** — "
+        f"APY **{p.get('apy') or 'n/a'}%**, TVL ${p.get('tvl_usd') or 0:,.0f}, "
+        f"IL risk **{p.get('il_risk') or 'unknown'}**. Open the pool report for execution options."
+    )
+
+
+def _format_sentinel_whale_summary(result) -> str:
+    p = _card(result)
+    items = p.get("items") or []
+    chain = p.get("chain") or "all chains"
+    hours = p.get("hours")
+    if not items:
+        return f"No whale activity in the last {hours}h on {chain}. Try widening the window or switching chains."
+    return f"{len(items)} whale events captured in the last {hours}h on {chain}. Open the feed above for per-tx details."
+
+
+def _format_sentinel_smart_money_summary(result) -> str:
+    p = _card(result)
+    chain = p.get("chain")
+    counts = (
+        f"{len(p.get('top_wallets') or [])} top wallets, "
+        f"{len(p.get('trending_tokens') or [])} trending tokens, "
+        f"{len(p.get('conviction') or [])} conviction picks"
+    )
+    return f"Smart-money hub for **{chain}** — {counts}. Open the card above for the breakdown."
+
+
+def _format_sentinel_shield_summary(result) -> str:
+    p = _card(result)
+    s = p.get("summary") or {}
+    verdict = p.get("verdict") or "unknown"
+    return (
+        f"Shield report on `{(p.get('address') or '')[:10]}…` — verdict **{verdict}**. "
+        f"{s.get('total_approvals',0)} approvals total · "
+        f"{s.get('high_risk_count',0)} high · {s.get('medium_risk_count',0)} med · "
+        f"{s.get('low_risk_count',0)} low."
+    )
+
+
+def _format_sentinel_entity_summary(result) -> str:
+    p = _card(result)
+    if p.get("empty"):
+        return p.get("empty_reason") or "No entity match."
+    name = p.get("name") or p.get("query")
+    tags = p.get("tags") or []
+    addrs = p.get("addresses") or []
+    return f"Entity **{name}** — {len(tags)} tags, {len(addrs)} linked addresses. Open the card for full details."
 
 
 def _format_bridge_response(data: dict) -> str:

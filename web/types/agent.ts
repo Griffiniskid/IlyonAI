@@ -326,7 +326,118 @@ export type CardType =
   | "swap_quote" | "pool" | "token" | "position"
   | "plan" | "execution_plan_v2" | "execution_plan_v3" | "balance" | "bridge" | "stake" | "market_overview" | "pair_list"
   | "defi_opportunities"
-  | "sentinel";
+  | "sentinel"
+  | "sentinel_token_report" | "sentinel_pool_report" | "sentinel_whale_feed"
+  | "sentinel_smart_money_hub" | "sentinel_shield_report" | "sentinel_entity_card";
+
+export interface SentinelTokenReportPayload {
+  address: string;
+  symbol?: string | null;
+  chain?: string | null;
+  score: number;
+  grade?: string | null;
+  verdict?: string | null;
+  price_usd?: number | null;
+  market_cap_usd?: number | null;
+  liquidity_usd?: number | null;
+  volume_24h_usd?: number | null;
+  rug_probability_pct?: number | null;
+  security: {
+    mint_authority_enabled?: boolean | null;
+    freeze_authority_enabled?: boolean | null;
+    liquidity_locked?: boolean | null;
+    lp_lock_percent?: number | null;
+    honeypot_status?: string | null;
+    is_honeypot?: boolean | null;
+    is_renounced?: boolean | null;
+    rugcheck_score?: number | null;
+  };
+  holders?: {
+    total?: number | null;
+    top10_pct?: number | null;
+    top_holder_pct?: number | null;
+  } | null;
+  ai?: {
+    red_flags?: string[];
+    green_flags?: string[];
+    recommendation?: string | null;
+  } | null;
+  recommendation?: string | null;
+}
+
+export interface SentinelPoolReportPayload {
+  pool_id?: string | null;
+  protocol?: string | null;
+  symbol?: string | null;
+  chain?: string | null;
+  apy?: number | null;
+  apy_base?: number | null;
+  apy_reward?: number | null;
+  tvl_usd?: number | null;
+  volume_24h_usd?: number | null;
+  il_risk?: string | null;
+  predicted_class?: string | null;
+  underlying_tokens?: string[];
+  links?: { label: string; url: string }[];
+}
+
+export interface SentinelWhaleEvent {
+  ts?: string | number | null;
+  action?: string | null;
+  symbol?: string | null;
+  chain?: string | null;
+  usd_value?: number | null;
+  wallet?: string | null;
+  tx_hash?: string | null;
+}
+export interface SentinelWhaleFeedPayload {
+  chain?: string | null;
+  hours: number;
+  items: SentinelWhaleEvent[];
+}
+
+export interface SentinelSmartMoneyHubPayload {
+  chain: string;
+  top_wallets?: { address: string; usd_value?: number; pnl_24h?: number; tag?: string }[];
+  recent_accumulations?: { symbol: string; usd_value?: number; chain?: string; ts?: string | number }[];
+  trending_tokens?: { symbol: string; usd_value?: number; price_change?: number }[];
+  conviction?: { symbol: string; score?: number; reason?: string }[];
+  flow_direction?: string;
+}
+
+export interface SentinelShieldFinding {
+  spender?: string;
+  contract?: string;
+  token?: string;
+  symbol?: string;
+  severity?: string;
+  risk?: string;
+}
+export interface SentinelShieldReportPayload {
+  address: string;
+  chain?: string | null;
+  verdict?: string | null;
+  risk_score?: number | null;
+  scanned_at?: string | null;
+  summary?: {
+    total_approvals?: number;
+    high_risk_count?: number;
+    medium_risk_count?: number;
+    low_risk_count?: number;
+  };
+  approvals?: SentinelShieldFinding[];
+  recommendation?: string | null;
+}
+
+export interface SentinelEntityCardPayload {
+  query: string;
+  name?: string | null;
+  description?: string | null;
+  tags?: string[];
+  addresses?: string[];
+  empty?: boolean;
+  empty_reason?: string;
+}
 
 export interface AllocationCard { card_id: string; card_type: "allocation"; payload: AllocationPayload; }
 export interface SentinelMatrixCard { card_id: string; card_type: "sentinel_matrix"; payload: SentinelMatrixPayload; }
@@ -345,12 +456,20 @@ export interface PairListCard { card_id: string; card_type: "pair_list"; payload
 export interface DefiOpportunitiesCard { card_id: string; card_type: "defi_opportunities"; payload: DefiOpportunitiesPayload; }
 export interface ExecutionPlanV3Card { card_id: string; card_type: "execution_plan_v3"; payload: ExecutionPlanV3Payload; }
 export interface SentinelBreakdownCardFrame { card_id: string; card_type: "sentinel"; payload: SentinelBlock; }
+export interface SentinelTokenReportCard { card_id: string; card_type: "sentinel_token_report"; payload: SentinelTokenReportPayload; }
+export interface SentinelPoolReportCard { card_id: string; card_type: "sentinel_pool_report"; payload: SentinelPoolReportPayload; }
+export interface SentinelWhaleFeedCard { card_id: string; card_type: "sentinel_whale_feed"; payload: SentinelWhaleFeedPayload; }
+export interface SentinelSmartMoneyHubCard { card_id: string; card_type: "sentinel_smart_money_hub"; payload: SentinelSmartMoneyHubPayload; }
+export interface SentinelShieldReportCard { card_id: string; card_type: "sentinel_shield_report"; payload: SentinelShieldReportPayload; }
+export interface SentinelEntityCard { card_id: string; card_type: "sentinel_entity_card"; payload: SentinelEntityCardPayload; }
 
 export type AgentCard =
   | AllocationCard | SentinelMatrixCard | ExecutionPlanCard | SwapQuoteCard | PoolCard | TokenCard | PositionCard
   | PlanCard | ExecutionPlanV2Card | BalanceCard | BridgeCard | StakeCard | MarketOverviewCard | PairListCard
   | DefiOpportunitiesCard | ExecutionPlanV3Card
-  | SentinelBreakdownCardFrame;
+  | SentinelBreakdownCardFrame
+  | SentinelTokenReportCard | SentinelPoolReportCard | SentinelWhaleFeedCard
+  | SentinelSmartMoneyHubCard | SentinelShieldReportCard | SentinelEntityCard;
 
 export interface ToolError {
   code: string;
