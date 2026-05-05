@@ -24,7 +24,7 @@ _ALLOCATION_TERMS = re.compile(r"\b(allocate|allocation|distribute|diversify|dep
 _EXECUTION_TERMS = re.compile(r"\b(execute|deposit|through my wallet|automatically|build .*strategy|sign|do it)\b", re.IGNORECASE)
 _REINVEST_TERMS = re.compile(r"\b(reinvest|compound|auto-compound|autocompound|rebalance later)\b", re.IGNORECASE)
 _AMOUNT_ASSET_RE = re.compile(
-    r"\b(?:i have|allocate|deploy|distribute|invest|put)\s+\$?([\d,]+(?:\.\d+)?)\s*([kKmM])?\s*([A-Za-z]{2,10})?",
+    r"\b(?:i have|allocate|deploy|distribute|invest|put)\s+(-?)\$?([\d,]+(?:\.\d+)?)\s*([kKmM])?\s*([A-Za-z]{2,10})?",
     re.IGNORECASE,
 )
 
@@ -113,17 +113,20 @@ def _parse_amount_and_asset(text: str) -> tuple[float | None, str | None]:
     match = _AMOUNT_ASSET_RE.search(text)
     if not match:
         return None, None
-    raw = match.group(1).replace(",", "")
+    sign = match.group(1) or ""
+    raw = match.group(2).replace(",", "")
     try:
         amount = float(raw)
     except ValueError:
         return None, None
-    suffix = (match.group(2) or "").lower()
+    if sign == "-":
+        amount = -amount
+    suffix = (match.group(3) or "").lower()
     if suffix == "k":
         amount *= 1_000
     elif suffix == "m":
         amount *= 1_000_000
-    asset = (match.group(3) or "").upper() or None
+    asset = (match.group(4) or "").upper() or None
     if asset and asset.lower() in _CHAIN_ALIASES:
         asset = None
     return amount, asset
