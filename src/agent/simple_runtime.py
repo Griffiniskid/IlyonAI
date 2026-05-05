@@ -12,12 +12,6 @@ from src.api.schemas.agent import ThoughtFrame, ToolFrame, ObservationFrame, Fin
 
 from src.storage.agent_chats import append_message, list_messages
 from src.storage.database import get_database
-from src.defi.strategy.opportunity_memory import (
-    find_opportunity as _recall_pool,
-    recall as _recall_opp_record,
-    remember_allocation as _remember_allocation,
-    remember_opportunities as _remember_opportunities,
-)
 
 
 # Maximum prior messages loaded into context per turn (user+assistant combined).
@@ -304,49 +298,6 @@ def _pre_tool_reasoning(tool_name: str, tool_input: dict, message: str) -> list[
             "Confirming adapter coverage and producing real unsigned approve + supply calldata.",
             "Running wallet preflight (balance / gas / allowance) before exposing any signing button.",
             "Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt.",
-        ]
-    if tool_name == "build_allocation_execution_plan":
-        rows = tool_input.get("allocations") or []
-        return [
-            f"Composing one ExecutionPlanV3 across {len(rows)} allocation rows.",
-            "Building real approve + deposit calldata per row via the adapter registry.",
-            "Wiring per-chain dependency chains so each step unlocks only after the prior on-chain receipt.",
-            "Skipping rows without verified adapters and surfacing them as warnings instead of fake buttons.",
-        ]
-    if tool_name == "build_yield_strategy_plan":
-        return [
-            f"Composing yield strategy: {_short_json(tool_input)}.",
-            "Wiring prerequisite swap/bridge into the deposit step before any wallet signature.",
-            "Verifying adapter coverage for the destination protocol/action/chain.",
-            "Producing one ExecutionPlanV3 with per-step depends_on so the wallet sees a single signing flow.",
-        ]
-    if tool_name == "analyze_token_full_sentinel":
-        return [
-            f"Routed token analysis request: {_short_json(tool_input)}.",
-            "Resolving chain, kicking off TokenAnalyzer (security + liquidity + holders + AI).",
-            "Aggregating Sentinel safety, distribution, honeypot, deployer, and behavioral scores.",
-            "Highlighting strongest signals and weakest assumptions before writing the answer.",
-        ]
-    if tool_name == "track_whales":
-        return [
-            f"Parsed whale-tracking request: {_short_json(tool_input)}.",
-            "Pulling recent whale transactions across Helius (Solana) and Moralis (EVM) feeds.",
-            "Filtering by chain, time-window, and USD threshold before summarizing.",
-            "Flagging the loudest moves and aggregating buy/sell pressure.",
-        ]
-    if tool_name == "get_smart_money_hub":
-        return [
-            f"Parsed smart-money hub request: {_short_json(tool_input)}.",
-            "Fetching top wallets, recent accumulations, trending tokens, and conviction picks.",
-            "Ranking by alpha quality and conviction strength rather than raw size.",
-            "Surfacing the strongest signals with caveats.",
-        ]
-    if tool_name == "get_shield_check":
-        return [
-            f"Parsed Shield wallet/contract scan: {_short_json(tool_input)}.",
-            "Pulling approval graph and on-chain risk findings for the address.",
-            "Cross-referencing known scam contracts, phishing approvals, and concentration risk.",
-            "Preparing a verdict with recommended revoke targets.",
         ]
     if tool_name == "find_liquidity_pool":
         return [
@@ -674,55 +625,6 @@ _AAVE_SUPPLY_RE = re.compile(
 _AAVE_HINT = re.compile(r"\baave\b", re.IGNORECASE)
 
 
-_BRIDGE_THEN_SUPPLY_RE = re.compile(
-    r"bridge\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<asset>[A-Za-z]{2,10})"
-    r"(?:\s+from\s+(?P<src>ethereum|polygon|arbitrum|optimism|base|avalanche|bsc))?"
-    r"\s+to\s+(?P<dst>ethereum|polygon|arbitrum|optimism|base|avalanche|bsc)"
-    r".*?(?:then|and).*?(?:supply|deposit|lend).*?aave",
-    re.IGNORECASE | re.DOTALL,
-)
-
-_SWAP_THEN_SUPPLY_RE = re.compile(
-    r"swap\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<src_asset>[A-Za-z]{2,10})\s+(?:to|for|into)\s+(?P<dst_asset>[A-Za-z]{2,10})"
-    r"(?:\s+on\s+(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche|bsc))?"
-    r".*?(?:then|and).*?(?:supply|deposit|lend).*?aave",
-    re.IGNORECASE | re.DOTALL,
-)
-
-
-def _detect_bridge_then_aave_supply(message: str) -> tuple[str, dict] | None:
-    match = _BRIDGE_THEN_SUPPLY_RE.search(message)
-    if not match:
-        return None
-    return "build_yield_strategy_plan", {
-        "deposit_chain": (match.group("dst") or "base").lower(),
-        "deposit_protocol": "aave-v3",
-        "deposit_action": "supply",
-        "deposit_asset": match.group("asset").upper(),
-        "deposit_amount": match.group("amount").replace(",", ""),
-        "source_chain": (match.group("src") or "ethereum").lower(),
-        "source_asset": match.group("asset").upper(),
-        "source_amount": match.group("amount").replace(",", ""),
-    }
-
-
-def _detect_swap_then_aave_supply(message: str) -> tuple[str, dict] | None:
-    match = _SWAP_THEN_SUPPLY_RE.search(message)
-    if not match:
-        return None
-    chain = (match.group("chain") or "ethereum").lower()
-    return "build_yield_strategy_plan", {
-        "deposit_chain": chain,
-        "deposit_protocol": "aave-v3",
-        "deposit_action": "supply",
-        "deposit_asset": match.group("dst_asset").upper(),
-        "deposit_amount": match.group("amount").replace(",", ""),
-        "source_chain": chain,
-        "source_asset": match.group("src_asset").upper(),
-        "source_amount": match.group("amount").replace(",", ""),
-    }
-
-
 def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
     """Match prompts like 'supply 100 USDC to Aave V3 on Ethereum' / 'execute Aave USDC supply 100'."""
     if not _AAVE_HINT.search(message):
@@ -751,366 +653,6 @@ def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
         "asset_in": asset,
         "amount_in": amount,
     }
-
-
-_POOL_EXECUTE_TRIGGER = re.compile(
-    r"\b(execute|sign|run|deploy|fire|do)\b.*\b("
-    r"this\s+pool|the\s+pool|that\s+pool|pool\s+#?\d+|"
-    r"these\s+pools|the\s+pools|the\s+strategy|the\s+plan|the\s+allocation|"
-    r"transactions?\s+through\s+(my|the)\s+wallet|through\s+(my|the)\s+wallet|"
-    r"the\s+transactions?|all\s+(of\s+)?them|all\s+(the\s+)?pools)\b",
-    re.IGNORECASE,
-)
-_POOL_EXECUTE_HINT = re.compile(
-    r"\b(execute|sign|run|deploy|deposit\s+into|stake\s+to|enter|provide\s+lp)\b",
-    re.IGNORECASE,
-)
-_POOL_REF_INDEX = re.compile(r"#\s*(\d{1,2})|pool\s*(\d{1,2})\b|number\s*(\d{1,2})\b", re.IGNORECASE)
-_POOL_REF_PROTOCOL_PAIR = re.compile(
-    r"([A-Za-z][A-Za-z0-9_-]{2,40})\s+([A-Z][A-Z0-9]{1,9}[\s/-][A-Z0-9]{1,12})",
-)
-_POOL_AMOUNT_RE = re.compile(
-    r"(?:with\s+)?\$?\s*([\d,]+(?:\.\d+)?)\s*(usdc|usdt|dai|usds|usd|sol|eth|bnb|matic|avax|wbtc|btc)?",
-    re.IGNORECASE,
-)
-_ALLOC_TRIGGER = re.compile(
-    r"\b(execute|sign|run|deploy)\b.*\b("
-    r"the\s+(strategy|allocation|plan|transactions?|deposits?|distribution)|"
-    r"transactions?\s+through\s+(my|the)\s+wallet|"
-    r"all\s+(of\s+)?them|all\s+(the\s+)?pools)\b",
-    re.IGNORECASE,
-)
-
-
-def _action_for_product_type(product_type: str | None) -> str:
-    pt = (product_type or "").lower()
-    if pt in {"pool", "lp", "amm", "clmm"}:
-        return "deposit_lp"
-    if pt in {"staking", "stake", "lst"}:
-        return "stake"
-    return "supply"
-
-
-_DIRECT_EXEC_VERB = re.compile(
-    r"\b(execute|sign|run|deploy|deposit|supply|stake|provide\s+lp)\b",
-    re.IGNORECASE,
-)
-_DIRECT_EXEC_PROTOCOL = re.compile(
-    r"\b(?P<protocol>aave(?:[- ]?v3)?|compound(?:[- ]?v3)?|lido|spark(?:[- ]?protocol)?|"
-    r"ether-fi|ether\.fi|etherfi|frax(?:[- ]?ether)?|rocket-?pool|stader|"
-    r"yearn(?:[- ]?finance)?|morpho(?:[- ]?blue)?|sky-?lending|"
-    r"convex(?:[- ]?finance)?|pendle|ethena|stargate|origin-?ether|moonwell|velodrome|gmx|"
-    r"raydium(?:[- ]?amm|[- ]?clmm)?|orca(?:[- ]?whirlpools)?|meteora(?:[- ]?dlmm)?|"
-    r"marinade(?:[- ]?finance)?|jito(?:[- ]?liquid-?staking)?|sanctum(?:[- ]?infinity)?|"
-    r"kamino(?:[- ]?lend|[- ]?finance)?|drift|lulo)\b",
-    re.IGNORECASE,
-)
-_DIRECT_EXEC_AMOUNT_ASSET = re.compile(
-    r"(?P<amount>[\d,]+(?:\.\d+)?)\s*(?P<asset>USDC|USDT|DAI|USDS|USDE|SOL|ETH|WETH|BTC|WBTC|MATIC|AVAX|BNB|MSOL|JITOSOL|EETH|RETH)\b",
-    re.IGNORECASE,
-)
-_PROTOCOL_CHAIN_HINTS = {
-    "raydium": "solana", "raydium-amm": "solana", "raydium-clmm": "solana",
-    "orca": "solana", "orca-whirlpools": "solana",
-    "meteora": "solana", "meteora-dlmm": "solana",
-    "marinade": "solana", "marinade-finance": "solana",
-    "jito": "solana", "jito-liquid-staking": "solana",
-    "sanctum": "solana", "sanctum-infinity": "solana",
-    "kamino": "solana", "kamino-lend": "solana", "kamino-finance": "solana",
-    "drift": "solana", "lulo": "solana",
-}
-_PROTOCOL_ACTION_HINTS = {
-    "raydium": "deposit_lp", "raydium-amm": "deposit_lp", "raydium-clmm": "deposit_lp",
-    "orca": "deposit_lp", "orca-whirlpools": "deposit_lp",
-    "meteora": "deposit_lp", "meteora-dlmm": "deposit_lp",
-    "uniswap-v3": "deposit_lp", "uniswap-v4": "deposit_lp",
-    "marinade": "stake", "marinade-finance": "stake",
-    "jito": "stake", "jito-liquid-staking": "stake",
-    "lido": "stake", "rocket-pool": "stake", "rocketpool": "stake",
-    "ether-fi": "stake", "ether.fi": "stake", "etherfi": "stake",
-    "stader": "stake",
-    "sanctum": "stake", "sanctum-infinity": "stake",
-    "kamino": "supply", "kamino-lend": "supply",
-}
-
-
-def _normalize_protocol_slug(raw: str) -> str:
-    s = raw.lower().strip().replace(" ", "-").replace(".", "-")
-    s = re.sub(r"-+", "-", s)
-    return s
-
-
-def _detect_direct_yield_execute(message: str) -> tuple[str, dict] | None:
-    """Match 'sign deposit_lp on raydium-amm X SOL on solana with 0.5'/'execute supply 100 USDC on aave v3' etc.
-
-    Composes 3 independent regex matches (verb / protocol / amount+asset)
-    so word order doesn't matter, then resolves chain + action via hints.
-    """
-    if not message:
-        return None
-    if not _DIRECT_EXEC_VERB.search(message):
-        return None
-    proto_match = _DIRECT_EXEC_PROTOCOL.search(message)
-    if not proto_match:
-        return None
-    amount_match = _DIRECT_EXEC_AMOUNT_ASSET.search(message)
-    if not amount_match:
-        return None
-
-    protocol = _normalize_protocol_slug(proto_match.group("protocol"))
-    amount = amount_match.group("amount").replace(",", "")
-    asset = amount_match.group("asset").upper()
-
-    chain_match = re.search(
-        r"\b(ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|solana)\b",
-        message, re.IGNORECASE,
-    )
-    chain = chain_match.group(1).lower() if chain_match else _PROTOCOL_CHAIN_HINTS.get(protocol)
-    if not chain:
-        chain = "ethereum"
-
-    action_hint = _PROTOCOL_ACTION_HINTS.get(protocol)
-    if action_hint is None:
-        if re.search(r"\b(stake|staking)\b", message, re.IGNORECASE):
-            action_hint = "stake"
-        elif re.search(r"\b(deposit_lp|provide\s+lp|\blp\b)\b", message, re.IGNORECASE):
-            action_hint = "deposit_lp"
-        else:
-            action_hint = "supply"
-
-    return "build_yield_execution_plan", {
-        "chain": chain,
-        "protocol": protocol,
-        "action": action_hint,
-        "asset_in": asset,
-        "amount_in": amount,
-        "research_thesis": "Direct execution from explicit chat command.",
-    }
-
-
-def _detect_pool_execute_followup(
-    message: str, session_id: str | None
-) -> tuple[str, dict] | None:
-    """Resolve "execute this pool X" / "execute the strategy" against session memory."""
-    if not session_id:
-        return None
-    if not message:
-        return None
-    msg = message.strip()
-    if not _POOL_EXECUTE_HINT.search(msg):
-        return None
-
-    record = _recall_opp_record(str(session_id))
-    if record is None:
-        return None
-
-    asset_match = _POOL_AMOUNT_RE.search(msg)
-    asked_amount = asset_match.group(1).replace(",", "") if asset_match else None
-    asked_asset = (asset_match.group(2) or "").upper() if asset_match else None
-
-    # ── Multi-pool / allocation trigger ──────────────────────────────────────
-    if _ALLOC_TRIGGER.search(msg):
-        rows = list(record.allocations or [])
-        if not rows and record.items:
-            # Fall back to top-N items if the user never ran allocate_plan but
-            # has a fresh pool list.
-            rows = record.items[:5]
-        if rows:
-            default_asset = (asked_asset or record.last_asset_hint or "USDC").upper()
-            return "build_allocation_execution_plan", {
-                "allocations": rows,
-                "default_asset": default_asset,
-                "default_amount_total": (
-                    asked_amount or
-                    (str(int(record.last_amount_usd)) if record.last_amount_usd else None)
-                ),
-                "title_hint": f"Allocation execution ({len(rows)} pools)",
-            }
-
-    # ── Single-pool trigger ──────────────────────────────────────────────────
-    if not _POOL_EXECUTE_TRIGGER.search(msg):
-        # Treat "execute pool raydium-amm SPACEX-WSOL" as a pool trigger even
-        # without the literal phrase "this pool".
-        if "execute" not in msg.lower() and "sign" not in msg.lower():
-            return None
-
-    index_match = _POOL_REF_INDEX.search(msg)
-    index_hint: int | None = None
-    if index_match:
-        for grp in index_match.groups():
-            if grp:
-                try:
-                    index_hint = int(grp)
-                except ValueError:
-                    pass
-                break
-
-    protocol_hint: str | None = None
-    symbol_hint: str | None = None
-    pair_match = _POOL_REF_PROTOCOL_PAIR.search(msg)
-    if pair_match:
-        protocol_hint = pair_match.group(1)
-        symbol_hint = pair_match.group(2).replace(" ", "-")
-    else:
-        # Look for a known protocol name token.
-        for token in re.findall(r"[A-Za-z][A-Za-z0-9-]{3,}", msg):
-            tl = token.lower()
-            if tl in {
-                "aave", "compound", "lido", "ethena", "morpho", "spark", "yearn",
-                "convex", "curve", "pendle", "stargate", "frax", "rocketpool",
-                "etherfi", "stader", "raydium", "orca", "kamino", "marinade",
-                "jito", "sanctum", "meteora", "aerodrome", "uniswap", "velodrome",
-                "supernova", "steer", "moonwell", "drift", "lulo",
-            }:
-                protocol_hint = tl
-                break
-
-    chain_hint: str | None = None
-    chain_match = re.search(
-        r"\b(ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|solana|sol)\b",
-        msg, re.IGNORECASE,
-    )
-    if chain_match:
-        chain_hint = chain_match.group(1).lower()
-
-    opp = _recall_pool(
-        str(session_id),
-        protocol_hint=protocol_hint,
-        symbol_hint=symbol_hint,
-        chain_hint=chain_hint,
-        index_hint=index_hint,
-    )
-    if opp is None:
-        return None
-
-    asset_in = (asked_asset or _infer_asset_from_symbol(opp.get("symbol"), opp.get("chain")) or "USDC").upper()
-    amount = asked_amount or _amount_from_record(record) or "100"
-    action = _action_for_product_type(opp.get("product_type"))
-
-    return "build_yield_execution_plan", {
-        "chain": opp.get("chain"),
-        "protocol": opp.get("protocol"),
-        "action": action,
-        "asset_in": asset_in,
-        "amount_in": amount,
-        "research_thesis": (
-            f"Replaying selected pool ({opp.get('protocol')} {opp.get('symbol')} "
-            f"on {opp.get('chain')}) from prior search."
-        ),
-    }
-
-
-def _infer_asset_from_symbol(symbol: str | None, chain: str | None) -> str | None:
-    if not symbol:
-        return None
-    sym = symbol.upper()
-    for stable in ("USDC", "USDT", "DAI", "USDS", "USDE"):
-        if stable in sym:
-            return stable
-    if (chain or "").lower() in {"solana", "sol"} and ("WSOL" in sym or "SOL" in sym):
-        return "SOL"
-    for major in ("WETH", "ETH", "WBTC", "BTC", "MATIC", "AVAX", "BNB"):
-        if major in sym:
-            return "ETH" if major == "WETH" else major
-    return None
-
-
-def _amount_from_record(record) -> str | None:
-    if record is None:
-        return None
-    if record.last_amount_usd:
-        return str(int(record.last_amount_usd))
-    return None
-
-
-_TOKEN_ADDR_RE = re.compile(
-    r"\b((?:0x[a-fA-F0-9]{40})|(?:[1-9A-HJ-NP-Za-km-z]{32,44}))\b"
-)
-_ANALYZE_TOKEN_RE = re.compile(
-    r"\b(analy[sz]e|analysis\s+of|analyze\s+this|sentinel\s+report|risk\s+report|risk\s+score|"
-    r"shield\s+(?:check|scan|report)|deep\s+dive|safety\s+check|rugpull\s+check|honeypot\s+check)\b",
-    re.IGNORECASE,
-)
-_WHALE_RE = re.compile(
-    r"\b(whale|whales|whale\s+activity|biggest\s+(?:buy|sell|trade|move)|big\s+wallet|"
-    r"large\s+holders?|top\s+wallet\s+activity)\b",
-    re.IGNORECASE,
-)
-_HUB_RE = re.compile(
-    r"\b(smart[- ]?money|smart\s+money\s+hub|smart[- ]?money\s+(?:wallets?|signals?|picks?)|"
-    r"sol\s+hub|solana\s+(?:smart|hub))\b",
-    re.IGNORECASE,
-)
-_SHIELD_RE = re.compile(
-    r"\b(shield(?:\s+(?:check|scan|report|wallet|approvals|status))?|approvals?\s+scan|"
-    r"approval\s+risk|revoke\s+(?:risky\s+)?approvals?|wallet\s+security)\b",
-    re.IGNORECASE,
-)
-_CHAIN_HINT_RE = re.compile(
-    r"\bon\s+(ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|solana)\b",
-    re.IGNORECASE,
-)
-
-
-def _extract_token_address(message: str) -> str | None:
-    if not message:
-        return None
-    for match in _TOKEN_ADDR_RE.finditer(message):
-        addr = match.group(1)
-        # Heuristic: strip noise; prefer EVM 0x first, otherwise the longest base58 token
-        if addr.startswith("0x") and len(addr) == 42:
-            return addr
-    # No 0x found; pick the longest base58 candidate
-    candidates = [m.group(1) for m in _TOKEN_ADDR_RE.finditer(message) if not m.group(1).startswith("0x")]
-    if candidates:
-        candidates.sort(key=len, reverse=True)
-        return candidates[0]
-    return None
-
-
-def _detect_sentinel_features(message: str) -> tuple[str, dict] | None:
-    if not message:
-        return None
-    chain_match = _CHAIN_HINT_RE.search(message)
-    chain = chain_match.group(1).lower() if chain_match else None
-
-    addr = _extract_token_address(message)
-
-    # Shield wallet/contract scan FIRST — the "shield" keyword is unambiguous.
-    if _SHIELD_RE.search(message):
-        target = addr
-        if not target:
-            wallet_match = re.search(r"\b(0x[a-fA-F0-9]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})\b", message)
-            if wallet_match:
-                target = wallet_match.group(1)
-        if target:
-            return "get_shield_check", {"address": target, "chain": chain}
-
-    # Token analyzer: any analyze/scan/sentinel-report verb + a token address.
-    if addr and _ANALYZE_TOKEN_RE.search(message):
-        return "analyze_token_full_sentinel", {"address": addr, "chain": chain, "mode": "standard"}
-    # Bare token address ("scan this token <addr>", "<addr> safety") → still analyze.
-    if addr and re.search(r"\b(scan|check|safe|safety|rug|honeypot|inspect|tell\s+me\s+about)\b", message, re.IGNORECASE):
-        return "analyze_token_full_sentinel", {"address": addr, "chain": chain, "mode": "standard"}
-
-    # Smart-money hub.
-    if _HUB_RE.search(message):
-        return "get_smart_money_hub", {"chain": chain or "solana", "limit": 10}
-
-    # Whale tracking.
-    if _WHALE_RE.search(message):
-        params: dict = {"limit": 10, "hours": 24}
-        if chain:
-            params["chain"] = chain
-        # Allow "whales in last 6 hours" / "last 48h" patterns.
-        h_match = re.search(r"\blast\s+(\d{1,3})\s*(?:h|hour|hours)\b", message, re.IGNORECASE)
-        if h_match:
-            try:
-                params["hours"] = max(1, min(int(h_match.group(1)), 168))
-            except ValueError:
-                pass
-        return "track_whales", params
-    return None
 
 
 def _defi_intent_to_tool(intent: DefiIntent) -> tuple[str, dict] | None:
@@ -1159,44 +701,6 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     """Detect intent and extract parameters from user message."""
     message_lower = message.lower()
 
-    # Sentinel feature surface (analyze, whale, hub, shield) wins over the
-    # generic analytics router so "analyze this token <addr>" routes to the
-    # full Sentinel analyzer, not the market overview tool.
-    sentinel_intent = _detect_sentinel_features(message)
-    if sentinel_intent is not None:
-        return sentinel_intent
-
-    # Direct yield execute: "sign deposit_lp on raydium-amm SPACEX-WSOL on
-    # solana with 0.5 SOL" / "execute supply 100 USDC on aave v3".
-    direct = _detect_direct_yield_execute(message)
-    if direct is not None:
-        return direct
-
-    # Spread+execute one-shot: "spread 500 USDC across 4 pools then execute
-    # through wallet" → allocate_plan now, the runtime auto-chains the
-    # execution-plan composer because 'execute' is in the message.
-    spread_match = re.search(
-        r"\bspread\s+\$?(?P<amount>[\d,]+(?:\.\d+)?)\s*(?P<asset>USDC|USDT|DAI|USDS|USDE|SOL|ETH)\b"
-        r".*?\b(across|over|into)\s+(?P<count>\d{1,2})\b",
-        message, re.IGNORECASE | re.DOTALL,
-    )
-    exec_kw = re.search(r"\b(execute|sign|deploy|run\s+it|fire\s+it|through\s+(my|the)\s+wallet)\b", message, re.IGNORECASE)
-    if spread_match and exec_kw:
-        try:
-            amount = float(spread_match.group("amount").replace(",", ""))
-            return "allocate_plan", {
-                "usd_amount": amount,
-                "risk_budget": "balanced",
-                "asset_hint": spread_match.group("asset").upper(),
-            }
-        except (ValueError, TypeError):
-            pass
-
-    # Strategy composer detectors (multi-step yield) win over single-action detectors.
-    for detector in (_detect_bridge_then_aave_supply, _detect_swap_then_aave_supply):
-        detected = detector(message)
-        if detected is not None:
-            return detected
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
         return multi_step
@@ -1641,11 +1145,11 @@ def _format_opportunity_search_response(data: dict) -> str:
         if link_parts:
             lines.append(f"   Links: {' · '.join(link_parts)}")
         reason = candidate.get("unsupported_reason")
-        if candidate.get("executable"):
+        if reason and not candidate.get("executable"):
+            lines.append(f"   Execution: research-only — {reason}")
+        elif candidate.get("executable"):
             adapter = candidate.get("adapter_id") or "executable adapter"
             lines.append(f"   Execution: ready via {adapter}")
-        elif reason:
-            lines.append(f"   Execution: routed via closest-executable alternative — {reason}")
         lines.append("")
 
     excluded = data.get("excluded_summary") or []
@@ -1689,18 +1193,8 @@ def _format_tool_result(tool_name: str, result) -> str:
         return _format_allocate_response(data)
     if tool_name == "search_defi_opportunities":
         return _format_opportunity_search_response(data)
-    if tool_name in {"build_yield_execution_plan", "build_yield_strategy_plan", "build_allocation_execution_plan"} or card_type == "execution_plan_v3":
+    if tool_name == "build_yield_execution_plan" or card_type == "execution_plan_v3":
         return _format_execution_plan_v3_response(data)
-    if tool_name in {"analyze_token_full_sentinel", "track_whales", "get_smart_money_hub", "get_shield_check"}:
-        # These tools emit a markdown text payload; surface it directly.
-        payload_obj = getattr(result, "card_payload", None) if hasattr(result, "card_payload") else None
-        if isinstance(payload_obj, dict) and isinstance(payload_obj.get("text"), str):
-            return payload_obj["text"]
-        if isinstance(data, dict):
-            for key in ("text", "summary", "content"):
-                if isinstance(data.get(key), str) and data[key].strip():
-                    return data[key]
-        return json.dumps(data, indent=2) if isinstance(data, dict) else str(data)
     if card_type == "token" or tool_name == "get_token_price":
         return _format_price_response(data)
     elif card_type == "stake" or tool_name == "get_staking_options":
@@ -1787,48 +1281,6 @@ def _maybe_replay_followup(*, message: str, history: list[dict]) -> str | None:
     )
 
 
-_STRATEGY_FOLLOWUP_RE = re.compile(
-    r"\b(execute it|execute the plan|run it|sign it|do it|reinvest|compound( this| it)?|rebalance( it| this)?|proceed with execution)\b",
-    re.IGNORECASE,
-)
-
-
-def _resolve_strategy_followup(message: str, session_id: str | None) -> tuple[str, dict] | None:
-    if not session_id:
-        return None
-    if not _STRATEGY_FOLLOWUP_RE.search(message or ""):
-        return None
-    from src.defi.strategy.memory import recall_strategy
-    record = recall_strategy(str(session_id))
-    if record is None:
-        return None
-    constraints = dict(record.constraints or {})
-    if "deposit_chain" in constraints:
-        params = {
-            "deposit_chain": constraints.get("deposit_chain"),
-            "deposit_protocol": constraints.get("deposit_protocol"),
-            "deposit_action": constraints.get("deposit_action"),
-            "deposit_asset": constraints.get("deposit_asset"),
-            "deposit_amount": constraints.get("deposit_amount"),
-            "research_thesis": f"Replaying prior strategy ({record.intent_summary}).",
-        }
-        for key in ("source_chain", "source_asset", "source_amount", "slippage_bps"):
-            value = constraints.get(key)
-            if value is not None:
-                params[key] = value
-        return "build_yield_strategy_plan", params
-    if "chain" in constraints and "protocol" in constraints:
-        return "build_yield_execution_plan", {
-            "chain": constraints["chain"],
-            "protocol": constraints["protocol"],
-            "action": constraints["action"],
-            "asset_in": constraints["asset_in"],
-            "amount_in": constraints["amount_in"],
-            "research_thesis": f"Replaying prior strategy ({record.intent_summary}).",
-        }
-    return None
-
-
 async def run_ephemeral_turn(
     *,
     router,
@@ -1836,7 +1288,6 @@ async def run_ephemeral_turn(
     message: str,
     wallet: str | None = None,
     history: list[dict] | None = None,
-    session_id: str | None = None,
 ) -> AsyncIterator[bytes]:
     """Execute one agent turn without DB persistence and yield SSE-encoded frames.
 
@@ -1853,16 +1304,10 @@ async def run_ephemeral_turn(
     collector = StreamCollector()
     started = __import__('time').monotonic()
 
-    # Pool-execution memory follow-up runs FIRST — before the generic
-    # "proceed/execute" replay — so "execute this pool X" or
-    # "execute the transactions through my wallet" build a real
-    # ExecutionPlanV3 instead of falling into the stub replay text.
-    early_pool_intent = _detect_pool_execute_followup(message, session_id)
-
     # If this is a follow-up confirmation and we have prior context, handle it
     # before falling through to the keyword intent detector — otherwise
     # "proceed" would never match anything in INTENT_PATTERNS.
-    if history and early_pool_intent is None:
+    if history:
         replay = _maybe_replay_followup(message=message, history=history)
         if replay is not None:
             collector._step += 1
@@ -1875,14 +1320,8 @@ async def run_ephemeral_turn(
                 yield encode_sse(frame_event_name(frame), frame.model_dump())
             return
 
-    # Pool-execution follow-up resolved earlier; re-use it without re-running
-    # the regex / memory lookup.
-    intent = early_pool_intent
-    # Strategy follow-up: replay last yield plan if user typed "execute it / reinvest / rebalance".
-    if intent is None:
-        intent = _resolve_strategy_followup(message, session_id)
-    if intent is None:
-        intent = detect_intent(message)
+    # Detect intent
+    intent = detect_intent(message)
 
     try:
         final_content = ""
@@ -2016,131 +1455,7 @@ async def run_ephemeral_turn(
                             payload=extra.payload,
                         ))
                         card_ids_for_final.append(extra.card_id)
-                    # Persist opportunity / allocation list so a follow-up like
-                    # "execute this pool X" can resolve chain/protocol/asset/amount
-                    # without re-running the search.
-                    try:
-                        sid = str(session_id) if session_id else None
-                        env_data = getattr(env, "data", None) or {}
-                        payload = env.card_payload if isinstance(env.card_payload, dict) else {}
-                        if sid and tool_name == "search_defi_opportunities":
-                            items = (env_data.get("primary_candidates")
-                                     or payload.get("items") or [])
-                            if items:
-                                _remember_opportunities(sid, items)
-                        if sid and tool_name == "allocate_plan":
-                            allocs = (env_data.get("allocations")
-                                      or payload.get("allocations")
-                                      or env_data.get("positions")
-                                      or payload.get("positions") or [])
-                            total = (env_data.get("total_usd")
-                                     or env_data.get("usd_amount")
-                                     or payload.get("total_usd")
-                                     or payload.get("usd_amount"))
-                            if allocs:
-                                total_f: float | None = None
-                                if total is not None:
-                                    try:
-                                        cleaned_total = (
-                                            str(total).replace("$", "").replace(",", "").strip().split()[0]
-                                            if isinstance(total, str) else total
-                                        )
-                                        total_f = float(cleaned_total)
-                                    except (ValueError, TypeError, IndexError):
-                                        total_f = None
-                                _remember_allocation(
-                                    sid,
-                                    allocs,
-                                    total_usd=total_f,
-                                    asset_hint=(env_data.get("asset_hint")
-                                                or payload.get("asset_hint")),
-                                )
-                            # Allocation cards usually carry the underlying pools
-                            # too — also remember them as a candidate list.
-                            pool_items = (env_data.get("primary_candidates")
-                                          or payload.get("items") or allocs or [])
-                            if pool_items:
-                                _remember_opportunities(sid, pool_items)
-                    except Exception:
-                        pass
                     final_content = _format_tool_result(tool_name, env)
-
-                    # Auto-chain: when the user said "spread 500 USDC across X
-                    # pools then execute through wallet" / "allocate ... and
-                    # sign" — run build_allocation_execution_plan as a follow-up
-                    # call within the same turn so the user gets ONE card with
-                    # signable steps instead of having to ask twice.
-                    if tool_name == "allocate_plan" and re.search(
-                        r"\b(execute|sign|deploy|run\s+it|fire\s+it|through\s+(my|the)\s+wallet)\b",
-                        message, re.IGNORECASE,
-                    ):
-                        try:
-                            allocs_for_chain = (
-                                (env_data.get("positions") or [])
-                                or (payload.get("positions") or [])
-                            )
-                            total_for_chain = (
-                                env_data.get("total_usd")
-                                or payload.get("total_usd")
-                            )
-                            asset_hint_for_chain = (
-                                env_data.get("asset_hint")
-                                or payload.get("asset_hint")
-                                or "USDC"
-                            )
-                            if allocs_for_chain:
-                                exec_tool = next(
-                                    (t for t in tools if t.name == "build_allocation_execution_plan"),
-                                    None,
-                                )
-                                if exec_tool is not None:
-                                    chain_args = {
-                                        "allocations": allocs_for_chain,
-                                        "default_asset": asset_hint_for_chain,
-                                        "default_amount_total": total_for_chain,
-                                        "title_hint": f"Allocation execution ({len(allocs_for_chain)} pools)",
-                                    }
-                                    collector._step += 1
-                                    _emit_thoughts(collector, _pre_tool_reasoning(
-                                        "build_allocation_execution_plan", chain_args, message,
-                                    ))
-                                    collector._queue.append(ToolFrame(
-                                        step_index=collector._step,
-                                        name="build_allocation_execution_plan",
-                                        args=chain_args,
-                                    ))
-                                    chain_result = await exec_tool.coroutine(chain_args)
-                                    chain_env: ToolEnvelope | None = None
-                                    if isinstance(chain_result, ToolEnvelope):
-                                        chain_env = chain_result
-                                    elif isinstance(chain_result, str):
-                                        try:
-                                            chain_env = ToolEnvelope.model_validate_json(chain_result)
-                                        except Exception:
-                                            chain_env = None
-                                    if chain_env is not None and chain_env.ok:
-                                        collector._queue.append(ObservationFrame(
-                                            step_index=collector._step,
-                                            name="build_allocation_execution_plan",
-                                            ok=True,
-                                            error=None,
-                                        ))
-                                        if chain_env.card_type and chain_env.card_payload is not None:
-                                            collector._queue.append(CardFrame(
-                                                step_index=collector._step,
-                                                card_id=chain_env.card_id,
-                                                card_type=chain_env.card_type,
-                                                payload=chain_env.card_payload,
-                                            ))
-                                            card_ids_for_final.append(chain_env.card_id)
-                                        plan_summary = _format_execution_plan_v3_response(chain_env.data or {})
-                                        final_content = (
-                                            final_content
-                                            + "\n\n---\n\n"
-                                            + plan_summary
-                                        )
-                        except Exception:
-                            pass
                 elif isinstance(tool_result, dict):
                     final_content = _format_tool_result(tool_name, tool_result)
                 else:
@@ -2267,7 +1582,6 @@ async def run_simple_turn(
         message=message,
         wallet=wallet,
         history=history,
-        session_id=session_id,
     ):
         yield chunk
         if db is not None:

@@ -11,22 +11,29 @@ import type {
   SentinelMatrixPayload,
   ExecutionPlanPayload,
   ExecutionPlanV2Payload,
+  ExecutionPlanV3Payload,
   PlanPayload,
   PositionPayload,
   BridgePayload,
   PairListPayload,
+  DefiOpportunitiesPayload,
   SentinelBlock,
 } from "@/types/agent";
 import { TrendingUp, TrendingDown, ExternalLink } from "lucide-react";
 import { AllocationCard as DemoAllocationCard } from "./AllocationCard";
 import { SentinelMatrixCard as DemoSentinelMatrixCard } from "./SentinelMatrixCard";
 import { ExecutionPlanCard as DemoExecutionPlanCard } from "./ExecutionPlanCard";
+import { DefiOpportunitiesCard } from "./DefiOpportunitiesCard";
+import { ExecutionPlanV3Card } from "./ExecutionPlanV3Card";
 import { SentinelBadge } from "./SentinelBadge";
 import { ShieldBadge } from "./ShieldBadge";
 import { SentinelBreakdownCard } from "./SentinelBreakdownCard";
 
 interface Props {
   card: CardFrame;
+  onStartSigning?: (payload: ExecutionPlanPayload) => void;
+  onRerunAllocation?: () => void;
+  onSignStep?: (planId: string, stepId: string) => void;
 }
 
 /* ── Sentinel / Shield Helpers ────────────────────────────────────────── */
@@ -539,10 +546,14 @@ function FallbackCard({ card }: { card: CardFrame }) {
 
 /* ── Main renderer ────────────────────────────────────────────────────── */
 
-export function CardRenderer({ card }: Props) {
+export function CardRenderer({ card, onStartSigning, onRerunAllocation, onSignStep }: Props) {
   const { card_type, payload } = card;
 
   switch (card_type) {
+    case "defi_opportunities":
+      return <DefiOpportunitiesCard payload={payload as unknown as DefiOpportunitiesPayload} />;
+    case "execution_plan_v3":
+      return <ExecutionPlanV3Card payload={payload as unknown as ExecutionPlanV3Payload} onSignStep={onSignStep} />;
     case "token":
       return <TokenCard payload={payload as unknown as TokenPayload} />;
     case "swap_quote":
@@ -560,7 +571,7 @@ export function CardRenderer({ card }: Props) {
     case "sentinel_matrix":
       return <DemoSentinelMatrixCard payload={payload as unknown as SentinelMatrixPayload} />;
     case "execution_plan":
-      return <DemoExecutionPlanCard payload={payload as unknown as ExecutionPlanPayload} />;
+      return <DemoExecutionPlanCard payload={payload as unknown as ExecutionPlanPayload} onStartSigning={onStartSigning} onRerunAllocation={onRerunAllocation} />;
     case "execution_plan_v2":
       return <ExecutionPlanV2Card payload={payload as unknown as ExecutionPlanV2Payload} />;
     case "plan":

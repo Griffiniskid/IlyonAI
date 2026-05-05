@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
@@ -37,7 +37,13 @@ const jsonResponse = (body: unknown, status = 200) =>
     headers: { "Content-Type": "application/json" },
   }));
 
-function installFetchMock() {
+const sseResponse = (body: string, status = 200) =>
+  Promise.resolve(new Response(body, {
+    status,
+    headers: { "Content-Type": "text/event-stream" },
+  }));
+
+function installFetchMock(agentResponse?: string) {
   const fetchMock = vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
 
@@ -73,6 +79,7 @@ function installFetchMock() {
     }
 
     if (url.includes("/api/v1/agent")) {
+      if (agentResponse) return sseResponse(agentResponse);
       return jsonResponse({ response: "Assistant response", chat_id: "chat-1" });
     }
 
@@ -81,6 +88,72 @@ function installFetchMock() {
 
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
+}
+
+const allocationPayload = {
+  total_usd: "$10,000",
+  blended_apy: "~5.6%",
+  chains: 3,
+  weighted_sentinel: 89,
+  risk_mix: { low: 4, medium: 1, high: 0 },
+  combined_tvl: "$31.2B",
+  positions: [
+    { rank: 1, protocol: "Lido", asset: "stETH", chain: "eth", apy: "3.1%", sentinel: 94, risk: "low", fit: "conservative", weight: 35, usd: "$3,500", tvl: "$24.5B", router: "Enso", safety: 96, durability: 92, exit: 98, confidence: 95, flags: [] },
+  ],
+};
+
+function richAllocationSse() {
+  const executionStep = { index: 1, verb: "Stake", amount: "1.0", asset: "ETH", target: "stETH · Lido", chain: "eth", router: "Enso", wallet: "MetaMask", gas: "~$4.80" };
+  return [
+    `event: thought\ndata: ${JSON.stringify({ step_index: 1, content: "Parsed intent: allocate $10,000 across staking + yield." })}`,
+    `event: thought\ndata: ${JSON.stringify({ step_index: 2, content: "Scored candidates via Sentinel pool framework: Safety x Yield durability x Exit x Confidence." })}`,
+    `event: tool\ndata: ${JSON.stringify({ step_index: 2, name: "allocate_plan", args: { usd_amount: 10000, risk_budget: "balanced" } })}`,
+    `event: card\ndata: ${JSON.stringify({ step_index: 2, card_id: "allocation-1", card_type: "allocation", payload: allocationPayload })}`,
+    `event: card\ndata: ${JSON.stringify({ step_index: 2, card_id: "matrix-1", card_type: "sentinel_matrix", payload: { ...allocationPayload, low_count: 1, medium_count: 0, high_count: 0 } })}`,
+    `event: card\ndata: ${JSON.stringify({ step_index: 2, card_id: "exec-1", card_type: "execution_plan", payload: { steps: [executionStep], total_gas: "~$4.80", slippage_cap: "0.5%", wallets: "MetaMask", tx_count: 1, requires_signature: true } })}`,
+    `event: final\ndata: ${JSON.stringify({ content: "Here is a risk-weighted allocation with Sentinel-backed execution.", card_ids: ["allocation-1", "matrix-1", "exec-1"], elapsed_ms: 1200, steps: 3 })}`,
+  ].join("\n\n");
+}
+
+function markdownSse() {
+  return [
+    `event: thought\ndata: ${JSON.stringify({ step_index: 1, content: "Parsed request." })}`,
+    `event: final\ndata: ${JSON.stringify({ content: "## Yield estimate\n\nWeighted Sentinel lands at **83 / 100**.\n\n- Risk levels stay visible\n- Wallet signatures remain gated", card_ids: [], elapsed_ms: 500, steps: 1 })}`,
+  ].join("\n\n");
+}
+
+function compoundSwapBridgeJson() {
+  return JSON.stringify({
+    status: "ok",
+    type: "compound_action",
+    message: "I've prepared two transactions for you:\n\n1. Swap 10 USDT to ~9.98 USDC on Solana\n2. Bridge USDC from Solana to BNB Smart Chain",
+    swap: {
+      status: "ok",
+      type: "solana_swap_proposal",
+      chain_type: "solana",
+      swapTransaction: "AQ==",
+      out_amount: "9980000",
+      ui_out_amount: 9.98,
+      ui_in_amount: 10,
+      in_symbol: "USDT",
+      out_symbol: "USDC",
+    },
+    bridge: {
+      status: "ok",
+      type: "bridge_proposal",
+      chain_type: "solana",
+      src_chain_name: "Solana",
+      dst_chain_name: "BNB Smart Chain",
+      from_token_symbol: "USDC",
+      to_token_symbol: "USDC",
+      amount_in_display: 10.1,
+      requested_amount_display: 9.98,
+      dst_amount_display: 9.97,
+      route_summary: "deBridge DLN",
+      estimated_fee_display: "~0.02 USDC",
+      tx: { serialized: "AQ==", chain_id: 101 },
+    },
+  });
 }
 
 describe("agent chat regressions", () => {
@@ -177,5 +250,156 @@ describe("agent chat regressions", () => {
     expect(screen.queryByText("My balance")).not.toBeInTheDocument();
     expect(screen.queryByText("Here is your balance")).not.toBeInTheDocument();
     expect(screen.getByText(/Hello! I'm your AI crypto assistant/)).toBeInTheDocument();
+  });
+
+  it("renders backend SSE reasoning and typed rich cards in the active MainApp chat", async () => {
+    localStorage.setItem("ap_sol_wallet", "So11111111111111111111111111111111111111112");
+    installFetchMock(richAllocationSse());
+    const { container } = render(<MainApp />);
+
+    const input = screen.getByPlaceholderText(/Ask anything about Solana/i);
+    fireEvent.change(input, {
+      target: {
+        value: "I have $10,000 USDC. Allocate it across the best staking and yield opportunities.",
+      },
+    });
+    await waitFor(() => expect(container.querySelector(".chat-composer .send-btn.active")).toBeTruthy());
+    fireEvent.click(container.querySelector(".chat-composer .send-btn.active") as HTMLButtonElement);
+
+    await waitFor(() => expect(screen.getByText(/Agent Reasoning/)).toBeInTheDocument(), { timeout: 2000 });
+    expect(await screen.findByTestId("allocation-card")).toBeInTheDocument();
+    expect(await screen.findByTestId("sentinel-matrix-card")).toBeInTheDocument();
+    expect(await screen.findByTestId("execution-plan-card")).toBeInTheDocument();
+    expect(screen.getByText(/Here is a risk-weighted allocation/)).toBeInTheDocument();
+  });
+
+  it("renders assistant markdown instead of raw markdown text", async () => {
+    localStorage.setItem("ap_sol_wallet", "So11111111111111111111111111111111111111112");
+    installFetchMock(markdownSse());
+    const { container } = render(<MainApp />);
+
+    const input = screen.getByPlaceholderText(/Ask anything about Solana/i);
+    fireEvent.change(input, { target: { value: "Estimate my yield" } });
+    await waitFor(() => expect(container.querySelector(".chat-composer .send-btn.active")).toBeTruthy());
+    fireEvent.click(container.querySelector(".chat-composer .send-btn.active") as HTMLButtonElement);
+
+    expect(await screen.findByRole("heading", { name: "Yield estimate" })).toBeInTheDocument();
+    expect(screen.getByText("83 / 100").tagName).toBe("STRONG");
+    expect(screen.getByRole("list")).toHaveTextContent(/Risk levels stay visible/);
+  });
+
+  it("persists guest chat locally and restores it after remount", async () => {
+    localStorage.setItem("ap_sol_wallet", "So11111111111111111111111111111111111111112");
+    installFetchMock(markdownSse());
+    const first = render(<MainApp />);
+
+    const input = screen.getByPlaceholderText(/Ask anything about Solana/i);
+    fireEvent.change(input, { target: { value: "Estimate my yield" } });
+    await waitFor(() => expect(first.container.querySelector(".chat-composer .send-btn.active")).toBeTruthy());
+    fireEvent.click(first.container.querySelector(".chat-composer .send-btn.active") as HTMLButtonElement);
+
+    expect(await screen.findByRole("heading", { name: "Yield estimate" })).toBeInTheDocument();
+    first.unmount();
+    cleanup();
+
+    render(<MainApp />);
+
+    expect(await screen.findByText("Estimate my yield")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Yield estimate" })).toBeInTheDocument();
+  });
+
+  it("lists locally persisted guest chats in the Chats panel", async () => {
+    localStorage.setItem("ap_sol_wallet", "So11111111111111111111111111111111111111112");
+    installFetchMock(markdownSse());
+    const { container } = render(<MainApp />);
+
+    const input = screen.getByPlaceholderText(/Ask anything about Solana/i);
+    fireEvent.change(input, { target: { value: "Estimate my yield" } });
+    await waitFor(() => expect(container.querySelector(".chat-composer .send-btn.active")).toBeTruthy());
+    fireEvent.click(container.querySelector(".chat-composer .send-btn.active") as HTMLButtonElement);
+    expect(await screen.findByRole("heading", { name: "Yield estimate" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /chats/i }));
+
+    await waitFor(() => expect(screen.getAllByText("Estimate my yield").length).toBeGreaterThanOrEqual(2));
+    expect(screen.queryByText(/No chats yet/)).not.toBeInTheDocument();
+  });
+
+  it("restores a trusted Phantom wallet provider without manual reconnect", async () => {
+    installFetchMock(markdownSse());
+    const connect = vi.fn().mockResolvedValue({
+      publicKey: { toString: () => "So11111111111111111111111111111111111111112" },
+    });
+    vi.stubGlobal("phantom", {
+      solana: { isPhantom: true, connect },
+      ethereum: {
+        request: vi.fn(async ({ method }: { method: string }) => {
+          if (method === "eth_accounts") return ["0x1111111111111111111111111111111111111111"];
+          if (method === "eth_chainId") return "0x1";
+          return null;
+        }),
+      },
+    });
+
+    render(<MainApp />);
+
+    await waitFor(() => expect(connect).toHaveBeenCalledWith({ onlyIfTrusted: true }));
+    expect(await screen.findByText("So1111…1112")).toBeInTheDocument();
+    expect(screen.queryByText(/Connect your wallet/i)).not.toBeInTheDocument();
+  });
+
+  it("does not fake a signing queue for Sentinel-only execution plans", async () => {
+    localStorage.setItem("ap_sol_wallet", "So11111111111111111111111111111111111111112");
+    installFetchMock(richAllocationSse());
+    const { container } = render(<MainApp />);
+
+    const input = screen.getByPlaceholderText(/Ask anything about Solana/i);
+    fireEvent.change(input, { target: { value: "I have $10,000 USDC. Allocate it." } });
+    await waitFor(() => expect(container.querySelector(".chat-composer .send-btn.active")).toBeTruthy());
+    fireEvent.click(container.querySelector(".chat-composer .send-btn.active") as HTMLButtonElement);
+
+    expect(await screen.findByTestId("execution-plan-card")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Start signing/i }));
+
+    expect(await screen.findByText(/Execution needs route-specific transaction build/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Signing queue/i)).not.toBeInTheDocument();
+  });
+
+  it("renders compound swap and bridge payloads as actionable previews", async () => {
+    localStorage.setItem("ap_sol_wallet", "So11111111111111111111111111111111111111112");
+    installFetchMock(JSON.stringify({ response: compoundSwapBridgeJson(), chat_id: "compound-chat" }));
+    const { container } = render(<MainApp />);
+
+    const input = screen.getByPlaceholderText(/Ask anything about Solana/i);
+    fireEvent.change(input, { target: { value: "swap 10 usdt to usdc and then bridge it to bnb chain" } });
+    await waitFor(() => expect(container.querySelector(".chat-composer .send-btn.active")).toBeTruthy());
+    fireEvent.click(container.querySelector(".chat-composer .send-btn.active") as HTMLButtonElement);
+
+    expect(await screen.findByText(/I've prepared two transactions/i)).toBeInTheDocument();
+    expect(screen.getByText(/Swap Preview/i)).toBeInTheDocument();
+    expect(screen.getByText(/Bridge Preview/i)).toBeInTheDocument();
+    expect(screen.queryByText(/"compound_action"/i)).not.toBeInTheDocument();
+  });
+
+  it("re-runs allocation from the execution plan card", async () => {
+    localStorage.setItem("ap_sol_wallet", "So11111111111111111111111111111111111111112");
+    const fetchMock = installFetchMock(richAllocationSse());
+    const { container } = render(<MainApp />);
+
+    const input = screen.getByPlaceholderText(/Ask anything about Solana/i);
+    fireEvent.change(input, { target: { value: "I have $10,000 USDC. Allocate it." } });
+    await waitFor(() => expect(container.querySelector(".chat-composer .send-btn.active")).toBeTruthy());
+    fireEvent.click(container.querySelector(".chat-composer .send-btn.active") as HTMLButtonElement);
+
+    expect(await screen.findByTestId("execution-plan-card")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Re-run \/ rebalance/i }));
+
+    await waitFor(() => {
+      const agentCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/v1/agent"));
+      expect(agentCalls.length).toBeGreaterThanOrEqual(2);
+      const lastCall = agentCalls[agentCalls.length - 1] as [RequestInfo | URL, RequestInit?];
+      const body = JSON.parse(String(lastCall[1]?.body));
+      expect(body.query).toMatch(/Re-run the allocation/i);
+    });
   });
 });

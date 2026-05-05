@@ -373,13 +373,28 @@ _OPENROUTER_MODELS = [
 ]
 
 
+class _OpenAINoStopChatOpenAI(ChatOpenAI):
+    """ChatOpenAI variant for OpenAI models that reject the `stop` parameter.
+
+    LangChain's ZERO_SHOT_REACT_DESCRIPTION agent passes stop sequences to the
+    model. gpt-5.4-mini rejects `stop`, so strip it at the model boundary while
+    leaving the rest of the agent stack unchanged.
+    """
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        return super()._generate(messages, stop=None, run_manager=run_manager, **kwargs)
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        return await super()._agenerate(messages, stop=None, run_manager=run_manager, **kwargs)
+
+
 def _build_llm(openrouter_model: Optional[str] = None):
     # "__openai__" sentinel: use OpenAI API directly
     if openrouter_model == "__openai__":
-        logger.info("Using OpenAI LLM (gpt-4.1-mini)")
+        logger.info("Using OpenAI LLM (gpt-5.4-mini)")
         openai_key = settings.api_keys.get("openai", "")
-        return ChatOpenAI(
-            model="gpt-4.1-mini",
+        return _OpenAINoStopChatOpenAI(
+            model="gpt-5.4-mini",
             temperature=0.1,
             timeout=90,
             api_key=SecretStr(openai_key) if openai_key else None,

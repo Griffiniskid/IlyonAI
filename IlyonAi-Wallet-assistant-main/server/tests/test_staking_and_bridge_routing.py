@@ -224,6 +224,27 @@ class DirectSwapRoutingTests(unittest.TestCase):
         self.assertEqual(payload["sell_amount"], "0.2")
         self.assertEqual(payload["user_pubkey"], "SoL4naPubKey111111111111111111111111111111")
 
+    @patch("app.agents.crypto_agent._build_swap_tx")
+    @patch("app.agents.crypto_agent.build_solana_swap")
+    def test_direct_swap_prefers_phantom_solana_for_stablecoin_pairs(self, mocked_build_solana_swap, mocked_build_swap_tx):
+        mocked_build_solana_swap.return_value = '{"status":"ok","chain_type":"solana"}'
+
+        result = _try_direct_swap(
+            "swap 10 usdt to usdc",
+            "0x1111111111111111111111111111111111111111",
+            "SoL4naPubKey111111111111111111111111111111",
+            1,
+        )
+
+        self.assertEqual(result, '{"status":"ok","chain_type":"solana"}')
+        mocked_build_swap_tx.assert_not_called()
+        raw = mocked_build_solana_swap.call_args.args[0]
+        payload = json.loads(raw)
+        self.assertEqual(payload["sell_token"], "USDT")
+        self.assertEqual(payload["buy_token"], "USDC")
+        self.assertEqual(payload["sell_amount"], "10")
+        self.assertEqual(payload["user_pubkey"], "SoL4naPubKey111111111111111111111111111111")
+
     def test_direct_solana_swap_error_formats_as_user_message(self):
         result = _format_direct_swap_result(
             '{"status":"error","chain_type":"solana","message":"No WBTC balance on Solana."}'

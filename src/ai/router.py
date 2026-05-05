@@ -234,13 +234,23 @@ class AIRouter:
         if not self.openai_mini:
             return {"content": "AI unavailable – no model configured.", "tool_calls": []}
 
-        # Build a single prompt from messages
+        # Keep system instructions out of the user prompt so providers treat
+        # them as instructions, not chat transcript text.
+        system_parts = []
         parts = []
         for m in (messages or []):
             role = m.get("role", "user")
             content = m.get("content", "")
-            parts.append(f"{role}: {content}")
+            if not content:
+                continue
+            if role == "system":
+                system_parts.append(str(content))
+            elif role == "assistant":
+                parts.append(f"assistant: {content}")
+            else:
+                parts.append(str(content))
         prompt = "\n".join(parts)
+        system_prompt = "\n\n".join(system_parts)
 
         if tools:
             # Include tool schemas in the prompt for ReAct-style usage
@@ -254,7 +264,7 @@ class AIRouter:
             prompt += "\n\nAvailable tools:\n" + "\n".join(tool_descriptions)
 
         try:
-            response = await self.openai_mini.chat(prompt)
+            response = await self.openai_mini.chat(prompt, system_prompt=system_prompt)
             return {"content": response or "", "tool_calls": []}
         except Exception as e:
             logger.error(f"complete() error: {e}")

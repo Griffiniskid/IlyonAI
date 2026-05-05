@@ -67,7 +67,7 @@ services:
         API_REWRITE_TARGET: ${API_REWRITE_TARGET:-http://api:8080}
         ASSISTANT_API_TARGET: ${ASSISTANT_API_TARGET:-http://assistant-api:8000}
         SENTINEL_API_TARGET: ${API_REWRITE_TARGET:-http://api:8080}
-        AGENT_BACKEND: sentinel
+        AGENT_BACKEND: ${AGENT_BACKEND:-hybrid}
     restart: unless-stopped
     depends_on:
       api:
@@ -81,7 +81,7 @@ services:
       API_REWRITE_TARGET: ${API_REWRITE_TARGET:-http://api:8080}
       ASSISTANT_API_TARGET: ${ASSISTANT_API_TARGET:-http://assistant-api:8000}
       SENTINEL_API_TARGET: ${API_REWRITE_TARGET:-http://api:8080}
-      AGENT_BACKEND: sentinel
+      AGENT_BACKEND: ${AGENT_BACKEND:-hybrid}
     ports:
       - "${WEB_HOST_PORT:-3000}:3000"
     healthcheck:

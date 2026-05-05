@@ -732,6 +732,10 @@ def _try_direct_swap(query: str, user_address: str, solana_address: str, chain_i
             return False
         if chain_alias == "solana":
             return True
+        if chain_alias:
+            return False
+        if token_in_symbol.upper() in _BRIDGE_SOLANA_TOKENS:
+            return True
         if token_in_symbol.upper() in solana_symbols or token_out_symbol.upper() in solana_symbols:
             return True
         return False

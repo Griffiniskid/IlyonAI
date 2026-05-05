@@ -6,9 +6,10 @@
 
 type EthProvider = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown>; isPhantom?: boolean };
 type SolanaProvider = {
-  connect: () => Promise<{ publicKey: { toString: () => string } }>;
+  connect: (options?: { onlyIfTrusted?: boolean }) => Promise<{ publicKey: { toString: () => string } }>;
   disconnect: () => void;
   signMessage?: (message: Uint8Array, display?: "utf8" | "hex") => Promise<{ signature: Uint8Array }>;
+  isPhantom?: boolean;
 };
 type PhantomWindow = { phantom?: { solana?: SolanaProvider; ethereum?: EthProvider }; ethereum?: EthProvider };
 
@@ -83,6 +84,40 @@ function persistPhantomWalletContext(context: StoredPhantomWalletContext): void 
   } else {
     localStorage.removeItem("ap_wallet");
   }
+}
+
+export async function restorePhantomWalletContext(): Promise<StoredPhantomWalletContext | null> {
+  const w = window as unknown as PhantomWindow;
+  const solana = w.phantom?.solana;
+  if (!solana) return null;
+
+  let solanaAddress = "";
+  try {
+    const resp = await solana.connect({ onlyIfTrusted: true });
+    solanaAddress = resp.publicKey.toString();
+  } catch {
+    return null;
+  }
+
+  let evmAddress = "";
+  let evmChainId = 101;
+  if (w.phantom?.ethereum) {
+    try {
+      const accounts = await w.phantom.ethereum.request({ method: "eth_accounts" }) as string[];
+      evmAddress = accounts[0] ?? "";
+      if (evmAddress) {
+        const chainHex = await w.phantom.ethereum.request({ method: "eth_chainId" }) as string;
+        evmChainId = parseInt(chainHex, 16);
+      }
+    } catch (e) {
+      console.warn("Could not restore Phantom EVM address:", e);
+    }
+  }
+
+  const context = { solanaAddress, evmAddress, evmChainId };
+  persistPhantomWalletContext(context);
+  localStorage.setItem("ap_wallet_type", "phantom");
+  return context;
 }
 
 export async function connectPhantomSolana(): Promise<PhantomSession> {

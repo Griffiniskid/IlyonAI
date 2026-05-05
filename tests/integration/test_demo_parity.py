@@ -117,6 +117,12 @@ def test_demo_prompt_emits_three_cards():
 
     assert "error" not in events, events.get("error")
     assert events.get("thought"), "expected thought frames"
+    thought_lines = [frame["content"] for frame in events.get("thought", [])]
+    assert len(thought_lines) >= 8
+    assert any("Parsed intent" in line for line in thought_lines)
+    assert any("DefiLlama" in line for line in thought_lines)
+    assert any("Ilyon Shield" in line for line in thought_lines)
+    assert any("position cap" in line.lower() for line in thought_lines)
     tools = events.get("tool", [])
     assert tools, "expected tool frames"
     allocate_calls = [t for t in tools if t.get("name") == "allocate_plan"]

@@ -1,8 +1,10 @@
 "use client";
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
+import { CardRenderer } from "@/components/agent/cards/CardRenderer";
+import type { CardFrame, ExecutionPlanPayload, ObservationFrame, PlanCompleteFrame, StepStatusFrame, ThoughtFrame, ToolFrame } from "@/types/agent";
 import { connectMetaMask, resolveMetaMaskProvider } from "./wallets/metamask";
-import { connectPhantomSolana, disconnectPhantomSolana, getStoredPhantomWalletContext, resolvePhantomEvmProvider } from "./wallets/phantom";
+import { connectPhantomSolana, disconnectPhantomSolana, getStoredPhantomWalletContext, resolvePhantomEvmProvider, restorePhantomWalletContext } from "./wallets/phantom";
 import { copyWithFeedback } from "./utils/copyWithFeedback";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -14,6 +16,12 @@ interface ReasoningStep {
   type: "think" | "tool" | "result" | "conclude";
   label: string;
   detail?: string;
+}
+
+interface ExecutionNotice {
+  title: string;
+  body: string;
+  steps?: ExecutionPlanPayload["steps"];
 }
 
 interface SwapPreview {
@@ -99,16 +107,42 @@ interface UniversalCardsData {
   cards: UniversalCard[];
 }
 
+interface CompoundActionData {
+  type: "compound_action";
+  message: string;
+  previews: SwapPreview[];
+}
+
 interface Message {
   id: number;
   role: Role;
   text: string;
   ts: Date;
   reasoning?: ReasoningStep[];
+  agentCards?: CardFrame[];
+  agentThoughts?: ThoughtFrame[];
+  agentTools?: ToolFrame[];
+  agentObservations?: ObservationFrame[];
+  agentStepStatuses?: StepStatusFrame[];
+  agentPlanCompletions?: PlanCompleteFrame[];
+  elapsedMs?: number;
   swapPreview?: SwapPreview | null;
+  compoundData?: CompoundActionData | null;
   balanceData?: BalanceData | null;
   poolData?: LiquidityPoolData | null;
   universalCards?: UniversalCardsData | null;
+}
+
+export interface ParsedAgentSseResponse {
+  response: string;
+  universalCards?: UniversalCardsData | null;
+  agentCards: CardFrame[];
+  agentThoughts: ThoughtFrame[];
+  agentTools: ToolFrame[];
+  agentObservations: ObservationFrame[];
+  agentStepStatuses: StepStatusFrame[];
+  agentPlanCompletions: PlanCompleteFrame[];
+  elapsedMs?: number;
 }
 
 interface AuthUser {
@@ -466,16 +500,38 @@ function parseUniversalCards(text: string): UniversalCardsData | null {
   return null;
 }
 
+function parseCompoundAction(text: string): CompoundActionData | null {
+  try {
+    const json = extractJson(text);
+    if (!json || typeof json !== "object") return null;
+    const payload = json as Record<string, unknown>;
+    if (payload.type !== "compound_action") return null;
+
+    const previews = [payload.swap, payload.bridge]
+      .map(item => item && typeof item === "object" ? parseSwapPreview(JSON.stringify(item)) : null)
+      .filter((preview): preview is SwapPreview => Boolean(preview));
+
+    return {
+      type: "compound_action",
+      message: typeof payload.message === "string" ? payload.message : "I've prepared a multi-step transaction plan. Review each step below.",
+      previews,
+    };
+  } catch { /* not JSON */ }
+  return null;
+}
+
 function resolveStructuredContent(text: string) {
   let swapPreview = null;
+  let compoundData = null;
   let balanceData = null;
   let poolData = null;
   let universalCards = null;
   try { swapPreview = parseSwapPreview(text); } catch (e) { console.error("parseSwapPreview failed", e); }
+  try { compoundData = parseCompoundAction(text); } catch (e) { console.error("parseCompoundAction failed", e); }
   try { balanceData = parseBalanceData(text); } catch (e) { console.error("parseBalanceData failed", e); }
   try { poolData = parseLiquidityPool(text); } catch (e) { console.error("parseLiquidityPool failed", e); }
   try { universalCards = parseUniversalCards(text); } catch (e) { console.error("parseUniversalCards failed", e); }
-  return { swapPreview, balanceData, poolData, universalCards };
+  return { swapPreview, compoundData, balanceData, poolData, universalCards };
 }
 
 function fmtCardValue(value: unknown): string {
@@ -581,11 +637,18 @@ function cardsFromAgentCard(cardType: string, payload: Record<string, unknown>):
   return [];
 }
 
-function parseAgentSseResponse(rawBody: string): { response: string; universalCards?: UniversalCardsData | null } | null {
+export function parseAgentSseResponse(rawBody: string): ParsedAgentSseResponse | null {
   if (!rawBody.includes("event:") || !rawBody.includes("data:")) return null;
 
   let response = "";
+  let elapsedMs: number | undefined;
   const cards: UniversalCard[] = [];
+  const agentCards: CardFrame[] = [];
+  const agentThoughts: ThoughtFrame[] = [];
+  const agentTools: ToolFrame[] = [];
+  const agentObservations: ObservationFrame[] = [];
+  const agentStepStatuses: StepStatusFrame[] = [];
+  const agentPlanCompletions: PlanCompleteFrame[] = [];
   for (const block of rawBody.split(/\n\n+/)) {
     const event = block.match(/^event:\s*(.+)$/m)?.[1]?.trim();
     const dataLine = block.match(/^data:\s*(.+)$/m)?.[1];
@@ -595,19 +658,73 @@ function parseAgentSseResponse(rawBody: string): { response: string; universalCa
 
     if (event === "final") {
       response = fmtCardValue(data.content);
+      if (typeof data.elapsed_ms === "number") elapsedMs = data.elapsed_ms;
     } else if (event === "error") {
       response = `Agent error: ${fmtCardValue(data.error)}`;
+    } else if (event === "thought") {
+      agentThoughts.push({ ...(data as Omit<ThoughtFrame, "kind">), kind: "thought" });
+    } else if (event === "tool") {
+      agentTools.push({ ...(data as Omit<ToolFrame, "kind">), kind: "tool" });
+    } else if (event === "observation") {
+      agentObservations.push({ ...(data as Omit<ObservationFrame, "kind">), kind: "observation" });
     } else if (event === "card") {
       const cardType = fmtCardValue(data.card_type);
       const payload = data.payload && typeof data.payload === "object" ? data.payload as Record<string, unknown> : {};
+      agentCards.push({ ...(data as Omit<CardFrame, "kind">), kind: "card" } as CardFrame);
       cards.push(...cardsFromAgentCard(cardType, payload));
+    } else if (event === "step_status") {
+      agentStepStatuses.push({ ...(data as Omit<StepStatusFrame, "kind">), kind: "step_status" });
+    } else if (event === "plan_complete") {
+      agentPlanCompletions.push({ ...(data as Omit<PlanCompleteFrame, "kind">), kind: "plan_complete" });
     }
   }
 
   return {
     response: response || "The agent completed without a final answer.",
     universalCards: cards.length ? { type: "universal_cards", cards } : null,
+    agentCards,
+    agentThoughts,
+    agentTools,
+    agentObservations,
+    agentStepStatuses,
+    agentPlanCompletions,
+    elapsedMs,
   };
+}
+
+function reasoningFromAgentFrames(thoughts: ThoughtFrame[], tools: ToolFrame[], observations: ObservationFrame[] = []): ReasoningStep[] {
+  const rows: Array<{ step: number; type: ReasoningStep["type"]; label: string; detail?: string }> = [
+    ...thoughts.map((frame) => ({ step: frame.step_index, type: "think" as const, label: frame.content })),
+    ...tools.map((frame) => ({
+      step: frame.step_index,
+      type: "tool" as const,
+      label: `Called ${frame.name}`,
+      detail: fmtCardValue(frame.args),
+    })),
+    ...observations.map((frame) => ({
+      step: frame.step_index + 0.1,
+      type: (frame.ok ? "result" : "conclude") as ReasoningStep["type"],
+      label: frame.ok ? `${frame.name || "Tool"} completed` : `${frame.name || "Tool"} failed`,
+      detail: frame.error ? fmtCardValue(frame.error) : undefined,
+    })),
+  ].sort((a, b) => a.step - b.step);
+
+  return rows.map((row, index) => ({
+    id: index + 1,
+    type: row.type,
+    label: row.label,
+    detail: row.detail,
+  }));
+}
+
+function orderAgentCards(cards: CardFrame[]): CardFrame[] {
+  const priority = new Map<string, number>([
+    ["allocation", 0],
+    ["sentinel_matrix", 1],
+    ["execution_plan", 2],
+    ["execution_plan_v2", 3],
+  ]);
+  return [...cards].sort((a, b) => (priority.get(a.card_type) ?? 50) - (priority.get(b.card_type) ?? 50));
 }
 
 // ── Universal Card List component ───────────────────────────────────────────
@@ -886,10 +1003,160 @@ const APP_VERSION = "2026-03-21-wallet-swap-fix-4";
 
 let nextId = 1;
 
+const LOCAL_CHAT_PREFIX = "ap_local_chat:";
+const LOCAL_CHAT_INDEX_PREFIX = "ap_local_chat_index:";
+
+function localChatOwnerKey() {
+  if (typeof window === "undefined") return "guest";
+  return localStorage.getItem("ap_sol_wallet") || localStorage.getItem("ap_wallet") || "guest";
+}
+
+function localChatIndexKey() {
+  return `${LOCAL_CHAT_INDEX_PREFIX}${localChatOwnerKey()}`;
+}
+
+function localChatStorageKey(sessionId?: string | null) {
+  if (typeof window === "undefined") return null;
+  const key = sessionId
+    || localStorage.getItem("ap_chat_session")
+    || localStorage.getItem("ap_sol_wallet")
+    || localStorage.getItem("ap_wallet")
+    || "guest";
+  return `${LOCAL_CHAT_PREFIX}${key}`;
+}
+
+function loadLocalChatIndex(): ChatItem[] {
+  if (typeof window === "undefined" || localStorage.getItem("ap_token")) return [];
+  const raw = localStorage.getItem(localChatIndexKey());
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is ChatItem => !!item && typeof item.id === "string" && typeof item.title === "string" && typeof item.updated_at === "string")
+      .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalChatIndex(chats: ChatItem[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(localChatIndexKey(), JSON.stringify(chats));
+}
+
+function upsertLocalChatIndex(chat: ChatItem): ChatItem[] {
+  const next = [chat, ...loadLocalChatIndex().filter(item => item.id !== chat.id)]
+    .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
+  saveLocalChatIndex(next);
+  return next;
+}
+
+function removeLocalChatIndex(chatId: string): ChatItem[] {
+  const next = loadLocalChatIndex().filter(item => item.id !== chatId);
+  saveLocalChatIndex(next);
+  return next;
+}
+
+function titleFromMessages(messages: Message[]) {
+  const firstUser = messages.find(message => message.role === "user" && message.text.trim());
+  const title = firstUser?.text.trim() || "New Chat";
+  return title.length > 40 ? `${title.slice(0, 40)}…` : title;
+}
+
+function loadLocalChatMessages(sessionId?: string | null): Message[] | null {
+  const key = localChatStorageKey(sessionId);
+  if (!key || localStorage.getItem("ap_token")) return null;
+  const raw = localStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const restored = parsed
+      .map((item): Message | null => {
+        if (!item || (item.role !== "user" && item.role !== "assistant") || typeof item.text !== "string") return null;
+        return {
+          ...item,
+          id: typeof item.id === "number" ? item.id : nextId++,
+          ts: item.ts ? new Date(item.ts) : new Date(),
+        } as Message;
+      })
+      .filter((item): item is Message => Boolean(item));
+    if (!restored.length) return null;
+    nextId = Math.max(nextId, ...restored.map(m => m.id + 1));
+    return restored;
+  } catch {
+    return null;
+  }
+}
+
+function shouldPersistLocalMessages(messages: Message[]) {
+  return messages.some(m => m.id !== WELCOME.id || m.text !== WELCOME.text || m.role !== WELCOME.role);
+}
+
+function inlineMarkdown(text: string, prefix: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  const pattern = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+  let last = 0;
+  let index = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    const start = match.index ?? 0;
+    if (start > last) nodes.push(text.slice(last, start));
+    const value = match[0];
+    if (value.startsWith("**")) {
+      nodes.push(<strong key={`${prefix}-strong-${index++}`}>{value.slice(2, -2)}</strong>);
+    } else {
+      nodes.push(<code key={`${prefix}-code-${index++}`}>{value.slice(1, -1)}</code>);
+    }
+    last = start + value.length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
+}
+
+function MarkdownText({ text }: { text: string }) {
+  const lines = text.split(/\r?\n/);
+  const blocks: React.ReactNode[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      const level = Math.min(heading[1].length, 3) as 1 | 2 | 3;
+      const Tag = `h${level}` as keyof JSX.IntrinsicElements;
+      blocks.push(<Tag key={`h-${i}`} className="agent-md-heading">{inlineMarkdown(heading[2], `h-${i}`)}</Tag>);
+      continue;
+    }
+    if (/^[-*]\s+/.test(line.trim())) {
+      const items: string[] = [];
+      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^[-*]\s+/, ""));
+        i += 1;
+      }
+      i -= 1;
+      blocks.push(
+        <ul key={`ul-${i}`} className="agent-md-list">
+          {items.map((item, idx) => <li key={idx}>{inlineMarkdown(item, `li-${i}-${idx}`)}</li>)}
+        </ul>
+      );
+      continue;
+    }
+    const para = [line.trim()];
+    while (i + 1 < lines.length && lines[i + 1].trim() && !/^(#{1,6})\s+/.test(lines[i + 1]) && !/^[-*]\s+/.test(lines[i + 1].trim())) {
+      i += 1;
+      para.push(lines[i].trim());
+    }
+    blocks.push(<p key={`p-${i}`}>{inlineMarkdown(para.join(" "), `p-${i}`)}</p>);
+  }
+  return <div className="agent-md">{blocks.length ? blocks : text}</div>;
+}
+
 // ── Framer Motion Variants ───────────────────────────────────────────────────
 const fadeUp:  Variants = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: "easeOut" as const } } };
 const slideIn: Variants = { hidden: { opacity: 0, x: 18 }, show: { opacity: 1, x: 0, transition: { duration: 0.28, ease: "easeOut" as const } } };
 const scaleIn: Variants = { hidden: { opacity: 0, scale: 0.96 }, show: { opacity: 1, scale: 1, transition: { duration: 0.25, ease: "easeOut" as const } } };
+const MotionDiv = motion.div;
 
 // ── CSS ─────────────────────────────────────────────────────────────────────
 const CSS = `
@@ -1377,6 +1644,18 @@ const CSS = `
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
     border-radius: 16px 16px 16px 4px;
   }
+  .agent-md { white-space: normal; display: flex; flex-direction: column; gap: 8px; }
+  .agent-md-heading { font-size: 17px; line-height: 1.25; font-weight: 850; color: #fff; }
+  .agent-md-list { margin-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+  .agent-md strong { color: #fff; font-weight: 850; }
+  .agent-md code { border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 1px 5px; background: rgba(15,23,42,0.7); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  .execution-notice-card { padding: 14px 16px; border-radius: 18px; border: 1px solid rgba(251,191,36,0.22); background: rgba(30,18,4,0.86); box-shadow: inset 0 1px 0 rgba(255,255,255,0.05); }
+  .execution-notice-title { font-size: 14px; font-weight: 850; color: #fff; }
+  .execution-notice-sub { margin-top: 6px; font-size: 12px; color: rgba(254,243,199,0.72); line-height: 1.55; }
+  .execution-notice-steps { margin-top: 10px; display: flex; flex-direction: column; gap: 7px; }
+  .execution-notice-step { display: flex; align-items: center; gap: 8px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); background: rgba(15,23,42,0.45); padding: 8px 10px; font-size: 12px; color: #f8fafc; }
+  .execution-notice-index { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 8px; background: rgba(251,191,36,0.18); color: #fde68a; font-weight: 850; }
+  .execution-notice-meta { margin-left: auto; color: rgba(226,232,240,0.45); font-size: 11px; }
   .msg-ts { font-size: 10px; color: rgba(255,255,255,0.25); margin-top: 5px; padding: 0 4px; }
   .msg-row.user .msg-ts { text-align: right; }
 
@@ -2885,10 +3164,11 @@ interface ReasoningAccordionProps {
 
 function ReasoningAccordion({ steps, isOpen, onToggle }: ReasoningAccordionProps) {
   return (
-    <div className="reasoning-wrap">
-      <button className="reasoning-toggle" onClick={onToggle}>
-        <span className="reasoning-toggle-icon">🧠</span>
-        <span className="reasoning-toggle-text">Agent Reasoning — {steps.length} steps</span>
+    <div className="reasoning-wrap rounded-3xl border border-cyan-300/20 bg-[#07111f]/85 p-3 shadow-[0_20px_80px_rgba(34,211,238,0.10)]" data-testid="reasoning-accordion">
+      <button className="reasoning-toggle w-full" onClick={onToggle}>
+        <span className="reasoning-toggle-icon">✦</span>
+        <span className="reasoning-toggle-text">Sentinel Live Reasoning — {steps.length} steps</span>
+        <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-200">streamed</span>
         <span className={`reasoning-toggle-caret${isOpen ? " open" : ""}`}>▲</span>
       </button>
       <AnimatePresence initial={false}>
@@ -2910,9 +3190,9 @@ function ReasoningAccordion({ steps, isOpen, onToggle }: ReasoningAccordionProps
                   transition={{ delay: i * 0.04, duration: 0.18 }}
                   className={`reasoning-step step-${step.type}`}
                 >
-                  <span className="reasoning-step-icon">{STEP_ICONS[step.type]}</span>
+                  <span className="reasoning-step-icon font-mono text-cyan-200">{String(i + 1).padStart(2, "0")}</span>
                   <div>
-                    <div className="reasoning-step-label">{step.label}</div>
+                    <div className="reasoning-step-label">{STEP_ICONS[step.type]} {step.label}</div>
                     {step.detail && <div className="reasoning-step-detail">{step.detail}</div>}
                   </div>
                 </motion.div>
@@ -3910,7 +4190,7 @@ function buildPhantomPortfolioAddress(solanaAddress: string | null, evmAddress: 
 export default function MainApp() {
   const makeWelcome = (): Message => ({ ...WELCOME, ts: new Date() });
   const createClientSessionId = () => globalThis.crypto?.randomUUID?.() ?? `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const [messages, setMessages]         = useState<Message[]>(() => [makeWelcome()]);
+  const [messages, setMessages]         = useState<Message[]>(() => loadLocalChatMessages() ?? [makeWelcome()]);
   const [input, setInput]               = useState("");
   const [loading, setLoading]           = useState(false);
   const [backendOk, setBackendOk]       = useState<null | boolean>(null);
@@ -3950,10 +4230,11 @@ export default function MainApp() {
   const [showAuth, setShowAuth]         = useState(
     () => !localStorage.getItem("ap_token") && !localStorage.getItem("ap_sol_wallet")
   );
-  const [chatList, setChatList]         = useState<ChatItem[]>([]);
+  const [chatList, setChatList]         = useState<ChatItem[]>(() => loadLocalChatIndex());
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [clientSessionId, setClientSessionId] = useState<string>(() => localStorage.getItem("ap_chat_session") || createClientSessionId());
   const [showChatList, setShowChatList] = useState(false);
+  const [executionNotice, setExecutionNotice] = useState<ExecutionNotice | null>(null);
 
   // Wallet connections — EVM (MetaMask/Phantom EVM) and Solana (Phantom)
   const [connectedWallet, setConnectedWallet] = useState<string | null>(() => {
@@ -3984,6 +4265,40 @@ export default function MainApp() {
   useEffect(() => {
     localStorage.setItem("ap_chat_session", clientSessionId);
   }, [clientSessionId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || authUser?.token || localStorage.getItem("ap_token")) return;
+    let cancelled = false;
+    restorePhantomWalletContext()
+      .then(context => {
+        if (cancelled || !context?.solanaAddress) return;
+        setWalletType("phantom");
+        setSolanaWallet(context.solanaAddress);
+        setConnectedWallet(context.evmAddress || null);
+        setConnectedChainId(context.evmChainId || 101);
+        setShowAuth(false);
+        setChatList(loadLocalChatIndex());
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [authUser?.token]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || authUser?.token || localStorage.getItem("ap_token")) return;
+    const key = localChatStorageKey(clientSessionId);
+    if (!key) return;
+    if (!shouldPersistLocalMessages(messages)) {
+      localStorage.removeItem(key);
+      return;
+    }
+    localStorage.setItem(key, JSON.stringify(messages));
+    const updated = upsertLocalChatIndex({
+      id: clientSessionId,
+      title: titleFromMessages(messages),
+      updated_at: new Date().toISOString(),
+    });
+    setChatList(updated);
+  }, [authUser?.token, clientSessionId, messages]);
 
   useEffect(() => {
     const prevVersion = localStorage.getItem("ap_app_version");
@@ -4255,6 +4570,7 @@ export default function MainApp() {
     setWalletType(null);
     setConnectedWallet(null);
     setSolanaWallet(null);
+    setExecutionNotice(null);
     setChatList([]);
     setCurrentChatId(null);
     setClientSessionId(createClientSessionId());
@@ -4263,7 +4579,16 @@ export default function MainApp() {
   };
 
   const handleSelectChat = async (chatId: string) => {
-    if (!authUser?.token) return;
+    if (!authUser?.token) {
+      const loaded = loadLocalChatMessages(chatId);
+      setCurrentChatId(chatId);
+      setClientSessionId(chatId);
+      setMessages(loaded ?? [makeWelcome()]);
+      setExecutionNotice(null);
+      setShowChatList(false);
+      setActiveTab("chat");
+      return;
+    }
     setCurrentChatId(chatId);
     setClientSessionId(chatId);
     setShowChatList(false);
@@ -4289,6 +4614,7 @@ export default function MainApp() {
     setCurrentChatId(null);
     setClientSessionId(createClientSessionId());
     setMessages([makeWelcome()]);
+    setExecutionNotice(null);
     setShowChatList(false);
     setActiveTab("chat");
   };
@@ -4306,6 +4632,7 @@ export default function MainApp() {
     setWalletType(null);
     setConnectedChainId(56);
     setMessages([makeWelcome()]);
+    setExecutionNotice(null);
     setCurrentChatId(null);
     setClientSessionId(createClientSessionId());
     setChatList([]);
@@ -4318,7 +4645,17 @@ export default function MainApp() {
   };
 
   const handleDeleteChat = async (chatId: string) => {
-    if (!authUser) return;
+    if (!authUser?.token) {
+      const key = localChatStorageKey(chatId);
+      if (key) localStorage.removeItem(key);
+      setChatList(removeLocalChatIndex(chatId));
+      if (currentChatId === chatId || clientSessionId === chatId) {
+        setCurrentChatId(null);
+        setClientSessionId(createClientSessionId());
+        setMessages([makeWelcome()]);
+      }
+      return;
+    }
     await fetch(`${API}/chats/${chatId}`, { method: "DELETE", headers: { Authorization: `Bearer ${authUser.token}` } }).catch(() => {});
     setChatList(prev => prev.filter(c => c.id !== chatId));
     if (currentChatId === chatId) {
@@ -4338,17 +4675,19 @@ export default function MainApp() {
     setLoading(true);
     setActiveTab("chat");
     setLiveSteps([]);
+    setExecutionNotice(null);
 
-    // Generate reasoning steps only for DeFi/on-chain queries
-    const steps = generateReasoningSteps(t);
+    // Keep legacy synthetic steps only for non-Sentinel JSON fallbacks.
+    const fallbackSteps = generateReasoningSteps(t);
     liveTimersRef.current.forEach(clearTimeout);
-    if (steps.length > 0) {
+    const startFallbackReasoning = () => {
+      if (fallbackSteps.length === 0) return;
       const DELAYS = [300, 1200, 2400, 3900, 5700, 7800];
-      setTotalSteps(steps.length);
-      liveTimersRef.current = steps.map((step, i) =>
+      setTotalSteps(fallbackSteps.length);
+      liveTimersRef.current = fallbackSteps.map((step, i) =>
         setTimeout(() => setLiveSteps(prev => [...prev, step]), DELAYS[i] ?? i * 800 + 500)
       );
-    }
+    };
 
     try {
       const normalizedQuery = (() => {
@@ -4370,11 +4709,59 @@ export default function MainApp() {
         body: JSON.stringify({ query: normalizedQuery, session_id: currentChatId ?? clientSessionId, chat_id: currentChatId, user_address: connectedWallet ?? "", solana_address: solanaWallet ?? "", chain_id: effectiveChainId, wallet_type: walletType ?? undefined }),
       });
 
-      const rawBody = await res.text();
+      const contentType = res.headers.get("content-type") || "";
+      const isSse = contentType.includes("text/event-stream");
+      let rawBody = "";
+      let parsedSse: ParsedAgentSseResponse | null = null;
+
+      const applyLiveSseFrames = () => {
+        const next = parseAgentSseResponse(rawBody);
+        if (!next) return;
+        parsedSse = next;
+        const liveReasoning = reasoningFromAgentFrames(next.agentThoughts, next.agentTools, next.agentObservations);
+        if (liveReasoning.length > 0) {
+          setTotalSteps(liveReasoning.length);
+          setLiveSteps(liveReasoning);
+        }
+      };
+
+      if (isSse && res.body && typeof res.body.getReader === "function") {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let pending = "";
+
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          pending += decoder.decode(value, { stream: true });
+
+          let boundary = pending.indexOf("\n\n");
+          while (boundary >= 0) {
+            const block = pending.slice(0, boundary);
+            pending = pending.slice(boundary + 2);
+            if (block.trim()) {
+              rawBody += `${block}\n\n`;
+              applyLiveSseFrames();
+            }
+            boundary = pending.indexOf("\n\n");
+          }
+        }
+
+        pending += decoder.decode();
+        if (pending.trim()) {
+          rawBody += pending.endsWith("\n\n") ? pending : `${pending}\n\n`;
+          applyLiveSseFrames();
+        }
+      } else {
+        startFallbackReasoning();
+        rawBody = await res.text();
+        parsedSse = parseAgentSseResponse(rawBody);
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let data: any = {};
       try {
-        data = parseAgentSseResponse(rawBody) ?? (rawBody ? JSON.parse(rawBody) : {});
+        data = parsedSse ?? (rawBody ? JSON.parse(rawBody) : {});
       } catch {
         throw new Error(`Server returned a non-JSON response (HTTP ${res.status}).`);
       }
@@ -4394,9 +4781,15 @@ export default function MainApp() {
 
       const structured = resolveStructuredContent(responseText);
       const swapPreview = structured.swapPreview;
+      const compoundData = structured.compoundData;
       const balanceData = structured.balanceData;
       const poolData = structured.poolData;
-      const universalCards = data.universalCards ?? structured.universalCards;
+      const agentCards = Array.isArray(data.agentCards) ? data.agentCards : [];
+      const agentThoughts = Array.isArray(data.agentThoughts) ? data.agentThoughts : [];
+      const agentTools = Array.isArray(data.agentTools) ? data.agentTools : [];
+      const agentObservations = Array.isArray(data.agentObservations) ? data.agentObservations : [];
+      const backendReasoning = reasoningFromAgentFrames(agentThoughts, agentTools, agentObservations);
+      const universalCards = agentCards.length ? null : (data.universalCards ?? structured.universalCards);
 
       // Update chat state from response
       if (authUser && data.chat_id) {
@@ -4407,22 +4800,32 @@ export default function MainApp() {
         fetchChatList(authUser.token);
       }
 
+      const assistantMessageId = nextId++;
       setMessages(p => [...p, {
-        id: nextId++, role: "assistant",
+        id: assistantMessageId, role: "assistant",
         text: responseText, ts: new Date(),
-        reasoning: steps,
+        reasoning: backendReasoning.length ? backendReasoning : fallbackSteps,
+        agentCards,
+        agentThoughts,
+        agentTools,
+        agentObservations,
+        agentStepStatuses: Array.isArray(data.agentStepStatuses) ? data.agentStepStatuses : [],
+        agentPlanCompletions: Array.isArray(data.agentPlanCompletions) ? data.agentPlanCompletions : [],
+        elapsedMs: typeof data.elapsedMs === "number" ? data.elapsedMs : undefined,
         swapPreview,
+        compoundData,
         balanceData,
         poolData,
         universalCards,
       }]);
+      if (backendReasoning.length) setOpenReasoning(assistantMessageId);
     } catch (err: unknown) {
       setBackendOk(false);
       const msg = err instanceof Error ? err.message : "Error";
       setMessages(p => [...p, {
         id: nextId++, role: "assistant", ts: new Date(),
         text: backendOk === false ? "⚠️ Backend offline.\n\nRun: `./start-server.sh`" : `❌ ${msg}`,
-        reasoning: steps,
+        reasoning: fallbackSteps,
       }]);
     } finally {
       liveTimersRef.current.forEach(clearTimeout);
@@ -4430,6 +4833,39 @@ export default function MainApp() {
       setLiveSteps([]);
       setTotalSteps(0);
     }
+  };
+
+  const handleStartSigning = (payload: ExecutionPlanPayload) => {
+    const hasExecutableTransaction = payload.steps.some((step) => {
+      const executableStep = step as ExecutionPlanPayload["steps"][number] & {
+        rawTx?: unknown;
+        swapTransaction?: unknown;
+        transaction?: unknown;
+        unsignedTx?: unknown;
+        serializedTransaction?: unknown;
+      };
+      return Boolean(
+        executableStep.rawTx ||
+        executableStep.swapTransaction ||
+        executableStep.transaction ||
+        executableStep.unsignedTx ||
+        executableStep.serializedTransaction
+      );
+    });
+
+    setExecutionNotice({
+      title: hasExecutableTransaction ? "Wallet transaction build ready" : "Execution needs route-specific transaction build",
+      body: hasExecutableTransaction
+        ? "Review the generated unsigned transaction payloads before opening wallet approval. Nothing is submitted until you approve it in your wallet."
+        : "This Sentinel plan is a strategy proposal, not an unsigned wallet transaction. Real execution requires a route-specific swap, bridge, stake, or deposit transaction build before any wallet prompt can open.",
+      steps: payload.steps,
+    });
+    setActiveTab("chat");
+    showToast(hasExecutableTransaction ? "Transaction build ready for wallet review." : "Execution is blocked until a transaction route is built.", "info");
+  };
+
+  const handleRerunAllocation = () => {
+    void send("Re-run the allocation using the latest live market data and rebalance the plan.");
   };
 
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -4765,11 +5201,11 @@ export default function MainApp() {
 
           <div className="content-canvas">
             <div className="top-banner">
-              <div className="top-banner-label">
+              <div className="top-banner-label" data-agent-build="sentinel-v2-streaming-live">
                 <span>✦</span>
-                <span>Preview of the AI Agent layout · Sentinel scoring layered in</span>
+                <span>Sentinel Agent v2 live · Real streaming reasoning · Typed execution cards</span>
               </div>
-              <div className="top-banner-chip">Coming soon</div>
+              <div className="top-banner-chip">LIVE NOW</div>
             </div>
 
             {/* ── Tab Panels ─────────────────────────────────────────────── */}
@@ -4883,7 +5319,7 @@ export default function MainApp() {
 
               {/* Chat */}
               {activeTab === "chat" && (
-                <motion.div key="chat" className="chat-wrap" variants={slideIn} initial="hidden" animate="show">
+                <MotionDiv key="chat" className="chat-wrap" variants={slideIn} initial="hidden" animate="show">
                   <div className="page-shell chat-page-shell">
                     <div className="chat-shell-head">
                       <span className="chat-shell-title">
@@ -4917,21 +5353,24 @@ export default function MainApp() {
                       // This makes rendering bullet-proof even if storage-time parsing failed
                       const msgText = msg.text ?? "";
                       const resolvedSwap    = msg.swapPreview    ?? (msg.role === "assistant" ? parseSwapPreview(msgText)    : null);
+                      const resolvedCompound = msg.compoundData  ?? (msg.role === "assistant" ? parseCompoundAction(msgText) : null);
                       const resolvedBalance = msg.balanceData    ?? (msg.role === "assistant" ? parseBalanceData(msgText)    : null);
                       const resolvedPool    = msg.poolData       ?? (msg.role === "assistant" ? parseLiquidityPool(msgText)  : null);
-                      const resolvedCards   = msg.universalCards ?? (msg.role === "assistant" ? parseUniversalCards(msgText) : null);
+                      const resolvedAgentCards = msg.role === "assistant" && msg.agentCards?.length ? orderAgentCards(msg.agentCards) : [];
+                      const resolvedCards   = resolvedAgentCards.length ? null : (msg.universalCards ?? (msg.role === "assistant" ? parseUniversalCards(msgText) : null));
                       const looksLikeTxJson = msg.role === "assistant" && (
                         msgText.includes('"type":"evm_action_proposal"') ||
                         msgText.includes('\\"type\\":\\"evm_action_proposal\\"') ||
                         msgText.includes('"swapTransaction"') ||
                         msgText.includes('\\"swapTransaction\\"') ||
                         msgText.includes('"serialized"') ||
+                        msgText.includes('"compound_action"') ||
                         (msgText.includes('"status":"ok"') && msgText.includes('"tx"'))
                       );
-                      const isStructured    = !!(resolvedSwap || resolvedBalance || resolvedPool || resolvedCards || looksLikeTxJson);
+                      const isStructured    = !!(resolvedSwap || resolvedCompound || resolvedBalance || resolvedPool || resolvedCards || looksLikeTxJson);
 
                       return (
-                      <motion.div
+                      <MotionDiv
                         key={msg.id}
                         className={`msg-row ${msg.role}`}
                         variants={msg.role === "user" ? slideIn : fadeUp}
@@ -4941,7 +5380,9 @@ export default function MainApp() {
                         <div className={`msg-avatar ${msg.role}`}>{msg.role === "user" ? "U" : "A"}</div>
                         <div className="msg-body">
                           <div className={`msg-bubble ${msg.role}`}>
-                            {msg.role === "assistant" && resolvedSwap
+                            {msg.role === "assistant" && resolvedCompound
+                              ? <MarkdownText text={resolvedCompound.message} />
+                              : msg.role === "assistant" && resolvedSwap
                               ? resolvedSwap.isTransfer
                                 ? (() => { const addr = resolvedSwap.transferTo ?? ""; const short = addr.length > 10 ? `${addr.slice(0,6)}…${addr.slice(-4)}` : addr; return `✅ Transfer: ${resolvedSwap.fromAmount} ${resolvedSwap.fromToken} → ${short}. Review and confirm below.`; })()
                                 : resolvedSwap.isBridge
@@ -4955,13 +5396,26 @@ export default function MainApp() {
                                   ? "🌊 Liquidity pool found:"
                                   : msg.role === "assistant" && resolvedCards
                                     ? (resolvedCards.message || "🔍 Here are the results:")
-                                    : isStructured ? null : msg.text}
+                                    : isStructured ? null : msg.role === "assistant" ? <MarkdownText text={msg.text} /> : <span>{msg.text}</span>}
                           </div>
+
+                          {/* Reasoning Accordion */}
+                          {msg.role === "assistant" && msg.reasoning && msg.id !== 0 && (
+                            <ReasoningAccordion
+                              steps={msg.reasoning}
+                              isOpen={openReasoning === msg.id}
+                              onToggle={() => setOpenReasoning(openReasoning === msg.id ? null : msg.id)}
+                            />
+                          )}
 
                           {/* Simulation Preview (for swap / transfer responses) */}
                           {msg.role === "assistant" && resolvedSwap && (
                             <SimulationPreview preview={resolvedSwap} fromAddress={connectedWallet} solanaAddress={solanaWallet} walletType={walletType} />
                           )}
+
+                          {msg.role === "assistant" && resolvedCompound && resolvedCompound.previews.map((preview, index) => (
+                            <SimulationPreview key={`${msg.id}-${index}`} preview={preview} fromAddress={connectedWallet} solanaAddress={solanaWallet} walletType={walletType} />
+                          ))}
 
                           {/* Liquidity Pool Card */}
                           {msg.role === "assistant" && resolvedPool && (
@@ -4973,29 +5427,52 @@ export default function MainApp() {
                             <BalanceCard data={resolvedBalance} />
                           )}
 
+                          {/* Typed Agent Cards (allocation, Sentinel matrix, execution plan, swap/bridge/stake, etc.) */}
+                          {msg.role === "assistant" && resolvedAgentCards.length > 0 && (
+                            <div className="space-y-3 mt-3">
+                              {resolvedAgentCards.map((card) => (
+                                <CardRenderer key={card.card_id} card={card} onStartSigning={handleStartSigning} onRerunAllocation={handleRerunAllocation} />
+                              ))}
+                            </div>
+                          )}
+
                           {/* Universal Cards (DexScreener pairs, token lists, etc.) */}
                           {msg.role === "assistant" && resolvedCards && (
                             <UniversalCardList data={resolvedCards} />
                           )}
 
-                          {/* Reasoning Accordion */}
-                          {msg.role === "assistant" && msg.reasoning && msg.id !== 0 && (
-                            <ReasoningAccordion
-                              steps={msg.reasoning}
-                              isOpen={openReasoning === msg.id}
-                              onToggle={() => setOpenReasoning(openReasoning === msg.id ? null : msg.id)}
-                            />
-                          )}
-
                           <div className="msg-ts">{fmt(msg.ts)}</div>
                         </div>
-                      </motion.div>
+                      </MotionDiv>
                       );
                     })}
 
+                    {executionNotice && (
+                      <MotionDiv className="msg-row assistant" variants={fadeUp} initial="hidden" animate="show">
+                        <div className="msg-avatar assistant">A</div>
+                        <div className="msg-body">
+                          <div className="execution-notice-card">
+                            <div className="execution-notice-title">{executionNotice.title}</div>
+                            <div className="execution-notice-sub">{executionNotice.body}</div>
+                            {executionNotice.steps && (
+                              <div className="execution-notice-steps">
+                              {executionNotice.steps.map(step => (
+                                <div key={step.index} className="execution-notice-step">
+                                  <span className="execution-notice-index">{step.index}</span>
+                                  <span>{step.verb} {step.amount} {step.asset}</span>
+                                  <span className="execution-notice-meta">{step.wallet} · {step.gas}</span>
+                                </div>
+                              ))}
+                            </div>
+                            )}
+                          </div>
+                        </div>
+                      </MotionDiv>
+                    )}
+
                     {/* Loading state with live reasoning steps */}
                     {loading && (
-                      <motion.div
+                      <MotionDiv
                         className="msg-row assistant"
                         variants={fadeUp}
                         initial="hidden"
@@ -5051,7 +5528,7 @@ export default function MainApp() {
                             </div>
                           )}
                         </div>
-                      </motion.div>
+                      </MotionDiv>
                     )}
 
                   </div>
@@ -5085,7 +5562,7 @@ export default function MainApp() {
                       </div>
                     </div>
                   </div>
-                </motion.div>
+                </MotionDiv>
               )}
 
               {/* Portfolio */}

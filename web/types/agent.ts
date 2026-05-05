@@ -214,10 +214,118 @@ export interface PairListPayload {
   shield?: ShieldBlock | null;
 }
 
+export interface DefiOpportunityLink {
+  label: string;
+  url: string;
+}
+
+export interface DefiOpportunityItem {
+  protocol: string;
+  symbol?: string | null;
+  chain?: string | null;
+  product_type?: string | null;
+  apy?: number | null;
+  apy_base?: number | null;
+  apy_reward?: number | null;
+  tvl_usd?: number | null;
+  volume_24h_usd?: number | null;
+  risk_level?: string | null;
+  executable?: boolean | null;
+  adapter_id?: string | null;
+  unsupported_reason?: string | null;
+  links: DefiOpportunityLink[];
+  pool_id?: string | null;
+}
+
+export interface DefiOpportunitiesPayload {
+  objective?: string | null;
+  target_apy?: number | null;
+  apy_band?: Array<number | null> | null;
+  risk_levels: string[];
+  chains: string[];
+  execution_requested: boolean;
+  items: DefiOpportunityItem[];
+  excluded_count: number;
+  blockers: Array<Record<string, unknown>>;
+}
+
+export interface ExecutionPlanV3StepTransaction {
+  chain_kind: "evm" | "solana";
+  chain_id?: number | null;
+  to?: string | null;
+  data?: string | null;
+  value?: string | null;
+  gas?: string | null;
+  serialized?: string | null;
+  spender?: string | null;
+}
+
+export type ExecutionPlanV3StepStatus =
+  | "blocked" | "pending" | "ready" | "signing" | "submitted" | "confirmed" | "failed" | "skipped";
+
+export interface ExecutionPlanV3Step {
+  step_id: string;
+  index: number;
+  action:
+    | "approve" | "swap" | "bridge" | "deposit_lp" | "supply" | "stake"
+    | "wait_receipt" | "verify_balance" | "claim_rewards" | "compound_rewards" | "withdraw";
+  title: string;
+  description: string;
+  chain: string;
+  wallet: WalletKind;
+  protocol: string;
+  asset_in?: string | null;
+  asset_out?: string | null;
+  amount_in?: string | null;
+  amount_out?: string | null;
+  slippage_bps?: number | null;
+  gas_estimate_usd?: number | null;
+  duration_estimate_s?: number | null;
+  depends_on: string[];
+  status: ExecutionPlanV3StepStatus;
+  blocker_codes: string[];
+  transaction?: ExecutionPlanV3StepTransaction | null;
+  receipt?: Record<string, unknown> | null;
+  risk_warnings: string[];
+}
+
+export interface ExecutionPlanV3Blocker {
+  code: string;
+  severity: "info" | "warning" | "blocker";
+  title: string;
+  detail: string;
+  affected_step_ids: string[];
+  recoverable: boolean;
+  cta?: string | null;
+}
+
+export interface ExecutionPlanV3Totals {
+  estimated_gas_usd: number;
+  estimated_duration_s: number;
+  signatures_required: number;
+  chains_touched: string[];
+  assets_required: Record<string, string>;
+}
+
+export interface ExecutionPlanV3Payload {
+  plan_id: string;
+  title: string;
+  summary: string;
+  status: "draft" | "blocked" | "ready" | "executing" | "complete" | "failed" | "aborted";
+  risk_gate: "clear" | "soft_warn" | "hard_block";
+  requires_double_confirm: boolean;
+  blockers: ExecutionPlanV3Blocker[];
+  steps: ExecutionPlanV3Step[];
+  totals: ExecutionPlanV3Totals;
+  research_thesis?: string | null;
+  strategy_id?: string | null;
+}
+
 export type CardType =
   | "allocation" | "sentinel_matrix" | "execution_plan"
   | "swap_quote" | "pool" | "token" | "position"
-  | "plan" | "execution_plan_v2" | "balance" | "bridge" | "stake" | "market_overview" | "pair_list"
+  | "plan" | "execution_plan_v2" | "execution_plan_v3" | "balance" | "bridge" | "stake" | "market_overview" | "pair_list"
+  | "defi_opportunities"
   | "sentinel";
 
 export interface AllocationCard { card_id: string; card_type: "allocation"; payload: AllocationPayload; }
@@ -234,11 +342,14 @@ export interface BridgeCard { card_id: string; card_type: "bridge"; payload: Bri
 export interface StakeCard { card_id: string; card_type: "stake"; payload: StakePayload; }
 export interface MarketOverviewCard { card_id: string; card_type: "market_overview"; payload: MarketOverviewPayload; }
 export interface PairListCard { card_id: string; card_type: "pair_list"; payload: PairListPayload; }
+export interface DefiOpportunitiesCard { card_id: string; card_type: "defi_opportunities"; payload: DefiOpportunitiesPayload; }
+export interface ExecutionPlanV3Card { card_id: string; card_type: "execution_plan_v3"; payload: ExecutionPlanV3Payload; }
 export interface SentinelBreakdownCardFrame { card_id: string; card_type: "sentinel"; payload: SentinelBlock; }
 
 export type AgentCard =
   | AllocationCard | SentinelMatrixCard | ExecutionPlanCard | SwapQuoteCard | PoolCard | TokenCard | PositionCard
   | PlanCard | ExecutionPlanV2Card | BalanceCard | BridgeCard | StakeCard | MarketOverviewCard | PairListCard
+  | DefiOpportunitiesCard | ExecutionPlanV3Card
   | SentinelBreakdownCardFrame;
 
 export interface ToolError {
