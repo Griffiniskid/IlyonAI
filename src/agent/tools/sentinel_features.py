@@ -511,11 +511,17 @@ async def analyze_pool(
         meta = await _fetch_pool_meta(pool_arg)
     else:
         protocol_hint, pair_hint = _split_protocol_pair(pool_arg)
-        meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=chain)
-        if not meta and chain:
+        SOLANA_PROTOS = {"raydium", "orca", "meteora", "kamino", "marinade", "jito", "sanctum", "drift", "lulo", "save", "lifinity", "solend"}
+        inferred_chain = chain
+        if not inferred_chain and protocol_hint:
+            head = protocol_hint.split("-")[0].lower()
+            if head in SOLANA_PROTOS:
+                inferred_chain = "solana"
+        meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=inferred_chain)
+        if not meta and inferred_chain:
             meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=None)
-        if not meta and pair_hint and not protocol_hint:
-            meta = await _resolve_protocol_pair("", pair_hint, chain=chain)
+        if not meta and pair_hint:
+            meta = await _resolve_protocol_pair("", pair_hint, chain=inferred_chain)
     if not meta:
         return err_envelope("pool_not_found", f"Could not resolve pool `{pool_arg}` against DefiLlama.")
     payload_card = {

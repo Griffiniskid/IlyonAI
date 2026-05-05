@@ -201,17 +201,23 @@ async def execute_pool_position(
         meta = await _fetch_pool_meta(pool_arg)
     else:
         protocol_hint, pair_hint = _split_protocol_pair(pool_arg)
-        meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=chain)
-        # Fallback: try without explicit chain (sometimes infer breaks).
-        if not meta and chain:
+        # Infer chain from a Solana protocol head when not given so the
+        # final retry stays on Solana even after we drop the proto filter.
+        SOLANA_PROTOS = {"raydium", "orca", "meteora", "kamino", "marinade", "jito", "sanctum", "drift", "lulo", "save", "lifinity", "solend"}
+        inferred_chain = chain
+        if not inferred_chain and protocol_hint:
+            head = protocol_hint.split("-")[0].lower()
+            if head in SOLANA_PROTOS:
+                inferred_chain = "solana"
+        meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=inferred_chain)
+        if not meta and inferred_chain:
             meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=None)
-        # Last-resort fallback: drop the protocol filter ONLY when no
-        # protocol hint was given. We must never silently swap in a
-        # different protocol when the user named one.
-        if not meta and pair_hint and not protocol_hint:
-            meta = await _resolve_protocol_pair("", pair_hint, chain=chain)
+        # When the protocol-anchored scan still misses, drop the protocol
+        # filter but keep the inferred chain so we don't drift to Sui/etc.
+        if not meta and pair_hint:
+            meta = await _resolve_protocol_pair("", pair_hint, chain=inferred_chain)
         if not meta and protocol_hint and not pair_hint:
-            meta = await _resolve_protocol_pair("", protocol_hint, chain=chain)
+            meta = await _resolve_protocol_pair("", protocol_hint, chain=inferred_chain)
 
     if not meta:
         return err_envelope(
