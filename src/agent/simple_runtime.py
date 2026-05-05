@@ -822,8 +822,9 @@ def _detect_sentinel_chat_tools(message: str) -> tuple[str, dict] | None:
         if re.search(r"\b(pool|pair|dex|dexscreener|liquidity)\b", text, re.I):
             return "analyze_dex_pair", params
         return "analyze_token_full_sentinel", params
-    # 2. analyze_pool — only when pool reference present and not already in execute mode
-    if _ANALYZE_POOL_RE.search(text) and not re.search(r"\bexecute\b|\bdeposit\b", text, re.I):
+    # 2. analyze_pool — when 'analyze pool ...' OR safety/quality verbs + pool reference, and not in execute mode
+    pool_safety_trigger = re.search(r"\b(safe|risky|rug|legit|trustworthy|audit|honeypot|stats?|info|details?)\b", text, re.I)
+    if (_ANALYZE_POOL_RE.search(text) or (pool_safety_trigger and (_POOL_UUID_RE.search(text) or _POOL_PROTO_PAIR_RE.search(text)))) and not re.search(r"\bexecute\b|\bdeposit\b", text, re.I):
         u = _POOL_UUID_RE.search(text)
         p = _POOL_PROTO_PAIR_RE.search(text)
         ref: str | None = None
@@ -881,6 +882,32 @@ def _detect_sentinel_chat_tools(message: str) -> tuple[str, dict] | None:
     return None
 
 
+def _detect_preference_update(message: str) -> tuple[str, dict] | None:
+    """Match natural-language preference updates and route to update_preference."""
+    text = message.strip()
+    params: dict = {}
+    m = re.search(r"\b(?:set\s+)?(?:my\s+)?slippage(?:\s+(?:to|=|cap))?\s+(\d{1,4})\s*(?:bps|bp)?\b", text, re.IGNORECASE)
+    if m:
+        try:
+            params["slippage_cap_bps"] = int(m.group(1))
+        except ValueError:
+            pass
+    m = re.search(r"\b(?:risk\s*budget|risk\s*level)\s+(conservative|balanced|aggressive)\b", text, re.IGNORECASE)
+    if m:
+        params["risk_budget"] = m.group(1).lower()
+    elif re.match(r"^\s*(conservative|balanced|aggressive)\s+only\b", text, re.IGNORECASE):
+        params["risk_budget"] = re.match(r"^\s*(\w+)", text, re.IGNORECASE).group(1).lower()
+    m = re.search(r"\bgas\s+cap\s*(?:to|=)?\s*\$?(\d+(?:\.\d+)?)", text, re.IGNORECASE)
+    if m:
+        try:
+            params["gas_cap_usd"] = float(m.group(1))
+        except ValueError:
+            pass
+    if not params:
+        return None
+    return "update_preference", params
+
+
 def detect_intent(message: str) -> tuple[str, dict] | None:
     """Detect intent and extract parameters from user message."""
     message_lower = message.lower()
@@ -896,6 +923,10 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     sentinel_tool = _detect_sentinel_chat_tools(message)
     if sentinel_tool is not None:
         return sentinel_tool
+
+    pref = _detect_preference_update(message)
+    if pref is not None:
+        return pref
 
     parsed_intent = parse_defi_intent(message)
     pool_exec = _detect_pool_execute(message, parsed_intent)
