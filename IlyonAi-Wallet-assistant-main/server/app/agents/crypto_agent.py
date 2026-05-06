@@ -361,6 +361,66 @@ def _load_moralis_api_key(env_path: Any = None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Moralis key rotator — wallet-assistant scope
+# ---------------------------------------------------------------------------
+# Crypto-agent has its own Moralis path that bypasses src/data/moralis_rotator.
+# When the daily quota on the active key is consumed Moralis returns HTTP 401,
+# wiping out every EVM scan. Read MORALIS_API_KEYS (plural, comma-separated) so
+# we can rotate to the next key on 401 instead of staying stuck on the dead one.
+
+_MORALIS_KEY_POOL: list[str] = []
+_MORALIS_DEAD_KEYS: set[str] = set()
+
+
+def _moralis_keys() -> list[str]:
+    """Return the ordered list of usable Moralis keys."""
+    global _MORALIS_KEY_POOL
+    if _MORALIS_KEY_POOL:
+        return [k for k in _MORALIS_KEY_POOL if k and k not in _MORALIS_DEAD_KEYS]
+    raw_multi = os.environ.get("MORALIS_API_KEYS") or ""
+    raw_single = os.environ.get("MORALIS_API_KEY", MORALIS_API_KEY)
+    keys: list[str] = []
+    for k in raw_multi.split(","):
+        k = k.strip().strip('"\'')
+        if k and k not in keys:
+            keys.append(k)
+    raw_single = (raw_single or "").strip().strip('"\'')
+    if raw_single and raw_single not in keys:
+        keys.append(raw_single)
+    # Always include the module-level MORALIS_API_KEY constant as a final fallback —
+    # it's an independent project key from the env values.
+    const_key = (MORALIS_API_KEY or "").strip().strip('"\'')
+    if const_key and const_key not in keys:
+        keys.append(const_key)
+    _MORALIS_KEY_POOL = keys
+    return [k for k in keys if k and k not in _MORALIS_DEAD_KEYS]
+
+
+def _moralis_get(url: str, *, params: Any = None, timeout: int = 8):
+    """HTTP GET against Moralis with key rotation on 401.
+
+    On 401 the active key is marked dead and the next key in the pool is tried.
+    Returns the final requests.Response (so the caller can read .status_code /
+    .json() exactly like before). When every key is dead, returns the last 401.
+    """
+    last = None
+    for key in _moralis_keys() or [""]:
+        if not key:
+            return _requests.get(url, params=params, headers={"accept": "application/json"}, timeout=timeout)
+        headers = {"accept": "application/json", "X-API-Key": key}
+        try:
+            resp = _requests.get(url, params=params, headers=headers, timeout=timeout)
+        except Exception:
+            raise
+        if resp.status_code == 401:
+            _MORALIS_DEAD_KEYS.add(key)
+            last = resp
+            continue
+        return resp
+    return last
+
+
+# ---------------------------------------------------------------------------
 # Step 1 — LLM
 # Priority: OpenRouter → Groq → OpenAI
 # ---------------------------------------------------------------------------
@@ -667,11 +727,10 @@ def _scan_single_address(raw_addr: str, target_chain: str) -> list[dict]:
                 sol_native = round(sol_bal, 8)
 
             # 2. SPL tokens via Moralis Solana Gateway
-            if MORALIS_API_KEY:
-                moralis_headers = {"accept": "application/json", "X-API-Key": MORALIS_API_KEY}
+            if _moralis_keys():
                 spl_url = f"https://solana-gateway.moralis.io/account/mainnet/{raw_addr}/tokens"
                 try:
-                    spl_resp = _requests.get(spl_url, headers=moralis_headers, timeout=8)
+                    spl_resp = _moralis_get(spl_url, timeout=8)
                     print(f"[SOL] Moralis SPL status: {spl_resp.status_code}")
                     if spl_resp.status_code == 200:
                         for tok in spl_resp.json():
@@ -766,12 +825,11 @@ def _scan_single_address(raw_addr: str, target_chain: str) -> list[dict]:
         # Only call Moralis for "important" chains to save API quota (free tier is limited)
         _MORALIS_PRIORITY = {"Ethereum", "BNB Chain", "Polygon", "Arbitrum", "Avalanche", "Base", "Optimism"}
         moralis_chain = _MORALIS_CHAINS.get(chain_name)
-        if moralis_chain and MORALIS_API_KEY and (chain_name in _MORALIS_PRIORITY or native_balance > 0):
+        if moralis_chain and _moralis_keys() and (chain_name in _MORALIS_PRIORITY or native_balance > 0):
             url = f"https://deep-index.moralis.io/api/v2.2/wallets/{evm_address}/tokens?chain={moralis_chain}"
-            headers = {"accept": "application/json", "X-API-Key": MORALIS_API_KEY}
             for attempt in range(2):
                 try:
-                    tok_resp = _requests.get(url, headers=headers, timeout=8)
+                    tok_resp = _moralis_get(url, timeout=8)
                     if tok_resp.status_code == 429:
                         logger.info("[Moralis] %s: 429 rate limit, attempt %d/2", chain_name, attempt + 1)
                         time.sleep(1.0)
@@ -1419,16 +1477,12 @@ def _resolve_token_metadata(
             pass
 
     # Last resort: wallet-scoped Moralis token scan
-    if wallet_addr and MORALIS_API_KEY and chain_name:
+    if wallet_addr and _moralis_keys() and chain_name:
         moralis_chain = _MORALIS_CHAINS.get(chain_name)
         if moralis_chain:
             try:
                 url = f"https://deep-index.moralis.io/api/v2.2/wallets/{wallet_addr}/tokens?chain={moralis_chain}"
-                resp = _requests.get(
-                    url,
-                    headers={"accept": "application/json", "X-API-Key": MORALIS_API_KEY},
-                    timeout=8,
-                )
+                resp = _moralis_get(url, timeout=8)
                 if resp.status_code == 200:
                     for tok in resp.json().get("result", []):
                         if tok.get("symbol", "").upper() != val.upper():
