@@ -1857,7 +1857,7 @@ async def run_ephemeral_turn(
                     # MainApp's parseSwapPreview→SimulationPreview flow (Phantom signing button).
                     # Skip the typed swap_quote/bridge CardFrame so only the legacy preview shows;
                     # the assistant text becomes the raw wallet-assistant JSON the parser expects.
-                    legacy_preview_tools = {"build_swap_tx", "build_bridge_tx", "build_solana_swap"}
+                    legacy_preview_tools = {"build_swap_tx", "build_bridge_tx", "build_solana_swap", "get_wallet_balance"}
                     is_legacy_preview = tool_name in legacy_preview_tools
                     # Push primary card
                     if not is_legacy_preview and env.card_type and env.card_payload is not None:
@@ -1950,7 +1950,7 @@ async def run_ephemeral_turn(
         # for signable swap/bridge tools whose final_content is a raw JSON
         # dump that the front-end parses (parseSwapPreview).
         is_allocate = intent and intent[0] == "allocate_plan"
-        is_legacy_preview = intent and intent[0] in {"build_swap_tx", "build_bridge_tx", "build_solana_swap"}
+        is_legacy_preview = intent and intent[0] in {"build_swap_tx", "build_bridge_tx", "build_solana_swap", "get_wallet_balance"}
         if not is_allocate and not is_legacy_preview:
             final_content = _clean_response(final_content)
         
