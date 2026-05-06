@@ -1101,7 +1101,10 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
                         params["src_chain_id"] = CHAIN_IDS.get(src, 1)
                         params["dst_chain_id"] = CHAIN_IDS.get(dst, CHAIN_IDS.get(dst.split()[0], 42161))
                         params["token_in"] = token
-                        params["token_out"] = token
+                        # Leave token_out empty so the wallet-assistant's bridge resolver
+                        # picks the chain-correct output (e.g. SOL → ETH on Ethereum)
+                        # instead of forcing the source mint onto a foreign chain.
+                        params["token_out"] = ""
                         params["amount"] = _to_base_units(m_bridge.group("amount"), token)
                 elif tool_name == "find_liquidity_pool":
                     # "pool for USDC on Ethereum" / "pool for USDC/WETH"
