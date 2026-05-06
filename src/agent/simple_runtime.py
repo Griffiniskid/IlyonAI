@@ -1946,9 +1946,12 @@ async def run_ephemeral_turn(
         
         # Clean up response — skip the meta-commentary stripper for allocation
         # responses (the "Below is the Sentinel scoring breakdown…" paragraph
-        # would otherwise be eaten by the "Below is/are" pattern).
+        # would otherwise be eaten by the "Below is/are" pattern). Also skip
+        # for signable swap/bridge tools whose final_content is a raw JSON
+        # dump that the front-end parses (parseSwapPreview).
         is_allocate = intent and intent[0] == "allocate_plan"
-        if not is_allocate:
+        is_legacy_preview = intent and intent[0] in {"build_swap_tx", "build_bridge_tx", "build_solana_swap"}
+        if not is_allocate and not is_legacy_preview:
             final_content = _clean_response(final_content)
         
         # Emit final frame
