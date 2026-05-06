@@ -39,7 +39,7 @@ def _get_build_swap_tx():
 
 
 async def build_swap_tx(
-    ctx, *, chain_id, token_in, token_out, amount_in, from_addr
+    ctx, *, chain_id, token_in, token_out, amount_in, from_addr=""
 ):
     """Build a swap transaction via the wallet assistant.
 
@@ -74,6 +74,20 @@ async def build_swap_tx(
 
     chain = "solana" if chain_id == 101 else "evm"
     slippage_bps = 50 if chain == "solana" else 100
+
+    # Fall back to the session wallet so intent-time routing doesn't need to
+    # know the connected address. Solana uses ctx.solana_wallet; EVM uses
+    # ctx.evm_wallet (with ctx.wallet as a final fallback).
+    sol_wallet = (getattr(ctx, "solana_wallet", "") or "").split(",")[0].strip()
+    evm_wallet = (getattr(ctx, "evm_wallet", "") or "").split(",")[0].strip()
+    primary = (getattr(ctx, "wallet", "") or "").split(",")[0].strip()
+    if not from_addr:
+        from_addr = sol_wallet if chain == "solana" else (evm_wallet or primary)
+    if not from_addr:
+        return err_envelope(
+            code="swap_failed",
+            message=f"No {'Solana' if chain == 'solana' else 'EVM'} wallet connected — connect a wallet then retry the swap.",
+        )
 
     params = {
         "chain": chain,
@@ -110,6 +124,44 @@ async def build_swap_tx(
 
     chain_type = parsed.get("chain_type", "evm")
     router = "jupiter" if chain_type == "solana" else "enso"
+
+    # Enrich Solana payloads so the legacy SimulationPreview parser shows the
+    # real symbols and human-readable amounts. _build_jupiter_swap_tx returns
+    # only out_amount + tx.serialized; the front-end parser falls back to "Token"
+    # / "—" without these.
+    if chain_type == "solana":
+        _SOL_DEC = {"SOL": 9, "WSOL": 9, "USDC": 6, "USDT": 6, "BONK": 5,
+                    "JUP": 6, "PYTH": 6, "RAY": 6, "ORCA": 6, "JITO": 9,
+                    "JITOSOL": 9, "MSOL": 9, "STSOL": 9, "WBTC": 8, "WETH": 8}
+        in_sym = str(token_in).upper() if isinstance(token_in, str) else ""
+        out_sym = str(token_out).upper() if isinstance(token_out, str) else ""
+        in_dec = _SOL_DEC.get(in_sym, 9)
+        out_dec = _SOL_DEC.get(out_sym, 9)
+        try:
+            ui_in = round(int(amount_in) / (10 ** in_dec), 8)
+            parsed.setdefault("ui_in_amount", ui_in)
+            parsed.setdefault("amount_in_display", ui_in)
+        except Exception:
+            pass
+        try:
+            out_amt = parsed.get("out_amount")
+            if out_amt is not None:
+                ui_out = round(int(out_amt) / (10 ** out_dec), 8)
+                parsed.setdefault("ui_out_amount", ui_out)
+                parsed.setdefault("dst_amount_display", ui_out)
+        except Exception:
+            pass
+        if in_sym:
+            parsed.setdefault("in_symbol", in_sym)
+            parsed.setdefault("from_token_symbol", in_sym)
+        if out_sym:
+            parsed.setdefault("out_symbol", out_sym)
+            parsed.setdefault("to_token_symbol", out_sym)
+        parsed.setdefault("route_summary", "Jupiter route")
+        # Mirror tx.serialized to top-level swapTransaction for legacy parser branches.
+        ser = (parsed.get("tx") or {}).get("serialized")
+        if ser and "swapTransaction" not in parsed:
+            parsed["swapTransaction"] = ser
 
     tx = parsed.get("tx", {})
     if chain_type == "solana":

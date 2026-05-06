@@ -261,6 +261,21 @@ def _pre_tool_reasoning(tool_name: str, tool_input: dict, message: str) -> list[
             "Checking quote quality: route source, expected output, price impact, gas, and slippage assumptions.",
             "Preparing wallet-safe signing guidance; the agent never touches private keys.",
         ]
+    if tool_name == "build_swap_tx":
+        return [
+            f"Parsed swap intent: {_short_json(tool_input)}.",
+            "Resolving token pair, chain, decimals, and amount before requesting an aggregator route.",
+            "Choosing aggregator: Jupiter for Solana, Enso for EVM. Validating slippage, route source, and price impact before quoting.",
+            "Building an unsigned transaction so Phantom or MetaMask can review the exact spend, gas, and approval.",
+            "Preparing wallet-safe signing guidance; the agent never holds keys — the user signs in their wallet.",
+        ]
+    if tool_name == "build_solana_swap":
+        return [
+            f"Parsed Solana swap intent: {_short_json(tool_input)}.",
+            "Resolving SPL mints and decimals before requesting a Jupiter v6 quote.",
+            "Checking route quality: hop count, price impact, slippage tolerance, and fee account.",
+            "Building a base64 VersionedTransaction for Phantom signing — the agent never touches keys.",
+        ]
     if tool_name == "build_bridge_tx":
         return [
             f"Parsed bridge intent: {_short_json(tool_input)}.",
@@ -576,6 +591,87 @@ def _detect_malicious_swap_plan(message: str) -> tuple[str, dict] | None:
             "steps": [
                 {"step_id": "swap", "action": "swap", "params": {"token_in": match.group("tin").upper(), "token_out": match.group("tout").upper(), "amount": match.group("amount"), "chain_id": 1}}
             ],
+        },
+    )
+
+
+# Solana decimals for swap base-unit conversion. Falls back to 9 (lamports) for unknown SPL tokens.
+_SOLANA_DECIMALS = {
+    "SOL": 9, "WSOL": 9, "USDC": 6, "USDT": 6, "BONK": 5, "JUP": 6, "PYTH": 6,
+    "RAY": 6, "ORCA": 6, "JITO": 9, "JITOSOL": 9, "MSOL": 9, "STSOL": 9,
+    "WBTC": 8, "WETH": 8,
+}
+
+
+def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
+    """Route signable swap intents to build_swap_tx (legacy SimulationPreview path).
+
+    Picks chain_id by message hint or token signal so Phantom Solana users land on
+    Jupiter and EVM users land on Enso. Amount is converted to base units (lamports
+    for Solana, wei-style for EVM) using TOKEN_DECIMALS / _SOLANA_DECIMALS.
+    """
+    pattern = re.compile(
+        r"(?:swap|exchange|convert|trade)\s+(?:of\s+)?"
+        r"(?P<amount>[\d,]+(?:\.\d+)?)\s*"
+        r"(?P<tin>[A-Za-z]{2,10})\s+"
+        r"(?:to|for|into)\s+"
+        r"(?P<tout>[A-Za-z]{2,10})"
+        r"(?:\s+on\s+(?P<chain>\w+))?",
+        re.IGNORECASE,
+    )
+    m = pattern.search(message)
+    if not m:
+        return None
+    token_in = m.group("tin").upper()
+    token_out = m.group("tout").upper()
+    if "MALICIOUS" in (token_in, token_out):
+        return None
+    amount_human_raw = m.group("amount").replace(",", "")
+    try:
+        amount_value = float(amount_human_raw)
+    except ValueError:
+        return None
+    if amount_value <= 0:
+        return None
+    chain_hint = (m.group("chain") or "").lower()
+
+    evm_only = {"BNB", "CAKE", "BUSD", "WBNB", "MATIC", "AVAX", "ARB", "OP"}
+    solana_only = {"BONK", "JUP", "PYTH", "RAY", "ORCA", "MSOL", "JITOSOL", "STSOL"}
+
+    if chain_hint:
+        chain_id = CHAIN_IDS.get(chain_hint, 1)
+        # CHAIN_IDS uses 7565164 for solana (deBridge ID); swap path expects 101.
+        if chain_id == 7565164:
+            chain_id = 101
+    elif token_in == "SOL" or token_out == "SOL" or token_in in solana_only or token_out in solana_only:
+        chain_id = 101
+    elif token_in in evm_only or token_out in evm_only:
+        chain_id = 56
+    elif token_in in {"USDC", "USDT", "DAI"} and token_out in {"USDC", "USDT", "DAI"}:
+        chain_id = 101
+    else:
+        chain_id = 1
+
+    if chain_id == 101:
+        decimals = _SOLANA_DECIMALS.get(token_in, 9)
+    else:
+        decimals = TOKEN_DECIMALS.get(token_in, 18)
+
+    try:
+        amount_in = str(int(round(amount_value * (10 ** decimals))))
+    except (OverflowError, ValueError):
+        return None
+    if int(amount_in) <= 0:
+        return None
+
+    return (
+        "build_swap_tx",
+        {
+            "chain_id": chain_id,
+            "token_in": token_in,
+            "token_out": token_out,
+            "amount_in": amount_in,
+            "from_addr": "",
         },
     )
 
@@ -915,7 +1011,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
         return multi_step
-    for detector in (_detect_aave_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_malicious_swap_plan, _detect_transfer_plan):
+    for detector in (_detect_aave_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_malicious_swap_plan, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
@@ -1754,8 +1850,14 @@ async def run_ephemeral_turn(
                     return
                 if env is not None and env.ok:
                     _emit_thoughts(collector, _post_tool_reasoning(tool_name, env))
+                    # Legacy SimulationPreview path: signable swap/bridge tools render via the
+                    # MainApp's parseSwapPreview→SimulationPreview flow (Phantom signing button).
+                    # Skip the typed swap_quote/bridge CardFrame so only the legacy preview shows;
+                    # the assistant text becomes the raw wallet-assistant JSON the parser expects.
+                    legacy_preview_tools = {"build_swap_tx", "build_bridge_tx", "build_solana_swap"}
+                    is_legacy_preview = tool_name in legacy_preview_tools
                     # Push primary card
-                    if env.card_type and env.card_payload is not None:
+                    if not is_legacy_preview and env.card_type and env.card_payload is not None:
                         collector._queue.append(CardFrame(
                             step_index=collector._step,
                             card_id=env.card_id,
@@ -1764,15 +1866,22 @@ async def run_ephemeral_turn(
                         ))
                         card_ids_for_final.append(env.card_id)
                     # Push extra cards (e.g. sentinel_matrix + execution_plan from allocate_plan)
-                    for extra in env.extra_cards or []:
-                        collector._queue.append(CardFrame(
-                            step_index=collector._step,
-                            card_id=extra.card_id,
-                            card_type=extra.card_type,
-                            payload=extra.payload,
-                        ))
-                        card_ids_for_final.append(extra.card_id)
-                    final_content = _format_tool_result(tool_name, env)
+                    if not is_legacy_preview:
+                        for extra in env.extra_cards or []:
+                            collector._queue.append(CardFrame(
+                                step_index=collector._step,
+                                card_id=extra.card_id,
+                                card_type=extra.card_type,
+                                payload=extra.payload,
+                            ))
+                            card_ids_for_final.append(extra.card_id)
+                    if is_legacy_preview and env.data is not None:
+                        try:
+                            final_content = json.dumps(env.data, default=str)
+                        except Exception:
+                            final_content = _format_tool_result(tool_name, env)
+                    else:
+                        final_content = _format_tool_result(tool_name, env)
                 elif env is not None and not env.ok:
                     err_code = (env.error.code if env.error else "tool_error") or "tool_error"
                     err_msg = (env.error.message if env.error else "Tool returned an error.") or "Tool returned an error."

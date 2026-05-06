@@ -287,7 +287,7 @@ async def test_run_ephemeral_turn_emits_advanced_reasoning_for_swap():
     chunks = []
     async for chunk in run_ephemeral_turn(
         router=None,
-        tools=[_FakeTool("simulate_swap", env)],
+        tools=[_FakeTool("build_swap_tx", env)],
         message="swap 0.5 ETH to USDC on Ethereum",
     ):
         chunks.append(chunk.decode())
@@ -297,9 +297,14 @@ async def test_run_ephemeral_turn_emits_advanced_reasoning_for_swap():
 
     assert len(thoughts) >= 5
     assert any("Parsed swap intent" in line for line in thoughts)
-    assert any("route" in line.lower() or "quote" in line.lower() for line in thoughts)
-    assert any("price impact" in line.lower() for line in thoughts)
-    assert events["card"][0]["card_type"] == "swap_quote"
+    assert any("route" in line.lower() or "quote" in line.lower() or "aggregator" in line.lower() for line in thoughts)
+    assert any("price impact" in line.lower() or "slippage" in line.lower() for line in thoughts)
+    # Legacy SimulationPreview path: no swap_quote CardFrame; raw JSON lands in the final content
+    # so MainApp's parseSwapPreview can render the Phantom signing button.
+    assert "card" not in events or not any(c["card_type"] == "swap_quote" for c in events["card"])
+    assert events["final"], "expected a final frame with the wallet-signable JSON payload"
+    final_content = events["final"][0]["content"]
+    assert "ETH" in final_content and "USDC" in final_content
 
 
 @pytest.mark.asyncio

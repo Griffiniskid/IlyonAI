@@ -74,9 +74,19 @@ async def build_bridge_tx(
             message=f"Failed to import wallet assistant: {exc}",
         )
 
-    from_addr = from_addr or getattr(ctx, "wallet", None) or ""
+    sol_wallet = (getattr(ctx, "solana_wallet", "") or "").split(",")[0].strip()
+    evm_wallet = (getattr(ctx, "evm_wallet", "") or "").split(",")[0].strip()
+    primary = (getattr(ctx, "wallet", "") or "").split(",")[0].strip()
+    # Solana = chain_id 101 (deBridge canonical) or 7565164 (deBridge enum). Either
+    # way, source-Solana bridges must sign from the Solana wallet, not the EVM one.
+    is_solana_source = src_chain_id in (101, 7565164)
     if not from_addr:
-        return err_envelope("bridge_failed", "No wallet address provided for bridge transaction.")
+        from_addr = sol_wallet if is_solana_source else (evm_wallet or primary)
+    if not from_addr:
+        return err_envelope(
+            code="bridge_failed",
+            message=f"No {'Solana' if is_solana_source else 'EVM'} wallet connected — connect a wallet then retry the bridge.",
+        )
 
     params = {
         "token_in": token_in,
