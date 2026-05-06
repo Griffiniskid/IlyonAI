@@ -75,6 +75,35 @@ async def build_swap_tx(
     chain = "solana" if chain_id == 101 else "evm"
     slippage_bps = 50 if chain == "solana" else 100
 
+    # Jupiter's quote API requires real SPL mint addresses, not symbols. Resolve
+    # the common ones inline so intent-time routing can pass plain symbols.
+    if chain == "solana":
+        _SOL_MINT_BY_SYMBOL = {
+            "SOL": "So11111111111111111111111111111111111111112",
+            "WSOL": "So11111111111111111111111111111111111111112",
+            "USDC": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            "USDT": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+            "BONK": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+            "JUP": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+            "PYTH": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+            "RAY": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+            "ORCA": "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE",
+            "JITOSOL": "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+            "MSOL": "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",
+            "STSOL": "7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj",
+        }
+        if isinstance(token_in, str) and token_in.upper() in _SOL_MINT_BY_SYMBOL:
+            token_in_resolved = _SOL_MINT_BY_SYMBOL[token_in.upper()]
+        else:
+            token_in_resolved = token_in
+        if isinstance(token_out, str) and token_out.upper() in _SOL_MINT_BY_SYMBOL:
+            token_out_resolved = _SOL_MINT_BY_SYMBOL[token_out.upper()]
+        else:
+            token_out_resolved = token_out
+    else:
+        token_in_resolved = token_in
+        token_out_resolved = token_out
+
     # Fall back to the session wallet so intent-time routing doesn't need to
     # know the connected address. Solana uses ctx.solana_wallet; EVM uses
     # ctx.evm_wallet (with ctx.wallet as a final fallback).
@@ -91,8 +120,8 @@ async def build_swap_tx(
 
     params = {
         "chain": chain,
-        "token_in": token_in,
-        "token_out": token_out,
+        "token_in": token_in_resolved,
+        "token_out": token_out_resolved,
         "amount": amount_in,
         "from": from_addr,
         "chain_id": chain_id,
