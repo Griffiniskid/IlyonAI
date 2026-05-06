@@ -77,6 +77,12 @@ async def build_bridge_tx(
     sol_wallet = (getattr(ctx, "solana_wallet", "") or "").split(",")[0].strip()
     evm_wallet = (getattr(ctx, "evm_wallet", "") or "").split(",")[0].strip()
     primary = (getattr(ctx, "wallet", "") or "").split(",")[0].strip()
+    # If primary looks like an EVM hex address but evm_wallet is empty, promote it.
+    if not evm_wallet and primary.lower().startswith("0x") and len(primary) == 42:
+        evm_wallet = primary
+    # If primary looks like a Solana base58 address but sol_wallet is empty, promote it.
+    if not sol_wallet and primary and not primary.lower().startswith("0x"):
+        sol_wallet = primary
     # Solana = chain_id 101 (deBridge canonical) or 7565164 (deBridge enum). Either
     # way, source-Solana bridges must sign from the Solana wallet, not the EVM one.
     is_solana_source = src_chain_id in (101, 7565164)
@@ -97,8 +103,13 @@ async def build_bridge_tx(
     }
     raw_input = json.dumps(params)
 
+    # _build_bridge_tx signature: (raw, user_address, default_chain_id, solana_address="").
+    # The destination resolver inside picks recipient = sol_wallet or evm_wallet based
+    # on dst_chain. Pass both wallets so cross-chain bridges (Solana ↔ EVM) succeed.
+    user_addr = evm_wallet or (from_addr if not is_solana_source else "")
+    sol_addr = sol_wallet or (from_addr if is_solana_source else "")
     try:
-        result_str = await asyncio.to_thread(_build_bridge_tx, raw_input, from_addr, src_chain_id)
+        result_str = await asyncio.to_thread(_build_bridge_tx, raw_input, user_addr, src_chain_id, sol_addr)
     except Exception as exc:
         return err_envelope(
             code="bridge_failed",
