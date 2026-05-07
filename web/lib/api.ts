@@ -323,29 +323,33 @@ function normalizeApproval(raw: any): ApprovalItem {
 }
 
 function normalizeShieldScan(raw: any): ShieldScanResponse {
-  const approvals = Array.isArray(raw.approvals) ? raw.approvals.map(normalizeApproval) : [];
-  const summary = raw.summary ?? {
-    total_approvals: raw.total_approvals ?? approvals.length,
-    high_risk_count: raw.high_risk_count ?? approvals.filter((approval: ApprovalItem) => approval.risk_level === "HIGH").length,
-    medium_risk_count: raw.medium_risk_count ?? approvals.filter((approval: ApprovalItem) => approval.risk_level === "MEDIUM").length,
-    low_risk_count: raw.low_risk_count ?? approvals.filter((approval: ApprovalItem) => approval.risk_level === "LOW").length,
+  // Backend wraps payload in `envelope_response` ({status, data, ...}).
+  // Without unwrapping, every field below resolves to undefined and the UI
+  // shows "Wallet:" + "Chains scanned:" with empty values, plus 0 approvals.
+  const payload: any = unwrapEnvelope<Record<string, unknown>>(raw, {}) || raw || {};
+  const approvals = Array.isArray(payload.approvals) ? payload.approvals.map(normalizeApproval) : [];
+  const summary = payload.summary ?? {
+    total_approvals: payload.total_approvals ?? approvals.length,
+    high_risk_count: payload.high_risk_count ?? approvals.filter((approval: ApprovalItem) => approval.risk_level === "HIGH").length,
+    medium_risk_count: payload.medium_risk_count ?? approvals.filter((approval: ApprovalItem) => approval.risk_level === "MEDIUM").length,
+    low_risk_count: payload.low_risk_count ?? approvals.filter((approval: ApprovalItem) => approval.risk_level === "LOW").length,
   };
 
-  const chains = Array.isArray(raw.chains_scanned)
-    ? raw.chains_scanned
-    : raw.chain
-      ? [raw.chain]
+  const chains = Array.isArray(payload.chains_scanned)
+    ? payload.chains_scanned
+    : payload.chain
+      ? [payload.chain]
       : [];
 
   return {
-    wallet: raw.wallet ?? raw.wallet_address ?? "",
+    wallet: payload.wallet ?? payload.wallet_address ?? "",
     chains_scanned: chains
       .map((chain: unknown) => normalizeChainName(chain))
       .filter((chain: ChainName | undefined): chain is ChainName => Boolean(chain)),
-    scanned_at: raw.scanned_at ?? undefined,
+    scanned_at: payload.scanned_at ?? undefined,
     summary,
     approvals,
-    recommendation: raw.recommendation ?? "",
+    recommendation: payload.recommendation ?? "",
   };
 }
 

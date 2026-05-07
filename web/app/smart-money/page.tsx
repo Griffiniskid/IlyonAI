@@ -369,16 +369,6 @@ export default function SmartMoneyPage() {
             )}
           </GlassCard>
 
-          {/* Navigation Links */}
-          <div className="flex flex-wrap gap-3 mb-6">
-            <Button asChild variant="outline" size="sm">
-              <Link href="/entity">
-                <Users className="h-4 w-4 mr-2" />
-                Entity Explorer
-              </Link>
-            </Button>
-          </div>
-
           {/* Footer */}
           {hasValidUpdatedAt && updatedAt && (
             <p className="text-xs text-muted-foreground">

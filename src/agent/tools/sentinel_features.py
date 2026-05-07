@@ -13,7 +13,26 @@ from typing import Any
 
 import aiohttp
 
+from src.agent.protocol_urls import protocol_app_url
 from src.agent.tools._base import err_envelope, ok_envelope
+
+
+def _pool_meta_links(meta: dict[str, Any]) -> list[dict[str, str]]:
+    """Build pool card links: DefiLlama pool + protocol's own app URL."""
+    pool_id = meta.get("pool")
+    project = meta.get("project")
+    project_url = meta.get("url") if isinstance(meta.get("url"), str) else None
+    links: list[dict[str, str]] = []
+    if pool_id:
+        links.append({"label": "DefiLlama pool", "url": f"https://defillama.com/yields/pool/{pool_id}"})
+    if project:
+        app_url = protocol_app_url(project, project_url=project_url)
+        protocol_label = str(project).replace("-", " ").title()
+        if app_url:
+            links.append({"label": f"Open in {protocol_label}", "url": app_url})
+        else:
+            links.append({"label": f"{protocol_label} on DefiLlama", "url": f"https://defillama.com/protocol/{project}"})
+    return links
 
 
 _logger = logging.getLogger(__name__)
@@ -537,10 +556,7 @@ async def analyze_pool(
         "il_risk": meta.get("ilRisk"),
         "predicted_class": (meta.get("predictions") or {}).get("predictedClass") if isinstance(meta.get("predictions"), dict) else None,
         "underlying_tokens": meta.get("underlyingTokens") or [],
-        "links": [
-            {"label": "DefiLlama pool", "url": f"https://defillama.com/yields/pool/{meta.get('pool')}"} if meta.get("pool") else None,
-            {"label": f"{meta.get('project','protocol')} on DefiLlama", "url": f"https://defillama.com/protocol/{meta.get('project')}"} if meta.get("project") else None,
-        ],
+        "links": _pool_meta_links(meta),
     }
     payload_card["links"] = [l for l in payload_card["links"] if l]
     return ok_envelope(

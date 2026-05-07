@@ -746,8 +746,22 @@ def _scan_single_address(raw_addr: str, target_chain: str) -> list[dict]:
                                 sol_seen.add(sym_up)
                                 _STABLE = {"USDC", "USDT", "DAI", "BUSD", "FDUSD"}
                                 tok_usd = round(ui_bal, 4) if symbol in _STABLE else 0.0
+                                # Capture decimals + mint so swap/sell-all flows can
+                                # convert UI balance to base units and pass the real
+                                # SPL mint to Jupiter (symbols alone are ambiguous).
+                                try:
+                                    spl_decimals = int(tok.get("decimals") or 0)
+                                except (TypeError, ValueError):
+                                    spl_decimals = 0
+                                spl_mint = tok.get("mint") or tok.get("associatedTokenAddress") or ""
                                 print(f"[SOL] SPL token: {symbol} bal={ui_bal}")
-                                sol_tokens.append({"symbol": symbol, "balance": round(ui_bal, 6), "usd_value": tok_usd})
+                                sol_tokens.append({
+                                    "symbol": symbol,
+                                    "balance": round(ui_bal, 6),
+                                    "usd_value": tok_usd,
+                                    "decimals": spl_decimals,
+                                    "mint": spl_mint,
+                                })
                     else:
                         print(f"[SOL] Moralis SPL error: {spl_resp.text[:200]}")
                 except Exception as spl_exc:

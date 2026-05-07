@@ -603,13 +603,134 @@ _SOLANA_DECIMALS = {
 }
 
 
+# Liquid-staking targets (LST) per (token_in, chain_id). When the user types a
+# bare "stake X TOKEN" (no protocol qualifier), we route the trade through the
+# canonical LST so they get an executable Phantom / MetaMask signing card via
+# the existing swap path. mainnet token addresses verified manually.
+_LST_BY_TOKEN_CHAIN: dict[tuple[str, int], tuple[str, str]] = {
+    ("SOL", 101): ("J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn", "Jito"),  # jitoSOL
+    ("ETH", 1): ("0xae7ab96520de3a18e5e111b5eaab095312d7fe84", "Lido"),  # stETH
+    ("BNB", 56): ("0xB0b84D294e0C75A6abe60171b70edEb2EFd14A1B", "Lista"),  # slisBNB
+    ("MATIC", 137): ("0xfa68FB4628DFF1028CFEc22b4162FCcd0d45efb6", "Stader"),  # MATICX
+    ("AVAX", 43114): ("0x2b2C81e08f1Af8835a78Bb2A90AE924ACE0eA4bE", "Benqi"),  # sAVAX
+}
+
+
+def _detect_stake_simple(message: str) -> tuple[str, dict] | None:
+    """Match bare 'stake 0.1 bnb' / 'stake 1 sol' (no protocol qualifier).
+
+    Returns build_swap_tx into the canonical LST for that chain so the user
+    gets a real signing card instead of an empty DeFi search.
+    """
+    pattern = re.compile(
+        r"^\s*stake\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})"
+        r"(?:\s+(?:on\s+|with\s+|via\s+)(?P<protocol>[A-Za-z0-9 ._-]+))?\s*$",
+        re.IGNORECASE,
+    )
+    m = pattern.search(message)
+    if not m:
+        return None
+    if m.group("protocol"):
+        # Protocol-qualified stake — let _detect_stake_amount_plan handle it.
+        return None
+    token = m.group("token").upper()
+    try:
+        amount_value = float(m.group("amount").replace(",", ""))
+    except ValueError:
+        return None
+    if amount_value <= 0:
+        return None
+    chain_id_by_token = {"SOL": 101, "ETH": 1, "BNB": 56, "MATIC": 137, "AVAX": 43114}
+    chain_id = chain_id_by_token.get(token)
+    if not chain_id:
+        return None
+    lst_target = _LST_BY_TOKEN_CHAIN.get((token, chain_id))
+    if not lst_target:
+        return None
+    decimals = _SOLANA_DECIMALS.get(token, 9) if chain_id == 101 else TOKEN_DECIMALS.get(token, 18)
+    try:
+        amount_in = str(int(round(amount_value * (10 ** decimals))))
+    except (OverflowError, ValueError):
+        return None
+    if int(amount_in) <= 0:
+        return None
+    return (
+        "build_swap_tx",
+        {
+            "chain_id": chain_id,
+            "token_in": token,
+            "token_out": lst_target[0],
+            "amount_in": amount_in,
+            "from_addr": "",
+        },
+    )
+
+
+# "swap all FATPENGU [from my wallet] to usdc" — must match BEFORE the numeric
+# pattern, and must NOT capture noise words ("WALLET", "MY", "FROM") as the
+# token symbol. The optional "from/in (my) wallet" clause is consumed but
+# discarded so it never lands in `tin`.
+_SWAP_ALL_RE = re.compile(
+    r"(?:swap|exchange|convert|trade|sell|dump)\s+"
+    r"(?:all|max|maximum|entire(?:\s+balance)?|everything|100%|whole(?:\s+balance)?)"
+    r"\s+(?:of\s+)?(?:my\s+)?"
+    r"(?P<tin>[A-Za-z][A-Za-z0-9$._-]{0,15})"
+    r"(?:\s+(?:from|in)\s+(?:my\s+)?wallet)?"
+    r"\s+(?:to|for|into)\s+"
+    r"(?P<tout>[A-Za-z][A-Za-z0-9$._-]{0,15})"
+    r"(?:\s+on\s+(?P<chain>\w+))?",
+    re.IGNORECASE,
+)
+_NOT_A_SYMBOL = {"WALLET", "MY", "FROM", "INTO", "TO", "FOR", "OF", "ALL", "MAX", "ENTIRE", "EVERYTHING"}
+
+
 def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
     """Route signable swap intents to build_swap_tx (legacy SimulationPreview path).
 
     Picks chain_id by message hint or token signal so Phantom Solana users land on
     Jupiter and EVM users land on Enso. Amount is converted to base units (lamports
-    for Solana, wei-style for EVM) using TOKEN_DECIMALS / _SOLANA_DECIMALS.
+    for Solana, wei-style for EVM) using TOKEN_DECIMALS / _SOLANA_DECIMALS. The
+    sentinel `amount_in == "ALL"` is forwarded so the swap tool can substitute the
+    user's actual wallet balance at execution time.
     """
+    # 1) "swap all/max/entire X to Y" — no numeric amount, look up balance later.
+    all_match = _SWAP_ALL_RE.search(message)
+    if all_match:
+        token_in = all_match.group("tin").upper()
+        token_out = all_match.group("tout").upper()
+        if token_in in _NOT_A_SYMBOL or token_out in _NOT_A_SYMBOL:
+            return None
+        if "MALICIOUS" in (token_in, token_out):
+            return None
+        chain_hint = (all_match.group("chain") or "").lower()
+        evm_only = {"BNB", "CAKE", "BUSD", "WBNB", "MATIC", "AVAX", "ARB", "OP"}
+        solana_only = {"BONK", "JUP", "PYTH", "RAY", "ORCA", "MSOL", "JITOSOL", "STSOL", "FATPENGU", "PENGU", "WIF", "POPCAT"}
+        if chain_hint:
+            chain_id = CHAIN_IDS.get(chain_hint, 1)
+            if chain_id == 7565164:
+                chain_id = 101
+        elif token_in == "SOL" or token_out == "SOL" or token_in in solana_only or token_out in solana_only:
+            chain_id = 101
+        elif token_in in evm_only or token_out in evm_only:
+            chain_id = 56
+        elif token_in in {"USDC", "USDT", "DAI"} and token_out in {"USDC", "USDT", "DAI"}:
+            chain_id = 101
+        else:
+            # Unknown ticker (typical meme on Solana) → default Solana so Jupiter
+            # gets a chance to resolve via the user's wallet token list.
+            chain_id = 101
+        return (
+            "build_swap_tx",
+            {
+                "chain_id": chain_id,
+                "token_in": token_in,
+                "token_out": token_out,
+                "amount_in": "ALL",
+                "from_addr": "",
+            },
+        )
+
+    # 2) "swap 0.1 SOL to USDC" — explicit numeric amount.
     pattern = re.compile(
         r"(?:swap|exchange|convert|trade)\s+(?:of\s+)?"
         r"(?P<amount>[\d,]+(?:\.\d+)?)\s*"
@@ -1011,7 +1132,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
         return multi_step
-    for detector in (_detect_aave_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_malicious_swap_plan, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_aave_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_simple, _detect_malicious_swap_plan, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected

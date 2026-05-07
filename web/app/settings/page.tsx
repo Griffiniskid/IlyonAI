@@ -2,8 +2,6 @@
 
 import { useWallet } from "@solana/wallet-adapter-react";
 import dynamic from "next/dynamic";
-import { useAuth, useUser } from "@/lib/hooks";
-import { useToast } from "@/components/ui/toaster";
 import AssistantWalletSettings from "@/components/agent-app/AssistantWalletSettings";
 
 // Dynamically import WalletMultiButton with SSR disabled to prevent hydration mismatch
@@ -16,38 +14,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Wallet,
-  Shield,
-  Loader2,
-  Check,
   ExternalLink,
   LogOut,
 } from "lucide-react";
 import { truncateAddress } from "@/lib/utils";
 
 export default function SettingsPage() {
-  const { connected, publicKey, disconnect, signMessage } = useWallet();
-  const { authenticate, isAuthenticating, logout } = useAuth();
-  const { data: user, isLoading: userLoading } = useUser();
-
-  const { addToast } = useToast();
-
-  const handleAuthenticate = async () => {
-    if (!signMessage) {
-      addToast("Your wallet does not support message signing. Try a different wallet.", "error");
-      return;
-    }
-    try {
-      await authenticate();
-      addToast("Successfully authenticated!", "success");
-    } catch (error: any) {
-      const message = error?.message || "Authentication failed";
-      if (message.includes("User rejected")) {
-        addToast("Signature request was rejected", "error");
-      } else {
-        addToast(`Authentication failed: ${message}`, "error");
-      }
-    }
-  };
+  const { connected, publicKey, disconnect } = useWallet();
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-3xl">
@@ -83,41 +56,6 @@ export default function SettingsPage() {
                 </Button>
               </div>
             </div>
-
-            {/* Authentication status */}
-            <div className="pt-4 border-t border-border">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium">Session Authentication</div>
-                  <div className="text-sm text-muted-foreground">
-                    Sign a message to access premium features
-                  </div>
-                </div>
-                {user ? (
-                  <div className="flex items-center gap-2">
-                    <Badge variant="safe">
-                      <Check className="h-3 w-3 mr-1" />
-                      Authenticated
-                    </Badge>
-                    <Button variant="outline" size="sm" onClick={logout}>
-                      Sign Out
-                    </Button>
-                  </div>
-                ) : (
-                  <Button
-                    onClick={handleAuthenticate}
-                    disabled={isAuthenticating}
-                  >
-                    {isAuthenticating ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    ) : (
-                      <Shield className="h-4 w-4 mr-2" />
-                    )}
-                    Authenticate
-                  </Button>
-                )}
-              </div>
-            </div>
           </div>
         ) : (
           <div className="text-center py-6">
@@ -130,31 +68,6 @@ export default function SettingsPage() {
         )}
         </GlassCard>
       </section>
-
-      {/* Account Stats */}
-      {user && (
-        <GlassCard className="mb-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Shield className="h-5 w-5 text-emerald-500" />
-            <h2 className="font-semibold">Account Statistics</h2>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 sm:gap-4">
-            <div className="text-center p-3 sm:p-4 bg-card/50 rounded-lg">
-              <div className="text-xl sm:text-2xl font-bold">{user.analyses_count}</div>
-              <div className="text-xs sm:text-sm text-muted-foreground">Analyses</div>
-            </div>
-            <div className="text-center p-3 sm:p-4 bg-card/50 rounded-lg">
-              <div className="text-xl sm:text-2xl font-bold">{user.tracked_wallets}</div>
-              <div className="text-xs sm:text-sm text-muted-foreground">Tracked</div>
-            </div>
-          </div>
-
-          <div className="mt-4 pt-4 border-t border-border text-sm text-muted-foreground">
-            Member since {new Date(user.created_at).toLocaleDateString()}
-          </div>
-        </GlassCard>
-      )}
 
       {/* Links */}
       <section>

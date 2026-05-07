@@ -40,7 +40,6 @@ export const navGroups: NavGroup[] = [
     items: [
       { label: "Hub", href: "/smart-money", icon: Radar },
       { label: "Whales", href: "/whales", icon: Droplets },
-      { label: "Entity", href: "/entity", icon: Briefcase },
     ],
   },
   {

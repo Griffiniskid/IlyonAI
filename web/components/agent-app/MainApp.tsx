@@ -4378,6 +4378,51 @@ export default function MainApp() {
   const [swapQuote, setSwapQuote]         = useState<{toAmount: string; rate: string; route: string} | null>(null);
   const [swapQuoteLoading, setSwapQuoteLoading] = useState(false);
   const [overviewSearch, setOverviewSearch] = useState("");
+  // Token picker: which side ("from" / "to") is currently open + search text.
+  const [swapPickerSide, setSwapPickerSide] = useState<"from" | "to" | null>(null);
+  const [swapPickerSearch, setSwapPickerSearch] = useState("");
+
+  // Curated token universe shown in the picker. Free-text input below this list
+  // lets the chat agent resolve tokens we don't list here (memes, new launches).
+  // Per-chain so connecting Phantom shows Solana memes, MetaMask shows EVM.
+  const SWAP_TOKEN_UNIVERSE: Record<string, { symbol: string; name: string; chain: string }[]> = {
+    solana: [
+      { symbol: "SOL", name: "Solana", chain: "Solana" },
+      { symbol: "USDC", name: "USD Coin", chain: "Solana" },
+      { symbol: "USDT", name: "Tether", chain: "Solana" },
+      { symbol: "BONK", name: "Bonk", chain: "Solana" },
+      { symbol: "WIF", name: "dogwifhat", chain: "Solana" },
+      { symbol: "JUP", name: "Jupiter", chain: "Solana" },
+      { symbol: "PYTH", name: "Pyth Network", chain: "Solana" },
+      { symbol: "RAY", name: "Raydium", chain: "Solana" },
+      { symbol: "ORCA", name: "Orca", chain: "Solana" },
+      { symbol: "JITOSOL", name: "Jito Staked SOL", chain: "Solana" },
+      { symbol: "MSOL", name: "Marinade SOL", chain: "Solana" },
+      { symbol: "POPCAT", name: "Popcat", chain: "Solana" },
+      { symbol: "PENGU", name: "Pudgy Penguins", chain: "Solana" },
+      { symbol: "FATPENGU", name: "Fat Penguin", chain: "Solana" },
+    ],
+    evm: [
+      { symbol: "BNB", name: "BNB", chain: "BSC" },
+      { symbol: "USDT", name: "Tether", chain: "BSC / Ethereum" },
+      { symbol: "USDC", name: "USD Coin", chain: "Ethereum / Base / Arbitrum" },
+      { symbol: "ETH", name: "Ether", chain: "Ethereum / L2" },
+      { symbol: "WBTC", name: "Wrapped BTC", chain: "Ethereum" },
+      { symbol: "DAI", name: "Dai", chain: "Ethereum" },
+      { symbol: "CAKE", name: "PancakeSwap", chain: "BSC" },
+      { symbol: "MATIC", name: "Polygon", chain: "Polygon" },
+      { symbol: "ARB", name: "Arbitrum", chain: "Arbitrum" },
+      { symbol: "OP", name: "Optimism", chain: "Optimism" },
+      { symbol: "AVAX", name: "Avalanche", chain: "Avalanche" },
+      { symbol: "LINK", name: "Chainlink", chain: "Ethereum" },
+      { symbol: "UNI", name: "Uniswap", chain: "Ethereum" },
+      { symbol: "AAVE", name: "Aave", chain: "Ethereum" },
+      { symbol: "STETH", name: "Lido Staked ETH", chain: "Ethereum" },
+      { symbol: "WSTETH", name: "Wrapped stETH", chain: "Ethereum" },
+      { symbol: "PEPE", name: "Pepe", chain: "Ethereum" },
+      { symbol: "SHIB", name: "Shiba Inu", chain: "Ethereum" },
+    ],
+  };
 
   // ── Live ticker prices ───────────────────────────────────────────────────
   const [livePrices, setLivePrices] = useState<Record<string, { price: string; change: string; pos: boolean }>>({
@@ -5941,13 +5986,18 @@ export default function MainApp() {
                               color: "#F8FAFC", fontSize: 34, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace",
                             }}
                           />
-                          <div style={{
-                            background: "rgba(255,255,255,0.06)", borderRadius: 16, padding: "10px 16px",
-                            color: "#F8FAFC", fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 6,
-                            border: "1px solid rgba(255,255,255,0.08)",
-                          }}>
+                          <button
+                            onClick={() => { setSwapPickerSide("from"); setSwapPickerSearch(""); }}
+                            style={{
+                              background: "rgba(255,255,255,0.06)", borderRadius: 16, padding: "10px 16px",
+                              color: "#F8FAFC", fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 8,
+                              border: "1px solid rgba(255,255,255,0.08)", cursor: "pointer", fontFamily: "inherit",
+                            }}
+                            title="Pick a token"
+                          >
                             {swapFromToken}
-                          </div>
+                            <span style={{ fontSize: 11, opacity: 0.65 }}>▾</span>
+                          </button>
                         </div>
                       </div>
 
@@ -5972,12 +6022,18 @@ export default function MainApp() {
                           <div style={{ flex: 1, color: swapQuote ? "#34D399" : "rgba(255,255,255,0.3)", fontSize: 34, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace" }}>
                             {swapQuoteLoading ? "…" : swapQuote?.toAmount ?? "0.0"}
                           </div>
-                          <div style={{
-                            background: "rgba(255,255,255,0.06)", borderRadius: 16, padding: "10px 16px",
-                            color: "#fff", fontWeight: 700, fontSize: 15, border: "1px solid rgba(255,255,255,0.08)",
-                          }}>
+                          <button
+                            onClick={() => { setSwapPickerSide("to"); setSwapPickerSearch(""); }}
+                            style={{
+                              background: "rgba(255,255,255,0.06)", borderRadius: 16, padding: "10px 16px",
+                              color: "#fff", fontWeight: 700, fontSize: 15, border: "1px solid rgba(255,255,255,0.08)",
+                              display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontFamily: "inherit",
+                            }}
+                            title="Pick a token"
+                          >
                             {swapToToken}
-                          </div>
+                            <span style={{ fontSize: 11, opacity: 0.65 }}>▾</span>
+                          </button>
                         </div>
                         {swapQuote && (
                           <div style={{ marginTop: 12, fontSize: 12, color: "rgba(196,181,253,0.9)", fontFamily: "'JetBrains Mono', monospace" }}>
@@ -6000,6 +6056,121 @@ export default function MainApp() {
                           >{from} → {to}</button>
                         ))}
                       </div>
+
+                      {/* Token picker — opens for either side. Curated list +
+                          free-text fallback so users can swap any ticker
+                          (memes, new launches) the agent can resolve. */}
+                      {swapPickerSide && (
+                        <div style={{
+                          background: "rgba(8,15,28,0.94)", border: "1px solid rgba(139,92,246,0.32)",
+                          borderRadius: 16, padding: 16, marginBottom: 14,
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                            <div style={{ fontSize: 12, color: "#C4B5FD", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                              Pick token to {swapPickerSide === "from" ? "pay" : "receive"}
+                            </div>
+                            <button
+                              onClick={() => { setSwapPickerSide(null); setSwapPickerSearch(""); }}
+                              style={{ background: "none", border: "none", color: "#F87171", cursor: "pointer", fontSize: 18, lineHeight: 1, fontFamily: "inherit" }}
+                              aria-label="Close picker"
+                            >✕</button>
+                          </div>
+                          <input
+                            value={swapPickerSearch}
+                            onChange={(e) => setSwapPickerSearch(e.target.value)}
+                            placeholder="Search by symbol or name (e.g. FATPENGU)"
+                            autoFocus
+                            style={{
+                              width: "100%", padding: "10px 12px", borderRadius: 10,
+                              border: "1px solid rgba(255,255,255,0.1)", background: "rgba(15,23,42,0.7)",
+                              color: "#fff", fontSize: 13, marginBottom: 10, fontFamily: "inherit", outline: "none",
+                            }}
+                          />
+                          <div style={{ maxHeight: 240, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+                            {(() => {
+                              const isPhantom = walletType === "phantom";
+                              const universe = isPhantom
+                                ? SWAP_TOKEN_UNIVERSE.solana
+                                : SWAP_TOKEN_UNIVERSE.evm;
+                              const q = swapPickerSearch.trim().toUpperCase();
+                              const filtered = q
+                                ? universe.filter(t => t.symbol.includes(q) || t.name.toUpperCase().includes(q))
+                                : universe;
+                              const exactMatch = filtered.some(t => t.symbol === q);
+                              const otherChainHits = q
+                                ? (isPhantom ? SWAP_TOKEN_UNIVERSE.evm : SWAP_TOKEN_UNIVERSE.solana)
+                                    .filter(t => t.symbol.includes(q) || t.name.toUpperCase().includes(q))
+                                : [];
+                              const pickToken = (sym: string) => {
+                                if (swapPickerSide === "from") setSwapFromToken(sym);
+                                else setSwapToToken(sym);
+                                setSwapPickerSide(null);
+                                setSwapPickerSearch("");
+                              };
+                              return (
+                                <>
+                                  {filtered.map(t => (
+                                    <button
+                                      key={`${t.symbol}-${t.chain}`}
+                                      onClick={() => pickToken(t.symbol)}
+                                      style={{
+                                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                                        width: "100%", padding: "10px 12px", borderRadius: 10, border: "none",
+                                        background: "rgba(15,23,42,0.55)", color: "#F8FAFC", cursor: "pointer",
+                                        textAlign: "left", fontFamily: "inherit",
+                                      }}
+                                    >
+                                      <span style={{ fontWeight: 800, fontSize: 14 }}>{t.symbol}</span>
+                                      <span style={{ color: "rgba(148,163,184,0.75)", fontSize: 12 }}>{t.name} · {t.chain}</span>
+                                    </button>
+                                  ))}
+                                  {q && !exactMatch && (
+                                    <button
+                                      onClick={() => pickToken(q)}
+                                      style={{
+                                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                                        width: "100%", padding: "10px 12px", borderRadius: 10,
+                                        border: "1px dashed rgba(139,92,246,0.4)", background: "rgba(139,92,246,0.08)",
+                                        color: "#C4B5FD", cursor: "pointer", textAlign: "left", fontFamily: "inherit",
+                                      }}
+                                    >
+                                      <span style={{ fontWeight: 800 }}>Use "{q}"</span>
+                                      <span style={{ fontSize: 12 }}>Custom · agent will resolve</span>
+                                    </button>
+                                  )}
+                                  {otherChainHits.length > 0 && (
+                                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                                      <div style={{ fontSize: 10, color: "rgba(148,163,184,0.6)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
+                                        Also on {isPhantom ? "EVM" : "Solana"}
+                                      </div>
+                                      {otherChainHits.map(t => (
+                                        <button
+                                          key={`alt-${t.symbol}-${t.chain}`}
+                                          onClick={() => pickToken(t.symbol)}
+                                          style={{
+                                            display: "flex", justifyContent: "space-between", alignItems: "center",
+                                            width: "100%", padding: "8px 12px", borderRadius: 10, border: "none",
+                                            background: "rgba(15,23,42,0.35)", color: "rgba(226,232,240,0.85)",
+                                            cursor: "pointer", textAlign: "left", fontFamily: "inherit", marginBottom: 4,
+                                          }}
+                                        >
+                                          <span style={{ fontWeight: 700, fontSize: 13 }}>{t.symbol}</span>
+                                          <span style={{ color: "rgba(148,163,184,0.6)", fontSize: 11 }}>{t.chain}</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {filtered.length === 0 && !q && (
+                                    <div style={{ padding: 16, textAlign: "center", color: "rgba(148,163,184,0.6)", fontSize: 13 }}>
+                                      No tokens — type a symbol above to add a custom one.
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
 
                       {!connectedWallet && !solanaWallet ? (
                         <button onClick={() => setShowAuth(true)} style={{

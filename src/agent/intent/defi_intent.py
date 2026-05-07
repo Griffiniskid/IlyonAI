@@ -80,11 +80,17 @@ def _parse_risk_levels(text: str) -> list[str]:
     levels: list[str] = []
     if re.search(r"medium\s*(?:and|/|-|to)?\s*high|medium[- ]high", lowered):
         return ["MEDIUM", "HIGH"]
-    if any(term in lowered for term in ("safe", "conservative", "low risk", "low-risk")):
+    if any(term in lowered for term in (
+        "safe", "safest", "conservative", "low risk", "low-risk",
+        "minimum risk", "min risk", "minimal risk", "lowest risk",
+        "least risk", "lowest-risk", "minimum-risk",
+    )):
         levels.append("LOW")
     if re.search(r"\bmedium(?:\s+risk|-risk)?\b", lowered):
         levels.append("MEDIUM")
-    if any(term in lowered for term in ("aggressive", "high risk", "high-risk")):
+    if any(term in lowered for term in (
+        "aggressive", "high risk", "high-risk", "highest risk", "max risk", "maximum risk",
+    )):
         levels.append("HIGH")
     return [level for level in ("LOW", "MEDIUM", "HIGH") if level in levels]
 

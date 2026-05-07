@@ -75,6 +75,83 @@ async def build_swap_tx(
     chain = "solana" if chain_id == 101 else "evm"
     slippage_bps = 50 if chain == "solana" else 100
 
+    # ── "swap all X to Y" path ───────────────────────────────────────────
+    # Sentinel "ALL" means: read the user's current balance for token_in
+    # from the wallet scanner, convert to base units, then proceed as a
+    # normal numeric swap. Done here (not in the detector) so we have ctx.
+    if isinstance(amount_in, str) and amount_in.strip().upper() in ("ALL", "MAX", "ENTIRE", "EVERYTHING", "100%"):
+        sol_wallet_addr = (getattr(ctx, "solana_wallet", "") or "").split(",")[0].strip()
+        evm_wallet_addr = (getattr(ctx, "evm_wallet", "") or "").split(",")[0].strip()
+        primary_addr = (getattr(ctx, "wallet", "") or "").split(",")[0].strip()
+        scan_addr = (sol_wallet_addr if chain == "solana" else evm_wallet_addr) or primary_addr
+        if not scan_addr:
+            return err_envelope(
+                code="swap_failed",
+                message=f"Connect a {'Solana' if chain == 'solana' else 'EVM'} wallet so I can read your {token_in} balance.",
+            )
+        try:
+            from IlyonAi_Wallet_assistant_main.server.app.agents.crypto_agent import (
+                get_smart_wallet_balance,
+            )
+        except Exception as exc:
+            return err_envelope(code="swap_failed", message=f"Balance lookup unavailable: {exc}")
+        raw_balance = await asyncio.to_thread(
+            get_smart_wallet_balance,
+            scan_addr,
+            evm_wallet_addr or primary_addr,
+            sol_wallet_addr,
+        )
+        try:
+            balance_doc = json.loads(raw_balance) if isinstance(raw_balance, str) else (raw_balance or {})
+        except Exception:
+            balance_doc = {}
+        sym_target = str(token_in).upper()
+        matched_amount = None
+        matched_decimals = None
+        matched_mint = None
+        for entry in (balance_doc.get("balances") or []):
+            native_sym = str(entry.get("native_symbol") or "").upper()
+            if native_sym == sym_target:
+                matched_amount = float(entry.get("native_balance") or 0)
+                # Native decimals: SOL=9, EVM=18.
+                matched_decimals = 9 if (entry.get("chain") == "Solana") else 18
+                break
+            for tok in (entry.get("tokens") or []):
+                if str(tok.get("symbol") or "").upper() == sym_target:
+                    matched_amount = float(tok.get("balance") or 0)
+                    matched_decimals = int(tok.get("decimals") or 0) or None
+                    matched_mint = tok.get("mint") or tok.get("address") or None
+                    break
+            if matched_amount is not None:
+                break
+        if matched_amount is None or matched_amount <= 0:
+            return err_envelope(
+                code="swap_failed",
+                message=f"No {sym_target} balance found in your wallet.",
+            )
+        # Decimals fallback by symbol if the scanner didn't return one.
+        if not matched_decimals:
+            if chain == "solana":
+                _SOL_DEC_FALLBACK = {"SOL": 9, "WSOL": 9, "USDC": 6, "USDT": 6, "BONK": 5,
+                                     "JUP": 6, "PYTH": 6, "RAY": 6, "ORCA": 6, "JITOSOL": 9,
+                                     "MSOL": 9, "STSOL": 9}
+                matched_decimals = _SOL_DEC_FALLBACK.get(sym_target, 6)
+            else:
+                matched_decimals = 18
+        # Leave a small dust buffer on natives so signing doesn't fail on gas.
+        if (chain == "solana" and sym_target == "SOL") or (chain == "evm" and sym_target in {"BNB", "ETH", "MATIC", "AVAX"}):
+            matched_amount = max(0.0, matched_amount - (0.001 if chain == "solana" else 0.002))
+            if matched_amount <= 0:
+                return err_envelope(
+                    code="swap_failed",
+                    message=f"Native {sym_target} balance too small after gas reserve.",
+                )
+        amount_in = str(int(matched_amount * (10 ** matched_decimals)))
+        # If the scanner gave us the actual mint address, use it directly so
+        # Jupiter doesn't need to symbol-resolve a meme like FATPENGU.
+        if chain == "solana" and matched_mint:
+            token_in = matched_mint
+
     # Jupiter's quote API requires real SPL mint addresses, not symbols. Resolve
     # the common ones inline so intent-time routing can pass plain symbols.
     if chain == "solana":

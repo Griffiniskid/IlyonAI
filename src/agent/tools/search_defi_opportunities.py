@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.agent.protocol_urls import protocol_app_url
 from src.agent.tools._base import err_envelope, ok_envelope
 from src.defi.execution.capabilities import build_default_registry
 from src.defi.search.models import OpportunityCandidate, OpportunitySearchRequest
@@ -20,9 +21,14 @@ def _build_source_urls(*, protocol_slug: str, pool_id: str | None, project_url: 
     urls: dict[str, str] = {}
     if pool_id:
         urls["defillama_pool"] = f"https://defillama.com/yields/pool/{pool_id}"
-    if protocol_slug:
+    # Prefer the protocol's own app URL (where the user can actually deposit).
+    # Fall back to DefiLlama's protocol page only if we have nothing else.
+    app_url = protocol_app_url(protocol_slug, project_url=project_url)
+    if app_url:
+        urls["protocol_app"] = app_url
+    elif protocol_slug:
         urls["defillama_protocol"] = f"https://defillama.com/protocol/{protocol_slug}"
-    if project_url:
+    if project_url and project_url != app_url:
         urls["protocol_site"] = project_url
     return urls
 
@@ -94,9 +100,12 @@ def _opportunity_card_payload(
         link_entries: list[dict[str, str]] = []
         if urls.get("defillama_pool"):
             link_entries.append({"label": "DefiLlama pool", "url": urls["defillama_pool"]})
-        if urls.get("defillama_protocol"):
-            link_entries.append({"label": f"{item.get('protocol', 'Protocol')} on DefiLlama", "url": urls["defillama_protocol"]})
-        if urls.get("protocol_site"):
+        protocol_label = item.get("protocol", "Protocol")
+        if urls.get("protocol_app"):
+            link_entries.append({"label": f"Open in {protocol_label}", "url": urls["protocol_app"]})
+        elif urls.get("defillama_protocol"):
+            link_entries.append({"label": f"{protocol_label} on DefiLlama", "url": urls["defillama_protocol"]})
+        if urls.get("protocol_site") and urls.get("protocol_site") != urls.get("protocol_app"):
             link_entries.append({"label": "Protocol site", "url": urls["protocol_site"]})
         items.append({
             "protocol": item.get("protocol"),
