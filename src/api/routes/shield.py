@@ -265,8 +265,17 @@ async def prepare_revoke(request: web.Request) -> web.Response:
 
 
 async def get_shield_status(request: web.Request) -> web.Response:
-    """GET /api/v1/shield/status — report per-chain API key availability."""
-    chain_keys = {
+    """GET /api/v1/shield/status — report per-chain coverage availability.
+
+    Moralis Wallet API is the primary source; an Etherscan-family key counts
+    as a fallback. A chain is "available" if at least one source has a key.
+    """
+    import os
+    moralis_present = bool(
+        (os.environ.get("MORALIS_API_KEYS") or os.environ.get("MORALIS_API_KEY") or "").strip()
+        or (settings.moralis_api_key or "").strip()
+    )
+    etherscan_keys = {
         "ethereum": settings.etherscan_api_key,
         "bsc": settings.bscscan_api_key,
         "polygon": settings.polygonscan_api_key,
@@ -276,11 +285,19 @@ async def get_shield_status(request: web.Request) -> web.Response:
         "avalanche": settings.snowtrace_api_key,
     }
     chains = {}
-    for chain_name, key in chain_keys.items():
-        available = bool(key and key.strip())
+    for chain_name, etherscan_key in etherscan_keys.items():
+        has_etherscan = bool(etherscan_key and etherscan_key.strip())
+        available = moralis_present or has_etherscan
+        if available:
+            reason = None
+            source = "moralis" if moralis_present else "etherscan"
+        else:
+            reason = "No Moralis key and no Etherscan-family key configured"
+            source = None
         chains[chain_name] = {
             "available": available,
-            "reason": None if available else "API key not configured",
+            "reason": reason,
+            "source": source,
         }
     return envelope_response({"chains": chains}, meta={"surface": "shield_status"})
 

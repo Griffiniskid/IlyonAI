@@ -3,9 +3,16 @@ Shield / Approval Manager module.
 
 Scans wallet token approvals across EVM chains and Solana,
 scores each approval for risk, and prepares revoke transactions.
+
+Approval discovery uses the existing Moralis Wallet API (already configured
+for portfolio scans), so no Etherscan-family API keys are required to make
+Shield functional. The legacy Etherscan path is kept as a fallback when no
+Moralis key is configured.
 """
 
+import asyncio
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 import aiohttp
@@ -15,6 +22,30 @@ from src.chains.registry import ChainRegistry
 from src.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+# Moralis chain identifiers per supported EVM chain.
+_MORALIS_CHAIN_BY_TYPE = {
+    ChainType.ETHEREUM: "eth",
+    ChainType.BSC: "bsc",
+    ChainType.POLYGON: "polygon",
+    ChainType.ARBITRUM: "arbitrum",
+    ChainType.BASE: "base",
+    ChainType.OPTIMISM: "optimism",
+    ChainType.AVALANCHE: "avalanche",
+}
+
+
+def _moralis_keys() -> List[str]:
+    """Return the same key pool the wallet-balance scanner uses (rotator
+    avoids 401-on-quota-exhaust). Reads MORALIS_API_KEYS (csv) then
+    MORALIS_API_KEY then settings.moralis_api_key."""
+    raw = os.environ.get("MORALIS_API_KEYS") or os.environ.get("MORALIS_API_KEY") or ""
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    if parts:
+        return parts
+    cfg = (settings.moralis_api_key or "").strip()
+    return [cfg] if cfg else []
 
 # Known safe spenders (major DEX routers, well-audited protocols)
 KNOWN_SAFE_SPENDERS = {
@@ -87,12 +118,106 @@ class ApprovalScanner:
         }
         return configs.get(chain, ("", ""))
 
+    async def _moralis_get_approvals(self, wallet: str, chain: ChainType) -> Optional[List[Dict[str, Any]]]:
+        """Fetch approvals via Moralis Wallet API. Returns None when no key
+        is configured or the chain isn't supported by Moralis. Returns [] on
+        empty/error so callers can fall back to Etherscan if desired."""
+        moralis_chain = _MORALIS_CHAIN_BY_TYPE.get(chain)
+        if not moralis_chain:
+            return None
+        keys = _moralis_keys()
+        if not keys:
+            return None
+
+        session = await self._get_session()
+        url = f"https://deep-index.moralis.io/api/v2.2/wallets/{wallet}/approvals"
+        params = {"chain": moralis_chain}
+
+        for key in keys:
+            headers = {"accept": "application/json", "X-API-Key": key}
+            try:
+                async with session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=12)) as resp:
+                    if resp.status == 401:
+                        # Quota or invalid — try next rotator key.
+                        continue
+                    if resp.status != 200:
+                        logger.warning("Moralis approvals %s: HTTP %s", chain.display_name, resp.status)
+                        return []
+                    body = await resp.json()
+            except Exception as exc:
+                logger.warning("Moralis approvals fetch failed for %s: %s", chain.display_name, exc)
+                return []
+
+            # Moralis shape: {"result": [{"token": {address, symbol, name, ...},
+            #                            "spender": {address, entity, label, ...},
+            #                            "value": "<wei str or unlimited>",
+            #                            "value_formatted": "...",
+            #                            "block_number": "...",
+            #                            "transaction_hash": "...",
+            #                            "block_timestamp": "..."}]}
+            results = body.get("result") if isinstance(body, dict) else None
+            if not isinstance(results, list):
+                return []
+            approvals: List[Dict[str, Any]] = []
+            for item in results:
+                if not isinstance(item, dict):
+                    continue
+                token = item.get("token") or {}
+                spender = item.get("spender") or {}
+                token_addr = (token.get("address") or "").lower()
+                spender_addr = (spender.get("address") or "").lower()
+                if not token_addr or not spender_addr:
+                    continue
+                raw_value = item.get("value") or ""
+                # Moralis returns the raw uint256 as decimal string. Convert
+                # to "unlimited" sentinel when it exceeds the 200-bit threshold.
+                try:
+                    val_int = int(raw_value)
+                    allowance = "unlimited" if val_int >= 2**200 else str(val_int)
+                except Exception:
+                    allowance = "unlimited" if str(raw_value).lower() == "unlimited" else str(raw_value or "unknown")
+                try:
+                    block_num = int(item.get("block_number") or 0)
+                except Exception:
+                    block_num = 0
+                approvals.append({
+                    "token_address": token_addr,
+                    "spender_address": spender_addr,
+                    "allowance": allowance,
+                    "block_number": block_num,
+                    "chain": chain.value,
+                    # Pre-fill metadata Moralis already gave us so we skip
+                    # the per-token RPC roundtrip in _enrich_approval.
+                    "token_symbol": token.get("symbol"),
+                    "token_name": token.get("name"),
+                    "token_logo": token.get("logo"),
+                    "spender_name": spender.get("entity_label") or spender.get("entity") or spender.get("label"),
+                    "spender_is_verified": bool(spender.get("verified_contract")),
+                    "approved_at": item.get("block_timestamp"),
+                })
+            # Dedupe by (token, spender) — Moralis can return historical events.
+            deduped: Dict[str, Dict[str, Any]] = {}
+            for a in approvals:
+                key_str = f"{a['token_address']}:{a['spender_address']}"
+                # Keep the highest block_number per pair (latest state).
+                if key_str not in deduped or a["block_number"] > deduped[key_str]["block_number"]:
+                    deduped[key_str] = a
+            return list(deduped.values())
+
+        return []  # all keys exhausted
+
     async def get_evm_approvals(self, wallet: str, chain: ChainType) -> List[Dict[str, Any]]:
         """
         Fetch ERC-20 Approval events for a wallet on an EVM chain.
 
-        Uses Etherscan-family API to get Transfer and Approval event logs.
+        Tries Moralis first (already-configured key, no Etherscan API needed).
+        Falls back to Etherscan-family event logs only if no Moralis key is
+        configured.
         """
+        moralis_result = await self._moralis_get_approvals(wallet, chain)
+        if moralis_result is not None:
+            return moralis_result
+
         api_url, api_key = self._get_explorer_api(chain)
         if not api_url:
             return []
@@ -175,7 +300,10 @@ class ApprovalScanner:
 
         risk_score = 50
         risk_reasons = []
-        spender_name = None
+        # Honour any name/verified flag the upstream source (Moralis) already
+        # populated; only override when KNOWN_SAFE_SPENDERS has a stronger label.
+        spender_name = approval.get("spender_name")
+        moralis_verified = bool(approval.get("spender_is_verified"))
         is_known_safe = False
 
         # Check against known safe list
@@ -186,7 +314,7 @@ class ApprovalScanner:
                 is_known_safe = True
             elif risk_tier == "medium":
                 risk_score = 35
-        elif spender_verified:
+        elif spender_verified or moralis_verified:
             risk_score = 40
         else:
             risk_score = 65
@@ -211,7 +339,7 @@ class ApprovalScanner:
         return {
             **approval,
             "spender_name": spender_name,
-            "spender_is_verified": spender_verified or is_known_safe,
+            "spender_is_verified": spender_verified or moralis_verified or is_known_safe,
             "risk_score": risk_score,
             "risk_level": risk_level,
             "risk_reasons": risk_reasons,
@@ -249,6 +377,10 @@ class ApprovalScanner:
 
     async def _enrich_approval(self, approval: Dict[str, Any]) -> Dict[str, Any]:
         """Attach token metadata to an approval when available."""
+        # Skip RPC roundtrip if Moralis already supplied symbol+name (the
+        # common case) — saves ~150ms × N approvals on a typical scan.
+        if approval.get("token_symbol") and approval.get("token_name"):
+            return approval
         token_address = approval.get("token_address")
         chain_name = approval.get("chain")
         if not token_address or not chain_name:
