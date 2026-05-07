@@ -221,6 +221,22 @@ export default function ShieldPage() {
   const [revokeResult, setRevokeResult] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  // Tell the user up front if scanner coverage is incomplete (missing
+  // Etherscan / BscScan / etc API keys → 0 approvals across the board).
+  const { data: shieldStatus } = useQuery<{ chains: Record<string, { available: boolean; reason: string | null }> }>({
+    queryKey: ["shield-status"],
+    queryFn: async () => {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
+      const res = await fetch(`${apiBase}/api/v1/shield/status`);
+      const json = await res.json();
+      return json?.data ?? json ?? { chains: {} };
+    },
+    staleTime: 5 * 60_000,
+  });
+  const unavailableChains = shieldStatus?.chains
+    ? Object.entries(shieldStatus.chains).filter(([, v]) => !v.available).map(([c]) => c)
+    : [];
+
   const { data, isLoading, error } = useQuery({
     queryKey: ["shield", wallet, chainFilter],
     queryFn: () =>
@@ -286,6 +302,24 @@ export default function ShieldPage() {
           Scan your wallet for risky token approvals across all EVM chains and revoke them in one click
         </p>
       </div>
+
+      {/* Coverage banner — visible only when API keys are missing. */}
+      {unavailableChains.length > 0 && (
+        <GlassCard className="mb-6 border-yellow-500/30">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-yellow-400 mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <p className="font-semibold text-yellow-300 mb-1">Limited scanner coverage</p>
+              <p className="text-muted-foreground">
+                Block-explorer API keys are not configured for{" "}
+                <span className="font-mono text-yellow-200">{unavailableChains.join(", ")}</span>.
+                Approvals on these chains may not appear in scan results until the operator
+                adds keys (Etherscan / BscScan / Polygonscan / Arbiscan / Basescan / Optimism Etherscan / Snowtrace).
+              </p>
+            </div>
+          </div>
+        </GlassCard>
+      )}
 
       {/* Search */}
       <GlassCard className="mb-6">

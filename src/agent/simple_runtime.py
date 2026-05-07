@@ -262,6 +262,24 @@ def _pre_tool_reasoning(tool_name: str, tool_input: dict, message: str) -> list[
             "Preparing wallet-safe signing guidance; the agent never touches private keys.",
         ]
     if tool_name == "build_swap_tx":
+        # If token_out matches a canonical LST, this is a stake intent — describe
+        # it as staking so the live-reasoning panel matches the user's request.
+        token_out_addr = str(tool_input.get("token_out", "")).lower()
+        token_in_sym = str(tool_input.get("token_in", "")).upper()
+        lst_match = next(
+            (info for (sym, _cid), info in _LST_BY_TOKEN_CHAIN.items()
+             if info[0].lower() == token_out_addr and sym == token_in_sym),
+            None,
+        )
+        if lst_match:
+            lst_protocol = lst_match[1]
+            return [
+                f"Parsed stake intent: {token_in_sym} → {lst_protocol} liquid staking ({_short_json(tool_input)}).",
+                f"Routing through Enso/Jupiter into the canonical {lst_protocol} LST so the staked balance stays liquid.",
+                "Validating slippage and price impact before producing the unsigned transaction.",
+                "Building an unsigned transaction so the wallet can review the exact spend and approval.",
+                "Preparing wallet-safe signing guidance; the agent never holds keys — the user signs in their wallet.",
+            ]
         return [
             f"Parsed swap intent: {_short_json(tool_input)}.",
             "Resolving token pair, chain, decimals, and amount before requesting an aggregator route.",

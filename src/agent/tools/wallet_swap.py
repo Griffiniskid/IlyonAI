@@ -231,6 +231,24 @@ async def build_swap_tx(
     chain_type = parsed.get("chain_type", "evm")
     router = "jupiter" if chain_type == "solana" else "enso"
 
+    # Override "Token" placeholder when token_out is a canonical LST. Enso/Jupiter
+    # don't always know the symbol of niche LSTs (slisBNB, jitoSOL, MATICX, sAVAX),
+    # so the chat would otherwise display "Token" in the preview card.
+    _LST_ADDRESS_TO_LABEL = {
+        "0xb0b84d294e0c75a6abe60171b70edeb2efd14a1b": ("slisBNB", "Lista DAO liquid staking"),
+        "0xae7ab96520de3a18e5e111b5eaab095312d7fe84": ("stETH", "Lido liquid staking"),
+        "0xfa68fb4628dff1028cfec22b4162fccd0d45efb6": ("MATICX", "Stader liquid staking"),
+        "0x2b2c81e08f1af8835a78bb2a90ae924ace0ea4be": ("sAVAX", "Benqi liquid staking"),
+        "j1toso1uck3rlmjorhttrvwy9hj7x8v9yyac6y7kgcpn": ("jitoSOL", "Jito liquid staking"),
+    }
+    out_addr_norm = str(token_out).lower() if isinstance(token_out, str) else ""
+    lst_meta = _LST_ADDRESS_TO_LABEL.get(out_addr_norm)
+    if lst_meta:
+        parsed["to_token_symbol"] = lst_meta[0]
+        parsed["out_symbol"] = lst_meta[0]
+        parsed["route_summary"] = lst_meta[1]
+        parsed.setdefault("action_label", "stake")
+
     # Enrich Solana payloads so the legacy SimulationPreview parser shows the
     # real symbols and human-readable amounts. _build_jupiter_swap_tx returns
     # only out_amount + tx.serialized; the front-end parser falls back to "Token"
