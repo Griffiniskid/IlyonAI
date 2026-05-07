@@ -1725,7 +1725,13 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
                         # Fallback: pick the last two valid-looking tickers,
                         # routing every English noise word ("WALLET", "FROM",
                         # "MY", chain names, etc) through the central STOP_WORDS list.
-                        all_tokens = re.findall(r"[A-Za-z]{2,10}", message)
+                        # Reject when the message contains a URL or 0x address —
+                        # neither is a swap-able ticker.
+                        if re.search(r"https?://|0x[0-9a-fA-F]{40}", message):
+                            return None
+                        # Strip URL-ish hostname noise before extracting tokens.
+                        clean_msg = re.sub(r"https?://\S+", " ", message)
+                        all_tokens = re.findall(r"[A-Za-z]{2,10}", clean_msg)
                         candidates = filter_symbol_candidates(all_tokens)
                         if len(candidates) < 2:
                             return None

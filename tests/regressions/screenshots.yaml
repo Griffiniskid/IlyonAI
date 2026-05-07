@@ -48,3 +48,21 @@ cases:
     description: "buy with ETH source, PENGU is Solana-native -> cross-chain reject"
     # PENGU only on Solana, ETH not on Solana → reject (no cross-chain buy yet).
     expect_tool: null
+
+  - id: bug007_url_injected_as_token
+    input: "swap 100 https://example.com to usdc"
+    description: "live smoke: URL host (COM) misparsed as ticker on production"
+    expect_tool: null
+
+  - id: bug008_evm_address_as_token
+    input: "swap 100 0x0000000000000000000000000000000000000000 to usdc"
+    description: "0x address as ticker — must refuse"
+    expect_tool: null
+
+  - id: bug009_guest_wallet_leaks_to_aggregator
+    input: "swap 100 usdc to weth"
+    description: "guest detect_intent OK; live build_swap_tx wallet check elsewhere"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "USDC"
+    expect_token_out: "WETH"
+    expect_chain_id: 1

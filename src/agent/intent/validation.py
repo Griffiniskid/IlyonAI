@@ -441,7 +441,7 @@ def translate_aggregator_error(raw: str | None) -> str:
     # Jupiter userPublicKey errors) — almost always a guest with no wallet.
     if ("fromaddress is not a valid address" in low
             or "fromaddress invalid" in low
-            or "userpublickey" in low and "invalid" in low
+            or ("userpublickey" in low and ("invalid" in low or "format" in low))
             or "is not a valid address" in low):
         return "Connect a wallet (MetaMask for EVM, Phantom for Solana) and retry the swap."
 
