@@ -749,6 +749,48 @@ _LST_BY_TOKEN_CHAIN: dict[tuple[str, int], tuple[str, str]] = {
 }
 
 
+_STAKE_ALL_RE = re.compile(
+    r"^\s*stake\s+(?:all|max|entire(?:\s+balance)?|everything|100%)\s+"
+    r"(?:of\s+)?(?:my\s+)?"
+    r"(?P<token>[A-Za-z][A-Za-z0-9$._-]{0,15})"
+    r"(?:\s+(?:from|in)\s+(?:my\s+)?wallet)?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_stake_all(message: str) -> tuple[str, dict] | None:
+    """'stake all my SOL' / 'stake all BNB' → LST swap with amount=ALL.
+
+    Routes through build_swap_tx so the swap-all balance lookup substitutes the
+    user's full chain balance (minus a gas reserve) at execution time.
+    """
+    m = _STAKE_ALL_RE.search(message)
+    if not m:
+        return None
+    if "idle" in message.lower():
+        return None  # let _detect_stake_amount_plan idle path handle it
+    token = m.group("token").upper()
+    if token in _NOT_A_SYMBOL:
+        return None
+    chain_id_by_token = {"SOL": 101, "ETH": 1, "BNB": 56, "MATIC": 137, "AVAX": 43114}
+    chain_id = chain_id_by_token.get(token)
+    if not chain_id:
+        return None
+    lst_target = _LST_BY_TOKEN_CHAIN.get((token, chain_id))
+    if not lst_target:
+        return None
+    return (
+        "build_swap_tx",
+        {
+            "chain_id": chain_id,
+            "token_in": token,
+            "token_out": lst_target[0],
+            "amount_in": "ALL",
+            "from_addr": "",
+        },
+    )
+
+
 def _detect_stake_simple(message: str) -> tuple[str, dict] | None:
     """Match bare 'stake 0.1 bnb' / 'stake 1 sol' (no protocol qualifier).
 
@@ -814,6 +856,16 @@ _SWAP_ALL_RE = re.compile(
     r"(?:\s+on\s+(?P<chain>\w+))?",
     re.IGNORECASE,
 )
+
+# "sell all FATPENGU" / "dump all SHIB" — destination defaults to USDC.
+_SELL_ALL_RE = re.compile(
+    r"^\s*(?:sell|dump)\s+"
+    r"(?:all|max|maximum|entire(?:\s+balance)?|everything|100%|whole(?:\s+balance)?)"
+    r"\s+(?:of\s+)?(?:my\s+)?"
+    r"(?P<tin>[A-Za-z][A-Za-z0-9$._-]{0,15})"
+    r"(?:\s+(?:from|in)\s+(?:my\s+)?wallet)?\s*$",
+    re.IGNORECASE,
+)
 _NOT_A_SYMBOL = {"WALLET", "MY", "FROM", "INTO", "TO", "FOR", "OF", "ALL", "MAX", "ENTIRE", "EVERYTHING"}
 
 
@@ -826,6 +878,35 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
     sentinel `amount_in == "ALL"` is forwarded so the swap tool can substitute the
     user's actual wallet balance at execution time.
     """
+    # 1a) "sell all FATPENGU" — destination implied USDC. Map well-known
+    # tokens to their canonical home chain so the swap-all balance lookup
+    # scans the right wallet.
+    sell_all_match = _SELL_ALL_RE.search(message)
+    if sell_all_match:
+        token_in = sell_all_match.group("tin").upper()
+        if token_in not in _NOT_A_SYMBOL and token_in != "USDC":
+            chain_id_by_token = {
+                "BNB": 56, "CAKE": 56, "BUSD": 56, "WBNB": 56,
+                "MATIC": 137, "POL": 137,
+                "AVAX": 43114,
+                "ARB": 42161, "OP": 10,
+                "SHIB": 1, "PEPE": 1, "ETH": 1, "WETH": 1,
+                "SOL": 101, "BONK": 101, "JUP": 101, "PYTH": 101, "RAY": 101,
+                "ORCA": 101, "MSOL": 101, "JITOSOL": 101, "STSOL": 101,
+                "FATPENGU": 101, "PENGU": 101, "WIF": 101, "POPCAT": 101,
+            }
+            chain_id = chain_id_by_token.get(token_in, 101)
+            return (
+                "build_swap_tx",
+                {
+                    "chain_id": chain_id,
+                    "token_in": token_in,
+                    "token_out": "USDC",
+                    "amount_in": "ALL",
+                    "from_addr": "",
+                },
+            )
+
     # 1) "swap all/max/entire X to Y" — no numeric amount, look up balance later.
     all_match = _SWAP_ALL_RE.search(message)
     if all_match:
@@ -875,7 +956,32 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
     )
     m = pattern.search(message)
     if not m:
-        return None
+        # 3) "sell 100 SHIB" / "dump 0.5 BONK" — destination defaults to USDC.
+        sell_pattern = re.compile(
+            r"(?:sell|dump)\s+(?P<amount>[\d,]+(?:\.\d+)?)\s*"
+            r"(?P<tin>[A-Za-z]{2,10})"
+            r"(?:\s+(?:to|for|into)\s+(?P<tout>[A-Za-z]{2,10}))?"
+            r"(?:\s+on\s+(?P<chain>\w+))?\s*$",
+            re.IGNORECASE,
+        )
+        sm = sell_pattern.search(message)
+        if not sm:
+            return None
+        # Synthesise the same group dict so the rest of the function works.
+        m = sm
+        # Force a USDC destination when none specified.
+        if not sm.group("tout"):
+            class _Wrap:
+                def __init__(self, real, override_tout):
+                    self._real = real
+                    self._override = override_tout
+                def group(self, name):
+                    if name == "tout":
+                        return self._override
+                    return self._real.group(name)
+                def groups(self):
+                    return self._real.groups()
+            m = _Wrap(sm, "USDC")
     token_in = m.group("tin").upper()
     token_out = m.group("tout").upper()
     if "MALICIOUS" in (token_in, token_out):
@@ -1265,7 +1371,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
         return multi_step
-    for detector in (_detect_aave_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_aave_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
