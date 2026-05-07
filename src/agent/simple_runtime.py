@@ -585,12 +585,35 @@ def _detect_swap_then_lp(message: str) -> tuple[str, dict] | None:
     )
 
 
+def _is_valid_recipient(addr: str) -> bool:
+    """Reject English noise like 'me' / 'alice' / 'bob' as transfer recipients.
+
+    Only accept what looks like an EVM address (0x... 42-char) or a Solana
+    base58 pubkey (32-44 chars), or an ENS name (.eth / .sol).
+    """
+    if not addr:
+        return False
+    s = addr.strip()
+    if s.lower().startswith("0x") and len(s) == 42:
+        return True
+    if re.match(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$", s):
+        return True
+    if re.match(r"^[a-z0-9-]+\.(eth|sol|crypto|x|nft)$", s, re.IGNORECASE):
+        return True
+    return False
+
+
 def _detect_transfer_plan(message: str) -> tuple[str, dict] | None:
     # Numeric amount path: "send 0.5 USDC to 0x..."
     pattern = re.compile(r"(?:send|transfer)\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})\s+to\s+(?P<to>[\w.:-]+)", re.IGNORECASE)
     match = pattern.search(message)
     if match:
         token = match.group("token").upper()
+        recipient = match.group("to")
+        if not _is_valid_recipient(recipient):
+            return None
+        if is_stop_word(token) or not is_valid_symbol_shape(token):
+            return None
         return (
             "compose_plan",
             {
@@ -599,7 +622,7 @@ def _detect_transfer_plan(message: str) -> tuple[str, dict] | None:
                     {
                         "step_id": "transfer",
                         "action": "transfer",
-                        "params": {"token": token, "amount": _to_base_units(match.group("amount"), token), "recipient": match.group("to"), "chain_id": 1},
+                        "params": {"token": token, "amount": _to_base_units(match.group("amount"), token), "recipient": recipient, "chain_id": 1},
                     }
                 ],
             },
@@ -620,6 +643,11 @@ def _detect_transfer_plan(message: str) -> tuple[str, dict] | None:
     token = am.group("token").upper()
     if token in _NOT_A_SYMBOL:
         return None
+    if is_stop_word(token) or not is_valid_symbol_shape(token):
+        return None
+    recipient = am.group("to")
+    if not _is_valid_recipient(recipient):
+        return None
     amt_sentinel = _quantifier_to_amount(am.group("qty"))
     pct_label = am.group("qty").strip().lower()
     return (
@@ -630,7 +658,7 @@ def _detect_transfer_plan(message: str) -> tuple[str, dict] | None:
                 {
                     "step_id": "transfer",
                     "action": "transfer",
-                    "params": {"token": token, "amount": amt_sentinel, "recipient": am.group("to"), "chain_id": 1},
+                    "params": {"token": token, "amount": amt_sentinel, "recipient": recipient, "chain_id": 1},
                 }
             ],
         },
@@ -1772,19 +1800,29 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
                         re.IGNORECASE,
                     )
                     m_bridge = bridge_re.search(message)
-                    if m_bridge:
-                        token = m_bridge.group("token").upper()
-                        src = (m_bridge.group("src") or "ethereum").strip().lower()
-                        dst = m_bridge.group("dst").strip().lower()
-                        dst = re.sub(r"\s+(?:and|then|to|for).*$", "", dst).strip()
-                        params["src_chain_id"] = CHAIN_IDS.get(src, 1)
-                        params["dst_chain_id"] = CHAIN_IDS.get(dst, CHAIN_IDS.get(dst.split()[0], 42161))
-                        params["token_in"] = token
-                        # Leave token_out empty so the wallet-assistant's bridge resolver
-                        # picks the chain-correct output (e.g. SOL → ETH on Ethereum)
-                        # instead of forcing the source mint onto a foreign chain.
-                        params["token_out"] = ""
-                        params["amount"] = _to_base_units(m_bridge.group("amount"), token)
+                    if not m_bridge:
+                        # Refuse rather than emit an empty-params bridge tool call.
+                        # 'bridge weth to bnb' (no amount) used to fall through here
+                        # and the bridge tool received {} which crashed downstream.
+                        return None
+                    token = m_bridge.group("token").upper()
+                    if is_stop_word(token) or not is_valid_symbol_shape(token):
+                        return None
+                    src = (m_bridge.group("src") or "ethereum").strip().lower()
+                    dst = m_bridge.group("dst").strip().lower()
+                    dst = re.sub(r"\s+(?:and|then|to|for).*$", "", dst).strip()
+                    src_id = CHAIN_IDS.get(src)
+                    dst_id = CHAIN_IDS.get(dst, CHAIN_IDS.get(dst.split()[0] if dst else ""))
+                    if src_id is None or dst_id is None or src_id == dst_id:
+                        return None
+                    params["src_chain_id"] = src_id
+                    params["dst_chain_id"] = dst_id
+                    params["token_in"] = token
+                    # Leave token_out empty so the wallet-assistant's bridge resolver
+                    # picks the chain-correct output (e.g. SOL → ETH on Ethereum)
+                    # instead of forcing the source mint onto a foreign chain.
+                    params["token_out"] = ""
+                    params["amount"] = _to_base_units(m_bridge.group("amount"), token)
                 elif tool_name == "find_liquidity_pool":
                     # "pool for USDC on Ethereum" / "pool for USDC/WETH"
                     pair_re = re.compile(

@@ -159,14 +159,17 @@ class TestBridgeDetector:
 # ── transfer detector ───────────────────────────────────────────────────────
 class TestTransferDetector:
     def test_numeric_transfer(self):
-        result = _detect_transfer_plan("send 5 USDC to 0xabc")
+        result = _detect_transfer_plan("send 5 USDC to 0x000000000000000000000000000000000000abcd")
         assert result and result[0] == "compose_plan"
         step = result[1]["steps"][0]
         assert step["params"]["token"] == "USDC"
         assert step["params"]["amount"] == str(5 * 10**6)
 
     def test_transfer_all(self):
-        result = _detect_transfer_plan("send all FATPENGU from my wallet to 5dQ8")
+        result = _detect_transfer_plan(
+            "send all FATPENGU from my wallet to "
+            "5dQ85HVgBfsxq9PsCxojwwxZmVHyDmACWYQ7uA37FpW2"
+        )
         assert result and result[0] == "compose_plan"
         step = result[1]["steps"][0]
         assert step["params"]["token"] == "FATPENGU"
@@ -174,7 +177,7 @@ class TestTransferDetector:
 
     def test_send_all_wallet_noise_rejected(self):
         # Can't capture 'wallet' as the token symbol.
-        assert _detect_transfer_plan("send all wallet to 0xabc") is None
+        assert _detect_transfer_plan("send all wallet to 0x000000000000000000000000000000000000abcd") is None
 
 
 # ── defi risk-level parser ──────────────────────────────────────────────────
@@ -204,9 +207,9 @@ class TestFractionalPropagation:
         assert result and result[1]["amount"] == expected
 
     @pytest.mark.parametrize("phrase,expected", [
-        ("send half my USDC to 0xabc", "PCT:50"),
-        ("transfer 25% USDC to 0xabc", "PCT:25"),
-        ("send all USDC to 0xabc", "ALL"),
+        ("send half my USDC to 0x000000000000000000000000000000000000abcd", "PCT:50"),
+        ("transfer 25% USDC to 0x000000000000000000000000000000000000abcd", "PCT:25"),
+        ("send all USDC to 0x000000000000000000000000000000000000abcd", "ALL"),
     ])
     def test_transfer_fractional(self, phrase, expected):
         result = _detect_transfer_plan(phrase)
