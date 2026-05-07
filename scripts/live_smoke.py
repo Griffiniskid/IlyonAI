@@ -270,6 +270,114 @@ def cases() -> list[Case]:
              "bridge 100 usdc from mars to earth",
              "refuse",
              "unknown chain"),
+
+        # ── Multi-step / compose_plan ─────────────────────────────────────
+        Case("multi_swap_then_lp",
+             "swap 100 usdc to weth then add liquidity",
+             "either_card_or_refuse",
+             "multi-step compose"),
+        Case("multi_bridge_then_stake",
+             "bridge 100 usdc from ethereum to solana then stake",
+             "either_card_or_refuse",
+             "compose plan"),
+
+        # ── Numeric edge / formatting ─────────────────────────────────────
+        Case("amt_comma",
+             "swap 1,000 usdc to eth",
+             "either_card_or_refuse",
+             "comma-formatted amount"),
+        Case("amt_dust",
+             "swap 0.000000001 sol to usdc",
+             "either_card_or_refuse",
+             "dust amount — 1e-9"),
+        Case("amt_k_suffix",
+             "swap 10k usdc to eth",
+             "either_card_or_refuse",
+             "k suffix"),
+        Case("amt_m_suffix",
+             "swap 0.1m usdc to eth",
+             "either_card_or_refuse",
+             "m suffix"),
+
+        # ── Synonyms ──────────────────────────────────────────────────────
+        Case("syn_exchange",
+             "exchange 0.1 sol for usdc",
+             "either_card_or_refuse",
+             "exchange synonym"),
+        Case("syn_convert",
+             "convert 0.1 sol into usdc",
+             "either_card_or_refuse",
+             "convert synonym"),
+        Case("syn_trade",
+             "trade 0.1 sol for usdc",
+             "either_card_or_refuse",
+             "trade synonym"),
+
+        # ── Token name conflicts ──────────────────────────────────────────
+        Case("token_named_max",
+             "swap max usdc to eth",
+             "either_card_or_refuse",
+             "MAX is a quantifier, not a ticker"),
+        Case("token_named_all",
+             "swap all to eth",
+             "refuse",
+             "no source token, just ALL"),
+        Case("token_jp",
+             "swap 1 jp to usdc",
+             "either_card_or_refuse",
+             "JP — too short, must reject or unknown"),
+
+        # ── Portfolio-context phrasings ───────────────────────────────────
+        Case("portfolio_sell_pct",
+             "sell 10% of my portfolio",
+             "either_card_or_refuse",
+             "PORTFOLIO must not become token; show balance instead"),
+        Case("holdings_swap_to_usdc",
+             "swap all my holdings to USDC",
+             "either_card_or_refuse",
+             "HOLDINGS must not become token"),
+        Case("bags_sell",
+             "sell my bags",
+             "either_card_or_refuse",
+             "BAGS slang"),
+
+        # ── Sentence-style phrasings ──────────────────────────────────────
+        Case("sentence_swap",
+             "I want to swap my SOL for ETH",
+             "either_card_or_refuse",
+             "sentence-style intent"),
+        Case("sentence_help",
+             "help me move 100 USDC from polygon to base",
+             "either_card_or_refuse",
+             "verbose bridge"),
+        Case("sentence_fast",
+             "fast bridge ETH to BNB chain",
+             "either_card_or_refuse",
+             "missing amount"),
+
+        # ── Address scan / contract intent ────────────────────────────────
+        Case("scan_pepe_addr",
+             "is this token safe: 0x6982508145454ce325ddbe47a25d4ec3d2311933",
+             "either_card_or_refuse",
+             "contract scan"),
+
+        # ── Empty / weird inputs ──────────────────────────────────────────
+        Case("empty_input",
+             "",
+             "reasoning_only",
+             "blank message"),
+        Case("only_punct",
+             "?!?",
+             "reasoning_only",
+             "punctuation only"),
+        Case("only_emoji",
+             "🚀🚀🚀",
+             "reasoning_only",
+             "emoji only"),
+        Case("very_long",
+             "swap " + ("very " * 200) + "0.1 sol to usdc",
+             "either_card_or_refuse",
+             "noisy long prompt"),
     ]
 
 
@@ -415,7 +523,7 @@ async def main() -> int:
                     print("    ", e[:300])
             # Throttle: agent_gap is roughly per-IP. Sleep enough that we don't
             # 429 ourselves into uselessness.
-            await asyncio.sleep(2)
+            await asyncio.sleep(5)
 
     failures = [(c, out, reason) for c, out, ok, reason in results if not ok]
     print()

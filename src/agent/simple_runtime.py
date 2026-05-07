@@ -585,6 +585,33 @@ def _detect_swap_then_lp(message: str) -> tuple[str, dict] | None:
     )
 
 
+# Phrases that turn a "swap X to Y" sentence into a question/hypothetical/future
+# rather than an executable command. The detector must refuse so the LLM can
+# answer rather than build a real signing card.
+_NON_IMPERATIVE_RE = re.compile(
+    r"^\s*(?:why|how|what|when|where|who|whom|whose|"
+    r"will|would|should|could|can|may|might|do|does|did|is|are|am|was|were|"
+    r"if|unless|whether|"
+    r"explain|tell\s+me|teach\s+me|show\s+me\s+how|describe|"
+    r"i\s+(?:want\s+to|would\s+like\s+to|will|might|may|plan\s+to))\b",
+    re.IGNORECASE,
+)
+_CONDITIONAL_HEDGE_RE = re.compile(
+    r"\b(?:but\s+only\s+if|only\s+if|if\s+price|tomorrow|next\s+(?:week|month|day)|"
+    r"later|after\s+(?:lunch|tomorrow|noon)|when\s+price)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_imperative_command(message: str) -> bool:
+    """True when the message reads like a direct command, not a question / hedge."""
+    if _NON_IMPERATIVE_RE.search(message):
+        return False
+    if _CONDITIONAL_HEDGE_RE.search(message):
+        return False
+    return True
+
+
 def _is_valid_recipient(addr: str) -> bool:
     """Reject English noise like 'me' / 'alice' / 'bob' as transfer recipients.
 
@@ -604,6 +631,8 @@ def _is_valid_recipient(addr: str) -> bool:
 
 
 def _detect_transfer_plan(message: str) -> tuple[str, dict] | None:
+    if not _is_imperative_command(message):
+        return None
     # Numeric amount path: "send 0.5 USDC to 0x..."
     pattern = re.compile(r"(?:send|transfer)\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})\s+to\s+(?P<to>[\w.:-]+)", re.IGNORECASE)
     match = pattern.search(message)
@@ -803,6 +832,8 @@ _BRIDGE_ALL_RE = re.compile(
 
 
 def _detect_bridge_signable(message: str) -> tuple[str, dict] | None:
+    if not _is_imperative_command(message):
+        return None
     """Bridge intent → build_bridge_tx, both numeric and ALL forms."""
     text = message.strip()
     am = _BRIDGE_ALL_RE.search(text)
@@ -1005,6 +1036,8 @@ _BUY_RE = re.compile(
 
 
 def _detect_buy_intent(message: str) -> tuple[str, dict] | None:
+    if not _is_imperative_command(message):
+        return None
     """'buy 100 BONK' / 'buy 0.5 SOL with USDC' → swap source into target.
 
     Source defaults to USDC. The numeric amount specifies the OUTPUT amount
@@ -1081,6 +1114,9 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
     sentinel `amount_in == "ALL"` is forwarded so the swap tool can substitute the
     user's actual wallet balance at execution time.
     """
+    # Refuse questions / hypotheticals / future-tense — never execute a tool.
+    if not _is_imperative_command(message):
+        return None
     # 1a) "sell all FATPENGU" — destination implied USDC. Map well-known
     # tokens to their canonical home chain so the swap-all balance lookup
     # scans the right wallet.
@@ -1709,9 +1745,10 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
                     return tool_name, params
                 if tool_name == "get_token_price" and match.groups():
                     tok = match.group(1).upper()
-                    # Skip common English words that aren't tokens.
-                    if tok.lower() not in {"the", "a", "an", "this", "that", "it", "of", "on", "in", "for"}:
-                        params["token"] = tok
+                    # Skip stop-words and shape-invalid captures.
+                    if is_stop_word(tok) or not is_valid_symbol_shape(tok):
+                        continue
+                    params["token"] = tok
                 elif tool_name == "simulate_swap":
                     # Parse "swap [of] <amount> <TOKEN_IN> to <TOKEN_OUT> on <chain>".
                     swap_re = re.compile(

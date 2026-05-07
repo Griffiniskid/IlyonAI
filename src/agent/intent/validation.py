@@ -21,10 +21,12 @@ from typing import Iterable
 # Words that appear in user phrasings ("from my wallet on solana chain") and must
 # never be captured as a token symbol. Superset of the legacy _NOT_A_SYMBOL list.
 STOP_WORDS: frozenset[str] = frozenset({
-    # English prepositions / determiners
+    # English prepositions / determiners / conjunctions
     "A", "AN", "THE", "THIS", "THAT", "IT", "OF", "ON", "IN", "FOR", "TO",
     "FROM", "INTO", "WITH", "USING", "VIA", "AT", "BY", "AS", "AND", "OR",
     "BUT", "MY", "YOUR", "OUR", "HIS", "HER", "ITS", "THEIR",
+    "IF", "UNLESS", "WHETHER", "WHEN", "WHILE", "BECAUSE", "SINCE",
+    "GOOD", "BAD", "PRICE", "RATE", "TIME", "DAY", "WEEK", "MONTH", "YEAR",
     # Action verbs
     "SWAP", "EXCHANGE", "CONVERT", "TRADE", "SELL", "DUMP", "BUY",
     "BRIDGE", "TRANSFER", "STAKE", "UNSTAKE", "SEND", "MOVE", "DEPOSIT",

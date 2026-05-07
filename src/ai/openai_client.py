@@ -798,7 +798,7 @@ If asked about a specific token, suggest sending the address for analysis."""
                 return data.get('choices', [{}])[0].get('message', {}).get('content', 'No response')
 
         except Exception as e:
-            logger.error(f"Chat error: {e}")
+            logger.error("Chat error: %s: %s", type(e).__name__, e or repr(e))
             return "An error occurred. Please try again."
 
     async def chat_json(
