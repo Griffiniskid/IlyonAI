@@ -34,6 +34,8 @@ STOP_WORDS: frozenset[str] = frozenset({
     "QUARTER", "PERCENT", "PCT",
     # Wallet / chain noise
     "WALLET", "CHAIN", "ADDRESS", "ACCOUNT", "BALANCE", "FUND", "FUNDS",
+    "PORTFOLIO", "HOLDINGS", "POSITION", "POSITIONS", "ASSETS", "TOKENS",
+    "BAGS", "STASH",
     # Chain names — never a token symbol
     "ETHEREUM", "MAINNET", "SOLANA", "ARBITRUM", "OPTIMISM", "POLYGON",
     "AVALANCHE", "BASE", "ZKSYNC", "LINEA", "SCROLL",

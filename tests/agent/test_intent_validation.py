@@ -18,7 +18,10 @@ from src.agent.intent.validation import (
 )
 
 
-@pytest.mark.parametrize("word", ["WALLET", "FROM", "MY", "TO", "ETHEREUM", "SOLANA", "CHAIN"])
+@pytest.mark.parametrize("word", [
+    "WALLET", "FROM", "MY", "TO", "ETHEREUM", "SOLANA", "CHAIN",
+    "PORTFOLIO", "HOLDINGS", "BAGS", "STASH", "ASSETS",
+])
 def test_stop_words_block(word):
     assert is_stop_word(word)
     assert is_stop_word(word.lower())
