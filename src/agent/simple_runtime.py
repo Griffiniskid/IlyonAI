@@ -267,12 +267,22 @@ def _pre_tool_reasoning(tool_name: str, tool_input: dict, message: str) -> list[
         # it as staking so the live-reasoning panel matches the user's request.
         token_out_addr = str(tool_input.get("token_out", "")).lower()
         token_in_sym = str(tool_input.get("token_in", "")).upper()
+        token_out_sym = str(tool_input.get("token_out", "")).upper()
         lst_match = next(
             (info for (sym, _cid), info in _LST_BY_TOKEN_CHAIN.items()
              if info[0].lower() == token_out_addr and sym == token_in_sym),
             None,
         )
         amt_str = str(tool_input.get("amount_in", "")).upper()
+        # Detect buy intent: user typed "buy ..." and we're spending a stable
+        # to acquire a non-stable. Surface the interpretation so the user can
+        # correct if they meant exact-output (which we don't support).
+        is_buy_intent = (
+            isinstance(message, str)
+            and re.match(r"^\s*buy\b", message, re.IGNORECASE)
+            and token_in_sym in {"USDC", "USDT", "DAI", "BUSD", "TUSD", "FDUSD"}
+        )
+
         # Plain-English first thought based on the amount sentinel.
         if amt_str == "ALL":
             first = (
@@ -287,6 +297,11 @@ def _pre_tool_reasoning(tool_name: str, tool_input: dict, message: str) -> list[
             first = (
                 f"Computing {pct_num}% of your {token_in_sym} balance — "
                 f"the wallet scanner will resolve the exact amount before the route quote."
+            )
+        elif is_buy_intent:
+            first = (
+                f"Parsed as buy: spending {token_in_sym} to acquire {token_out_sym}. "
+                f"Amount is interpreted as the input — quote will show how much {token_out_sym} you'll receive."
             )
         else:
             first = f"Parsed swap intent: {_short_json(tool_input)}."
