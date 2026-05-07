@@ -272,17 +272,37 @@ def _pre_tool_reasoning(tool_name: str, tool_input: dict, message: str) -> list[
              if info[0].lower() == token_out_addr and sym == token_in_sym),
             None,
         )
+        amt_str = str(tool_input.get("amount_in", "")).upper()
+        # Plain-English first thought based on the amount sentinel.
+        if amt_str == "ALL":
+            first = (
+                f"Reading your full {token_in_sym} balance from the wallet "
+                f"(minus a small native-gas reserve) before quoting the route."
+            )
+        elif amt_str.startswith("PCT:"):
+            try:
+                pct_num = int(amt_str[4:])
+            except ValueError:
+                pct_num = 0
+            first = (
+                f"Computing {pct_num}% of your {token_in_sym} balance — "
+                f"the wallet scanner will resolve the exact amount before the route quote."
+            )
+        else:
+            first = f"Parsed swap intent: {_short_json(tool_input)}."
+
         if lst_match:
             lst_protocol = lst_match[1]
             return [
-                f"Parsed stake intent: {token_in_sym} → {lst_protocol} liquid staking ({_short_json(tool_input)}).",
+                first if amt_str in ("ALL",) or amt_str.startswith("PCT:")
+                else f"Parsed stake intent: {token_in_sym} → {lst_protocol} liquid staking.",
                 f"Routing through Enso/Jupiter into the canonical {lst_protocol} LST so the staked balance stays liquid.",
                 "Validating slippage and price impact before producing the unsigned transaction.",
                 "Building an unsigned transaction so the wallet can review the exact spend and approval.",
                 "Preparing wallet-safe signing guidance; the agent never holds keys — the user signs in their wallet.",
             ]
         return [
-            f"Parsed swap intent: {_short_json(tool_input)}.",
+            first,
             "Resolving token pair, chain, decimals, and amount before requesting an aggregator route.",
             "Choosing aggregator: Jupiter for Solana, Enso for EVM. Validating slippage, route source, and price impact before quoting.",
             "Building an unsigned transaction so Phantom or MetaMask can review the exact spend, gas, and approval.",
