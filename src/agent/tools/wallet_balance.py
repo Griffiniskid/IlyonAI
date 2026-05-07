@@ -104,6 +104,7 @@ async def get_wallet_balance(
         by_chain = parsed.get("by_chain") or parsed.get("chains") or {}
 
     card_payload = {
+        "wallet": addrs[0],
         "address": addrs[0],
         "addresses": addrs,
         "total_usd": parsed.get("total_usd"),
