@@ -539,20 +539,49 @@ def _detect_swap_then_lp(message: str) -> tuple[str, dict] | None:
 
 
 def _detect_transfer_plan(message: str) -> tuple[str, dict] | None:
+    # Numeric amount path: "send 0.5 USDC to 0x..."
     pattern = re.compile(r"(?:send|transfer)\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})\s+to\s+(?P<to>[\w.:-]+)", re.IGNORECASE)
     match = pattern.search(message)
-    if not match:
+    if match:
+        token = match.group("token").upper()
+        return (
+            "compose_plan",
+            {
+                "title": f"Send {token}",
+                "steps": [
+                    {
+                        "step_id": "transfer",
+                        "action": "transfer",
+                        "params": {"token": token, "amount": _to_base_units(match.group("amount"), token), "recipient": match.group("to"), "chain_id": 1},
+                    }
+                ],
+            },
+        )
+    # "Send all" path: full balance, agent looks up at execution time. Same
+    # noise-word filter as swap-all so "send all wallet to 0x..." doesn't
+    # capture WALLET as the symbol.
+    all_pattern = re.compile(
+        r"(?:send|transfer)\s+(?:all|max|entire(?:\s+balance)?|everything|100%)\s+"
+        r"(?:of\s+)?(?:my\s+)?(?P<token>[A-Za-z][A-Za-z0-9$._-]{0,15})"
+        r"(?:\s+(?:from|in)\s+(?:my\s+)?wallet)?"
+        r"\s+to\s+(?P<to>[\w.:-]+)",
+        re.IGNORECASE,
+    )
+    am = all_pattern.search(message)
+    if not am:
         return None
-    token = match.group("token").upper()
+    token = am.group("token").upper()
+    if token in _NOT_A_SYMBOL:
+        return None
     return (
         "compose_plan",
         {
-            "title": f"Send {token}",
+            "title": f"Send all {token}",
             "steps": [
                 {
                     "step_id": "transfer",
                     "action": "transfer",
-                    "params": {"token": token, "amount": _to_base_units(match.group("amount"), token), "recipient": match.group("to"), "chain_id": 1},
+                    "params": {"token": token, "amount": "ALL", "recipient": am.group("to"), "chain_id": 1},
                 }
             ],
         },
@@ -619,6 +648,92 @@ _SOLANA_DECIMALS = {
     "RAY": 6, "ORCA": 6, "JITO": 9, "JITOSOL": 9, "MSOL": 9, "STSOL": 9,
     "WBTC": 8, "WETH": 8,
 }
+
+
+# "bridge [amount|all] TOKEN from CHAIN to CHAIN" — single-step signable bridge.
+# Mirrors _detect_swap_signable so "bridge all FATPENGU from solana to ethereum"
+# doesn't fall through to the LLM (which would mis-extract WALLET as token_in).
+_BRIDGE_NUMERIC_RE = re.compile(
+    r"(?:bridge|transfer\s+across|move)\s+"
+    r"(?P<amount>[\d,]+(?:\.\d+)?)\s+"
+    r"(?P<token>[A-Za-z]{2,10})\s+"
+    r"from\s+(?P<src>[A-Za-z ]+?)\s+to\s+(?P<dst>[A-Za-z ]+?)\s*$",
+    re.IGNORECASE,
+)
+_BRIDGE_ALL_RE = re.compile(
+    r"(?:bridge|transfer\s+across|move)\s+"
+    r"(?:all|max|entire(?:\s+balance)?|everything|100%)\s+"
+    r"(?:of\s+)?(?:my\s+)?"
+    r"(?P<token>[A-Za-z][A-Za-z0-9$._-]{0,15})"
+    r"(?:\s+(?:from|in)\s+(?:my\s+)?wallet)?"
+    r"\s+from\s+(?P<src>[A-Za-z ]+?)\s+to\s+(?P<dst>[A-Za-z ]+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_bridge_signable(message: str) -> tuple[str, dict] | None:
+    """Bridge intent → build_bridge_tx, both numeric and ALL forms."""
+    text = message.strip()
+    am = _BRIDGE_ALL_RE.search(text)
+    if am:
+        token = am.group("token").upper()
+        if token in _NOT_A_SYMBOL:
+            return None
+        src = am.group("src").strip().lower()
+        dst = am.group("dst").strip().lower()
+        src_chain_id = CHAIN_IDS.get(src)
+        dst_chain_id = CHAIN_IDS.get(dst)
+        if src_chain_id is None or dst_chain_id is None or src_chain_id == dst_chain_id:
+            return None
+        return (
+            "build_bridge_tx",
+            {
+                "src_chain_id": src_chain_id,
+                "dst_chain_id": dst_chain_id,
+                "token_in": token,
+                "token_out": "",
+                "amount": "ALL",
+            },
+        )
+    nm = _BRIDGE_NUMERIC_RE.search(text)
+    if not nm:
+        return None
+    token = nm.group("token").upper()
+    src = nm.group("src").strip().lower()
+    dst = nm.group("dst").strip().lower()
+    src_chain_id = CHAIN_IDS.get(src)
+    dst_chain_id = CHAIN_IDS.get(dst)
+    if src_chain_id is None or dst_chain_id is None or src_chain_id == dst_chain_id:
+        return None
+    try:
+        amount_value = float(nm.group("amount").replace(",", ""))
+    except ValueError:
+        return None
+    if amount_value <= 0:
+        return None
+    # Source-chain decimals: BSC USDC/USDT are 18-decimal (BNB-pegged), not 6.
+    # Same for any EVM chain with non-canonical pegs. Solana mints use the
+    # SPL decimal table.
+    if src_chain_id == 7565164:
+        decimals = _SOLANA_DECIMALS.get(token, 9)
+    elif src_chain_id == 56 and token in {"USDC", "USDT", "DAI", "BUSD", "TUSD", "FDUSD"}:
+        decimals = 18
+    else:
+        decimals = TOKEN_DECIMALS.get(token, 18)
+    try:
+        amount_base = str(int(round(amount_value * (10 ** decimals))))
+    except (OverflowError, ValueError):
+        return None
+    return (
+        "build_bridge_tx",
+        {
+            "src_chain_id": src_chain_id,
+            "dst_chain_id": dst_chain_id,
+            "token_in": token,
+            "token_out": "",
+            "amount": amount_base,
+        },
+    )
 
 
 # Liquid-staking targets (LST) per (token_in, chain_id). When the user types a
@@ -1150,7 +1265,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
         return multi_step
-    for detector in (_detect_aave_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_simple, _detect_malicious_swap_plan, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_aave_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected

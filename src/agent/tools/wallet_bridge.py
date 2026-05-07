@@ -94,6 +94,68 @@ async def build_bridge_tx(
             message=f"No {'Solana' if is_solana_source else 'EVM'} wallet connected — connect a wallet then retry the bridge.",
         )
 
+    # ── "bridge all X" path ──────────────────────────────────────────────
+    if isinstance(amount, str) and amount.strip().upper() in ("ALL", "MAX", "ENTIRE", "EVERYTHING", "100%"):
+        try:
+            from IlyonAi_Wallet_assistant_main.server.app.agents.crypto_agent import (
+                get_smart_wallet_balance,
+            )
+        except Exception as exc:
+            return err_envelope(code="bridge_failed", message=f"Balance lookup unavailable: {exc}")
+        scan_addr = sol_wallet if is_solana_source else (evm_wallet or primary)
+        if not scan_addr:
+            return err_envelope(
+                code="bridge_failed",
+                message=f"Connect a {'Solana' if is_solana_source else 'EVM'} wallet so I can read your {token_in} balance.",
+            )
+        raw_balance = await asyncio.to_thread(
+            get_smart_wallet_balance,
+            scan_addr,
+            evm_wallet or primary,
+            sol_wallet,
+        )
+        try:
+            balance_doc = json.loads(raw_balance) if isinstance(raw_balance, str) else (raw_balance or {})
+        except Exception:
+            balance_doc = {}
+        sym_target = str(token_in).upper()
+        matched_amount = None
+        matched_decimals = None
+        for entry in (balance_doc.get("balances") or []):
+            native_sym = str(entry.get("native_symbol") or "").upper()
+            if native_sym == sym_target:
+                matched_amount = float(entry.get("native_balance") or 0)
+                matched_decimals = 9 if entry.get("chain") == "Solana" else 18
+                break
+            for tok in (entry.get("tokens") or []):
+                if str(tok.get("symbol") or "").upper() == sym_target:
+                    matched_amount = float(tok.get("balance") or 0)
+                    matched_decimals = int(tok.get("decimals") or 0) or None
+                    break
+            if matched_amount is not None:
+                break
+        if matched_amount is None or matched_amount <= 0:
+            return err_envelope(
+                code="bridge_failed",
+                message=f"No {sym_target} balance found in your {('Solana' if is_solana_source else 'EVM')} wallet.",
+            )
+        if not matched_decimals:
+            if is_solana_source:
+                _SOL_DEC_FALLBACK = {"SOL": 9, "USDC": 6, "USDT": 6}
+                matched_decimals = _SOL_DEC_FALLBACK.get(sym_target, 6)
+            else:
+                _EVM_DEC_FALLBACK = {"USDC": 6, "USDT": 6, "DAI": 18, "WBTC": 8}
+                matched_decimals = _EVM_DEC_FALLBACK.get(sym_target, 18)
+        # Reserve gas on natives — bridges always need a small fee in the native.
+        if (is_solana_source and sym_target == "SOL") or (not is_solana_source and sym_target in {"BNB", "ETH", "MATIC", "AVAX"}):
+            matched_amount = max(0.0, matched_amount - (0.005 if is_solana_source else 0.005))
+            if matched_amount <= 0:
+                return err_envelope(
+                    code="bridge_failed",
+                    message=f"Native {sym_target} balance too small after gas reserve.",
+                )
+        amount = str(int(matched_amount * (10 ** matched_decimals)))
+
     params = {
         "token_in": token_in,
         "token_out": token_out,
