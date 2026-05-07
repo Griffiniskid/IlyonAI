@@ -557,11 +557,11 @@ def _detect_transfer_plan(message: str) -> tuple[str, dict] | None:
                 ],
             },
         )
-    # "Send all" path: full balance, agent looks up at execution time. Same
-    # noise-word filter as swap-all so "send all wallet to 0x..." doesn't
-    # capture WALLET as the symbol.
+    # "Send all/half/25%" path: fractional balance, agent looks up at execution
+    # time. Same noise-word filter as swap-all so "send all wallet to 0x..."
+    # doesn't capture WALLET as the symbol.
     all_pattern = re.compile(
-        r"(?:send|transfer)\s+(?:all|max|entire(?:\s+balance)?|everything|100%)\s+"
+        rf"(?:send|transfer)\s+(?P<qty>{_QUANTIFIER_PATTERN})\s+"
         r"(?:of\s+)?(?:my\s+)?(?P<token>[A-Za-z][A-Za-z0-9$._-]{0,15})"
         r"(?:\s+(?:from|in)\s+(?:my\s+)?wallet)?"
         r"\s+to\s+(?P<to>[\w.:-]+)",
@@ -573,15 +573,17 @@ def _detect_transfer_plan(message: str) -> tuple[str, dict] | None:
     token = am.group("token").upper()
     if token in _NOT_A_SYMBOL:
         return None
+    amt_sentinel = _quantifier_to_amount(am.group("qty"))
+    pct_label = am.group("qty").strip().lower()
     return (
         "compose_plan",
         {
-            "title": f"Send all {token}",
+            "title": f"Send {pct_label} {token}",
             "steps": [
                 {
                     "step_id": "transfer",
                     "action": "transfer",
-                    "params": {"token": token, "amount": "ALL", "recipient": am.group("to"), "chain_id": 1},
+                    "params": {"token": token, "amount": amt_sentinel, "recipient": am.group("to"), "chain_id": 1},
                 }
             ],
         },
@@ -650,6 +652,34 @@ _SOLANA_DECIMALS = {
 }
 
 
+# Quantifier phrases the swap/sell/bridge/transfer/stake detectors accept.
+# Map to a percent integer 1-100 so the wallet tool can convert
+# balance × pct/100 → base units. Defined at module top so all the regex
+# patterns below can reference _QUANTIFIER_PATTERN at compile time.
+_QUANTIFIER_PCT = {
+    "all": 100, "max": 100, "maximum": 100, "entire": 100, "entire balance": 100,
+    "everything": 100, "100%": 100, "whole": 100, "whole balance": 100,
+    "three quarters": 75, "three-quarters": 75, "75%": 75,
+    "two thirds": 66, "two-thirds": 66, "67%": 67, "66%": 66,
+    "half": 50, "1/2": 50, "50%": 50, "50 percent": 50,
+    "third": 33, "one third": 33, "1/3": 33, "33%": 33, "33 percent": 33,
+    "quarter": 25, "one quarter": 25, "1/4": 25, "25%": 25, "25 percent": 25,
+    "20%": 20, "20 percent": 20, "10%": 10, "10 percent": 10,
+    "5%": 5, "5 percent": 5,
+}
+_QUANTIFIER_PATTERN = "|".join(re.escape(k) for k in sorted(_QUANTIFIER_PCT, key=len, reverse=True))
+_NOT_A_SYMBOL = {"WALLET", "MY", "FROM", "INTO", "TO", "FOR", "OF", "ALL", "MAX", "ENTIRE", "EVERYTHING"}
+
+
+def _quantifier_to_amount(q: str) -> str:
+    """Map a parsed quantifier ('half', '50%', 'all') to an amount sentinel.
+
+    Returns 'ALL' for 100% (kept for backward-compat) or 'PCT:NN' for partials.
+    """
+    pct = _QUANTIFIER_PCT.get(q.strip().lower(), 100)
+    return "ALL" if pct == 100 else f"PCT:{pct}"
+
+
 # "bridge [amount|all] TOKEN from CHAIN to CHAIN" — single-step signable bridge.
 # Mirrors _detect_swap_signable so "bridge all FATPENGU from solana to ethereum"
 # doesn't fall through to the LLM (which would mis-extract WALLET as token_in).
@@ -662,8 +692,8 @@ _BRIDGE_NUMERIC_RE = re.compile(
 )
 _BRIDGE_ALL_RE = re.compile(
     r"(?:bridge|transfer\s+across|move)\s+"
-    r"(?:all|max|entire(?:\s+balance)?|everything|100%)\s+"
-    r"(?:of\s+)?(?:my\s+)?"
+    rf"(?P<qty>{_QUANTIFIER_PATTERN})"
+    r"\s+(?:of\s+)?(?:my\s+)?"
     r"(?P<token>[A-Za-z][A-Za-z0-9$._-]{0,15})"
     r"(?:\s+(?:from|in)\s+(?:my\s+)?wallet)?"
     r"\s+from\s+(?P<src>[A-Za-z ]+?)\s+to\s+(?P<dst>[A-Za-z ]+?)\s*$",
@@ -692,7 +722,7 @@ def _detect_bridge_signable(message: str) -> tuple[str, dict] | None:
                 "dst_chain_id": dst_chain_id,
                 "token_in": token,
                 "token_out": "",
-                "amount": "ALL",
+                "amount": _quantifier_to_amount(am.group("qty")),
             },
         )
     nm = _BRIDGE_NUMERIC_RE.search(text)
@@ -750,7 +780,7 @@ _LST_BY_TOKEN_CHAIN: dict[tuple[str, int], tuple[str, str]] = {
 
 
 _STAKE_ALL_RE = re.compile(
-    r"^\s*stake\s+(?:all|max|entire(?:\s+balance)?|everything|100%)\s+"
+    rf"^\s*stake\s+(?P<qty>{_QUANTIFIER_PATTERN})\s+"
     r"(?:of\s+)?(?:my\s+)?"
     r"(?P<token>[A-Za-z][A-Za-z0-9$._-]{0,15})"
     r"(?:\s+(?:from|in)\s+(?:my\s+)?wallet)?\s*$",
@@ -785,7 +815,7 @@ def _detect_stake_all(message: str) -> tuple[str, dict] | None:
             "chain_id": chain_id,
             "token_in": token,
             "token_out": lst_target[0],
-            "amount_in": "ALL",
+            "amount_in": _quantifier_to_amount(m.group("qty")),
             "from_addr": "",
         },
     )
@@ -841,31 +871,6 @@ def _detect_stake_simple(message: str) -> tuple[str, dict] | None:
     )
 
 
-# Quantifier phrases the swap/sell/bridge detectors accept. Map to a percent
-# integer 1-100 so the wallet tool can convert balance × pct/100 → base units.
-_QUANTIFIER_PCT = {
-    "all": 100, "max": 100, "maximum": 100, "entire": 100, "entire balance": 100,
-    "everything": 100, "100%": 100, "whole": 100, "whole balance": 100,
-    "three quarters": 75, "three-quarters": 75, "75%": 75,
-    "two thirds": 66, "two-thirds": 66, "67%": 67, "66%": 66,
-    "half": 50, "1/2": 50, "50%": 50, "50 percent": 50,
-    "third": 33, "one third": 33, "1/3": 33, "33%": 33, "33 percent": 33,
-    "quarter": 25, "one quarter": 25, "1/4": 25, "25%": 25, "25 percent": 25,
-    "20%": 20, "20 percent": 20, "10%": 10, "10 percent": 10,
-    "5%": 5, "5 percent": 5,
-}
-_QUANTIFIER_PATTERN = "|".join(re.escape(k) for k in sorted(_QUANTIFIER_PCT, key=len, reverse=True))
-
-
-def _quantifier_to_amount(q: str) -> str:
-    """Map a parsed quantifier ('half', '50%', 'all') to an amount sentinel.
-
-    Returns 'ALL' for 100% (kept for backward-compat) or 'PCT:NN' for partials.
-    """
-    pct = _QUANTIFIER_PCT.get(q.strip().lower(), 100)
-    return "ALL" if pct == 100 else f"PCT:{pct}"
-
-
 # "swap all FATPENGU [from my wallet] to usdc" — must match BEFORE the numeric
 # pattern, and must NOT capture noise words ("WALLET", "MY", "FROM") as the
 # token symbol. The optional "from/in (my) wallet" clause is consumed but
@@ -891,9 +896,6 @@ _SELL_ALL_RE = re.compile(
     r"(?:\s+(?:from|in)\s+(?:my\s+)?wallet)?\s*$",
     re.IGNORECASE,
 )
-_NOT_A_SYMBOL = {"WALLET", "MY", "FROM", "INTO", "TO", "FOR", "OF", "ALL", "MAX", "ENTIRE", "EVERYTHING"}
-
-
 def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
     """Route signable swap intents to build_swap_tx (legacy SimulationPreview path).
 

@@ -190,6 +190,36 @@ class TestDefiRiskParser:
         assert result.risk_levels == expected
 
 
+# ── fractional propagation across bridge/transfer/stake ─────────────────────
+class TestFractionalPropagation:
+    @pytest.mark.parametrize("phrase,expected", [
+        ("bridge half SOL from solana to ethereum", "PCT:50"),
+        ("bridge 25% USDC from bsc to base", "PCT:25"),
+        ("bridge all SOL from solana to ethereum", "ALL"),
+    ])
+    def test_bridge_fractional(self, phrase, expected):
+        result = _detect_bridge_signable(phrase)
+        assert result and result[1]["amount"] == expected
+
+    @pytest.mark.parametrize("phrase,expected", [
+        ("send half my USDC to 0xabc", "PCT:50"),
+        ("transfer 25% USDC to 0xabc", "PCT:25"),
+        ("send all USDC to 0xabc", "ALL"),
+    ])
+    def test_transfer_fractional(self, phrase, expected):
+        result = _detect_transfer_plan(phrase)
+        assert result and result[1]["steps"][0]["params"]["amount"] == expected
+
+    @pytest.mark.parametrize("phrase,expected", [
+        ("stake half my SOL", "PCT:50"),
+        ("stake 25% BNB", "PCT:25"),
+        ("stake all my SOL", "ALL"),
+    ])
+    def test_stake_fractional(self, phrase, expected):
+        result = _detect_stake_all(phrase)
+        assert result and result[1]["amount_in"] == expected
+
+
 # ── quantifier mapping (helper sanity) ──────────────────────────────────────
 class TestQuantifierMapping:
     @pytest.mark.parametrize("phrase,expected", [

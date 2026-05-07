@@ -94,8 +94,17 @@ async def build_bridge_tx(
             message=f"No {'Solana' if is_solana_source else 'EVM'} wallet connected — connect a wallet then retry the bridge.",
         )
 
-    # ── "bridge all X" path ──────────────────────────────────────────────
-    if isinstance(amount, str) and amount.strip().upper() in ("ALL", "MAX", "ENTIRE", "EVERYTHING", "100%"):
+    # ── "bridge all/half/25% X" path ─────────────────────────────────────
+    pct_factor = None
+    amt_str = amount.strip().upper() if isinstance(amount, str) else ""
+    if amt_str in ("ALL", "MAX", "ENTIRE", "EVERYTHING", "100%"):
+        pct_factor = 1.0
+    elif amt_str.startswith("PCT:"):
+        try:
+            pct_factor = max(0.0, min(1.0, int(amt_str[4:]) / 100.0))
+        except ValueError:
+            pct_factor = None
+    if pct_factor is not None:
         try:
             from IlyonAi_Wallet_assistant_main.server.app.agents.crypto_agent import (
                 get_smart_wallet_balance,
@@ -146,14 +155,24 @@ async def build_bridge_tx(
             else:
                 _EVM_DEC_FALLBACK = {"USDC": 6, "USDT": 6, "DAI": 18, "WBTC": 8}
                 matched_decimals = _EVM_DEC_FALLBACK.get(sym_target, 18)
-        # Reserve gas on natives — bridges always need a small fee in the native.
-        if (is_solana_source and sym_target == "SOL") or (not is_solana_source and sym_target in {"BNB", "ETH", "MATIC", "AVAX"}):
-            matched_amount = max(0.0, matched_amount - (0.005 if is_solana_source else 0.005))
+        # Apply percent factor (half/quarter/etc).
+        matched_amount = matched_amount * pct_factor
+        # Reserve native gas only when bridging the full balance.
+        if pct_factor >= 0.99 and (
+            (is_solana_source and sym_target == "SOL")
+            or (not is_solana_source and sym_target in {"BNB", "ETH", "MATIC", "AVAX"})
+        ):
+            matched_amount = max(0.0, matched_amount - 0.005)
             if matched_amount <= 0:
                 return err_envelope(
                     code="bridge_failed",
                     message=f"Native {sym_target} balance too small after gas reserve.",
                 )
+        if matched_amount <= 0:
+            return err_envelope(
+                code="bridge_failed",
+                message=f"Computed {sym_target} amount is zero after applying percent.",
+            )
         amount = str(int(matched_amount * (10 ** matched_decimals)))
 
     params = {
