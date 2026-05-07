@@ -175,14 +175,28 @@ async def search_defi_opportunities(
     execution_requested: bool = False,
     limit: int = 8,
 ):
+    # When the caller asks for low-risk only, tighten the TVL floor and cap the
+    # APY band so we don't surface high-APY low-TVL traps that look quantitatively
+    # safe but are actually thin liquidity. "Conservative" in the user's words
+    # should mean conservative in candidates too.
+    risk_set = {r.upper() for r in (risk_levels or [])}
+    if risk_set == {"LOW"}:
+        min_tvl_floor = 10_000_000.0
+        max_apy_cap = 50.0 if max_apy is None else max_apy
+    elif risk_set == {"MEDIUM"} or risk_set == {"LOW", "MEDIUM"}:
+        min_tvl_floor = 1_000_000.0
+        max_apy_cap = 200.0 if max_apy is None else max_apy
+    else:
+        min_tvl_floor = 100_000.0
+        max_apy_cap = 500.0 if max_apy is None else max_apy
     request = OpportunitySearchRequest(
         risk_levels=risk_levels or [],
         chains=chains or [],
         product_types=product_types or [],
         target_apy=target_apy,
         min_apy=0.5 if min_apy is None else min_apy,
-        max_apy=500.0 if max_apy is None else max_apy,
-        min_tvl=100_000.0,
+        max_apy=max_apy_cap,
+        min_tvl=min_tvl_floor,
         ranking_objective=ranking_objective,
         limit=limit,
         execution_requested=execution_requested,

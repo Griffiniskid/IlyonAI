@@ -5974,7 +5974,29 @@ export default function MainApp() {
                         background: "rgba(8,15,28,0.82)", border: "1px solid rgba(255,255,255,0.08)",
                         borderRadius: 22, padding: "18px 20px", marginBottom: 10,
                       }}>
-                        <div style={{ color: "rgba(148,163,184,0.85)", fontSize: 11, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>You Pay</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                          <div style={{ color: "rgba(148,163,184,0.85)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em" }}>You Pay</div>
+                          {/* MAX → routes through the agent's swap-all detector
+                              so the chain-aware balance lookup substitutes the
+                              real wallet balance at execution time. */}
+                          <button
+                            onClick={() => {
+                              if (!connectedWallet && !solanaWallet) {
+                                setShowAuth(true);
+                                return;
+                              }
+                              if (!swapFromToken || !swapToToken || swapFromToken === swapToToken) return;
+                              setActiveTab("chat");
+                              setTimeout(() => send(`Swap all ${swapFromToken} to ${swapToToken}`), 100);
+                            }}
+                            style={{
+                              padding: "4px 10px", borderRadius: 999, border: "1px solid rgba(16,185,129,0.32)",
+                              background: "rgba(16,185,129,0.10)", color: "#34D399", fontSize: 11,
+                              fontWeight: 800, letterSpacing: "0.08em", cursor: "pointer", fontFamily: "inherit",
+                            }}
+                            title="Swap full balance"
+                          >MAX</button>
+                        </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                           <input
                             type="number"
