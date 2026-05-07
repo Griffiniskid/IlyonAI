@@ -17,10 +17,12 @@ import pytest
 
 from src.agent.simple_runtime import (
     _detect_bridge_signable,
+    _detect_buy_intent,
     _detect_stake_all,
     _detect_stake_simple,
     _detect_swap_signable,
     _detect_transfer_plan,
+    _expand_numeric_amount,
     _quantifier_to_amount,
 )
 from src.agent.intent.defi_intent import parse_defi_intent
@@ -218,6 +220,61 @@ class TestFractionalPropagation:
     def test_stake_fractional(self, phrase, expected):
         result = _detect_stake_all(phrase)
         assert result and result[1]["amount_in"] == expected
+
+
+# ── numeric suffix expansion (k/m/b) ────────────────────────────────────────
+class TestNumericSuffix:
+    @pytest.mark.parametrize("amt,suf,expected", [
+        ("1", "k", 1_000.0),
+        ("1.5", "M", 1_500_000.0),
+        ("2", "b", 2_000_000_000.0),
+        ("100", None, 100.0),
+        ("1,000", None, 1_000.0),
+        ("0.5", "K", 500.0),
+    ])
+    def test_expansion(self, amt, suf, expected):
+        assert _expand_numeric_amount(amt, suf) == expected
+
+    def test_swap_with_k_suffix(self):
+        result = _detect_swap_signable("swap 1k SOL to USDC")
+        assert result and result[1]["amount_in"] == str(1_000 * 10**9)  # 1000 SOL in lamports
+
+    def test_sell_with_k_suffix(self):
+        # 100k SHIB at 18 decimals
+        result = _detect_swap_signable("sell 100k SHIB")
+        assert result and int(result[1]["amount_in"]) == int(100_000 * 10**18)
+
+    def test_bridge_with_k_suffix(self):
+        # 1k USDC on BSC at 18 decimals
+        result = _detect_bridge_signable("bridge 1k USDC from bsc to base")
+        assert result and int(result[1]["amount"]) == int(1_000 * 10**18)
+
+
+# ── buy intent ──────────────────────────────────────────────────────────────
+class TestBuyIntent:
+    def test_basic_buy_routes_via_usdc(self):
+        # Default source is USDC. amount is interpreted as USDC input.
+        result = _detect_buy_intent("buy 100 BONK")
+        assert result and result[0] == "build_swap_tx"
+        args = result[1]
+        assert args["token_in"] == "USDC"
+        assert args["token_out"] == "BONK"
+        assert args["chain_id"] == 101  # Solana meme
+
+    def test_buy_with_explicit_source(self):
+        result = _detect_buy_intent("buy 50 ETH using USDT")
+        assert result and result[1]["token_in"] == "USDT"
+        assert result[1]["token_out"] == "ETH"
+        assert result[1]["chain_id"] == 1
+
+    def test_buy_noise_rejected(self):
+        # "buy 100 wallet" must not capture WALLET as tout.
+        assert _detect_buy_intent("buy 100 wallet") is None
+
+    def test_buy_with_k_suffix(self):
+        result = _detect_buy_intent("buy 1k BNB")
+        # 1000 USDC routed on BSC (18-dec USDC)
+        assert result and int(result[1]["amount_in"]) == int(1_000 * 10**18)
 
 
 # ── quantifier mapping (helper sanity) ──────────────────────────────────────

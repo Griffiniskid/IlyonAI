@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from decimal import Decimal, InvalidOperation
 from typing import AsyncIterator
 
 from src.agent.intent.defi_intent import DefiIntent, parse_defi_intent
@@ -680,12 +681,38 @@ def _quantifier_to_amount(q: str) -> str:
     return "ALL" if pct == 100 else f"PCT:{pct}"
 
 
+# Multiplier suffix for numeric amounts: '1k', '1.5m', '2b'. Crypto users type
+# these constantly, so every numeric-amount regex below uses _NUM_AMOUNT_RE
+# and runs the captured groups through _expand_numeric_amount.
+_NUM_AMOUNT_RE = r"(?P<amount>[\d,]+(?:\.\d+)?)(?P<suffix>[kKmMbB])?"
+
+
+def _expand_numeric_amount(amount_str: str, suffix: str | None) -> Decimal | None:
+    """Parse '1.5k' / '100,000' / '2.5m' / '0.1' as Decimal so wei-level
+    precision survives multiplication by 10**decimals (float64 loses precision
+    at ~1e16, breaking 18-decimal SHIB-class tokens)."""
+    try:
+        n = Decimal((amount_str or "").replace(",", ""))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    if not suffix:
+        return n
+    s = suffix.lower()
+    if s == "k":
+        return n * Decimal(1_000)
+    if s == "m":
+        return n * Decimal(1_000_000)
+    if s == "b":
+        return n * Decimal(1_000_000_000)
+    return n
+
+
 # "bridge [amount|all] TOKEN from CHAIN to CHAIN" — single-step signable bridge.
 # Mirrors _detect_swap_signable so "bridge all FATPENGU from solana to ethereum"
 # doesn't fall through to the LLM (which would mis-extract WALLET as token_in).
 _BRIDGE_NUMERIC_RE = re.compile(
     r"(?:bridge|transfer\s+across|move)\s+"
-    r"(?P<amount>[\d,]+(?:\.\d+)?)\s+"
+    rf"{_NUM_AMOUNT_RE}\s+"
     r"(?P<token>[A-Za-z]{2,10})\s+"
     r"from\s+(?P<src>[A-Za-z ]+?)\s+to\s+(?P<dst>[A-Za-z ]+?)\s*$",
     re.IGNORECASE,
@@ -735,11 +762,8 @@ def _detect_bridge_signable(message: str) -> tuple[str, dict] | None:
     dst_chain_id = CHAIN_IDS.get(dst)
     if src_chain_id is None or dst_chain_id is None or src_chain_id == dst_chain_id:
         return None
-    try:
-        amount_value = float(nm.group("amount").replace(",", ""))
-    except ValueError:
-        return None
-    if amount_value <= 0:
+    amount_value = _expand_numeric_amount(nm.group("amount"), nm.group("suffix"))
+    if amount_value is None or amount_value <= 0:
         return None
     # Source-chain decimals: BSC USDC/USDT are 18-decimal (BNB-pegged), not 6.
     # Same for any EVM chain with non-canonical pegs. Solana mints use the
@@ -751,8 +775,8 @@ def _detect_bridge_signable(message: str) -> tuple[str, dict] | None:
     else:
         decimals = TOKEN_DECIMALS.get(token, 18)
     try:
-        amount_base = str(int(round(amount_value * (10 ** decimals))))
-    except (OverflowError, ValueError):
+        amount_base = str(int(amount_value * (Decimal(10) ** decimals)))
+    except (OverflowError, ValueError, InvalidOperation):
         return None
     return (
         "build_bridge_tx",
@@ -840,8 +864,8 @@ def _detect_stake_simple(message: str) -> tuple[str, dict] | None:
         return None
     token = m.group("token").upper()
     try:
-        amount_value = float(m.group("amount").replace(",", ""))
-    except ValueError:
+        amount_value = Decimal(m.group("amount").replace(",", ""))
+    except (InvalidOperation, ValueError):
         return None
     if amount_value <= 0:
         return None
@@ -854,8 +878,8 @@ def _detect_stake_simple(message: str) -> tuple[str, dict] | None:
         return None
     decimals = _SOLANA_DECIMALS.get(token, 9) if chain_id == 101 else TOKEN_DECIMALS.get(token, 18)
     try:
-        amount_in = str(int(round(amount_value * (10 ** decimals))))
-    except (OverflowError, ValueError):
+        amount_in = str(int(amount_value * (Decimal(10) ** decimals)))
+    except (OverflowError, ValueError, InvalidOperation):
         return None
     if int(amount_in) <= 0:
         return None
@@ -896,6 +920,79 @@ _SELL_ALL_RE = re.compile(
     r"(?:\s+(?:from|in)\s+(?:my\s+)?wallet)?\s*$",
     re.IGNORECASE,
 )
+# "buy 100 BONK" / "buy 0.5 SOL with USDC" — swap source (default USDC) into target.
+_BUY_RE = re.compile(
+    rf"^\s*buy\s+{_NUM_AMOUNT_RE}\s+"
+    r"(?P<tout>[A-Za-z][A-Za-z0-9$._-]{0,15})"
+    r"(?:\s+(?:with|using|from|via)\s+(?P<src>[A-Za-z][A-Za-z0-9$._-]{0,15}))?"
+    r"(?:\s+on\s+(?P<chain>\w+))?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_buy_intent(message: str) -> tuple[str, dict] | None:
+    """'buy 100 BONK' / 'buy 0.5 SOL with USDC' → swap source into target.
+
+    Source defaults to USDC. The numeric amount specifies the OUTPUT amount
+    in target tokens, not the input — but Jupiter/Enso quote API takes input
+    amount, so we emit a swap with the input side as the explicit src token
+    and the agent re-asks the user when liquidity differs significantly.
+
+    Implementation note: we route as 'swap N USDC to TOKEN' so the existing
+    pricing path produces a quote. If the user wants 100 BONK literally,
+    they can quote-and-adjust.
+    """
+    m = _BUY_RE.search(message)
+    if not m:
+        return None
+    tout = m.group("tout").upper()
+    src = (m.group("src") or "USDC").upper()
+    if tout in _NOT_A_SYMBOL or src in _NOT_A_SYMBOL or tout == src:
+        return None
+    amount_value = _expand_numeric_amount(m.group("amount"), m.group("suffix"))
+    if amount_value is None or amount_value <= 0:
+        return None
+    # Pick chain from token signal: solana memes → 101, EVM tokens → 1 default,
+    # BNB → 56, etc. Reuse the same logic as sell-all.
+    chain_id_by_token = {
+        "BNB": 56, "CAKE": 56, "BUSD": 56, "WBNB": 56,
+        "MATIC": 137, "POL": 137, "AVAX": 43114,
+        "ARB": 42161, "OP": 10,
+        "SHIB": 1, "PEPE": 1, "ETH": 1, "WETH": 1,
+        "SOL": 101, "BONK": 101, "JUP": 101, "PYTH": 101, "RAY": 101,
+        "ORCA": 101, "MSOL": 101, "JITOSOL": 101, "STSOL": 101,
+        "FATPENGU": 101, "PENGU": 101, "WIF": 101, "POPCAT": 101,
+    }
+    chain_hint = (m.group("chain") or "").lower()
+    if chain_hint:
+        chain_id = CHAIN_IDS.get(chain_hint, chain_id_by_token.get(tout, 1))
+        if chain_id == 7565164:
+            chain_id = 101
+    else:
+        chain_id = chain_id_by_token.get(tout, 101)
+    # Convert input USDC amount in source token decimals.
+    if chain_id == 101:
+        decimals = _SOLANA_DECIMALS.get(src, 6)
+    elif chain_id == 56 and src in {"USDC", "USDT", "DAI", "BUSD", "TUSD", "FDUSD"}:
+        decimals = 18
+    else:
+        decimals = TOKEN_DECIMALS.get(src, 18 if src not in {"USDC", "USDT"} else 6)
+    try:
+        amount_in = str(int(amount_value * (Decimal(10) ** decimals)))
+    except (OverflowError, ValueError, InvalidOperation):
+        return None
+    return (
+        "build_swap_tx",
+        {
+            "chain_id": chain_id,
+            "token_in": src,
+            "token_out": tout,
+            "amount_in": amount_in,
+            "from_addr": "",
+        },
+    )
+
+
 def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
     """Route signable swap intents to build_swap_tx (legacy SimulationPreview path).
 
@@ -974,7 +1071,7 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
     # 2) "swap 0.1 SOL to USDC" — explicit numeric amount.
     pattern = re.compile(
         r"(?:swap|exchange|convert|trade)\s+(?:of\s+)?"
-        r"(?P<amount>[\d,]+(?:\.\d+)?)\s*"
+        rf"{_NUM_AMOUNT_RE}\s*"
         r"(?P<tin>[A-Za-z]{2,10})\s+"
         r"(?:to|for|into)\s+"
         r"(?P<tout>[A-Za-z]{2,10})"
@@ -985,7 +1082,7 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
     if not m:
         # 3) "sell 100 SHIB" / "dump 0.5 BONK" — destination defaults to USDC.
         sell_pattern = re.compile(
-            r"(?:sell|dump)\s+(?P<amount>[\d,]+(?:\.\d+)?)\s*"
+            rf"(?:sell|dump)\s+{_NUM_AMOUNT_RE}\s*"
             r"(?P<tin>[A-Za-z]{2,10})"
             r"(?:\s+(?:to|for|into)\s+(?P<tout>[A-Za-z]{2,10}))?"
             r"(?:\s+on\s+(?P<chain>\w+))?\s*$",
@@ -1013,12 +1110,12 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
     token_out = m.group("tout").upper()
     if "MALICIOUS" in (token_in, token_out):
         return None
-    amount_human_raw = m.group("amount").replace(",", "")
     try:
-        amount_value = float(amount_human_raw)
-    except ValueError:
-        return None
-    if amount_value <= 0:
+        suffix = m.group("suffix")
+    except Exception:
+        suffix = None
+    amount_value = _expand_numeric_amount(m.group("amount"), suffix)
+    if amount_value is None or amount_value <= 0:
         return None
     chain_hint = (m.group("chain") or "").lower()
 
@@ -1045,8 +1142,8 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
         decimals = TOKEN_DECIMALS.get(token_in, 18)
 
     try:
-        amount_in = str(int(round(amount_value * (10 ** decimals))))
-    except (OverflowError, ValueError):
+        amount_in = str(int(amount_value * (Decimal(10) ** decimals)))
+    except (OverflowError, ValueError, InvalidOperation):
         return None
     if int(amount_in) <= 0:
         return None
@@ -1398,7 +1495,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
         return multi_step
-    for detector in (_detect_aave_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_aave_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
