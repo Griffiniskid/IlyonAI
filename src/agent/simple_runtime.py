@@ -841,13 +841,38 @@ def _detect_stake_simple(message: str) -> tuple[str, dict] | None:
     )
 
 
+# Quantifier phrases the swap/sell/bridge detectors accept. Map to a percent
+# integer 1-100 so the wallet tool can convert balance × pct/100 → base units.
+_QUANTIFIER_PCT = {
+    "all": 100, "max": 100, "maximum": 100, "entire": 100, "entire balance": 100,
+    "everything": 100, "100%": 100, "whole": 100, "whole balance": 100,
+    "three quarters": 75, "three-quarters": 75, "75%": 75,
+    "two thirds": 66, "two-thirds": 66, "67%": 67, "66%": 66,
+    "half": 50, "1/2": 50, "50%": 50, "50 percent": 50,
+    "third": 33, "one third": 33, "1/3": 33, "33%": 33, "33 percent": 33,
+    "quarter": 25, "one quarter": 25, "1/4": 25, "25%": 25, "25 percent": 25,
+    "20%": 20, "20 percent": 20, "10%": 10, "10 percent": 10,
+    "5%": 5, "5 percent": 5,
+}
+_QUANTIFIER_PATTERN = "|".join(re.escape(k) for k in sorted(_QUANTIFIER_PCT, key=len, reverse=True))
+
+
+def _quantifier_to_amount(q: str) -> str:
+    """Map a parsed quantifier ('half', '50%', 'all') to an amount sentinel.
+
+    Returns 'ALL' for 100% (kept for backward-compat) or 'PCT:NN' for partials.
+    """
+    pct = _QUANTIFIER_PCT.get(q.strip().lower(), 100)
+    return "ALL" if pct == 100 else f"PCT:{pct}"
+
+
 # "swap all FATPENGU [from my wallet] to usdc" — must match BEFORE the numeric
 # pattern, and must NOT capture noise words ("WALLET", "MY", "FROM") as the
 # token symbol. The optional "from/in (my) wallet" clause is consumed but
-# discarded so it never lands in `tin`.
+# discarded so it never lands in `tin`. Now also matches "half / 50% / quarter".
 _SWAP_ALL_RE = re.compile(
     r"(?:swap|exchange|convert|trade|sell|dump)\s+"
-    r"(?:all|max|maximum|entire(?:\s+balance)?|everything|100%|whole(?:\s+balance)?)"
+    rf"(?P<qty>{_QUANTIFIER_PATTERN})"
     r"\s+(?:of\s+)?(?:my\s+)?"
     r"(?P<tin>[A-Za-z][A-Za-z0-9$._-]{0,15})"
     r"(?:\s+(?:from|in)\s+(?:my\s+)?wallet)?"
@@ -857,10 +882,10 @@ _SWAP_ALL_RE = re.compile(
     re.IGNORECASE,
 )
 
-# "sell all FATPENGU" / "dump all SHIB" — destination defaults to USDC.
+# "sell all FATPENGU" / "dump all SHIB" / "sell half my SOL" — destination defaults to USDC.
 _SELL_ALL_RE = re.compile(
     r"^\s*(?:sell|dump)\s+"
-    r"(?:all|max|maximum|entire(?:\s+balance)?|everything|100%|whole(?:\s+balance)?)"
+    rf"(?P<qty>{_QUANTIFIER_PATTERN})"
     r"\s+(?:of\s+)?(?:my\s+)?"
     r"(?P<tin>[A-Za-z][A-Za-z0-9$._-]{0,15})"
     r"(?:\s+(?:from|in)\s+(?:my\s+)?wallet)?\s*$",
@@ -902,12 +927,12 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
                     "chain_id": chain_id,
                     "token_in": token_in,
                     "token_out": "USDC",
-                    "amount_in": "ALL",
+                    "amount_in": _quantifier_to_amount(sell_all_match.group("qty")),
                     "from_addr": "",
                 },
             )
 
-    # 1) "swap all/max/entire X to Y" — no numeric amount, look up balance later.
+    # 1) "swap all/half/50% X to Y" — no numeric amount, look up balance later.
     all_match = _SWAP_ALL_RE.search(message)
     if all_match:
         token_in = all_match.group("tin").upper()
@@ -939,7 +964,7 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
                 "chain_id": chain_id,
                 "token_in": token_in,
                 "token_out": token_out,
-                "amount_in": "ALL",
+                "amount_in": _quantifier_to_amount(all_match.group("qty")),
                 "from_addr": "",
             },
         )

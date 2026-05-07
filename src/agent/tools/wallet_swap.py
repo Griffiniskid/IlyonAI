@@ -75,11 +75,21 @@ async def build_swap_tx(
     chain = "solana" if chain_id == 101 else "evm"
     slippage_bps = 50 if chain == "solana" else 100
 
-    # ── "swap all X to Y" path ───────────────────────────────────────────
-    # Sentinel "ALL" means: read the user's current balance for token_in
-    # from the wallet scanner, convert to base units, then proceed as a
-    # normal numeric swap. Done here (not in the detector) so we have ctx.
-    if isinstance(amount_in, str) and amount_in.strip().upper() in ("ALL", "MAX", "ENTIRE", "EVERYTHING", "100%"):
+    # ── "swap all/half/50% X to Y" path ──────────────────────────────────
+    # Sentinel "ALL" / "PCT:NN" means: read the user's current balance for
+    # token_in from the wallet scanner, take that fraction, convert to base
+    # units, then proceed as a normal numeric swap. Done here (not in the
+    # detector) so we have ctx.
+    pct_factor = None
+    amt_str = amount_in.strip().upper() if isinstance(amount_in, str) else ""
+    if amt_str in ("ALL", "MAX", "ENTIRE", "EVERYTHING", "100%"):
+        pct_factor = 1.0
+    elif amt_str.startswith("PCT:"):
+        try:
+            pct_factor = max(0.0, min(1.0, int(amt_str[4:]) / 100.0))
+        except ValueError:
+            pct_factor = None
+    if pct_factor is not None:
         sol_wallet_addr = (getattr(ctx, "solana_wallet", "") or "").split(",")[0].strip()
         evm_wallet_addr = (getattr(ctx, "evm_wallet", "") or "").split(",")[0].strip()
         primary_addr = (getattr(ctx, "wallet", "") or "").split(",")[0].strip()
@@ -138,14 +148,25 @@ async def build_swap_tx(
                 matched_decimals = _SOL_DEC_FALLBACK.get(sym_target, 6)
             else:
                 matched_decimals = 18
-        # Leave a small dust buffer on natives so signing doesn't fail on gas.
-        if (chain == "solana" and sym_target == "SOL") or (chain == "evm" and sym_target in {"BNB", "ETH", "MATIC", "AVAX"}):
+        # Apply the percent factor — half/quarter/etc.
+        matched_amount = matched_amount * pct_factor
+        # Leave a small dust buffer on natives so signing doesn't fail on gas
+        # (only when sweeping the full balance — partial swaps don't need it).
+        if pct_factor >= 0.99 and (
+            (chain == "solana" and sym_target == "SOL")
+            or (chain == "evm" and sym_target in {"BNB", "ETH", "MATIC", "AVAX"})
+        ):
             matched_amount = max(0.0, matched_amount - (0.001 if chain == "solana" else 0.002))
             if matched_amount <= 0:
                 return err_envelope(
                     code="swap_failed",
                     message=f"Native {sym_target} balance too small after gas reserve.",
                 )
+        if matched_amount <= 0:
+            return err_envelope(
+                code="swap_failed",
+                message=f"Computed {sym_target} amount is zero after applying percent.",
+            )
         amount_in = str(int(matched_amount * (10 ** matched_decimals)))
         # If the scanner gave us the actual mint address, use it directly so
         # Jupiter doesn't need to symbol-resolve a meme like FATPENGU.
