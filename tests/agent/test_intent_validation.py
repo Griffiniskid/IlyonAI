@@ -108,6 +108,14 @@ def test_validate_swap_rejects_token_not_on_chain():
     assert v.error_code in ("cross_chain", "token_not_on_chain")
 
 
+def test_translate_aggregator_from_address_invalid():
+    msg = translate_aggregator_error(
+        'Enso API 400: {"message":"fromAddress is not a valid address (guest).","error":"Bad Request"}'
+    )
+    assert "wallet" in msg.lower()
+    assert "guest" not in msg.lower()  # raw token scrubbed
+
+
 def test_translate_aggregator_jupiter_wrongsize():
     msg = translate_aggregator_error("Jupiter quote error 400: outputMint cannot be parsed: WrongSize")
     assert "bridge" in msg.lower() or "valid solana mint" in msg.lower()

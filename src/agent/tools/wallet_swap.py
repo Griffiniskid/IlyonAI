@@ -265,13 +265,37 @@ async def build_swap_tx(
     sol_wallet = (getattr(ctx, "solana_wallet", "") or "").split(",")[0].strip()
     evm_wallet = (getattr(ctx, "evm_wallet", "") or "").split(",")[0].strip()
     primary = (getattr(ctx, "wallet", "") or "").split(",")[0].strip()
+
+    def _is_evm_addr(s: str) -> bool:
+        return isinstance(s, str) and s.lower().startswith("0x") and len(s) == 42
+
+    def _is_sol_addr(s: str) -> bool:
+        # base58, 32-44 chars, no 0/O/I/l. Avoid matching "guest", "from", etc.
+        import re as _re
+        return bool(s) and bool(_re.match(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$", str(s)))
+
     if not from_addr:
-        from_addr = sol_wallet if chain == "solana" else (evm_wallet or primary)
-    if not from_addr:
-        return err_envelope(
-            code="swap_failed",
-            message=f"No {'Solana' if chain == 'solana' else 'EVM'} wallet connected — connect a wallet then retry the swap.",
-        )
+        if chain == "solana":
+            cand = sol_wallet or (primary if _is_sol_addr(primary) else "")
+        else:
+            cand = evm_wallet or (primary if _is_evm_addr(primary) else "")
+        from_addr = cand or ""
+
+    # Hard validate the resolved address before sending to Enso/Jupiter — the
+    # wallet assistant otherwise leaks raw aggregator errors when the address
+    # is the literal string "guest" (or any non-address fallback).
+    if chain == "solana":
+        if not _is_sol_addr(from_addr):
+            return err_envelope(
+                code="swap_failed",
+                message="Connect a Solana wallet (Phantom) and retry the swap.",
+            )
+    else:
+        if not _is_evm_addr(from_addr):
+            return err_envelope(
+                code="swap_failed",
+                message="Connect an EVM wallet (MetaMask) and retry the swap.",
+            )
 
     params = {
         "chain": chain,

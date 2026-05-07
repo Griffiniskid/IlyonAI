@@ -437,6 +437,14 @@ def translate_aggregator_error(raw: str | None) -> str:
             "wasn't charged."
         )
 
+    # Wallet identity errors (Enso "fromAddress is not a valid address" /
+    # Jupiter userPublicKey errors) — almost always a guest with no wallet.
+    if ("fromaddress is not a valid address" in low
+            or "fromaddress invalid" in low
+            or "userpublickey" in low and "invalid" in low
+            or "is not a valid address" in low):
+        return "Connect a wallet (MetaMask for EVM, Phantom for Solana) and retry the swap."
+
     # Slippage
     if "slippage" in low and ("exceed" in low or "tolerance" in low):
         return (

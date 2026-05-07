@@ -42,7 +42,7 @@ async def test_build_swap_tx_success():
     sys.modules["wallet_assistant_crypto_agent"] = mock_module
 
     services = SimpleNamespace()
-    ctx = ToolCtx(services=services, user_id=0, wallet="0xabc")
+    ctx = ToolCtx(services=services, user_id=0, wallet="0x0000000000000000000000000000000000000abc")
 
     result = await build_swap_tx(
         ctx,
@@ -50,7 +50,7 @@ async def test_build_swap_tx_success():
         token_in="BNB",
         token_out="USDT",
         amount_in="1000000000000000000",
-        from_addr="0xabc",
+        from_addr="0x0000000000000000000000000000000000000abc",
     )
 
     assert result.ok is True
@@ -69,7 +69,7 @@ async def test_build_swap_tx_success():
     mock_build_swap_tx.assert_called_once()
     call_args = mock_build_swap_tx.call_args[0]
     assert json.loads(call_args[0])["chain_id"] == 56
-    assert call_args[1] == "0xabc"
+    assert call_args[1] == "0x0000000000000000000000000000000000000abc"
     assert call_args[2] == 56
 
 
@@ -95,7 +95,7 @@ async def test_build_swap_tx_solana():
     sys.modules["wallet_assistant_crypto_agent"] = mock_module
 
     services = SimpleNamespace()
-    ctx = ToolCtx(services=services, user_id=0, wallet="SolanaPubkey")
+    ctx = ToolCtx(services=services, user_id=0, wallet="11111111111111111111111111111111")
 
     result = await build_swap_tx(
         ctx,
@@ -103,7 +103,7 @@ async def test_build_swap_tx_solana():
         token_in="SOL",
         token_out="USDC",
         amount_in="1000000000",
-        from_addr="SolanaPubkey",
+        from_addr="11111111111111111111111111111111",
     )
 
     assert result.ok is True
@@ -126,7 +126,7 @@ async def test_build_swap_tx_error():
     sys.modules["wallet_assistant_crypto_agent"] = mock_module
 
     services = SimpleNamespace()
-    ctx = ToolCtx(services=services, user_id=0, wallet="0xabc")
+    ctx = ToolCtx(services=services, user_id=0, wallet="0x0000000000000000000000000000000000000abc")
 
     result = await build_swap_tx(
         ctx,
@@ -134,7 +134,7 @@ async def test_build_swap_tx_error():
         token_in="UNKNOWN",
         token_out="USDT",
         amount_in="1000000000000000000",
-        from_addr="0xabc",
+        from_addr="0x0000000000000000000000000000000000000abc",
     )
 
     assert result.ok is False
@@ -155,7 +155,7 @@ async def test_build_swap_tx_invalid_json():
     sys.modules["wallet_assistant_crypto_agent"] = mock_module
 
     services = SimpleNamespace()
-    ctx = ToolCtx(services=services, user_id=0, wallet="0xabc")
+    ctx = ToolCtx(services=services, user_id=0, wallet="0x0000000000000000000000000000000000000abc")
 
     result = await build_swap_tx(
         ctx,
@@ -163,7 +163,7 @@ async def test_build_swap_tx_invalid_json():
         token_in="BNB",
         token_out="USDT",
         amount_in="1000000000000000000",
-        from_addr="0xabc",
+        from_addr="0x0000000000000000000000000000000000000abc",
     )
 
     assert result.ok is False
@@ -181,7 +181,7 @@ async def test_build_swap_tx_exception():
     sys.modules["wallet_assistant_crypto_agent"] = mock_module
 
     services = SimpleNamespace()
-    ctx = ToolCtx(services=services, user_id=0, wallet="0xabc")
+    ctx = ToolCtx(services=services, user_id=0, wallet="0x0000000000000000000000000000000000000abc")
 
     result = await build_swap_tx(
         ctx,
@@ -189,7 +189,7 @@ async def test_build_swap_tx_exception():
         token_in="BNB",
         token_out="USDT",
         amount_in="1000000000000000000",
-        from_addr="0xabc",
+        from_addr="0x0000000000000000000000000000000000000abc",
     )
 
     assert result.ok is False
