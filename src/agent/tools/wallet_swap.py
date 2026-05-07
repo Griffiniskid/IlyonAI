@@ -12,6 +12,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from src.agent.intent.validation import (
+    is_stop_word,
+    is_valid_symbol_shape,
+    translate_aggregator_error,
+    validate_swap_params,
+)
 from src.agent.tools._assistant_bridge import AssistantError, parse_assistant_json
 from src.api.schemas.agent import ToolEnvelope
 from src.agent.tools._base import err_envelope, ok_envelope
@@ -64,6 +70,57 @@ async def build_swap_tx(
         ok envelope with card_type="swap_quote" on success,
         err envelope with code="swap_failed" on error.
     """
+    # Pre-flight semantic gate. Catches LLM tool-call mistakes (stop-words as
+    # tickers, cross-chain mismatches, garbage amounts) before reaching Enso/
+    # Jupiter. Symbols only — pass-through when the caller already supplied
+    # an on-chain address (prefix 0x or base58-shaped) since validation only
+    # speaks in tickers.
+    def _is_address_like(t):
+        if not isinstance(t, str):
+            return False
+        s = t.strip()
+        return s.startswith("0x") and len(s) == 42 or len(s) >= 32 and not s.isdecimal()
+
+    if isinstance(token_in, str) and not _is_address_like(token_in):
+        if (not is_valid_symbol_shape(token_in)) or is_stop_word(token_in):
+            return err_envelope(
+                code="invalid_token",
+                message=(
+                    f"'{token_in}' isn't a valid token symbol. "
+                    f"Use a canonical ticker like SOL, USDC, ETH."
+                ),
+            )
+    if isinstance(token_out, str) and not _is_address_like(token_out):
+        if (not is_valid_symbol_shape(token_out)) or is_stop_word(token_out):
+            return err_envelope(
+                code="invalid_token",
+                message=(
+                    f"'{token_out}' isn't a valid token symbol. "
+                    f"Use a canonical ticker like WBNB, USDC, ETH."
+                ),
+            )
+
+    # When both sides are tickers (not addresses) we can run the full check.
+    if (isinstance(token_in, str) and not _is_address_like(token_in)
+            and isinstance(token_out, str) and not _is_address_like(token_out)):
+        amt_str_check = str(amount_in).strip().upper() if amount_in is not None else ""
+        is_sentinel = (
+            amt_str_check in ("ALL", "MAX", "ENTIRE", "EVERYTHING", "100%")
+            or amt_str_check.startswith("PCT:")
+        )
+        v = validate_swap_params(
+            token_in=token_in,
+            token_out=token_out,
+            chain_id=int(chain_id) if chain_id is not None else None,
+            amount_in=amount_in,
+            amount_is_sentinel=is_sentinel,
+        )
+        if not v.ok:
+            return err_envelope(
+                code=v.error_code or "swap_failed",
+                message=v.user_message or "Swap rejected by validation.",
+            )
+
     try:
         _build_swap_tx = _get_build_swap_tx()
     except Exception as exc:
@@ -232,7 +289,7 @@ async def build_swap_tx(
     except Exception as exc:
         return err_envelope(
             code="swap_failed",
-            message=f"Wallet assistant error: {exc}",
+            message=translate_aggregator_error(str(exc)),
         )
 
     try:
@@ -240,13 +297,13 @@ async def build_swap_tx(
     except AssistantError as exc:
         return err_envelope(
             code="swap_failed",
-            message=f"Failed to parse assistant response: {exc}",
+            message=f"Failed to parse swap response: {exc}",
         )
 
     if parsed.get("status") == "error":
         return err_envelope(
             code="swap_failed",
-            message=parsed.get("message", "Unknown swap error"),
+            message=translate_aggregator_error(parsed.get("message", "Unknown swap error")),
         )
 
     chain_type = parsed.get("chain_type", "evm")
@@ -316,6 +373,23 @@ async def build_swap_tx(
 
     amount_in_display = parsed.get("amount_in_display", 0)
     dst_amount_display = parsed.get("dst_amount_display", 0)
+    # Refuse to render zero/negative quote cards. Aggregator can occasionally
+    # return a successful response with a 0 outAmount for ultra-illiquid pairs
+    # — surface a real error instead of a card showing "0 → 0".
+    try:
+        in_num = float(amount_in_display or 0)
+        out_num = float(dst_amount_display or 0)
+    except (TypeError, ValueError):
+        in_num, out_num = 0.0, 0.0
+    if in_num <= 0 or out_num <= 0:
+        return err_envelope(
+            code="zero_quote",
+            message=(
+                "The aggregator returned a non-positive output amount, so we can't "
+                "show a swap card. The pair may be illiquid or the input too small. "
+                "Try a larger amount or a more liquid pair."
+            ),
+        )
     if amount_in_display and dst_amount_display:
         rate = str(round(dst_amount_display / amount_in_display, 8))
     else:

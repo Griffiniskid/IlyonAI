@@ -7,6 +7,17 @@ from decimal import Decimal, InvalidOperation
 from typing import AsyncIterator
 
 from src.agent.intent.defi_intent import DefiIntent, parse_defi_intent
+from src.agent.intent.validation import (
+    STOP_WORDS as _VALIDATION_STOP_WORDS,
+    filter_symbol_candidates,
+    is_cross_chain,
+    is_stop_word,
+    is_valid_symbol_shape,
+    primary_home_chain,
+    token_supported_on_chain,
+    validate_swap_params,
+    _native_chain_for_token,
+)
 from src.agent.llm import IlyonChatModel
 from src.agent.streaming import StreamCollector, encode_sse, frame_event_name
 from src.api.schemas.agent import ThoughtFrame, ToolFrame, ObservationFrame, FinalFrame, DoneFrame, CardFrame, PlanBlockedFrame
@@ -1016,6 +1027,11 @@ def _detect_buy_intent(message: str) -> tuple[str, dict] | None:
         amount_in = str(int(amount_value * (Decimal(10) ** decimals)))
     except (OverflowError, ValueError, InvalidOperation):
         return None
+    # Cross-chain reject: 'buy 100 PENGU with ETH' — PENGU is Solana-only,
+    # ETH is EVM. Buy intent doesn't auto-bridge; refuse so the LLM/user can
+    # rephrase as bridge + swap.
+    if is_cross_chain(src, tout, chain_id):
+        return None
     return (
         "build_swap_tx",
         {
@@ -1043,7 +1059,10 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
     sell_all_match = _SELL_ALL_RE.search(message)
     if sell_all_match:
         token_in = sell_all_match.group("tin").upper()
-        if token_in not in _NOT_A_SYMBOL and token_in != "USDC":
+        if (token_in not in _NOT_A_SYMBOL
+                and not is_stop_word(token_in)
+                and is_valid_symbol_shape(token_in)
+                and token_in != "USDC"):
             chain_id_by_token = {
                 "BNB": 56, "CAKE": 56, "BUSD": 56, "WBNB": 56,
                 "MATIC": 137, "POL": 137,
@@ -1073,10 +1092,14 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
         token_out = all_match.group("tout").upper()
         if token_in in _NOT_A_SYMBOL or token_out in _NOT_A_SYMBOL:
             return None
+        if is_stop_word(token_in) or is_stop_word(token_out):
+            return None
+        if not is_valid_symbol_shape(token_in) or not is_valid_symbol_shape(token_out):
+            return None
         if "MALICIOUS" in (token_in, token_out):
             return None
         chain_hint = (all_match.group("chain") or "").lower()
-        evm_only = {"BNB", "CAKE", "BUSD", "WBNB", "MATIC", "AVAX", "ARB", "OP"}
+        evm_only = {"BNB", "CAKE", "BUSD", "WBNB", "MATIC", "AVAX", "ARB", "OP", "WETH", "WSTETH", "RETH", "SHIB", "PEPE"}
         solana_only = {"BONK", "JUP", "PYTH", "RAY", "ORCA", "MSOL", "JITOSOL", "STSOL", "FATPENGU", "PENGU", "WIF", "POPCAT"}
         if chain_hint:
             chain_id = CHAIN_IDS.get(chain_hint, 1)
@@ -1085,13 +1108,30 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
         elif token_in == "SOL" or token_out == "SOL" or token_in in solana_only or token_out in solana_only:
             chain_id = 101
         elif token_in in evm_only or token_out in evm_only:
-            chain_id = 56
+            if token_in in {"WETH", "SHIB", "PEPE", "WSTETH", "RETH"} or token_out in {"WETH", "SHIB", "PEPE", "WSTETH", "RETH"}:
+                chain_id = 1
+            elif token_in in {"BNB", "CAKE", "BUSD", "WBNB"} or token_out in {"BNB", "CAKE", "BUSD", "WBNB"}:
+                chain_id = 56
+            elif token_in in {"MATIC", "POL"} or token_out in {"MATIC", "POL"}:
+                chain_id = 137
+            elif token_in == "AVAX" or token_out == "AVAX":
+                chain_id = 43114
+            elif token_in == "ARB" or token_out == "ARB":
+                chain_id = 42161
+            elif token_in == "OP" or token_out == "OP":
+                chain_id = 10
+            else:
+                chain_id = 56
         elif token_in in {"USDC", "USDT", "DAI"} and token_out in {"USDC", "USDT", "DAI"}:
             chain_id = 101
         else:
             # Unknown ticker (typical meme on Solana) → default Solana so Jupiter
             # gets a chance to resolve via the user's wallet token list.
             chain_id = 101
+        # Cross-chain: ALL/PCT amount is a sentinel, so we can't auto-bridge a
+        # numeric amount. Reject the swap so the user reframes as a bridge.
+        if is_cross_chain(token_in, token_out, chain_id):
+            return None
         return (
             "build_swap_tx",
             {
@@ -1145,6 +1185,10 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
     token_out = m.group("tout").upper()
     if "MALICIOUS" in (token_in, token_out):
         return None
+    # Reject obvious stop-word captures from earlier-pattern slack — the regex
+    # can't always exclude phrases like "from my wallet to wbnb" cleanly.
+    if is_stop_word(token_in) or is_stop_word(token_out):
+        return None
     try:
         suffix = m.group("suffix")
     except Exception:
@@ -1152,10 +1196,14 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
     amount_value = _expand_numeric_amount(m.group("amount"), suffix)
     if amount_value is None or amount_value <= 0:
         return None
+    # Sanity ceiling: anything above 1B human units of any token is a parse
+    # error — block before the LLM/aggregator wastes a quote on it.
+    if amount_value > Decimal("1_000_000_000"):
+        return None
     chain_hint = (m.group("chain") or "").lower()
 
-    evm_only = {"BNB", "CAKE", "BUSD", "WBNB", "MATIC", "AVAX", "ARB", "OP"}
-    solana_only = {"BONK", "JUP", "PYTH", "RAY", "ORCA", "MSOL", "JITOSOL", "STSOL"}
+    evm_only = {"BNB", "CAKE", "BUSD", "WBNB", "MATIC", "AVAX", "ARB", "OP", "WETH", "WSTETH", "RETH", "SHIB", "PEPE"}
+    solana_only = {"BONK", "JUP", "PYTH", "RAY", "ORCA", "MSOL", "JITOSOL", "STSOL", "WIF", "POPCAT", "FATPENGU", "PENGU"}
 
     if chain_hint:
         chain_id = CHAIN_IDS.get(chain_hint, 1)
@@ -1165,14 +1213,66 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
     elif token_in == "SOL" or token_out == "SOL" or token_in in solana_only or token_out in solana_only:
         chain_id = 101
     elif token_in in evm_only or token_out in evm_only:
-        chain_id = 56
+        # Pick the EVM home chain of the registered side instead of always defaulting
+        # to BSC (56). WETH/SHIB/PEPE → Ethereum (1); BNB/CAKE → BSC; etc.
+        if token_in in {"WETH", "SHIB", "PEPE", "WSTETH", "RETH"} or token_out in {"WETH", "SHIB", "PEPE", "WSTETH", "RETH"}:
+            chain_id = 1
+        elif token_in in {"BNB", "CAKE", "BUSD", "WBNB"} or token_out in {"BNB", "CAKE", "BUSD", "WBNB"}:
+            chain_id = 56
+        elif token_in in {"MATIC", "POL"} or token_out in {"MATIC", "POL"}:
+            chain_id = 137
+        elif token_in == "AVAX" or token_out == "AVAX":
+            chain_id = 43114
+        elif token_in == "ARB" or token_out == "ARB":
+            chain_id = 42161
+        elif token_in == "OP" or token_out == "OP":
+            chain_id = 10
+        else:
+            chain_id = 56
     elif token_in in {"USDC", "USDT", "DAI"} and token_out in {"USDC", "USDT", "DAI"}:
         chain_id = 101
     else:
         chain_id = 1
 
+    # Cross-chain detection: SOL → WETH, BNB → SOL, etc. Route to bridge.
+    if is_cross_chain(token_in, token_out, chain_id):
+        # Pick canonical home chains (single-home if known, else the registered
+        # primary preference). This lets SOL → ETH route to ethereum even though
+        # ETH lives on multiple chains.
+        src_chain_id = primary_home_chain(token_in)
+        dst_chain_id = primary_home_chain(token_out)
+        if src_chain_id and dst_chain_id and src_chain_id != dst_chain_id:
+            # Compute base-units on the SOURCE chain (where token_in lives).
+            if src_chain_id == 101:
+                src_decimals = _SOLANA_DECIMALS.get(token_in, 9)
+            elif src_chain_id == 56 and token_in in {"USDC", "USDT", "DAI", "BUSD", "TUSD", "FDUSD"}:
+                src_decimals = 18
+            else:
+                src_decimals = TOKEN_DECIMALS.get(token_in, 18)
+            try:
+                amount_base = str(int(amount_value * (Decimal(10) ** src_decimals)))
+            except (OverflowError, ValueError, InvalidOperation):
+                return None
+            if int(amount_base) <= 0:
+                return None
+            return (
+                "build_bridge_tx",
+                {
+                    "src_chain_id": src_chain_id,
+                    "dst_chain_id": dst_chain_id,
+                    "token_in": token_in,
+                    "token_out": "",  # let bridge resolver pick destination
+                    "amount": amount_base,
+                },
+            )
+        # Otherwise: refuse the swap so we don't hand garbage to the aggregator.
+        return None
+
     if chain_id == 101:
         decimals = _SOLANA_DECIMALS.get(token_in, 9)
+    elif chain_id == 56 and token_in in {"USDC", "USDT", "DAI", "BUSD", "TUSD", "FDUSD"}:
+        # BSC pegs are 18-decimal, not 6.
+        decimals = 18
     else:
         decimals = TOKEN_DECIMALS.get(token_in, 18)
 
@@ -1181,6 +1281,16 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
     except (OverflowError, ValueError, InvalidOperation):
         return None
     if int(amount_in) <= 0:
+        return None
+
+    # Final pre-dispatch validation. Catches anything the structured logic missed.
+    v = validate_swap_params(
+        token_in=token_in,
+        token_out=token_out,
+        chain_id=chain_id,
+        amount_in=amount_in,
+    )
+    if not v.ok:
         return None
 
     return (
@@ -1588,23 +1698,67 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
                     )
                     m2 = swap_re.search(message)
                     if m2:
-                        params["token_in"] = m2.group("tin").upper()
-                        params["token_out"] = m2.group("tout").upper()
+                        ti = m2.group("tin").upper()
+                        to = m2.group("tout").upper()
+                        if is_stop_word(ti) or is_stop_word(to):
+                            return None
+                        if ti == to:
+                            return None
+                        try:
+                            amt_val = float(m2.group("amount").replace(",", ""))
+                        except (TypeError, ValueError):
+                            return None
+                        if amt_val <= 0 or amt_val > 1_000_000_000:
+                            return None
+                        params["token_in"] = ti
+                        params["token_out"] = to
                         params["amount"] = m2.group("amount").replace(",", "")
                         chain = m2.group("chain")
-                        params["chain"] = (chain.lower() if chain else "ethereum")
+                        chain_l = chain.lower() if chain else "ethereum"
+                        # Cross-chain check: refuse so the LLM/bridge path can take over.
+                        from src.agent.intent.validation import _CHAIN_ID_BY_NAME_FALLBACK as _C  # noqa: E402
+                        _cid = _C.get(chain_l)
+                        if _cid and is_cross_chain(ti, to, _cid):
+                            return None
+                        params["chain"] = chain_l
                     else:
-                        # Fallback: pick the last two capitalised tokens that aren't english stop-words
-                        stop = {"SWAP", "TO", "FOR", "INTO", "ON", "THE", "A", "AN"}
-                        candidates = [t for t in re.findall(r"[A-Za-z]{2,10}", message)
-                                      if t.upper() not in stop]
-                        if len(candidates) >= 2:
-                            params["token_in"] = candidates[-2].upper()
-                            params["token_out"] = candidates[-1].upper()
+                        # Fallback: pick the last two valid-looking tickers,
+                        # routing every English noise word ("WALLET", "FROM",
+                        # "MY", chain names, etc) through the central STOP_WORDS list.
+                        all_tokens = re.findall(r"[A-Za-z]{2,10}", message)
+                        candidates = filter_symbol_candidates(all_tokens)
+                        if len(candidates) < 2:
+                            return None
+                        ti = candidates[-2]
+                        to = candidates[-1]
+                        if ti == to:
+                            return None
+                        # Detect a negative-sign immediately preceding a number — reject.
+                        if re.search(r"-\s*\d", message):
+                            return None
                         amount_match = re.search(r'(\d+(?:\.\d+)?)', message)
-                        if amount_match:
-                            params["amount"] = amount_match.group(1)
-                        params["chain"] = "ethereum"
+                        if not amount_match:
+                            return None
+                        try:
+                            amt_val = float(amount_match.group(1))
+                        except (TypeError, ValueError):
+                            return None
+                        if amt_val <= 0 or amt_val > 1_000_000_000:
+                            return None
+                        # Detect chain hint anywhere in the message.
+                        chain_l = "ethereum"
+                        for chain_name, patterns in CHAIN_PATTERNS.items():
+                            if any(re.search(p, message_lower, re.IGNORECASE) for p in patterns):
+                                chain_l = chain_name
+                                break
+                        from src.agent.intent.validation import _CHAIN_ID_BY_NAME_FALLBACK as _C  # noqa: E402
+                        _cid = _C.get(chain_l)
+                        if _cid and is_cross_chain(ti, to, _cid):
+                            return None
+                        params["token_in"] = ti
+                        params["token_out"] = to
+                        params["amount"] = amount_match.group(1)
+                        params["chain"] = chain_l
                 elif tool_name == "build_bridge_tx":
                     bridge_re = re.compile(
                         r"bridge\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})"

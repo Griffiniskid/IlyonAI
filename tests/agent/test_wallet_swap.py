@@ -140,7 +140,9 @@ async def test_build_swap_tx_error():
     assert result.ok is False
     assert result.error is not None
     assert result.error.code == "swap_failed"
-    assert "Insufficient liquidity" in result.error.message
+    # Aggregator error is translated to a user-actionable message; raw
+    # phrasing may not survive verbatim, but the cause must be conveyed.
+    assert "liquidity" in result.error.message.lower()
 
 
 @pytest.mark.asyncio

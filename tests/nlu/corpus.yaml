@@ -1,0 +1,252 @@
+# NLU adversarial corpus for AI Sentinel intent detection.
+#
+# Each entry exercises detect_intent (src/agent/simple_runtime.py).
+# Cases include:
+#   - canonical phrasings (must produce a valid tool call)
+#   - adversarial phrasings (must NOT produce a swap with stop-words as tickers)
+#   - cross-chain mismatches (must route to bridge or refuse, never to a same-chain swap)
+#   - chain-name aliases ("on solana chain", "on bsc")
+#   - amount edge cases (zero, ALL, PCT)
+#
+# Schema:
+#   - id:           unique slug
+#   - input:        raw user text
+#   - expect_tool:  tool name to dispatch ("build_swap_tx" / "build_bridge_tx" /
+#                   "simulate_swap" / "build_yield_execution_plan" / "compose_plan" / null)
+#   - expect_token_in:  optional, expected source ticker
+#   - expect_token_out: optional, expected destination ticker
+#   - expect_chain_id:  optional, expected chain id
+#   - description:  short reason this case exists
+
+cases:
+  # ── canonical swap (must succeed) ───────────────────────────────────────────
+  - id: canon_swap_sol_usdc
+    input: "swap 0.1 SOL to USDC"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "SOL"
+    expect_token_out: "USDC"
+    expect_chain_id: 101
+    description: "canonical Solana swap"
+
+  - id: canon_swap_eth_usdc
+    input: "swap 1 ETH to USDC"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "ETH"
+    expect_token_out: "USDC"
+    expect_chain_id: 1
+    description: "canonical Ethereum swap"
+
+  - id: canon_swap_bnb_cake_bsc
+    input: "swap 0.5 BNB to CAKE on bsc"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "BNB"
+    expect_token_out: "CAKE"
+    expect_chain_id: 56
+    description: "canonical BSC swap with explicit chain"
+
+  - id: canon_swap_usdc_wbnb_bsc
+    input: "swap 100 USDC to WBNB on bsc"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "USDC"
+    expect_token_out: "WBNB"
+    expect_chain_id: 56
+    description: "BSC USDC→WBNB (BSC-native pair, must not default to Solana)"
+
+  # ── adversarial: stop-words must not be captured as tickers ────────────────
+  - id: adv_from_my_wallet
+    input: "swap 100 usdc on solana chain from my wallet to wbnb"
+    expect_tool: null
+    description: "WALLET phrasing must not parse WALLET as a token; cross-chain mismatch must not route to swap"
+
+  - id: adv_from_wallet_no_chain
+    input: "swap 50 usdc from my wallet to bnb"
+    expect_tool: "simulate_swap"
+    expect_token_in: "USDC"
+    expect_token_out: "BNB"
+    description: "WALLET phrasing must drop; USDC->BNB resolves to BSC quote"
+
+  - id: adv_to_my_wallet
+    input: "swap 0.05 sol to wallet"
+    expect_tool: null
+    description: "destination 'wallet' must reject"
+
+  - id: adv_with_chain_word
+    input: "swap 1 eth to chain"
+    expect_tool: null
+    description: "destination 'chain' is a stop-word, must reject"
+
+  - id: adv_address_as_token
+    input: "swap 100 address to bnb"
+    expect_tool: null
+    description: "noise word as tin"
+
+  # ── cross-chain mismatches (must NOT produce same-chain swap) ──────────────
+  - id: cross_sol_to_weth
+    input: "swap 0.1 sol for weth"
+    expect_tool: "build_bridge_tx"
+    expect_token_in: "SOL"
+    description: "SOL is Solana-native, WETH is EVM — must bridge"
+
+  - id: cross_sol_to_eth
+    input: "swap 0.04 sol to eth"
+    expect_tool: "build_bridge_tx"
+    expect_token_in: "SOL"
+    description: "SOL→ETH is cross-chain — must bridge"
+
+  - id: cross_bnb_to_sol
+    input: "swap 0.5 bnb to sol"
+    expect_tool: "build_bridge_tx"
+    expect_token_in: "BNB"
+    description: "BNB is BSC-native, SOL is Solana — must bridge"
+
+  - id: cross_pepe_to_bonk
+    input: "swap 1000000 pepe to bonk"
+    expect_tool: "build_bridge_tx"
+    expect_token_in: "PEPE"
+    description: "PEPE on Ethereum, BONK on Solana — bridge"
+
+  - id: cross_arb_to_op
+    input: "swap 100 arb to op"
+    expect_tool: "build_bridge_tx"
+    expect_token_in: "ARB"
+    description: "different L2s — bridge"
+
+  # ── canonical bridge ───────────────────────────────────────────────────────
+  - id: canon_bridge_explicit
+    input: "bridge 100 USDC from ethereum to arbitrum"
+    expect_tool: "build_bridge_tx"
+    expect_token_in: "USDC"
+    description: "canonical explicit bridge"
+
+  - id: canon_bridge_all
+    input: "bridge all FATPENGU from solana to ethereum"
+    expect_tool: "build_bridge_tx"
+    expect_token_in: "FATPENGU"
+    description: "ALL-amount bridge"
+
+  # ── canonical sell-all ─────────────────────────────────────────────────────
+  - id: canon_sell_all
+    input: "sell all my BONK"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "BONK"
+    expect_token_out: "USDC"
+    expect_chain_id: 101
+    description: "sell-all defaults to USDC out"
+
+  - id: canon_sell_half
+    input: "sell half my SOL"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "SOL"
+    expect_token_out: "USDC"
+    expect_chain_id: 101
+    description: "PCT-50 sentinel"
+
+  # ── canonical buy ──────────────────────────────────────────────────────────
+  - id: canon_buy_bonk
+    input: "buy 100 BONK"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "USDC"
+    expect_token_out: "BONK"
+    expect_chain_id: 101
+    description: "buy → spending USDC"
+
+  - id: canon_buy_with_eth
+    input: "buy 50 SHIB with USDC"
+    expect_tool: "build_swap_tx"
+    expect_token_out: "SHIB"
+    expect_chain_id: 1
+    description: "buy with explicit source"
+
+  # ── amount edge cases ──────────────────────────────────────────────────────
+  - id: amt_zero
+    input: "swap 0 sol to usdc"
+    expect_tool: null
+    description: "zero amount must reject"
+
+  - id: amt_negative
+    input: "swap -1 sol to usdc"
+    expect_tool: null
+    description: "negative amount must reject"
+
+  - id: amt_huge
+    input: "swap 999999999999999 eth to usdc"
+    expect_tool: null
+    description: "absurd amount must reject"
+
+  - id: amt_k_suffix
+    input: "swap 10k usdc to eth"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "USDC"
+    expect_token_out: "ETH"
+    expect_chain_id: 1
+    description: "10k = 10000"
+
+  - id: amt_decimal
+    input: "swap 0.00001 sol to usdc"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "SOL"
+    expect_token_out: "USDC"
+    expect_chain_id: 101
+    description: "tiny but positive"
+
+  # ── chain alias variants ──────────────────────────────────────────────────
+  - id: chain_alias_arb
+    input: "swap 1 eth to usdc on arb"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "ETH"
+    expect_token_out: "USDC"
+    expect_chain_id: 42161
+    description: "arb alias"
+
+  - id: chain_alias_op
+    input: "swap 100 usdc to eth on op"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "USDC"
+    expect_token_out: "ETH"
+    expect_chain_id: 10
+    description: "op alias"
+
+  - id: chain_alias_polygon
+    input: "swap 100 usdc to matic on polygon"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "USDC"
+    expect_token_out: "MATIC"
+    expect_chain_id: 137
+    description: "polygon explicit"
+
+  # ── BSC USDC decimals (regression: 6 vs 18) ──────────────────────────────
+  - id: bsc_usdc_decimals
+    input: "swap 100 usdc to wbnb on bsc"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "USDC"
+    expect_token_out: "WBNB"
+    expect_chain_id: 56
+    description: "BSC USDC→WBNB; downstream must use 18 decimals not 6"
+
+  # ── duplicate tokens ──────────────────────────────────────────────────────
+  - id: dup_same_token
+    input: "swap 1 usdc to usdc"
+    expect_tool: null
+    description: "same token both legs must reject"
+
+  # ── meme tokens (unknown registry → defer to aggregator) ──────────────────
+  - id: meme_random
+    input: "swap 100 usdc to ZOOMER"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "USDC"
+    expect_token_out: "ZOOMER"
+    description: "unknown meme — let aggregator resolve"
+
+  # ── extra prepositions / filler ───────────────────────────────────────────
+  - id: filler_please
+    input: "please swap 0.1 sol to usdc"
+    expect_tool: "build_swap_tx"
+    expect_token_in: "SOL"
+    expect_token_out: "USDC"
+    expect_chain_id: 101
+    description: "leading 'please' must not affect parse"
+
+  - id: filler_now
+    input: "swap 0.1 sol to usdc now"
+    expect_tool: "build_swap_tx"
+    description: "trailing filler"

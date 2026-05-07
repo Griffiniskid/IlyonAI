@@ -1,0 +1,50 @@
+# Regression fixtures captured from real bug screenshots reported via Telegram.
+# Each entry must continue to pass on every commit. Adding a new bug = adding a
+# new entry here BEFORE landing the fix.
+#
+# Schema mirrors tests/nlu/corpus.yaml and runs against detect_intent.
+
+cases:
+  - id: bug001_swap_100_usdt_to_wbnb_enso_429
+    input: "swap 100 usdt to wbnb"
+    description: "screenshot 1: aggregator returned raw Enso 429 to user"
+    # Detector itself doesn't 429 — but the validation layer must reject any
+    # mis-targeted route. USDT and WBNB share BSC (chain 56), so this should
+    # land as build_swap_tx on BSC (USDT exists on 56, WBNB only on 56). The
+    # Enso 429 path is exercised by tests/agent/test_intent_validation.py
+    # (translate_aggregator_error).
+    expect_tool: "build_swap_tx"
+    expect_token_in: "USDT"
+    expect_token_out: "WBNB"
+    expect_chain_id: 56
+
+  - id: bug002_swap_004_sol_to_eth_jupiter_wrongsize
+    input: "swap 0.04 sol to eth"
+    description: "screenshot 1: SOL->ETH cross-chain leaked Jupiter outputMint WrongSize"
+    expect_tool: "build_bridge_tx"
+    expect_token_in: "SOL"
+
+  - id: bug003_swap_01_sol_for_weth_jupiter_wrongsize
+    input: "swap 0.1 sol for weth"
+    description: "screenshot 2: SOL->WETH cross-chain misroute"
+    expect_tool: "build_bridge_tx"
+    expect_token_in: "SOL"
+
+  - id: bug004_zero_swap_preview_render
+    input: "swap 100 usdc on solana chain to wbnb"
+    description: "screenshot 3: SOL-side USDC -> BSC WBNB rendered 0->0 preview"
+    # Detector must REFUSE rather than render a 0->0 card. Cross-chain phrasing
+    # 'on solana chain to wbnb' is not in the swap grammar — fall through to LLM.
+    expect_tool: null
+
+  - id: bug005_wallet_parsed_as_token
+    input: "swap 100 usdc on solana chain from my wallet to wbnb"
+    description: "screenshot 4: 'WALLET' parsed as token_in, garbage quote rendered"
+    # Detector must REFUSE; never produce a card with WALLET as a ticker.
+    expect_tool: null
+
+  - id: bug006_buy_pengu_with_eth_no_chain
+    input: "buy 100 PENGU with ETH"
+    description: "buy with ETH source, PENGU is Solana-native -> cross-chain reject"
+    # PENGU only on Solana, ETH not on Solana → reject (no cross-chain buy yet).
+    expect_tool: null
