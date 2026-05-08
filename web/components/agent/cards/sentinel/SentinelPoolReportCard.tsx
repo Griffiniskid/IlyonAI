@@ -27,7 +27,9 @@ function ilTone(s?: string | null): string {
 function dispatchExecute(payload: SentinelPoolReportPayload) {
   if (typeof window === "undefined") return;
   const ref = payload.pool_id || `${payload.protocol || ""} ${payload.symbol || ""}`.trim();
-  const message = `execute_pool_position pool="${ref}" amount=100`;
+  // Natural-language message so the backend `_EXECUTION_TERMS` regex
+  // (which expects \bexecute\b / \bdeposit\b word-boundary) fires.
+  const message = `Execute deposit into pool ${ref} with $100`;
   window.dispatchEvent(new CustomEvent("ilyon:execute-pool", { detail: { pool: ref, message } }));
 }
 

@@ -149,10 +149,14 @@ CHAIN_IDS = {
     "op": 10,
     "polygon": 137,
     "matic": 137,
+    "pol": 137,
     "bsc": 56,
     "bnb": 56,
+    "binance": 56,
     "solana": 7565164,
     "sol": 7565164,
+    "avalanche": 43114,
+    "avax": 43114,
 }
 
 TOKEN_DECIMALS = {
@@ -830,12 +834,104 @@ _BRIDGE_ALL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# "bridge 0.14 sol to eth chain" — no explicit "from" clause; infer source
+# chain from the token's home chain. This closes the tester gap reported in
+# 2026-05 where SOL→ETH/BNB/AVAX bridge requests fell through to the LLM.
+_BRIDGE_TO_NUMERIC_RE = re.compile(
+    r"^\s*(?:bridge|transfer\s+across|move)\s+"
+    rf"{_NUM_AMOUNT_RE}\s+"
+    r"(?P<token>[A-Za-z]{2,10})"
+    r"(?:\s+(?:from|in)\s+(?:my\s+)?wallet)?"
+    r"\s+(?:to|->|→|onto|over\s+to)\s+"
+    r"(?P<dst>[A-Za-z][A-Za-z0-9 ._-]+?)"
+    r"(?:\s+(?:chain|network|mainnet))?\s*$",
+    re.IGNORECASE,
+)
+_BRIDGE_TO_ALL_RE = re.compile(
+    r"^\s*(?:bridge|transfer\s+across|move)\s+"
+    rf"(?P<qty>{_QUANTIFIER_PATTERN})"
+    r"\s+(?:of\s+)?(?:my\s+)?"
+    r"(?P<token>[A-Za-z][A-Za-z0-9$._-]{0,15})"
+    r"(?:\s+(?:from|in)\s+(?:my\s+)?wallet)?"
+    r"\s+(?:to|->|→|onto|over\s+to)\s+"
+    r"(?P<dst>[A-Za-z][A-Za-z0-9 ._-]+?)"
+    r"(?:\s+(?:chain|network|mainnet))?\s*$",
+    re.IGNORECASE,
+)
+
+# Token → home chain mapping for implicit-source bridge.
+_TOKEN_HOME_CHAIN: dict[str, int] = {
+    "SOL": 7565164, "WSOL": 7565164,
+    "ETH": 1, "WETH": 1,
+    "BNB": 56, "WBNB": 56, "CAKE": 56,
+    "MATIC": 137, "WMATIC": 137,
+    "AVAX": 43114, "WAVAX": 43114,
+    "ARB": 42161,
+    "OP": 10,
+}
+
 
 def _detect_bridge_signable(message: str) -> tuple[str, dict] | None:
     if not _is_imperative_command(message):
         return None
     """Bridge intent → build_bridge_tx, both numeric and ALL forms."""
     text = message.strip()
+
+    def _resolve_dst(dst_raw: str) -> int | None:
+        d = dst_raw.strip().lower()
+        d = re.sub(r"\s+(chain|network|mainnet)$", "", d).strip()
+        return CHAIN_IDS.get(d)
+
+    # Implicit-source bridge: "bridge 0.14 sol to eth chain"
+    tn = _BRIDGE_TO_NUMERIC_RE.search(text)
+    if tn:
+        token = tn.group("token").upper()
+        if token in _NOT_A_SYMBOL:
+            return None
+        src_chain_id = _TOKEN_HOME_CHAIN.get(token)
+        dst_chain_id = _resolve_dst(tn.group("dst"))
+        if src_chain_id and dst_chain_id and src_chain_id != dst_chain_id:
+            amount_value = _expand_numeric_amount(tn.group("amount"), tn.group("suffix"))
+            if amount_value is not None and amount_value > 0:
+                if src_chain_id == 7565164:
+                    decimals = _SOLANA_DECIMALS.get(token, 9)
+                elif src_chain_id == 56 and token in {"USDC", "USDT", "DAI", "BUSD", "TUSD", "FDUSD"}:
+                    decimals = 18
+                else:
+                    decimals = TOKEN_DECIMALS.get(token, 18)
+                try:
+                    amt_base = str(int(amount_value * (Decimal(10) ** decimals)))
+                except (OverflowError, ValueError, InvalidOperation):
+                    amt_base = None
+                if amt_base:
+                    return (
+                        "build_bridge_tx",
+                        {
+                            "src_chain_id": src_chain_id,
+                            "dst_chain_id": dst_chain_id,
+                            "token_in": token,
+                            "token_out": "",
+                            "amount": amt_base,
+                        },
+                    )
+    ta = _BRIDGE_TO_ALL_RE.search(text)
+    if ta:
+        token = ta.group("token").upper()
+        if token not in _NOT_A_SYMBOL:
+            src_chain_id = _TOKEN_HOME_CHAIN.get(token)
+            dst_chain_id = _resolve_dst(ta.group("dst"))
+            if src_chain_id and dst_chain_id and src_chain_id != dst_chain_id:
+                return (
+                    "build_bridge_tx",
+                    {
+                        "src_chain_id": src_chain_id,
+                        "dst_chain_id": dst_chain_id,
+                        "token_in": token,
+                        "token_out": "",
+                        "amount": _quantifier_to_amount(ta.group("qty")),
+                    },
+                )
+
     am = _BRIDGE_ALL_RE.search(text)
     if am:
         token = am.group("token").upper()
@@ -1454,6 +1550,91 @@ _POOL_PROTO_PAIR_RE = re.compile(
 )
 
 
+# Approximate fiat hint for converting "put 0.2 SOL into pool X" → USD size.
+# Price drift is fine because pool deposit sizing is bounded by user balance and
+# slippage_bps tolerates volatility. Real-time price lookup would be ideal but
+# would couple this detector to the pricing service for negligible gain.
+_TOKEN_USD_HINT: dict[str, float] = {
+    "SOL": 90.0, "WSOL": 90.0,
+    "ETH": 2300.0, "WETH": 2300.0,
+    "BNB": 640.0, "WBNB": 640.0,
+    "MATIC": 0.13, "WMATIC": 0.13, "POL": 0.13,
+    "AVAX": 18.0, "WAVAX": 18.0,
+    "ARB": 0.13, "OP": 0.15,
+    "USDC": 1.0, "USDT": 1.0, "DAI": 1.0, "BUSD": 1.0, "FDUSD": 1.0, "TUSD": 1.0,
+    "BTC": 80000.0, "WBTC": 80000.0, "CBBTC": 80000.0,
+}
+
+
+_DIRECT_POOL_DEPOSIT_RE = re.compile(
+    r"^\s*(?:put|add|deposit|provide|supply|stake|allocate)\s+"
+    rf"{_NUM_AMOUNT_RE}\s+"
+    r"(?P<token>[A-Za-z]{2,10})\s+"
+    r"(?:(?:in|to|into|on|inside)\s+)?"
+    r"(?:this\s+|the\s+|a\s+)?"
+    r"(?:pool|liquidity\s+pool|lp|vault)\s+"
+    r"(?P<rest>.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_direct_pool_deposit(message: str) -> tuple[str, dict] | None:
+    """'Put 0.2 SOL to this pool uniswap-v4 USDT-SIREN' → execute_pool_position.
+
+    The DefiIntent allocator misroutes this to allocate_plan because 'put' is
+    in _ALLOCATION_TERMS. This detector short-circuits when the user names a
+    concrete pool reference so they get a single deposit card, not a 5-step
+    allocation strategy.
+    """
+    m = _DIRECT_POOL_DEPOSIT_RE.search(message)
+    if not m:
+        return None
+    token = m.group("token").upper()
+    if token in _NOT_A_SYMBOL:
+        return None
+    rest = m.group("rest").strip().lstrip("·").strip()
+    pool_ref = None
+    proto_pair = _POOL_PROTO_PAIR_RE.search(rest)
+    if proto_pair:
+        pool_ref = f"{proto_pair.group(1)} {proto_pair.group(2)}"
+    else:
+        pair_only = re.search(r"\b([A-Z][A-Z0-9.]{0,9}[-/_·][A-Z][A-Z0-9.]{0,9})\b", rest)
+        if pair_only:
+            pool_ref = pair_only.group(1)
+    if not pool_ref:
+        # Bare protocol fallback: "put 100 usdc into pool aave-v3" → use
+        # token as the asset hint for single-asset supply.
+        bare = re.search(
+            r"\b(?i:(aave-v3|aave|compound-v3|compound|spark|morpho-blue|morpho|"
+            r"lido|rocket-pool|jito|kamino|marinade|sanctum|stader|raydium|orca|"
+            r"meteora|uniswap-v[34]|curve|convex|pendle|yearn|gmx))\b",
+            rest,
+        )
+        if bare:
+            pool_ref = f"{bare.group(1).lower()} {token}"
+    if not pool_ref:
+        return None
+    amount_value = _expand_numeric_amount(m.group("amount"), m.group("suffix"))
+    if amount_value is None or amount_value <= 0:
+        return None
+    price = _TOKEN_USD_HINT.get(token)
+    if not price:
+        # Unknown token — pass native amount; tool will fail-soft if it can't price.
+        usd_amount = float(amount_value) * 1.0
+    else:
+        usd_amount = float(amount_value) * price
+    if usd_amount <= 0:
+        return None
+    return (
+        "execute_pool_position",
+        {
+            "pool": pool_ref,
+            "amount": usd_amount,
+            "asset_in": token,
+        },
+    )
+
+
 def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] | None:
     """Route 'execute pool X' / 'deposit into raydium-amm SPACEX-WSOL' to
     execute_pool_position when a concrete pool reference is present.
@@ -1704,7 +1885,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
         return multi_step
-    for detector in (_detect_aave_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_direct_pool_deposit, _detect_aave_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
@@ -2661,13 +2842,25 @@ async def run_ephemeral_turn(
                 yield encode_sse(frame_event_name(frame), frame.model_dump())
             base_system = (
                 "You are Ilyon Sentinel's crypto agent. You help users with DeFi, "
-                "token prices, swaps, and yield opportunities.\n\n"
-                "Respond directly to the user in a friendly, professional manner. "
-                "Do NOT include meta-commentary, internal reasoning, or stage directions.\n\n"
-                "When discussing crypto assets, mention:\n"
-                "- Risk levels (LOW, MEDIUM, HIGH) based on market cap and volatility\n"
-                "- Strategy fit (conservative, balanced, aggressive)\n"
-                "- General safety tips"
+                "token prices, swaps, bridges, staking, and yield opportunities.\n\n"
+                "STRICT OUTPUT RULES (non-negotiable):\n"
+                "1. Reply directly to the user. Never expose your internal "
+                "thinking, scratchpad, or chain-of-thought.\n"
+                "2. Do NOT begin sentences with: 'We need to', 'I need to', "
+                "'Let me', 'Let\\'s', 'Looking at', 'Hmm', 'Wait', 'Actually', "
+                "'Maybe', 'For prior examples', 'In previous examples', "
+                "'The user is', 'Need to compute', 'To answer', or any "
+                "self-referential planning language.\n"
+                "3. Do NOT show arithmetic steps ('0.15 + 0.024 = 0.174'). "
+                "If you need to compute, do it silently and present only the result.\n"
+                "4. No stage directions, no meta-commentary, no apologies "
+                "about reasoning. Be concise and useful.\n"
+                "5. Keep replies short and on-point unless the user asks for "
+                "deep detail. Two to four sentences is usually right.\n\n"
+                "When discussing crypto assets, briefly mention:\n"
+                "- Risk level (LOW / MEDIUM / HIGH) when relevant\n"
+                "- Strategy fit (conservative / balanced / aggressive) when relevant\n"
+                "- General safety tips when the action is risky"
             )
 
             llm_messages: list = []
@@ -2695,9 +2888,18 @@ async def run_ephemeral_turn(
 
             llm_messages.append(type('Msg', (), {'type': 'human', 'content': message})())
 
-            result = await llm._agenerate(llm_messages)
-            final_content = result.generations[0].message.content
-        
+            try:
+                result = await llm._agenerate(llm_messages)
+                final_content = result.generations[0].message.content
+            except Exception as exc:
+                logger.error("LLM fallback generation failed: %s: %s", type(exc).__name__, exc)
+                final_content = (
+                    "I had trouble reaching the language model just now. "
+                    "Try rephrasing the request or ask about a specific token, "
+                    "swap, bridge, stake, or DeFi pool — those go through the "
+                    "deterministic Sentinel tools and don't depend on this fallback."
+                )
+
         # Clean up response — skip the meta-commentary stripper for allocation
         # responses (the "Below is the Sentinel scoring breakdown…" paragraph
         # would otherwise be eaten by the "Below is/are" pattern). Also skip
@@ -2706,7 +2908,17 @@ async def run_ephemeral_turn(
         is_allocate = intent and intent[0] == "allocate_plan"
         is_legacy_preview = intent and intent[0] in {"build_swap_tx", "build_bridge_tx", "build_solana_swap", "get_wallet_balance"}
         if not is_allocate and not is_legacy_preview:
-            final_content = _clean_response(final_content)
+            cleaned = _clean_response(final_content or "")
+            # If clean_response stripped the whole message (pure scratchpad),
+            # emit a graceful fallback instead of empty bubble.
+            if not cleaned.strip():
+                cleaned = (
+                    "I can help with that. To act on it, try a specific verb — "
+                    "swap, bridge, stake, transfer, or 'find pools' — with the "
+                    "amount and token. For example: `bridge 0.1 SOL to ETH chain` "
+                    "or `swap 1 SOL to USDC`."
+                )
+            final_content = cleaned
         
         # Emit final frame
         elapsed = int((__import__('time').monotonic() - started) * 1000)
@@ -2798,39 +3010,106 @@ async def run_simple_turn(
 
 
 def _clean_response(content: str) -> str:
-    """Clean up any JSON blocks, meta-commentary, or technical formatting from response."""
-    # Remove JSON code blocks
+    """Strip JSON dumps, scratchpad prose, and meta-commentary from LLM output.
+
+    The model occasionally leaks reasoning ("We need to respond with a bridge
+    proposal…", "Let's compute amounts…", "Hmm not consistent.") which the
+    tester sees as noise. This function nukes whole leading paragraphs that
+    open with such markers, then strips one-line scratchpad lines anywhere.
+    """
+    # Strip code blocks first.
     content = re.sub(r'```json\s*.*?\s*```', '', content, flags=re.DOTALL)
     content = re.sub(r'```\s*.*?\s*```', '', content, flags=re.DOTALL)
-    
-    # Remove standalone JSON objects
+
+    # Strip standalone JSON objects.
     content = re.sub(r'\{\s*"[^"]+":\s*"[^"]+"[^}]*\}', '', content)
-    
-    # Remove meta-commentary patterns
+
+    # Phase 1 — peel leading scratchpad lines. A line is scratchpad if it
+    # opens with a self-referential marker. Stops at the first non-scratchpad
+    # line, preserving the real answer that follows.
+    # Self-referential planning markers — high-confidence scratchpad.
+    scratchpad_line = re.compile(
+        r'^\s*('
+        r'we\s+(?:need\s+to|have\s+to|must|should|can|will)|'
+        r'i\s+(?:need\s+to|have\s+to|must|should|will\s+(?:compute|calculate)|think|believe|suppose|guess)|'
+        r"i'll\s+|i\s+am\s+(?:going\s+to|about\s+to|trying\s+to)|"
+        r'let\s+me\s+(?:think|compute|calculate|check|see|analyze|figure)|'
+        r"let'?s\s+(?:think|compute|calculate|see|figure|review)|"
+        r'looking\s+at|to\s+answer|to\s+compute|to\s+calculate|to\s+respond|'
+        r'need\s+to\s+(?:answer|compute|calculate|respond|figure|determine|review)|'
+        r'hmm[,. ]|wait[,. ]|'
+        r'the\s+user\s+(?:is|wants|asks|asked|requested|needs)|'
+        r'user\s+(?:wants|asked|requested|needs)|'
+        r'this\s+user|'
+        r'in\s+(?:prior|previous|the\s+previous|earlier|past)\s+(?:examples?|conversations?|chats?|messages?)|'
+        r'(?:for|in)\s+(?:prior|previous|earlier|the\s+last)\s+(?:examples?|messages?)|'
+        r'maybe\s+(?:the\s+fee|fee\s+is|it\s+is)|'
+        r'we\s+can\s+approximate|'
+        r'\d+(?:\.\d+)?\s*[+\-*/]\s*\d+(?:\.\d+)?\s*='  # bare arithmetic with =
+        r')',
+        re.IGNORECASE,
+    )
+    # Skip dropping a line if it carries substantive payload — $/%/address/
+    # mint-like base58 etc. — even when it opens with a scratchpad marker.
+    # Those are handled by Phase 3 prefix-stripping instead.
+    payload_marker = re.compile(r'\$\d|\d+%|0x[0-9a-fA-F]{6,}|[1-9A-HJ-NP-Za-km-z]{20,}|`[^`]+`')
+    lines = content.split("\n")
+    drop = 0
+    for ln in lines:
+        if not ln.strip():
+            drop += 1
+            continue
+        if scratchpad_line.match(ln) and not payload_marker.search(ln):
+            drop += 1
+            continue
+        break
+    content = "\n".join(lines[drop:])
+
+    # Phase 2.5 — prefix-strip soft openers that precede real content.
+    content = re.sub(
+        r'^(?:Looking\s+at\s+(?:the\s+)?(?:data|chart|history|info|info\s*),?\s*|'
+        r'Based\s+on\s+(?:the\s+)?(?:data|chart|history|info)?,?\s*)',
+        '',
+        content,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+
+    # Phase 2 — line-level scratchpad removal anywhere in the response.
+    line_patterns = [
+        r'^\s*(?:Hmm|Wait|Actually|Maybe|Probably|Let me|Let\'s)\b[^.]*\.\s*$',
+        r'^\s*(?:For|In)\s+(?:prior|previous|the\s+last)\s+(?:examples?|conversations?|messages?)\b[^.]*\.\s*$',
+        r'^\s*\d+(?:\.\d+)?\s*[+\-*/]\s*\d+[^.]*\.\s*$',  # math scratchpad like "0.15 + 0.024162 = 0.174..."
+        r'^\s*(?:But|However|Although)\s+we\s+can\s+approximate\b[^.]*\.\s*$',
+    ]
+    for p in line_patterns:
+        content = re.sub(p, '', content, flags=re.IGNORECASE | re.MULTILINE)
+
+    # Phase 3 — short-line meta patterns at line starts. Two tiers:
+    # (a) Conversational openers — strip just the prefix word + comma,
+    #     preserving the rest of the sentence.
+    # (b) Self-referential planning — strip the whole sentence.
+    content = re.sub(
+        r'^(?:Okay|OK|Alright|Sure|Well|So|Now)[,!]\s+',
+        '',
+        content,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
     meta_patterns = [
         r'^(We|I)\s+need\s+to\s+answer\b.*?(?=\n\n|With\s+\*\*|Here\s+is|Here\s+are|The\s+answer\s+is|You\s+would|Estimated|Based\s+on|$)',
         r'^(Need\s+to\s+(?:calculate|compute|answer)|Let\'s\s+compute|Let\'s\s+calculate)\b.*?(?=\n\n|With\s+\*\*|Here\s+is|Here\s+are|The\s+answer\s+is|You\s+would|Estimated|Based\s+on|$)',
-        r'^(Okay|OK|Alright|Sure|Well|So|Now|Let me|I\'ll|I will|I should|I need to|I think|I believe|I suppose|I guess)\b[^.]*\.\s*',
+        r'^(Let me|I\'ll|I will|I should|I need to|I think|I believe|I suppose|I guess)\b[^.]*\.\s*',
         r'^(The user is|User is|They are|This user)\b[^.]*\.\s*',
-        r'^(Here is|Here are|Below is|Below are)\b[^.]*\.\s*',
+        r'^(Below is|Below are)\b[^.]*\.\s*',
         r'^(I\'m|I am)\s+(going to|about to|trying to|attempting to|working on)\b[^.]*\.\s*',
-        r'^(First|Next|Then|Finally|Lastly)\b[^.]*\.\s*',
         r'^(Let me think|Let me analyze|Let me check|Let me look|Let me search)\b[^.]*\.\s*',
         r'^(I don\'t have|I do not have|I cannot|I can\'t)\b[^.]*\.\s*',
-        r'^(In this case|In that case|For this|For that)\b[^.]*\.\s*',
     ]
-    
     for pattern in meta_patterns:
         content = re.sub(pattern, '', content, flags=re.IGNORECASE | re.MULTILINE)
-    
-    # Remove "I" statements that are meta-commentary (not facts about data)
+
     content = re.sub(r'^I\s+(?:think|believe|suppose|guess|feel|would|could|might|should)\s+[^.]*\.\s*$', '', content, flags=re.MULTILINE | re.IGNORECASE)
-    
-    # Clean up multiple newlines and spaces
+
     content = re.sub(r'\n{3,}', '\n\n', content)
     content = re.sub(r' {2,}', ' ', content)
-    
-    # Remove empty lines at start/end
     content = content.strip()
-    
     return content

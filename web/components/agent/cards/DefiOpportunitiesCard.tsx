@@ -31,7 +31,7 @@ function riskTone(level?: string | null): string {
 function dispatchExecutePool(item: DefiOpportunityItem) {
   if (typeof window === "undefined") return;
   const poolRef = (item.pool_id as string | undefined) || `${item.protocol} ${item.symbol || ""}`.trim();
-  const message = `execute_pool_position pool="${poolRef}" amount=100`;
+  const message = `Execute deposit into pool ${poolRef} with $100`;
   // Primary: structured event for MainApp to inject into chat input.
   window.dispatchEvent(new CustomEvent("ilyon:execute-pool", { detail: { pool: poolRef, item, message } }));
   // Fallback: copy to clipboard so user can paste if listener missing.

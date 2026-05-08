@@ -46,6 +46,8 @@ interface SwapPreview {
   orderId?: string;
   estimatedTime?: string;
   bridgeRequestedAmount?: string;
+  bridgeOperatingExpense?: string;
+  bridgeAmountTotal?: string;
   sourceExecutionSummary?: string;
   warnings?: string[];
   // Solana (Jupiter) swap fields
@@ -342,14 +344,32 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         : json.fees?.recommended_slippage != null
           ? `~${json.fees.recommended_slippage}%`
           : "—";
+      // Show user-requested amount in From; surface operating expense in Fee.
+      const requested = json.requested_amount_display != null ? Number(json.requested_amount_display) : null;
+      const totalIn = json.amount_in_display != null ? Number(json.amount_in_display) : null;
+      const fromAmount = requested != null && requested > 0
+        ? requested.toString()
+        : (totalIn != null ? totalIn.toString() : "—");
+      let opExpense: number | null = null;
+      if (requested != null && totalIn != null && totalIn - requested > 0.000001) {
+        opExpense = Number((totalIn - requested).toFixed(8));
+      }
+      const srcSym = (json.from_token_symbol || "Token").toUpperCase();
+      const feeText = json.estimated_fee_display && String(json.estimated_fee_display) !== "—"
+        ? String(json.estimated_fee_display)
+        : (opExpense != null ? `~${opExpense.toFixed(6)} ${srcSym}` : "0");
+      // Filter Phantom-spend warning since the fee column already conveys it.
+      const filteredWarnings = Array.isArray(json.warnings)
+        ? json.warnings.map(String).filter((w: string) => !/total source-chain spend/i.test(w))
+        : undefined;
       return {
         fromToken: json.from_token_symbol || "Token",
-        fromAmount: json.amount_in_display != null ? String(json.amount_in_display) : "—",
+        fromAmount,
         toToken: json.to_token_symbol || "Token",
         toAmount: json.dst_amount_display != null ? String(json.dst_amount_display) : "—",
         route: json.route_summary || "deBridge DLN",
         priceImpact,
-        fee: "0",
+        fee: feeText,
         rawTx: json.chain_type === "evm" ? (json.tx ?? null) : null,
         approvalTx: json.approval_tx ?? null,
         actionType: "bridge",
@@ -360,9 +380,11 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         destinationChainLabel: json.dst_chain_name || (json.dst_chain_id ? `Chain ${json.dst_chain_id}` : undefined),
         orderId: json.order_id ? String(json.order_id) : undefined,
         estimatedTime,
-        bridgeRequestedAmount: json.requested_amount_display != null ? String(json.requested_amount_display) : undefined,
+        bridgeRequestedAmount: requested != null ? requested.toString() : undefined,
+        bridgeAmountTotal: totalIn != null ? totalIn.toString() : undefined,
+        bridgeOperatingExpense: opExpense != null ? opExpense.toString() : undefined,
         sourceExecutionSummary: json.source_execution_summary ? String(json.source_execution_summary) : undefined,
-        warnings: Array.isArray(json.warnings) ? json.warnings.map(String) : undefined,
+        warnings: filteredWarnings,
       };
     }
     if (json.status === "ok" && json.chain_type === "solana" && json.tx?.serialized && json.type !== "bridge_proposal") {
@@ -3461,10 +3483,10 @@ function SimulationPreview({ preview, fromAddress, solanaAddress, walletType }: 
             </div>
           </div>
           <div className="sim-meta">
-            {preview.bridgeRequestedAmount && (
+            {preview.bridgeAmountTotal && preview.bridgeOperatingExpense && (
               <div className="sim-meta-item">
-                <span className="sim-meta-label">Requested</span>
-                <span className="sim-meta-value">{preview.bridgeRequestedAmount} {preview.fromToken}</span>
+                <span className="sim-meta-label">Total Spend</span>
+                <span className="sim-meta-value">{preview.bridgeAmountTotal} {preview.fromToken}</span>
               </div>
             )}
             <div className="sim-meta-item">
@@ -5019,7 +5041,7 @@ export default function MainApp() {
         const protoPair = target.split(" ").slice(-2).reverse().join(" ");
         const ref = protoPair || target || `${firstStep.asset || ""}`;
         const amt = Number(String(firstStep.amount || "100").replace(/[^0-9.]/g, "")) || 100;
-        const message = `execute_pool_position pool="${ref}" amount=${amt}`;
+        const message = `Execute deposit into pool ${ref} with $${amt}`;
         showToast(`Building unsigned transaction for ${ref}…`, "info");
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("ilyon:execute-pool", { detail: { pool: ref, message } }));

@@ -215,10 +215,31 @@ async def build_bridge_tx(
     chain_type = parsed.get("chain_type", "evm")
     spender = tx.get("to", "") if chain_type == "evm" else ""
 
+    # Separate user-requested amount from operating expense.
+    # Wallet assistant returns:
+    #   - amount_in_display: total source-chain spend (requested + operating expense)
+    #   - requested_amount_display: what the user actually asked for
+    # Sentinel card surfaces the requested amount in the From column and the
+    # operating expense in a dedicated Fee column so the tester is not
+    # confused about why "bridge 0.15 SOL" charges 0.16 SOL on Phantom.
+    requested = parsed.get("requested_amount_display")
+    total_in = parsed.get("amount_in_display")
+    op_expense = None
+    try:
+        if requested is not None and total_in is not None:
+            diff = float(total_in) - float(requested)
+            if diff > 0.000001:
+                op_expense = round(diff, 8)
+    except (TypeError, ValueError):
+        op_expense = None
+
     card_payload = {
         "src_chain_id": parsed.get("src_chain_id"),
         "dst_chain_id": parsed.get("dst_chain_id"),
-        "amount_in": parsed.get("amount_in_display"),
+        "amount_in": requested if requested is not None else total_in,
+        "amount_in_total": total_in,
+        "operating_expense": op_expense,
+        "estimated_fee_display": parsed.get("estimated_fee_display"),
         "amount_out": parsed.get("dst_amount_display"),
         "router": "debridge",
         "estimated_seconds": parsed.get("estimated_fill_time_seconds"),

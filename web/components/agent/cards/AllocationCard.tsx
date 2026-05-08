@@ -35,7 +35,7 @@ function dispatchExecutePosition(position: AllocationPayload["positions"][0]) {
   const ref = `${position.protocol} ${position.asset}`.trim();
   const usd = String(position.usd || "").replace(/[^0-9.]/g, "");
   const amount = usd && Number(usd) > 0 ? Number(usd) : 100;
-  const message = `execute_pool_position pool="${ref}" amount=${amount}`;
+  const message = `Execute deposit into pool ${ref} with $${amount}`;
   window.dispatchEvent(new CustomEvent("ilyon:execute-pool", { detail: { pool: ref, message } }));
 }
 

@@ -799,7 +799,13 @@ If asked about a specific token, suggest sending the address for analysis."""
 
         except Exception as e:
             logger.error("Chat error: %s: %s", type(e).__name__, e or repr(e))
-            return "An error occurred. Please try again."
+            return (
+                "I couldn't reach the language model just now. "
+                "Try rephrasing the question, or ask about a specific swap, "
+                "bridge, stake, transfer, or DeFi pool — those run through "
+                "the deterministic Sentinel tools and don't rely on the chat "
+                "fallback."
+            )
 
     async def chat_json(
         self,
