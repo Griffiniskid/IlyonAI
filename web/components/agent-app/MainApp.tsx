@@ -326,7 +326,7 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         toAmount: outHuman,
         route: json.route_summary || "Jupiter route",
         priceImpact: json.price_impact_pct != null ? `${json.price_impact_pct}%` : "≤ 0.5%",
-        fee: json.platform_fee_bps ? `${Number(json.platform_fee_bps) / 100}%` : "—",
+        fee: "0",
         swapTransaction: json.swapTransaction,
         isSolanaSwap: true,
       };
@@ -349,7 +349,7 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         toAmount: json.dst_amount_display != null ? String(json.dst_amount_display) : "—",
         route: json.route_summary || "deBridge DLN",
         priceImpact,
-        fee: json.estimated_fee_display || (Number(json.affiliate_fee_percent ?? 0) ? `${Number(json.affiliate_fee_percent)}% + bridge fees` : "Bridge fees only"),
+        fee: "0",
         rawTx: json.chain_type === "evm" ? (json.tx ?? null) : null,
         approvalTx: json.approval_tx ?? null,
         actionType: "bridge",
@@ -377,7 +377,7 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         toAmount: outHuman,
         route: json.route_summary || "Jupiter route",
         priceImpact: json.price_impact_pct != null ? `${json.price_impact_pct}%` : "≤ 0.5%",
-        fee: json.platform_fee_bps ? `${Number(json.platform_fee_bps) / 100}%` : "—",
+        fee: "0",
         swapTransaction: json.tx.serialized,
         isSolanaSwap: true,
       };
@@ -391,7 +391,7 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         toAmount: "—",
         route: "Direct Transfer",
         priceImpact: "—",
-        fee: "—",
+        fee: "0",
         rawTx: { to: json.to, data: json.data, value: json.value, chain_id: json.chain_id },
         isTransfer: true,
         transferTo: json.ui_to ?? json.to,
@@ -415,13 +415,12 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         toAmount: outHuman,
         route: "Jupiter v6",
         priceImpact: "≤ 0.5%",
-        fee: json.platform_fee_bps ? `${Number(json.platform_fee_bps) / 100}%` : "—",
+        fee: "0",
         swapTransaction: json.swapTransaction,
         isSolanaSwap: true,
       };
     }
     if (json.type === "evm_action_proposal" && json.tx) {
-      const feeBps = Number(json.platform_fee_bps ?? 0);
       const impact = json.price_impact_pct != null ? `${json.price_impact_pct}%` : "—";
       return {
         fromToken: json.from_token_symbol || "Token",
@@ -430,7 +429,7 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         toAmount: json.dst_amount_display != null ? String(json.dst_amount_display) : "—",
         route: json.route_summary || "Enso route",
         priceImpact: impact,
-        fee: feeBps ? `${feeBps / 100}% platform` : "—",
+        fee: "0",
         rawTx: json.tx ?? null,
         approvalTx: json.approval_tx ?? null,
         actionType: json.action ?? "swap",
@@ -447,7 +446,7 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         toAmount: (parseInt(json.dst_amount) / 1e18).toFixed(6),
         route: `${chain} Aggregator`,
         priceImpact: "< 0.1%",
-        fee: json.platform_fee_bps ? `${Number(json.platform_fee_bps) / 100}%` : "—",
+        fee: "0",
         rawTx: json.tx ?? null,
         approvalTx: json.approval_tx ?? null,
       };
@@ -464,7 +463,7 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         toAmount: swapMatch[3],
         route: "Aggregator",
         priceImpact: "< 0.01%",
-        fee: "0.05%",
+        fee: "0",
       };
   }
   return null;
@@ -1017,7 +1016,7 @@ const PARTNERS: Partner[] = [
 const INTRO_STATS = [
   { value: "15+",  label: "Blockchains",    sub: "SOL · ETH · Base · more" },
   { value: "500+", label: "Tokens",         sub: "Across all chains"           },
-  { value: "0.5%", label: "Platform Fee",   sub: "Transparent pricing"         },
+  { value: "0",    label: "Platform Fee",   sub: "No fees on swaps"            },
   { value: "AI",   label: "Powered Engine", sub: "Natural language DeFi"       },
 ];
 
@@ -6255,7 +6254,7 @@ export default function MainApp() {
                         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                           {[
                             'The final transaction is always reviewed in chat before wallet signing.',
-                            'Platform fee remains 0.5% across Enso, Jupiter, and deBridge flows.',
+                            'Zero platform fees across Enso, Jupiter, and deBridge flows.',
                             'Technical route details use monospace styling once the AI prepares execution.',
                           ].map(note => (
                             <div key={note} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>

@@ -36,7 +36,7 @@ const SCENARIOS: ReasoningScenario[] = [
         icon: "📊",
         label: "Calculating Economics",
         detail: "Analyzing fees and timing",
-        substeps: ["Bridge fee: 0.15%", "Est. time: ~45s", "Min. received: 0.9985 ETH-equivalent"],
+        substeps: ["Bridge fee: 0", "Est. time: ~45s", "Min. received: 0.9985 ETH-equivalent"],
       },
       {
         icon: "🔐",

@@ -378,6 +378,32 @@ def cases() -> list[Case]:
              "swap " + ("very " * 200) + "0.1 sol to usdc",
              "either_card_or_refuse",
              "noisy long prompt"),
+
+        # ── Questions / hypotheticals — must NOT execute ──────────────────
+        Case("q_why_cant",
+             "why cant I swap 0.1 sol to usdc",
+             "either_card_or_refuse",
+             "question must not execute"),
+        Case("q_how_do_i",
+             "how do I swap sol to usdc",
+             "either_card_or_refuse",
+             "how-to question"),
+        Case("q_can_you",
+             "can you swap 0.1 sol to usdc",
+             "either_card_or_refuse",
+             "polite question"),
+        Case("hyp_future",
+             "I will swap 0.1 SOL to USDC tomorrow",
+             "either_card_or_refuse",
+             "future tense"),
+        Case("hyp_conditional",
+             "swap 0.1 sol to USDC, but only if price is good",
+             "either_card_or_refuse",
+             "conditional"),
+        Case("hyp_explain",
+             "explain how to swap sol to usdc",
+             "either_card_or_refuse",
+             "explanation request"),
     ]
 
 
