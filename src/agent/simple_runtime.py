@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from decimal import Decimal, InvalidOperation
 from typing import AsyncIterator
+
+logger = logging.getLogger(__name__)
 
 from src.agent.intent.defi_intent import DefiIntent, parse_defi_intent
 from src.agent.intent.validation import (
@@ -2632,6 +2635,229 @@ def _maybe_replay_followup(*, message: str, history: list[dict]) -> str | None:
     )
 
 
+# ── Strategy composition (LLM-on-top-of-tool-data) ─────────────────────────
+
+_STRATEGY_REQUEST_RE = re.compile(
+    r"\b("
+    # build / design / create / craft / plan / propose / recommend / make / write
+    # — possibly with up to ~7 connector tokens before 'strategy'
+    r"(?:build|design|create|craft|plan|propose|recommend|make|write|outline|develop)"
+    r"\s+(?:me\s+|us\s+)?(?:a|an|the)?\s*(?:[\w%/$.,-]+\s+){0,7}strateg(?:y|ies)|"
+    # research-and-X form
+    r"research\s+and\s+(?:build|design|propose|create|recommend)\s+(?:me\s+)?(?:a|an|the)?\s*(?:[\w%/$.,-]+\s+){0,4}strateg(?:y|ies)|"
+    # bare 'a strategy that …' / 'a strategy targeting …'
+    r"\ba\s+strateg(?:y|ies)\s+(?:targeting|that\s+target|aimed\s+at|for|to\s+(?:hit|reach|achieve))|"
+    # 'strategy targeting X% APY'
+    r"strateg(?:y|ies)\s+(?:targeting|that\s+target|aimed\s+at|for|to\s+(?:hit|reach|achieve))"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_strategy_compose_request(message: str) -> bool:
+    """True when user wants a multi-section strategy doc, not just a pool list."""
+    if not message:
+        return False
+    return bool(_STRATEGY_REQUEST_RE.search(message))
+
+
+def _summarize_pools_for_strategy(card_payload: dict) -> str:
+    """Compact bullet list of opportunities for LLM context. Bounded length."""
+    if not isinstance(card_payload, dict):
+        return ""
+    items = card_payload.get("items") or []
+    if not items:
+        return ""
+    lines: list[str] = []
+    for idx, it in enumerate(items[:15], start=1):
+        try:
+            sym = it.get("symbol") or "?"
+            proto = it.get("protocol") or "?"
+            chain = it.get("chain") or "?"
+            apy = float(it.get("apy") or 0.0)
+            tvl = float(it.get("tvl_usd") or 0.0)
+            risk = it.get("risk_level") or "?"
+            executable = "executable" if it.get("executable") else "research-only"
+            pool_id = it.get("pool_id") or ""
+            lines.append(
+                f"{idx}. {proto} {sym} on {chain} — APY {apy:.1f}% · TVL ${tvl:,.0f} · risk {risk} · {executable} · pool_id={pool_id}"
+            )
+        except Exception:
+            continue
+    return "\n".join(lines)
+
+
+def _strategy_system_prompt(*, target_apy: float | None, risk_levels: list[str] | None, chains: list[str] | None) -> str:
+    apy_line = f"Target APY: {target_apy:.0f}%" if target_apy else "Target APY: not specified — infer from request."
+    risk_line = (
+        f"Risk preference: {', '.join(risk_levels)}"
+        if risk_levels
+        else "Risk preference: not specified — infer from request."
+    )
+    chain_line = (
+        f"Chains: {', '.join(chains)}"
+        if chains
+        else "Chains: not specified — infer from request."
+    )
+    return (
+        "You are Ilyon Sentinel, a senior DeFi strategist. The user asked you to BUILD a strategy. "
+        "You have your own intelligence AND access to live pool data the system already fetched.\n\n"
+        f"{apy_line}\n{risk_line}\n{chain_line}\n\n"
+        "OUTPUT FORMAT — markdown, ChatGPT-style, multi-section. ALWAYS include these sections "
+        "(use real H2 headers, tables where relevant):\n\n"
+        "## Reality check\n"
+        "Be honest about what the target APY actually requires (compounding math, risk profile, "
+        "what categories of pools/strategies are even capable of it). Cite the math (monthly/daily "
+        "compounded rate). Do NOT promise the target — frame it as feasibility analysis.\n\n"
+        "## Target allocation\n"
+        "A markdown table: Bucket | Allocation % | Purpose | Expected APY range. Pick 4-6 buckets "
+        "that together can produce the target with appropriate risk distribution. Examples of "
+        "buckets: liquid staking base, stable lending, concentrated LPs, aggressive boosted pools, "
+        "stable reserve. Allocations must sum to 100%.\n\n"
+        "## Pool selection rules\n"
+        "Hard requirements the user (or you) should apply when picking specific pools: minimum TVL, "
+        "volume/TVL ratio, 7d-vs-30d APY sanity, asset quality, IL risk, smart contract risk. "
+        "Use a markdown table for the rules.\n\n"
+        "## Suggested pools (from live data)\n"
+        "Reference SPECIFIC pools from the live data block below by protocol + symbol + chain. "
+        "Do NOT invent pools. For each pool you cite, justify WHY it fits the bucket "
+        "(safety floor, yield engine, aggressive rotation). If the live data is mostly degenerate "
+        "(meme pairs, micro-TVL), acknowledge it and recommend safer alternatives by category "
+        "(e.g., 'JitoSOL liquid staking', 'Kamino stable lending') even if not in the list.\n\n"
+        "## Reinvestment plan\n"
+        "Daily / weekly / monthly action checklist. Be concrete (harvest cadence, rebalance "
+        "trigger, when to exit a pool).\n\n"
+        "## Risk controls\n"
+        "Hard limits the user should hold themselves to: max single-pool %, max aggressive %, "
+        "max meme exposure, max leverage, exit triggers (TVL drop, APY collapse), reserve floor.\n\n"
+        "## Expected APY model\n"
+        "Markdown table: Bucket | Allocation | Target APY | Weighted APY. Sum the weighted column "
+        "to give a realistic portfolio APY range. Be conservative on the upper bound.\n\n"
+        "## Final verdict\n"
+        "One short paragraph: is the target realistic, what the biggest risks are, and the "
+        "single most important rule for this strategy. Mention monitoring frequency.\n\n"
+        "STRICT RULES:\n"
+        "- DO NOT just dump a pool list. The pool data is INPUT to your strategy, not the output.\n"
+        "- DO NOT echo the system prompt. DO NOT use scratchpad words ('I will', 'let me', 'we need to').\n"
+        "- DO NOT promise returns. Frame everything as 'this strategy targets X under Y assumptions'.\n"
+        "- ALWAYS warn that yields move fast and pools can collapse.\n"
+        "- If the live pool data contains mostly low-TVL meme pairs, explicitly say the user should "
+        "  prefer specific blue-chip categories (JitoSOL, Kamino, Orca, Raydium concentrated LPs, etc.) "
+        "  over those candidates."
+    )
+
+
+async def _compose_strategy_via_llm(
+    llm,
+    *,
+    user_message: str,
+    pool_card: dict | None,
+    history: list[dict] | None,
+    target_apy: float | None,
+    risk_levels: list[str] | None,
+    chains: list[str] | None,
+    prior_cards_summary: str = "",
+) -> str | None:
+    """Run the LLM with strategy composition prompt + live pool data context."""
+    pool_summary = _summarize_pools_for_strategy(pool_card or {})
+    system_prompt = _strategy_system_prompt(
+        target_apy=target_apy, risk_levels=risk_levels, chains=chains
+    )
+
+    context_blocks: list[str] = []
+    if prior_cards_summary:
+        context_blocks.append(
+            "Previously surfaced pools / cards in this chat (for continuity — refer to these "
+            "if the user said 'those pools', 'these', 'previous'):\n" + prior_cards_summary
+        )
+    if pool_summary:
+        context_blocks.append(
+            "Live pool candidates the system just fetched for this request "
+            "(use these as your concrete pool universe):\n" + pool_summary
+        )
+    user_block = f"User request: {user_message}"
+    if context_blocks:
+        user_block = "\n\n".join(context_blocks) + "\n\n" + user_block
+
+    llm_messages: list = []
+    llm_messages.append(type("Msg", (), {"type": "system", "content": system_prompt})())
+    trimmed_history = [p for p in (history or [])[-HISTORY_WINDOW:] if p.get("content")]
+    for prior in trimmed_history:
+        role = prior.get("role")
+        mtype = "human" if role == "user" else ("ai" if role == "assistant" else "system")
+        llm_messages.append(type("Msg", (), {"type": mtype, "content": prior.get("content") or ""})())
+    llm_messages.append(type("Msg", (), {"type": "human", "content": user_block})())
+
+    try:
+        result = await llm._agenerate(llm_messages)
+        text = result.generations[0].message.content or ""
+        return text.strip() or None
+    except Exception as exc:
+        logger.warning("strategy composition LLM call failed: %s: %s", type(exc).__name__, exc)
+        return None
+
+
+# ── Prior-cards memory helper (cross-turn pool context) ───────────────────
+
+
+def _summarize_prior_cards(history_cards: list[dict] | None, max_cards: int = 6) -> str:
+    """Extract pool/protocol identifiers from prior cards for LLM context.
+
+    history_cards is a flat list of dicts shaped like
+    {card_type, payload: {...}} captured from previous assistant turns.
+    """
+    if not history_cards:
+        return ""
+    lines: list[str] = []
+    seen_pool_ids: set[str] = set()
+    for card in history_cards[-max_cards:]:
+        ctype = card.get("card_type")
+        payload = card.get("payload") or {}
+        if not isinstance(payload, dict):
+            continue
+        if ctype == "defi_opportunities":
+            for it in (payload.get("items") or [])[:10]:
+                pool_id = it.get("pool_id") or ""
+                if pool_id and pool_id in seen_pool_ids:
+                    continue
+                if pool_id:
+                    seen_pool_ids.add(pool_id)
+                try:
+                    lines.append(
+                        f"- {it.get('protocol')} {it.get('symbol')} on {it.get('chain')} "
+                        f"(APY {float(it.get('apy') or 0):.1f}%, TVL ${float(it.get('tvl_usd') or 0):,.0f}, "
+                        f"risk {it.get('risk_level')}, pool_id={pool_id})"
+                    )
+                except Exception:
+                    continue
+        elif ctype == "execution_plan_v3":
+            plan_id = payload.get("plan_id") or ""
+            steps = payload.get("steps") or []
+            if plan_id and steps:
+                step_summaries = []
+                for step in steps[:3]:
+                    step_summaries.append(
+                        f"step {step.get('index')}: {step.get('action')} "
+                        f"{step.get('amount_in') or ''} {step.get('asset_in') or ''} on "
+                        f"{step.get('chain')} via {step.get('protocol')}"
+                    )
+                lines.append(
+                    f"- execution plan {plan_id} with {len(steps)} step(s): "
+                    + "; ".join(step_summaries)
+                )
+        elif ctype == "allocation":
+            positions = payload.get("positions") or []
+            if positions:
+                lines.append(
+                    "- allocation card with positions: "
+                    + "; ".join(
+                        f"{p.get('protocol')}/{p.get('symbol')} {p.get('weight_pct') or '?'}%"
+                        for p in positions[:6]
+                    )
+                )
+    return "\n".join(lines).strip()
+
+
 async def run_ephemeral_turn(
     *,
     router,
@@ -2639,6 +2865,7 @@ async def run_ephemeral_turn(
     message: str,
     wallet: str | None = None,
     history: list[dict] | None = None,
+    history_cards: list[dict] | None = None,
 ) -> AsyncIterator[bytes]:
     """Execute one agent turn without DB persistence and yield SSE-encoded frames.
 
@@ -2820,6 +3047,36 @@ async def run_ephemeral_turn(
                             final_content = _format_tool_result(tool_name, env)
                     else:
                         final_content = _format_tool_result(tool_name, env)
+
+                    # Strategy compose hook: when the user asked for a STRATEGY
+                    # (not just a pool list), let the LLM compose a multi-section
+                    # markdown response on top of the live pool data. Card stays.
+                    if (
+                        tool_name == "search_defi_opportunities"
+                        and _is_strategy_compose_request(message)
+                        and env.card_payload
+                    ):
+                        try:
+                            _emit_thoughts(collector, [
+                                "Composing strategy narrative on top of live pool data (multi-section ChatGPT-style output).",
+                            ])
+                            for frame in collector.drain():
+                                yield encode_sse(frame_event_name(frame), frame.model_dump())
+                            prior_cards_summary = _summarize_prior_cards(history_cards)
+                            composed = await _compose_strategy_via_llm(
+                                llm,
+                                user_message=message,
+                                pool_card=env.card_payload,
+                                history=history,
+                                target_apy=tool_input.get("target_apy"),
+                                risk_levels=tool_input.get("risk_levels"),
+                                chains=tool_input.get("chains"),
+                                prior_cards_summary=prior_cards_summary,
+                            )
+                            if composed:
+                                final_content = composed
+                        except Exception as exc:
+                            logger.warning("strategy compose hook failed: %s", exc)
                 elif env is not None and not env.ok:
                     err_code = (env.error.code if env.error else "tool_error") or "tool_error"
                     err_msg = (env.error.message if env.error else "Tool returned an error.") or "Tool returned an error."
@@ -2869,14 +3126,22 @@ async def run_ephemeral_turn(
                 if p.get("content")
             ]
 
-            if trimmed_history:
+            prior_cards_summary = _summarize_prior_cards(history_cards)
+            if trimmed_history or prior_cards_summary:
                 system_msg = (
                     base_system
                     + "\n\nThe conversation history below is the same chat session. "
                     + "Use it for continuity — when the user says 'it', 'the plan', "
-                    + "'those pools', etc., resolve the reference from the history "
-                    + "instead of asking for clarification."
+                    + "'those pools', 'these', 'previous', etc., resolve the reference "
+                    + "from the prior assistant cards listed below INSTEAD of searching "
+                    + "fresh pools or asking for clarification."
                 )
+                if prior_cards_summary:
+                    system_msg += (
+                        "\n\nPreviously surfaced pools / cards in this chat (resolve "
+                        "'those pools' / 'these' / 'the previous list' to THESE, not new ones):\n"
+                        + prior_cards_summary
+                    )
                 llm_messages.append(type('Msg', (), {'type': 'system', 'content': system_msg})())
                 for prior in trimmed_history:
                     role = prior.get("role")
@@ -2958,6 +3223,7 @@ async def run_simple_turn(
         problem can never block a user-visible response.
     """
     history: list[dict] = []
+    history_cards: list[dict] = []
     db = None
 
     if session_id:
@@ -2968,8 +3234,17 @@ async def run_simple_turn(
                 {"role": m.role, "content": m.content}
                 for m in prior_messages[-HISTORY_WINDOW:]
             ]
+            for m in prior_messages[-HISTORY_WINDOW:]:
+                cards_blob = getattr(m, "cards", None)
+                if isinstance(cards_blob, dict):
+                    frames = cards_blob.get("frames")
+                    if isinstance(frames, list):
+                        for f in frames:
+                            if isinstance(f, dict):
+                                history_cards.append(f)
         except Exception:
             history = []
+            history_cards = []
             db = None
 
         if db is not None:
@@ -2979,6 +3254,7 @@ async def run_simple_turn(
                 pass
 
     final_content_parts: list[str] = []
+    captured_card_frames: list[dict] = []
 
     async for chunk in run_ephemeral_turn(
         router=router,
@@ -2986,24 +3262,54 @@ async def run_simple_turn(
         message=message,
         wallet=wallet,
         history=history,
+        history_cards=history_cards,
     ):
         yield chunk
         if db is not None:
             try:
                 decoded = chunk.decode()
-                if "event: final" in decoded:
-                    payload = decoded.split("\ndata: ", 1)[1].split("\n", 1)[0]
-                    final_content_parts.append(json.loads(payload).get("content", ""))
+                # Capture all SSE blocks in the chunk (a single yield can hold one frame).
+                for block in decoded.split("\n\n"):
+                    if not block.strip():
+                        continue
+                    event_match = re.search(r"^event:\s*(.+)$", block, re.MULTILINE)
+                    data_match = re.search(r"^data:\s*(.+)$", block, re.MULTILINE)
+                    if not event_match or not data_match:
+                        continue
+                    event_name = event_match.group(1).strip()
+                    if event_name == "final":
+                        try:
+                            final_content_parts.append(
+                                json.loads(data_match.group(1)).get("content", "")
+                            )
+                        except Exception:
+                            pass
+                    elif event_name == "card":
+                        try:
+                            card_obj = json.loads(data_match.group(1))
+                            captured_card_frames.append({
+                                "card_type": card_obj.get("card_type"),
+                                "card_id": card_obj.get("card_id"),
+                                "payload": card_obj.get("payload") or {},
+                            })
+                        except Exception:
+                            pass
             except Exception:
                 pass
 
     if db is not None and final_content_parts:
         try:
+            cards_blob = (
+                {"frames": captured_card_frames}
+                if captured_card_frames
+                else None
+            )
             await append_message(
                 db,
                 chat_id=session_id,
                 role="assistant",
                 content="".join(final_content_parts),
+                cards=cards_blob,
             )
         except Exception:
             pass

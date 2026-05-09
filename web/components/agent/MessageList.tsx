@@ -20,6 +20,10 @@ interface Props {
   };
   isStreaming: boolean;
   onSelect?: (prompt: string) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onStartSigning?: (payload: any) => void;
+  onRerunAllocation?: () => void;
+  onSignStep?: (planId: string, stepId: string) => void;
 }
 
 function formatTime(d: Date = new Date()): string {
@@ -56,10 +60,17 @@ function AssistantParagraphs({
   content,
   cards,
   reasoning,
+  onStartSigning,
+  onRerunAllocation,
+  onSignStep,
 }: {
   content: string;
   cards: CardFrame[];
   reasoning?: { steps: number; lines: string[]; time?: string } | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onStartSigning?: (payload: any) => void;
+  onRerunAllocation?: () => void;
+  onSignStep?: (planId: string, stepId: string) => void;
 }) {
   const paragraphs = splitParagraphs(content);
   // Keep a stable order: allocation → sentinel_matrix → execution_plan; other cards after.
@@ -92,7 +103,15 @@ function AssistantParagraphs({
       );
     }
     const card = orderedCards[i];
-    if (card) items.push(<CardRenderer key={`c-${i}`} card={card} />);
+    if (card) items.push(
+      <CardRenderer
+        key={`c-${i}`}
+        card={card}
+        onStartSigning={onStartSigning}
+        onRerunAllocation={onRerunAllocation}
+        onSignStep={onSignStep}
+      />,
+    );
   }
   return (
     <div className="space-y-3">
@@ -104,7 +123,7 @@ function AssistantParagraphs({
   );
 }
 
-export function MessageList({ messages, currentSteps, isStreaming, onSelect }: Props) {
+export function MessageList({ messages, currentSteps, isStreaming, onSelect, onStartSigning, onRerunAllocation, onSignStep }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -168,6 +187,9 @@ export function MessageList({ messages, currentSteps, isStreaming, onSelect }: P
               content={msg.content}
               cards={msg.cards}
               reasoning={reasoning}
+              onStartSigning={onStartSigning}
+              onRerunAllocation={onRerunAllocation}
+              onSignStep={onSignStep}
             />
             {msg.stepStatuses?.map((frame) => (
               <StepStatusCard key={`${frame.plan_id}-${frame.step_id}-${frame.status}-${frame.tx_hash ?? ""}`} frame={frame} />
@@ -185,7 +207,13 @@ export function MessageList({ messages, currentSteps, isStreaming, onSelect }: P
             />
           )}
           {currentSteps.cards.map((c) => (
-            <CardRenderer key={c.card_id} card={c} />
+            <CardRenderer
+              key={c.card_id}
+              card={c}
+              onStartSigning={onStartSigning}
+              onRerunAllocation={onRerunAllocation}
+              onSignStep={onSignStep}
+            />
           ))}
           {currentSteps.stepStatuses?.map((frame) => (
             <StepStatusCard key={`${frame.plan_id}-${frame.step_id}-${frame.status}-${frame.tx_hash ?? ""}`} frame={frame} />

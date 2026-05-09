@@ -5073,13 +5073,16 @@ export default function MainApp() {
       } | null;
     };
     type PlanPayload = { plan_id?: string; steps?: StepLite[] };
+    console.log("[handleSignStep] click", { planId, stepId, messageCount: messages.length });
     let step: StepLite | undefined;
+    let foundCard = false;
     for (const m of messages) {
       const cards = m.agentCards || [];
       for (const c of cards) {
         if (c.card_type === "execution_plan_v3") {
           const p = c.payload as PlanPayload;
           if (p?.plan_id === planId) {
+            foundCard = true;
             step = (p.steps || []).find(s => s.step_id === stepId);
             if (step) break;
           }
@@ -5087,8 +5090,19 @@ export default function MainApp() {
       }
       if (step) break;
     }
+    console.log("[handleSignStep] resolution", {
+      foundCard,
+      stepId,
+      hasStep: !!step,
+      hasTransaction: !!step?.transaction,
+      chain_kind: step?.transaction?.chain_kind,
+    });
     if (!step?.transaction) {
-      showToast("Step has no unsigned transaction yet — re-run the build.", "info");
+      const msg = foundCard
+        ? "Step transaction missing — please rebuild the plan."
+        : "No execution plan found for this signing request.";
+      showToast(msg, "info");
+      try { window.alert(msg); } catch {}
       return;
     }
     const tx = step.transaction;
@@ -5096,25 +5110,48 @@ export default function MainApp() {
       if (tx.chain_kind === "solana" && tx.serialized) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const sol = (window as any)?.phantom?.solana ?? (window as any).solana;
-        if (!sol?.isPhantom) throw new Error("Phantom wallet not found");
+        console.log("[handleSignStep] solana provider", { hasSol: !!sol, isPhantom: sol?.isPhantom, connected: sol?.isConnected });
+        if (!sol) throw new Error("Phantom not detected. Install Phantom and refresh the page.");
+        if (!sol.isPhantom && !sol.isConnected) {
+          // Some wallets (Backpack, Solflare) also expose window.solana — accept them.
+          if (typeof sol.signAndSendTransaction !== "function") {
+            throw new Error("Solana wallet missing signAndSendTransaction.");
+          }
+        }
+        try { if (typeof sol.connect === "function") await sol.connect({ onlyIfTrusted: false }); } catch (connErr) {
+          console.warn("[handleSignStep] sol.connect non-fatal", connErr);
+        }
         const { VersionedTransaction } = await import("@solana/web3.js");
         const bytes = Uint8Array.from(atob(tx.serialized), c => c.charCodeAt(0));
         const vtx = VersionedTransaction.deserialize(bytes);
-        const { signature } = await sol.signAndSendTransaction(vtx);
-        showToast(`Signed: ${signature.slice(0, 12)}…`, "success");
+        const result = await sol.signAndSendTransaction(vtx);
+        const signature: string = result?.signature ?? result;
+        showToast(`Signed: ${String(signature).slice(0, 12)}…`, "success");
       } else if (tx.chain_kind === "evm" && tx.to && tx.data) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const eth: any = (window as any).ethereum;
-        if (!eth) throw new Error("MetaMask not found");
-        const params = [{ from: (await eth.request({ method: "eth_accounts" }))[0], to: tx.to, data: tx.data, value: tx.value || "0x0" }];
+        console.log("[handleSignStep] evm provider", { hasEth: !!eth });
+        if (!eth) throw new Error("EVM wallet (MetaMask/Phantom-EVM) not found.");
+        const accounts = await eth.request({ method: "eth_accounts" });
+        let from = accounts?.[0];
+        if (!from) {
+          const requested = await eth.request({ method: "eth_requestAccounts" });
+          from = requested?.[0];
+        }
+        if (!from) throw new Error("No EVM account connected.");
+        const params = [{ from, to: tx.to, data: tx.data, value: tx.value || "0x0" }];
         const hash = await eth.request({ method: "eth_sendTransaction", params });
         showToast(`Signed: ${String(hash).slice(0, 12)}…`, "success");
       } else {
-        showToast("Unsupported transaction kind on this step.", "info");
+        const msg = `Unsupported transaction shape (chain_kind=${tx.chain_kind}, has_serialized=${!!tx.serialized}, has_to=${!!tx.to}).`;
+        showToast(msg, "info");
+        try { window.alert(msg); } catch {}
       }
     } catch (e: unknown) {
       const msg = (e as { message?: string }).message || "Signing failed";
+      console.error("[handleSignStep] error", e);
       showToast(`Wallet error: ${msg}`, "error");
+      try { window.alert(`Wallet error: ${msg}`); } catch {}
     }
   };
 
