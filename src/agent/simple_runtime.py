@@ -3117,10 +3117,10 @@ async def _compose_strategy_via_llm(
     llm_messages.append(type("Msg", (), {"type": "human", "content": user_block})())
 
     try:
-        # 1800 keeps the request under the upstream provider's per-call output
-        # cap (gpt-oss-120b:nitro returned empty body at 4000) while still
-        # leaving budget for reasoning + multi-section markdown.
-        result = await llm._agenerate(llm_messages, max_tokens=1800, temperature=0.5)
+        # 2400 covers all 8 strategy sections without truncating mid-table.
+        # Stays under the upstream provider's per-call output cap
+        # (gpt-oss-120b:nitro returned empty body at 4000).
+        result = await llm._agenerate(llm_messages, max_tokens=2400, temperature=0.5)
         text = (result.generations[0].message.content or "").strip()
         if not text:
             return None
@@ -3269,7 +3269,10 @@ async def _compose_prior_pools_distribution_via_llm(
         "OUTPUT FORMAT — markdown:\n"
         "## Allocation\n"
         "Markdown table: # | Protocol · Pair (chain) | Weight % | $ Amount | APY | Risk | Rationale.\n"
-        "Weights sum to 100%. Use the user's stated amount to derive $ amounts.\n\n"
+        "Weights sum to 100%. Use the user's stated amount to derive $ amounts.\n"
+        "DEFAULT to EVEN split (e.g., 4 pools → 25%/25%/25%/25%) unless the user "
+        "explicitly asked for risk-weighted bias. The card uses your weights "
+        "directly, so they MUST sum to 100 and match the $ Amount column you write.\n\n"
         "## Reasoning\n"
         "2-4 sentences explaining why the weights tilt the way they do (risk balance, "
         "TVL depth, APY contribution to blended yield).\n\n"
@@ -3330,6 +3333,11 @@ _SIGN_CONTINUATION_RE = re.compile(
     r"sign\s+(?:the|all|these|those|it)|"
     r"sign\s+them|"
     r"execute\s+(?:and\s+)?(?:sign|now|the|it|that|all|the\s+plan)|"
+    r"execute\s+this\s+(?:workflow|plan|strategy|allocation)|"
+    r"execute\s+(?:them|those|these)\s+(?:pools?|positions?)?|"
+    r"execute\s+the\s+\d+\s+pools?|"
+    r"step\s+by\s+step|"
+    r"one\s+(?:at\s+a\s+time|by\s+one)|"
     r"proceed\s+(?:with|to|and)|"
     r"build\s+(?:the\s+)?(?:allocation|execution\s+plan|plan)|"
     r"create\s+(?:the\s+)?(?:execution|plan)|"
@@ -3715,6 +3723,7 @@ def _build_prior_pools_allocation_payload(
     *,
     usd_amount: float,
     risk_budget: str = "balanced",
+    override_weights: list[int] | None = None,
 ) -> dict | None:
     """Compose an `allocation` card payload over the prior pool universe.
 
@@ -3748,6 +3757,60 @@ def _build_prior_pools_allocation_payload(
     # uses even split, so card and narrative agree). Caller can override
     # via risk_budget="ladder_<conservative|balanced|aggressive>".
     n = min(len(prior_pools), 5)
+    if override_weights and len(override_weights) >= n:
+        weights = list(override_weights[:n])
+        s = sum(weights)
+        if s and 95 <= s <= 105:
+            drift = 100 - s
+            weights[0] += drift
+            if not weights:
+                return None
+            # Skip the ladder/even-split branch
+            positions: list[AllocationPosition] = []
+            for rank, (it, weight) in enumerate(zip(prior_pools[:n], weights), start=1):
+                try:
+                    apy = float(it.get("apy") or 0.0)
+                    tvl = float(it.get("tvl_usd") or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                protocol = str(it.get("protocol") or "Unknown")
+                symbol = str(it.get("symbol") or "?")
+                chain_raw = str(it.get("chain") or "ethereum")
+                chain = _norm_chain(chain_raw)
+                if apy >= 80 or tvl < 1_000_000:
+                    risk_l = "high"
+                elif apy >= 25 or tvl < 50_000_000:
+                    risk_l = "medium"
+                else:
+                    risk_l = "low"
+                symbol_upper = symbol.upper()
+                is_stable = any(s in symbol_upper for s in ("USD", "DAI", "FRAX", "USDC", "USDT"))
+                days_live = 200 if tvl >= 100_000_000 else 90
+                pc = _PC(
+                    project=protocol, symbol=symbol, chain=chain_raw,
+                    tvl_usd=tvl, apy=apy, audits=False, days_live=days_live,
+                    stable=is_stable,
+                    il_risk="no" if "-" not in symbol else "yes",
+                    exposure="single" if "-" not in symbol else "multi",
+                )
+                ss_v = _ss(pc); sd_v = _sd(pc); se_v = _se(pc); sc_v = _sc(pc)
+                sent = _ws(ss_v, sd_v, se_v, sc_v)
+                flags = _df(pc, sent)
+                positions.append(
+                    AllocationPosition(
+                        rank=rank, protocol=protocol, asset=symbol, chain=chain,
+                        apy=_fmt_apy(apy), sentinel=sent, risk=risk_l,
+                        fit=_bucket_fit(sent, apy), weight=weight,
+                        usd=_fmt_usd(usd_amount * weight / 100.0),
+                        tvl=_fmt_tvl(tvl), router=_ROUTERS.get(chain, "Enso"),
+                        safety=ss_v, durability=sd_v, exit=se_v, confidence=sc_v,
+                        flags=flags,
+                    )
+                )
+            if positions:
+                summary = _summarise(positions, usd_amount)
+                return AllocationPayload(positions=positions, **summary).model_dump()
+            return None
     if risk_budget.startswith("ladder_") or risk_budget in {"conservative", "balanced", "aggressive"} and risk_budget == "ladder_balanced":
         rb = risk_budget.replace("ladder_", "") or "balanced"
         if rb == "conservative":
@@ -3835,6 +3898,40 @@ def _build_prior_pools_allocation_payload(
     return AllocationPayload(positions=positions, **summary).model_dump()
 
 
+def _parse_weights_from_narrative(narrative: str, n_pools: int) -> list[int] | None:
+    """Extract weight % from a markdown allocation table the LLM produced.
+
+    Looks for lines like '| 1 | gmtrade BTC-USDC ... | 30% | $30 ...' and
+    captures the integer percent. Returns weights summing to ~100 if found.
+    """
+    if not narrative or n_pools <= 0:
+        return None
+    weights: list[int] = []
+    # Match table rows that have a leading rank number, then any cell, then
+    # a weight percent in another cell (handles 'Weight %' columns).
+    for m in re.finditer(
+        r"\|\s*\d+\s*\|[^\n|]*\|\s*(\d{1,3})\s*%",
+        narrative,
+    ):
+        try:
+            v = int(m.group(1))
+            if 1 <= v <= 100:
+                weights.append(v)
+        except ValueError:
+            continue
+        if len(weights) >= n_pools:
+            break
+    if len(weights) != n_pools:
+        return None
+    s = sum(weights)
+    if not (95 <= s <= 105):
+        return None
+    # Normalize to exactly 100
+    drift = 100 - s
+    weights[0] += drift
+    return weights
+
+
 async def _bake_prior_pools_execution_plan(
     tools, *, positions: list[dict], usd_amount: float
 ) -> dict | None:
@@ -3899,11 +3996,15 @@ async def _bake_prior_pools_execution_plan(
         tx = (first or {}).get("transaction") if first else None
         # Build ExecutionStep
         verb = "Stake" if any(k in protocol.lower() for k in ("marinade", "jito", "sanctum", "lido", "stader", "liquid-staking")) else "Supply"
-        amount_asset = "USDC" if any(s in symbol.upper() for s in ("USD", "DAI")) else (
-            "SOL" if "SOL" in symbol.upper() else (
-            "ETH" if "ETH" in symbol.upper() else "USDC"
-            )
-        )
+        # Entry-leg asset: show what the user is depositing FROM their wallet.
+        # For LP/yield pools we accept USDC by default — Jupiter/Enso swap
+        # legs convert to the underlying as needed. For pure liquid staking
+        # the native chain asset (SOL on Solana) is the deposit token.
+        is_lst = any(k in protocol.lower() for k in ("marinade", "jito", "sanctum", "lido", "stader", "liquid-staking"))
+        if is_lst:
+            amount_asset = "SOL" if chain == "sol" else "ETH"
+        else:
+            amount_asset = "USDC"
         gas_by_chain = {"sol": 0.01, "eth": 4.8, "mainnet": 6.9, "arb": 0.35, "base": 0.25, "polygon": 0.08, "bsc": 0.12, "op": 0.35, "avax": 0.3}
         return ExecutionStep(
             index=rank,
@@ -4115,10 +4216,16 @@ async def run_ephemeral_turn(
         # note prompting the user to resize.
         try:
             effective_amount = amount_hint_val if amount_hint_val is not None else 1000.0
+            # Try to inherit weights from the LLM narrative table so card and
+            # narrative agree on percentages. Fall back to even split.
+            llm_weights = _parse_weights_from_narrative(
+                composed or "", n_pools=min(len(prior_pools_for_dist), 5)
+            )
             alloc_payload = _build_prior_pools_allocation_payload(
                 prior_pools_for_dist,
                 usd_amount=effective_amount,
                 risk_budget="balanced",
+                override_weights=llm_weights,
             )
             if alloc_payload:
                 alloc_card_id = str(_uuid4())
