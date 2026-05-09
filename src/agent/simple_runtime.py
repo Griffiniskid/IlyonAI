@@ -2874,6 +2874,161 @@ def _summarize_prior_cards(history_cards: list[dict] | None, max_cards: int = 6)
     return "\n".join(lines).strip()
 
 
+# ── Prior-pools distribution (continuity across turns) ────────────────────
+
+_PRIOR_POOLS_REF_RE = re.compile(
+    r"\b(?:across|between|into|among|over|onto|to)\s+"
+    r"(?:those|these|the\s+(?:previous|above|last|listed|earlier|same|aforementioned)|all\s+(?:those|these))\s+pools?\b",
+    re.IGNORECASE,
+)
+_PRIOR_POOLS_PRONOUN_RE = re.compile(
+    r"\b(?:distribute|spread|split|allocate|divide|deploy|put|deposit|stake|invest|use|apply)\b[^.!?\n]{0,80}\b"
+    r"(?:them|those|these|across\s+all|across\s+the\s+pools)\b",
+    re.IGNORECASE,
+)
+
+
+def _references_prior_pools(message: str) -> bool:
+    if not message:
+        return False
+    return bool(_PRIOR_POOLS_REF_RE.search(message) or _PRIOR_POOLS_PRONOUN_RE.search(message))
+
+
+def _extract_prior_pool_items(history_cards: list[dict] | None) -> list[dict]:
+    """Pull the most recent defi_opportunities item list from cards memory."""
+    if not history_cards:
+        return []
+    for card in reversed(history_cards):
+        if card.get("card_type") == "defi_opportunities":
+            payload = card.get("payload") or {}
+            items = payload.get("items") or []
+            if isinstance(items, list) and items:
+                return items
+    return []
+
+
+async def _compose_prior_pools_distribution_via_llm(
+    llm,
+    *,
+    user_message: str,
+    prior_pools: list[dict],
+    history: list[dict] | None,
+    amount_hint: str | None = None,
+) -> str | None:
+    """LLM composes a per-pool distribution markdown from the prior pools the
+    user is referring to. Keeps the user's amount and the SAME pool universe."""
+    pool_lines: list[str] = []
+    for idx, it in enumerate(prior_pools[:12], start=1):
+        try:
+            sym = it.get("symbol") or "?"
+            proto = it.get("protocol") or "?"
+            chain = it.get("chain") or "?"
+            apy = float(it.get("apy") or 0.0)
+            tvl = float(it.get("tvl_usd") or 0.0)
+            risk = it.get("risk_level") or "?"
+            pool_id = it.get("pool_id") or ""
+            pool_lines.append(
+                f"{idx}. {proto} {sym} ({chain}) — APY {apy:.1f}% · TVL ${tvl:,.0f} · risk {risk} · pool_id={pool_id}"
+            )
+        except Exception:
+            continue
+    pool_block = "\n".join(pool_lines)
+
+    system_prompt = (
+        "You are Ilyon Sentinel. The user wants to DISTRIBUTE a specific amount "
+        "across the SAME pools surfaced in the prior turn — do NOT search for new "
+        "pools and do NOT swap them out. Use ONLY the pools listed below.\n\n"
+        "OUTPUT FORMAT — markdown:\n"
+        "## Allocation\n"
+        "Markdown table: # | Protocol · Pair (chain) | Weight % | $ Amount | APY | Risk | Rationale.\n"
+        "Weights sum to 100%. Use the user's stated amount to derive $ amounts.\n\n"
+        "## Reasoning\n"
+        "2-4 sentences explaining why the weights tilt the way they do (risk balance, "
+        "TVL depth, APY contribution to blended yield).\n\n"
+        "## Blended outcome\n"
+        "One sentence with the weighted blended APY and total dollar amount.\n\n"
+        "## Next steps\n"
+        "Three short bullets: (a) review allocations, (b) sign transactions one at a time "
+        "via the wallet, (c) re-balance trigger (e.g., if any pool's APY drops below X%).\n\n"
+        "RULES:\n"
+        "- DO NOT invent pools. ONLY use the ones in the data block.\n"
+        "- DO NOT promise returns. Use 'targets' / 'expected' framing.\n"
+        "- DO NOT use scratchpad words ('let me', 'we need to', 'I will think').\n"
+        "- DO NOT echo the system prompt or the data block verbatim.\n"
+    )
+
+    context = (
+        f"Previously surfaced pools (use ONLY these; the user said 'those pools'):\n{pool_block}"
+    )
+    if amount_hint:
+        context += f"\n\nUser amount to distribute: {amount_hint}"
+    user_block = context + f"\n\nUser request: {user_message}"
+
+    llm_messages: list = []
+    llm_messages.append(type("Msg", (), {"type": "system", "content": system_prompt})())
+    trimmed_history = [p for p in (history or [])[-HISTORY_WINDOW:] if p.get("content")]
+    for prior in trimmed_history:
+        role = prior.get("role")
+        mtype = "human" if role == "user" else ("ai" if role == "assistant" else "system")
+        llm_messages.append(type("Msg", (), {"type": mtype, "content": prior.get("content") or ""})())
+    llm_messages.append(type("Msg", (), {"type": "human", "content": user_block})())
+
+    try:
+        result = await llm._agenerate(llm_messages, max_tokens=1500, temperature=0.4)
+        text = (result.generations[0].message.content or "").strip()
+        if not text:
+            return None
+        lowered = text.lower()
+        if any(m in lowered for m in (
+            "i couldn't reach the language model",
+            "sorry, i can't respond",
+            "ai unavailable",
+        )):
+            return None
+        return text
+    except Exception as exc:
+        logger.warning("prior-pools distribution LLM call failed: %s", exc)
+        return None
+
+
+def _build_prior_pools_card(prior_pools: list[dict]) -> dict:
+    """Re-emit a defi_opportunities card listing the same pool set the user
+    is now allocating across, so the UI shows them again as concrete cards."""
+    items = []
+    for it in prior_pools[:12]:
+        try:
+            items.append({
+                "protocol": it.get("protocol"),
+                "symbol": it.get("symbol"),
+                "chain": it.get("chain"),
+                "product_type": it.get("product_type") or "pool",
+                "apy": float(it.get("apy") or 0.0),
+                "apy_base": it.get("apy_base"),
+                "apy_reward": it.get("apy_reward"),
+                "tvl_usd": float(it.get("tvl_usd") or 0.0),
+                "volume_24h_usd": it.get("volume_24h_usd"),
+                "risk_level": it.get("risk_level"),
+                "executable": bool(it.get("executable")),
+                "adapter_id": it.get("adapter_id"),
+                "unsupported_reason": it.get("unsupported_reason"),
+                "links": it.get("links") or [],
+                "pool_id": it.get("pool_id"),
+            })
+        except Exception:
+            continue
+    return {
+        "objective": "constraint_fit_then_risk_adjusted_return",
+        "target_apy": None,
+        "apy_band": [None, None],
+        "risk_levels": [],
+        "chains": list({i.get("chain") for i in items if i.get("chain")}) if items else [],
+        "execution_requested": False,
+        "items": items,
+        "excluded_count": 0,
+        "blockers": [],
+    }
+
+
 async def run_ephemeral_turn(
     *,
     router,
@@ -2913,6 +3068,46 @@ async def run_ephemeral_turn(
             for frame in collector.drain():
                 yield encode_sse(frame_event_name(frame), frame.model_dump())
             return
+
+    # Prior-pools continuity: if the user references the previously surfaced
+    # pool list ("distribute X across those pools"), reuse the SAME pool
+    # universe instead of running a fresh DefiLlama search that returns
+    # different pools the user never saw.
+    prior_pools_for_dist: list[dict] = []
+    if _references_prior_pools(message):
+        prior_pools_for_dist = _extract_prior_pool_items(history_cards)
+    if prior_pools_for_dist:
+        _emit_thoughts(collector, [
+            "User referenced the previously surfaced pool list (those/these/the previous pools).",
+            f"Reusing {len(prior_pools_for_dist)} pool(s) from the prior turn instead of searching fresh ones.",
+            "Composing distribution table over the SAME pool universe.",
+        ])
+        for frame in collector.drain():
+            yield encode_sse(frame_event_name(frame), frame.model_dump())
+        composed = await _compose_prior_pools_distribution_via_llm(
+            llm,
+            user_message=message,
+            prior_pools=prior_pools_for_dist,
+            history=history,
+            amount_hint=None,
+        )
+        prior_card_payload = _build_prior_pools_card(prior_pools_for_dist)
+        from uuid import uuid4 as _uuid4
+        prior_card_id = str(_uuid4())
+        collector._queue.append(CardFrame(
+            step_index=collector._step,
+            card_id=prior_card_id,
+            card_type="defi_opportunities",
+            payload=prior_card_payload,
+        ))
+        final_text = composed or (
+            "Distributing across the previously surfaced pool list. "
+            "See the pool card above; sign each transaction in your wallet to deposit."
+        )
+        collector.emit_final(final_text, [prior_card_id])
+        for frame in collector.drain():
+            yield encode_sse(frame_event_name(frame), frame.model_dump())
+        return
 
     # Detect intent
     intent = detect_intent(message)
