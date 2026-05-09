@@ -805,10 +805,33 @@ If asked about a specific token, suggest sending the address for analysis."""
                 timeout=aiohttp.ClientTimeout(total=timeout_total)
             ) as resp:
                 if resp.status != 200:
+                    err_text = await resp.text()
+                    logger.warning("Chat HTTP %s: %s", resp.status, err_text[:300])
                     return "Sorry, I can't respond right now. Please try again later."
 
                 data = await resp.json()
-                return data.get('choices', [{}])[0].get('message', {}).get('content', 'No response')
+                msg = (data.get('choices', [{}])[0] or {}).get('message', {}) or {}
+                content = msg.get('content') or ''
+                if not content.strip():
+                    # Reasoning models (gpt-oss, deepseek-r1, etc.) sometimes emit
+                    # the final answer under reasoning / reasoning_content; fall
+                    # back to those before giving up.
+                    for alt_key in ("reasoning_content", "reasoning", "text"):
+                        alt = msg.get(alt_key)
+                        if isinstance(alt, str) and alt.strip():
+                            content = alt
+                            break
+                if not content.strip():
+                    finish = (data.get('choices', [{}])[0] or {}).get('finish_reason')
+                    usage = data.get('usage', {})
+                    logger.warning(
+                        "Chat empty content: finish=%s usage=%s msg_keys=%s",
+                        finish,
+                        usage,
+                        list(msg.keys()),
+                    )
+                    return "No response"
+                return content
 
         except Exception as e:
             logger.error("Chat error: %s: %s", type(e).__name__, e or repr(e))
