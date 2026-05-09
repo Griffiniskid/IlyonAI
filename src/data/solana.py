@@ -113,140 +113,98 @@ class SolanaClient:
         await self.close()
 
     async def _get_holders_via_helius(self, address: str, limit: int = 20) -> List[Dict]:
-        """
-        Fetch token holders using Helius API (more reliable than standard RPC).
+        """Fetch token holders via Helius RPC + DAS fallback.
 
-        Args:
-            address: Token mint address
-            limit: Maximum holders to fetch
-
-        Returns:
-            List of holder dicts with 'address' and 'amount'
+        Strategy:
+          1. getTokenLargestAccounts (fast, returns top 20 with UI amounts).
+          2. On transient overload (-32603), retry up to 2x with backoff.
+          3. On 'too many accounts' (-32600), fall back to public Solana RPC
+             which still serves getTokenLargestAccounts for big mints.
         """
         if not self.helius_api_key:
             return []
 
-        url = f"https://mainnet.helius-rpc.com/?api-key={self.helius_api_key}"
+        helius_url = f"https://mainnet.helius-rpc.com/?api-key={self.helius_api_key}"
+        public_url = self.rpc_url or "https://api.mainnet-beta.solana.com"
 
-        # Use Helius enhanced RPC for token largest accounts
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getTokenLargestAccounts",
-            "params": [address]
-        }
+        async def _largest(session, url):
+            payload = {"jsonrpc": "2.0", "id": 1, "method": "getTokenLargestAccounts", "params": [address]}
+            try:
+                async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as r:
+                    if r.status != 200:
+                        return ("status", r.status, None)
+                    return ("ok", None, await r.json())
+            except Exception as exc:
+                return ("exc", str(exc), None)
+
+        def _parse_largest(body):
+            if not isinstance(body, dict):
+                return None
+            if 'error' in body:
+                return None
+            value = (body.get('result') or {}).get('value') or []
+            holders = []
+            for account in value[:limit]:
+                amount = 0.0
+                if account.get('uiAmount') is not None:
+                    amount = float(account['uiAmount'])
+                elif account.get('ui_amount') is not None:
+                    amount = float(account['ui_amount'])
+                elif account.get('uiAmountString'):
+                    try: amount = float(account['uiAmountString'])
+                    except Exception: amount = 0.0
+                elif 'amount' in account:
+                    raw = account.get('amount', 0)
+                    dec = int(account.get('decimals', 9))
+                    if isinstance(raw, str):
+                        try: raw = int(raw)
+                        except Exception: raw = 0
+                    amount = raw / (10 ** dec) if dec else float(raw)
+                holders.append({'address': account.get('address', ''), 'amount': amount})
+            return holders
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    if resp.status != 200:
-                        logger.warning(f"Helius API returned {resp.status}")
-                        return []
-
-                    data = await resp.json()
-
-                    if 'error' in data:
-                        err = data['error']
-                        err_msg = err.get('message', '') if isinstance(err, dict) else str(err)
-                        err_code = err.get('code') if isinstance(err, dict) else None
-                        logger.warning(f"Helius API error: {err}")
-                        if err_code == -32600 or 'Too many accounts' in err_msg:
-                            # Mint has too many holders for getTokenLargestAccounts.
-                            # Fall back to Helius DAS getTokenAccounts and pick the
-                            # largest by amount in-process. Pull a generous slice
-                            # so the top-N is well-sampled.
-                            das_payload = {
-                                "jsonrpc": "2.0",
-                                "id": 1,
-                                "method": "getTokenAccounts",
-                                "params": {
-                                    "mint": address,
-                                    "limit": 1000,
-                                    "options": {"showZeroBalance": False},
-                                },
-                            }
-                            async with session.post(url, json=das_payload, timeout=aiohttp.ClientTimeout(total=15)) as das_resp:
-                                if das_resp.status != 200:
-                                    logger.info(f"DAS fallback HTTP {das_resp.status} for {address[:8]}")
-                                    return []
-                                das_data = await das_resp.json()
-                            if 'error' in das_data:
-                                logger.info(f"DAS fallback error for {address[:8]}: {das_data['error']}")
-                                return []
-                            das_accounts = (das_data.get('result', {}) or {}).get('token_accounts', []) or []
-                            # Each entry: address, mint, owner, amount (raw int), delegated_amount, frozen.
-                            # Need decimals to convert amount to UI value.
-                            try:
-                                from src.data.solana import _safe_get_decimals  # noqa: F401  (placeholder)
-                            except Exception:
-                                pass
-                            # Fetch token decimals via getAccountInfo on the mint.
-                            decimals = 0
-                            try:
-                                mint_payload = {
-                                    "jsonrpc": "2.0",
-                                    "id": 1,
-                                    "method": "getAsset",
-                                    "params": {"id": address},
-                                }
-                                async with session.post(url, json=mint_payload, timeout=aiohttp.ClientTimeout(total=10)) as mr:
-                                    if mr.status == 200:
-                                        mr_data = await mr.json()
-                                        token_info = ((mr_data.get('result') or {}).get('token_info') or {})
-                                        decimals = int(token_info.get('decimals') or 0)
-                            except Exception:
-                                decimals = 0
-                            divisor = (10 ** decimals) if decimals else 1
-                            ranked = sorted(
-                                das_accounts,
-                                key=lambda a: int(a.get('amount') or 0),
-                                reverse=True,
-                            )[:limit]
-                            return [
-                                {
-                                    'address': a.get('owner', '') or a.get('address', ''),
-                                    'amount': float(int(a.get('amount') or 0)) / divisor if divisor else float(int(a.get('amount') or 0)),
-                                }
-                                for a in ranked
-                            ]
-                        return []
-
-                    result = data.get('result', {})
-                    value = result.get('value', [])
-
-                    holders = []
-                    for account in value[:limit]:
-                        try:
-                            amount = 0.0
-
-                            # Helius/Solana RPC returns uiAmount at account level (not nested under amount)
-                            # Format: {"address": "...", "amount": "raw", "decimals": 9, "uiAmount": 0.123, "uiAmountString": "0.123"}
-                            if 'uiAmount' in account and account['uiAmount'] is not None:
-                                amount = float(account['uiAmount'])
-                            elif 'ui_amount' in account and account['ui_amount'] is not None:
-                                amount = float(account['ui_amount'])
-                            elif 'uiAmountString' in account and account['uiAmountString']:
-                                amount = float(account['uiAmountString'])
-                            elif 'amount' in account:
-                                # Fallback: raw amount - need to adjust by decimals
-                                raw_amount = account.get('amount', 0)
-                                decimals = account.get('decimals', 9)
-                                if isinstance(raw_amount, str):
-                                    raw_amount = int(raw_amount)
-                                amount = raw_amount / (10 ** decimals)
-
-                            holders.append({
-                                'address': account.get('address', ''),
-                                'amount': amount
-                            })
-                        except Exception as e:
-                            logger.debug(f"Error parsing Helius holder: {e}")
+                # 1. Try Helius getTokenLargestAccounts with retry on -32603.
+                body = None
+                err_code = None
+                err_msg = ''
+                for attempt in range(3):
+                    kind, info, b = await _largest(session, helius_url)
+                    if kind == "ok" and isinstance(b, dict):
+                        body = b
+                        err = b.get('error') if isinstance(b.get('error'), dict) else None
+                        err_code = err.get('code') if err else None
+                        err_msg = err.get('message', '') if err else ''
+                        if err_code == -32603 and attempt < 2:
+                            await asyncio.sleep(0.5 * (attempt + 1))
                             continue
+                        break
+                    if kind == "status" and info in (429, 503) and attempt < 2:
+                        await asyncio.sleep(0.5 * (attempt + 1))
+                        continue
+                    break
 
+                # 2. Success path: parse and return.
+                if body is not None and 'error' not in body:
+                    holders = _parse_largest(body) or []
                     if holders:
                         logger.info(f"✅ Helius: Found {len(holders)} holders for {address[:8]}")
-
                     return holders
+
+                if err_code or err_msg:
+                    logger.warning(f"Helius API error after retries: code={err_code} msg={err_msg}")
+
+                # 3. Fall back to public Solana RPC for getTokenLargestAccounts.
+                #    Public mainnet supports this for any mint cardinality.
+                kind, info, b = await _largest(session, public_url)
+                if kind == "ok" and isinstance(b, dict) and 'error' not in b:
+                    holders = _parse_largest(b) or []
+                    if holders:
+                        logger.info(f"✅ Public RPC fallback: {len(holders)} holders for {address[:8]}")
+                    return holders
+                logger.info(f"Holder fetch fallback failed for {address[:8]}: kind={kind} info={info}")
+                return []
 
         except Exception as e:
             logger.warning(f"Helius holder fetch failed: {e}")
