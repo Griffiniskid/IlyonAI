@@ -792,12 +792,17 @@ If asked about a specific token, suggest sending the address for analysis."""
                 "temperature": 0.7 if temperature is None else float(temperature),
                 "max_tokens": 300 if max_tokens is None else int(max_tokens),
             }
+            # Long completions need more wall-clock budget — DeepSeek/OpenRouter
+            # streams tokens at ~30/s so a 2500-token response can need 90+s.
+            timeout_total = 30
+            if max_tokens is not None and int(max_tokens) > 800:
+                timeout_total = 180
 
             async with session.post(
                 self.base_url,
                 headers=headers,
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=30)
+                timeout=aiohttp.ClientTimeout(total=timeout_total)
             ) as resp:
                 if resp.status != 200:
                     return "Sorry, I can't respond right now. Please try again later."

@@ -2790,8 +2790,21 @@ async def _compose_strategy_via_llm(
 
     try:
         result = await llm._agenerate(llm_messages, max_tokens=2500, temperature=0.5)
-        text = result.generations[0].message.content or ""
-        return text.strip() or None
+        text = (result.generations[0].message.content or "").strip()
+        if not text:
+            return None
+        # OpenAIClient.chat() returns a fixed apology string on transport error
+        # — reject it so the default formatter remains the response.
+        lowered = text.lower()
+        rejection_markers = (
+            "i couldn't reach the language model",
+            "sorry, i can't respond",
+            "ai unavailable",
+        )
+        if any(marker in lowered for marker in rejection_markers):
+            logger.warning("strategy compose: LLM returned transport error string; falling back to formatter")
+            return None
+        return text
     except Exception as exc:
         logger.warning("strategy composition LLM call failed: %s: %s", type(exc).__name__, exc)
         return None
