@@ -151,8 +151,64 @@ class SolanaClient:
                         err_code = err.get('code') if isinstance(err, dict) else None
                         logger.warning(f"Helius API error: {err}")
                         if err_code == -32600 or 'Too many accounts' in err_msg:
-                            logger.info(f"Skipping holder fetch for {address[:8]}: mint too large")
-                            return []
+                            # Mint has too many holders for getTokenLargestAccounts.
+                            # Fall back to Helius DAS getTokenAccounts and pick the
+                            # largest by amount in-process. Pull a generous slice
+                            # so the top-N is well-sampled.
+                            das_payload = {
+                                "jsonrpc": "2.0",
+                                "id": 1,
+                                "method": "getTokenAccounts",
+                                "params": {
+                                    "mint": address,
+                                    "limit": 1000,
+                                    "options": {"showZeroBalance": False},
+                                },
+                            }
+                            async with session.post(url, json=das_payload, timeout=aiohttp.ClientTimeout(total=15)) as das_resp:
+                                if das_resp.status != 200:
+                                    logger.info(f"DAS fallback HTTP {das_resp.status} for {address[:8]}")
+                                    return []
+                                das_data = await das_resp.json()
+                            if 'error' in das_data:
+                                logger.info(f"DAS fallback error for {address[:8]}: {das_data['error']}")
+                                return []
+                            das_accounts = (das_data.get('result', {}) or {}).get('token_accounts', []) or []
+                            # Each entry: address, mint, owner, amount (raw int), delegated_amount, frozen.
+                            # Need decimals to convert amount to UI value.
+                            try:
+                                from src.data.solana import _safe_get_decimals  # noqa: F401  (placeholder)
+                            except Exception:
+                                pass
+                            # Fetch token decimals via getAccountInfo on the mint.
+                            decimals = 0
+                            try:
+                                mint_payload = {
+                                    "jsonrpc": "2.0",
+                                    "id": 1,
+                                    "method": "getAsset",
+                                    "params": {"id": address},
+                                }
+                                async with session.post(url, json=mint_payload, timeout=aiohttp.ClientTimeout(total=10)) as mr:
+                                    if mr.status == 200:
+                                        mr_data = await mr.json()
+                                        token_info = ((mr_data.get('result') or {}).get('token_info') or {})
+                                        decimals = int(token_info.get('decimals') or 0)
+                            except Exception:
+                                decimals = 0
+                            divisor = (10 ** decimals) if decimals else 1
+                            ranked = sorted(
+                                das_accounts,
+                                key=lambda a: int(a.get('amount') or 0),
+                                reverse=True,
+                            )[:limit]
+                            return [
+                                {
+                                    'address': a.get('owner', '') or a.get('address', ''),
+                                    'amount': float(int(a.get('amount') or 0)) / divisor if divisor else float(int(a.get('amount') or 0)),
+                                }
+                                for a in ranked
+                            ]
                         return []
 
                     result = data.get('result', {})
