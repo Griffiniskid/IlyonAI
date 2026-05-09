@@ -1503,15 +1503,22 @@ def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
 # Kept narrow on purpose — only short confirmations, no broad keywords like "do it"
 # that could match unrelated turns.
 FOLLOWUP_PROCEED_PATTERNS = [
-    r"^\s*proceed\b",
-    r"\bproceed\s+with\s+(?:the\s+)?execut",
-    r"\bproceed\s+with\s+(?:the\s+)?(?:plan|allocation|swap|bridge|stake)",
-    r"\b(?:please\s+)?(?:go\s+ahead|continue|carry\s+on)\b.*\bexecut",
-    r"^\s*(?:please\s+)?execute\s+(?:the|it|that|this|plan|allocation)?\b",
-    r"^\s*yes(?:,)?\s*(?:please\s*)?(?:proceed|execute|continue|go\s+ahead)\b",
-    r"^\s*confirm(?:ed)?\b",
-    r"^\s*(?:let'?s|let\s+us)\s+(?:do\s+(?:it|this|that)|proceed|execute|go)\b",
-    r"^\s*(?:approved|approve)\b",
+    # Standalone confirmations only — must end the message (or be followed
+    # by punctuation/optional final particle), so 'execute deposit into
+    # pool X' doesn't match.
+    r"^\s*(?:please\s+)?proceed\s*[.!?]*\s*$",
+    r"^\s*(?:please\s+)?proceed\s+with\s+(?:the\s+)?(?:plan|allocation|swap|bridge|stake|execution)\s*[.!?]*\s*$",
+    r"^\s*(?:please\s+)?(?:go\s+ahead|continue|carry\s+on)\s*[.!?]*\s*$",
+    r"^\s*(?:please\s+)?(?:go\s+ahead|continue)\s+and\s+(?:execute|proceed|sign)\s*[.!?]*\s*$",
+    r"^\s*(?:please\s+)?execute\s+(?:the\s+|that\s+|this\s+)?(?:plan|allocation|strategy|it|that|this)\s*[.!?]*\s*$",
+    r"^\s*(?:please\s+)?execute\s*[.!?]*\s*$",
+    r"^\s*yes(?:,)?\s*(?:please)?\s*(?:proceed|execute|continue|go\s+ahead)?\s*[.!?]*\s*$",
+    r"^\s*confirm(?:ed)?\s*[.!?]*\s*$",
+    r"^\s*(?:let'?s|let\s+us)\s+(?:do\s+(?:it|this|that)|proceed|execute|go)\s*[.!?]*\s*$",
+    r"^\s*(?:approved|approve)\s*[.!?]*\s*$",
+    r"^\s*ok(?:ay)?\s*[.!?]*\s*$",
+    r"^\s*sounds\s+good\s*[.!?]*\s*$",
+    r"^\s*looks\s+good\s*[.!?]*\s*$",
 ]
 
 
@@ -1576,10 +1583,14 @@ def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
 
 _POOL_UUID_RE = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
 _POOL_PROTO_PAIR_RE = re.compile(
-    r"\b(?i:(raydium-amm|raydium-clmm|orca-whirlpools|orca|meteora-dlmm|meteora|"
-    r"kamino|marinade|jito|sanctum|drift|aave-v3|compound-v3|spark|curve|convex|pendle|"
-    r"yearn-finance|lido|rocket-pool|ether\.fi|frax-ether|stargate|morpho-blue|moonwell|"
-    r"stader|gmx|velodrome|aerodrome-slipstream|uniswap-v[34]|steer-protocol|zeebu|blackhole-clmm|supernova-cl))"
+    r"\b(?i:(raydium-amm|raydium-clmm|orca-whirlpools|orca-dex|orca|meteora-dlmm|meteora|"
+    r"kamino-liquidity|kamino-lend|kamino|marinade-liquid-staking|marinade|jito-liquid-staking|"
+    r"jito|sanctum-infinity|sanctum|drift|aave-v3|aave|compound-v3|compound|spark|curve-dex|curve|"
+    r"convex|pendle|yearn-finance|yearn|lido|rocket-pool|ether\.fi|frax-ether|stargate|morpho-blue|"
+    r"morpho|moonwell|stader|gmx|velodrome|aerodrome-slipstream|aerodrome|uniswap-v[34]|uniswap|"
+    r"pancakeswap-amm-v3|pancakeswap|balancer-v3|balancer|"
+    r"gmtrade|hylo-lsts|marginfi-lst|the-vault-liquid-staking|"
+    r"steer-protocol|zeebu|blackhole-clmm|supernova-cl|shadow-exchange-clmm|mim-swap|beefy))"
     r"[\s·/|-]+([A-Z][A-Z0-9.]*[-_/][A-Z][A-Z0-9.]+|[A-Z][A-Z0-9]{2,15})",
 )
 
@@ -1756,9 +1767,33 @@ def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] |
         )
         if proto_token:
             pool_ref = f"{proto_token.group(1).lower()} {pool_ref}"
+    # Amount detection: prefer explicit "with $X" / "for $X" / "$X" /
+    # "X USD" / "X USDC" patterns over the intent.amount_usd default.
+    explicit_amt: float | None = None
+    am = re.search(
+        r"\b(?:with|for|amount|of|=)\s*\$?\s*(\d+(?:[\.,]\d+)?)\s*([kKmM])?",
+        text,
+        re.IGNORECASE,
+    )
+    if not am:
+        am = re.search(r"\$\s*(\d+(?:[\.,]\d+)?)\s*([kKmM])?", text)
+    if am:
+        try:
+            n = float(am.group(1).replace(",", ""))
+            sfx = (am.group(2) or "").lower()
+            if sfx == "k":
+                n *= 1_000
+            elif sfx == "m":
+                n *= 1_000_000
+            if 0 < n <= 1_000_000_000:
+                explicit_amt = n
+        except (TypeError, ValueError):
+            pass
+    if explicit_amt is None:
+        explicit_amt = intent.amount_usd if (intent.amount_usd is not None and intent.amount_usd > 0) else 100.0
     params: dict = {
         "pool": pool_ref,
-        "amount": intent.amount_usd if (intent.amount_usd is not None and intent.amount_usd > 0) else 100.0,
+        "amount": explicit_amt,
     }
     chain_hint_match = re.search(r"\bon\s+(solana|ethereum|polygon|arbitrum|base|optimism|bsc|avalanche)\b", text, re.I)
     if chain_hint_match:
@@ -2732,6 +2767,19 @@ def _maybe_replay_followup(*, message: str, history: list[dict]) -> str | None:
     starter ("Hello! I'm ready to help...") when the user types "proceed".
     """
     if detect_followup_intent(message) is None:
+        return None
+    # Hard guard: if the message contains a concrete pool reference, $ amount,
+    # or any execution-arg pattern, this is NOT a confirmation — it's a fresh
+    # explicit deposit instruction. Refuse the canned reply so the normal
+    # intent dispatch can build a real signing card.
+    if _POOL_UUID_RE.search(message):
+        return None
+    if _POOL_PROTO_PAIR_RE.search(message):
+        return None
+    if re.search(r"\$\s*\d|\b\d+(?:\.\d+)?\s*(?:USDC|USDT|USD|SOL|ETH|BTC|WBTC|BNB|MATIC|AVAX|DAI)\b", message, re.IGNORECASE):
+        return None
+    # Verb + object pattern ("execute deposit into ...", "execute swap ...")
+    if re.search(r"^\s*execute\s+(?:deposit|swap|bridge|stake|trade|buy|sell|supply|provide)\b", message, re.IGNORECASE):
         return None
 
     last_assistant: dict | None = None
@@ -4187,44 +4235,50 @@ async def run_ephemeral_turn(
                             # filtered pool universe, also emit allocation
                             # + execution_plan cards over THOSE pools so the
                             # research-only output becomes actionable.
+                            # If user gave NO amount, ASK for it instead of
+                            # silently using a $1000 placeholder.
                             if (
                                 tool_input.get("execution_requested")
                                 and filtered_payload
                                 and (filtered_payload.get("items") or [])
                             ):
-                                try:
-                                    pools_for_alloc = filtered_payload.get("items") or []
-                                    # Default size: tool_input target_apy hints
-                                    # at amount? Otherwise $1000 placeholder.
-                                    default_amount = 1000.0
-                                    rb = "balanced"
-                                    rls = (tool_input.get("risk_levels") or [])
-                                    if rls and "LOW" in [str(r).upper() for r in rls] and "HIGH" not in [str(r).upper() for r in rls]:
-                                        rb = "conservative"
-                                    elif rls and "HIGH" in [str(r).upper() for r in rls]:
-                                        rb = "aggressive"
-                                    alloc_payload_exec = _build_prior_pools_allocation_payload(
-                                        pools_for_alloc,
-                                        usd_amount=default_amount,
-                                        risk_budget=rb,
+                                user_amount = _parse_amount_from_text(message)
+                                if user_amount is None:
+                                    # Append a clarifying question to the
+                                    # narrative — no allocation card emitted.
+                                    final_content = (final_content or "").rstrip() + (
+                                        "\n\n---\n\n**Before I size the allocation:** how much do you want "
+                                        "to deploy, and from which wallet/token? For example: `Deploy "
+                                        "$2,000 from my USDC balance` or `Stake 5 SOL across these`. I'll "
+                                        "size each position and prepare the wallet-gated execution plan "
+                                        "after you tell me the amount."
                                     )
-                                    if alloc_payload_exec:
-                                        from uuid import uuid4 as _uuid4
-                                        alloc_id = str(_uuid4())
-                                        collector._queue.append(CardFrame(
-                                            step_index=collector._step,
-                                            card_id=alloc_id,
-                                            card_type="allocation",
-                                            payload=alloc_payload_exec,
-                                        ))
-                                        card_ids_for_final.append(alloc_id)
-                                        # Append note to final_content explaining the placeholder amount
-                                        final_content = (final_content or "").rstrip() + (
-                                            "\n\n_Placeholder allocation sized at $1,000 — tell me the "
-                                            "amount you want to deploy and I'll resize before signing._"
+                                else:
+                                    try:
+                                        pools_for_alloc = filtered_payload.get("items") or []
+                                        rb = "balanced"
+                                        rls = (tool_input.get("risk_levels") or [])
+                                        if rls and "LOW" in [str(r).upper() for r in rls] and "HIGH" not in [str(r).upper() for r in rls]:
+                                            rb = "conservative"
+                                        elif rls and "HIGH" in [str(r).upper() for r in rls]:
+                                            rb = "aggressive"
+                                        alloc_payload_exec = _build_prior_pools_allocation_payload(
+                                            pools_for_alloc,
+                                            usd_amount=user_amount,
+                                            risk_budget=rb,
                                         )
-                                except Exception as exc:
-                                    logger.warning("execute-chain card build failed: %s", exc)
+                                        if alloc_payload_exec:
+                                            from uuid import uuid4 as _uuid4
+                                            alloc_id = str(_uuid4())
+                                            collector._queue.append(CardFrame(
+                                                step_index=collector._step,
+                                                card_id=alloc_id,
+                                                card_type="allocation",
+                                                payload=alloc_payload_exec,
+                                            ))
+                                            card_ids_for_final.append(alloc_id)
+                                    except Exception as exc:
+                                        logger.warning("execute-chain card build failed: %s", exc)
                         except Exception as exc:
                             logger.warning("strategy compose hook failed: %s", exc)
                 elif env is not None and not env.ok:
