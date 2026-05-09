@@ -1,6 +1,7 @@
 """Simple agent runtime without ReAct - uses direct LLM calls with tool support."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -3743,24 +3744,29 @@ def _build_prior_pools_allocation_payload(
     if not prior_pools:
         return None
 
-    def _weight_ladder(count: int, rb: str) -> list[int]:
-        if count <= 0:
-            return []
+    # Even-split weights (default for prior-pools dispatch — narrative also
+    # uses even split, so card and narrative agree). Caller can override
+    # via risk_budget="ladder_<conservative|balanced|aggressive>".
+    n = min(len(prior_pools), 5)
+    if risk_budget.startswith("ladder_") or risk_budget in {"conservative", "balanced", "aggressive"} and risk_budget == "ladder_balanced":
+        rb = risk_budget.replace("ladder_", "") or "balanced"
         if rb == "conservative":
             base = [35, 25, 20, 12, 8]
         elif rb == "aggressive":
             base = [30, 25, 20, 15, 10]
         else:
             base = [35, 20, 20, 15, 10]
-        trimmed = base[:count]
+        trimmed = base[:n]
         total = sum(trimmed)
-        out = [int(round(w * 100 / total)) for w in trimmed]
-        drift = 100 - sum(out)
-        if out:
-            out[0] += drift
-        return out
-
-    weights = _weight_ladder(min(len(prior_pools), 5), risk_budget)
+        weights = [int(round(w * 100 / total)) for w in trimmed]
+        drift = 100 - sum(weights)
+        if weights:
+            weights[0] += drift
+    else:
+        # Even split — preferred default for prior-pools dispatch
+        even = 100 // n
+        weights = [even] * n
+        weights[0] += 100 - sum(weights)
     if not weights:
         return None
 
@@ -3827,6 +3833,113 @@ def _build_prior_pools_allocation_payload(
         return None
     summary = _summarise(positions, usd_amount)
     return AllocationPayload(positions=positions, **summary).model_dump()
+
+
+async def _bake_prior_pools_execution_plan(
+    tools, *, positions: list[dict], usd_amount: float
+) -> dict | None:
+    """Per allocation position, invoke `execute_pool_position` to get a real
+    unsigned transaction, then assemble an `ExecutionPlanPayload` so the
+    front-end Sign-Step-1 button has a target.
+    """
+    if not positions:
+        return None
+    # Find the execute_pool_position tool in the runtime's tool list
+    epp_tool = None
+    for t in tools or []:
+        if getattr(t, "name", "") == "execute_pool_position":
+            epp_tool = t
+            break
+    if epp_tool is None:
+        return None
+    from src.api.schemas.agent import ExecutionStep, ExecutionPlanPayload
+
+    async def _bake_one(pos: dict) -> dict | None:
+        protocol = (pos.get("protocol") or "").strip()
+        symbol = (pos.get("asset") or "").strip()
+        chain = (pos.get("chain") or "").strip().lower()
+        weight = int(pos.get("weight") or 0)
+        rank = int(pos.get("rank") or 0)
+        if not protocol or not symbol or weight <= 0:
+            return None
+        pool_ref = f"{protocol} {symbol}".strip()
+        usd_slice = max(0.0, usd_amount * weight / 100.0)
+        if usd_slice <= 0:
+            return None
+        chain_full = {
+            "sol": "solana", "eth": "ethereum", "mainnet": "ethereum",
+            "arb": "arbitrum", "base": "base", "polygon": "polygon",
+            "bsc": "bsc", "op": "optimism", "avax": "avalanche",
+        }.get(chain, chain or None)
+        try:
+            env = await asyncio.wait_for(
+                epp_tool.ainvoke({
+                    "pool": pool_ref,
+                    "amount": usd_slice,
+                    "chain": chain_full,
+                }),
+                timeout=15.0,
+            )
+        except Exception as exc:
+            logger.warning("bake exec_plan position %s: %s", rank, exc)
+            return None
+        if env is None:
+            return None
+        from src.api.schemas.agent import ToolEnvelope
+        if isinstance(env, ToolEnvelope):
+            payload = env.card_payload if env.ok else None
+        elif isinstance(env, dict):
+            payload = env.get("card_payload") if env.get("ok", False) else None
+        else:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        plan_steps = payload.get("steps") or []
+        first = plan_steps[0] if plan_steps else None
+        tx = (first or {}).get("transaction") if first else None
+        # Build ExecutionStep
+        verb = "Stake" if any(k in protocol.lower() for k in ("marinade", "jito", "sanctum", "lido", "stader", "liquid-staking")) else "Supply"
+        amount_asset = "USDC" if any(s in symbol.upper() for s in ("USD", "DAI")) else (
+            "SOL" if "SOL" in symbol.upper() else (
+            "ETH" if "ETH" in symbol.upper() else "USDC"
+            )
+        )
+        gas_by_chain = {"sol": 0.01, "eth": 4.8, "mainnet": 6.9, "arb": 0.35, "base": 0.25, "polygon": 0.08, "bsc": 0.12, "op": 0.35, "avax": 0.3}
+        return ExecutionStep(
+            index=rank,
+            verb=verb,
+            amount=f"{usd_slice:,.0f}",
+            asset=amount_asset,
+            target=f"{symbol} · {protocol}",
+            chain=chain,
+            router="Jupiter" if chain == "sol" else "Enso",
+            wallet="Phantom" if chain == "sol" else "MetaMask",
+            gas=f"~${gas_by_chain.get(chain, 2.0):,.2f}",
+            step_id=f"alloc_step_{rank}",
+            protocol=protocol,
+            transaction=tx,
+        ).model_dump()
+
+    raw_steps = await asyncio.gather(*[_bake_one(p) for p in positions])
+    steps = [s for s in raw_steps if s]
+    if not steps:
+        return None
+    total_gas = 0.0
+    for s in steps:
+        try:
+            total_gas += float(str(s.get("gas", "~$0")).lstrip("~$").replace(",", ""))
+        except (TypeError, ValueError):
+            pass
+    wallets = sorted({s.get("wallet", "MetaMask") for s in steps})
+    payload = ExecutionPlanPayload(
+        steps=steps,
+        total_gas=f"~${total_gas:,.2f}",
+        slippage_cap="0.5%",
+        wallets=" + ".join(wallets) if wallets else "MetaMask",
+        tx_count=len(steps),
+        requires_signature=any(s.get("transaction") for s in steps),
+    ).model_dump()
+    return payload
 
 
 def _build_prior_pools_card(prior_pools: list[dict]) -> dict:
@@ -3916,16 +4029,26 @@ async def run_ephemeral_turn(
     pivot_requested = _is_pivot_request(message, history_cards)
     refine_requested = _is_refine_request(message, history_cards)
 
+    # When the message contains a CONCRETE pool reference (UUID or
+    # protocol-pair like "gmtrade BTC-USDC"), the user is doing a single-
+    # pool deposit, not a re-distribute across the prior set. Skip the
+    # prior-pools dispatch so detect_intent → _detect_pool_execute can
+    # build a single execute_pool_position card.
+    has_concrete_pool_ref = bool(
+        _POOL_UUID_RE.search(message) or _POOL_PROTO_PAIR_RE.search(message)
+    )
+
     # Prior-pools continuity: if the user references the previously surfaced
     # pool list ("distribute X across those pools" / "allocate $1000" /
     # "sign these"), reuse the SAME pool universe instead of running a fresh
     # DefiLlama search that returns different pools the user never saw.
-    # Skip when a pivot/refine is detected so the user gets the regenerated
-    # result they asked for.
+    # Skip when a pivot/refine is detected, OR a concrete pool ref is
+    # present, so the user gets the regenerated / single-pool result.
     prior_pools_for_dist: list[dict] = []
     is_allocation_continuation = (
         not pivot_requested
         and not refine_requested
+        and not has_concrete_pool_ref
         and _references_prior_pools_for_allocation(message, history_cards)
     )
     if is_allocation_continuation:
@@ -4006,13 +4129,32 @@ async def run_ephemeral_turn(
                     payload=alloc_payload,
                 ))
                 emitted_card_ids.append(alloc_card_id)
+                # Bake unsigned transactions per position via execute_pool_position
+                # tool, then emit an execution_plan extra card so the front-end
+                # signing buttons (per-row + global "Start signing") have a
+                # target. Without this, the user sees the allocation but cannot
+                # sign anything.
+                exec_plan_payload = await _bake_prior_pools_execution_plan(
+                    tools,
+                    positions=alloc_payload.get("positions") or [],
+                    usd_amount=effective_amount,
+                )
+                if exec_plan_payload:
+                    exec_card_id = str(_uuid4())
+                    collector._queue.append(CardFrame(
+                        step_index=collector._step,
+                        card_id=exec_card_id,
+                        card_type="execution_plan",
+                        payload=exec_plan_payload,
+                    ))
+                    emitted_card_ids.append(exec_card_id)
                 if amount_hint_val is None:
                     composed = (composed or "").rstrip() + (
                         "\n\n_Placeholder allocation sized at $1,000 — tell me the "
                         "amount you want to deploy and I'll resize before signing._"
                     )
         except Exception as exc:
-            logger.warning("prior-pools allocation card build failed: %s", exc)
+            logger.warning("prior-pools allocation/exec-plan build failed: %s", exc)
         final_text = composed or (
             "Distributing across the previously surfaced pool list. "
             "See the pool card above; sign each transaction in your wallet to deposit."
