@@ -1638,6 +1638,23 @@ def _detect_direct_pool_deposit(message: str) -> tuple[str, dict] | None:
     )
 
 
+_STRATEGY_BUILD_VERBS_RE = re.compile(
+    r"\b(build|design|create|craft|propose|recommend|outline|develop|research(?:\s+and\s+(?:build|design|create|craft|propose|recommend|outline|develop))?)"
+    r"\s+(?:me\s+|us\s+)?(?:a|an|the)?\s*[\w%/$.,-]*\s*"
+    r"(?:strategy|strategies|portfolio|allocation\s+plan|yield\s+plan|farm\s+plan)\b",
+    re.IGNORECASE,
+)
+_NOISE_ASSET_TOKENS = {
+    "APY", "APR", "YIELD", "STRATEGY", "STRATEGIES", "RISK", "RISKS",
+    "POOL", "POOLS", "FARM", "FARMS", "VAULT", "VAULTS", "PAIR", "PAIRS",
+    "LP", "LPS", "GAS", "GAS%", "TVL", "BPS", "FEE", "FEES",
+    "TARGETING", "TARGET", "ABOUT", "AROUND", "NEAR", "OVER", "UNDER",
+    "MIN", "MAX", "MINIMUM", "MAXIMUM", "AT", "FOR", "TO", "ON", "VIA",
+    "ANY", "ALL", "TOP", "BEST", "WORST", "HIGH", "LOW", "MED", "MEDIUM",
+    "LOWEST", "HIGHEST", "PROFIT", "RETURNS",
+}
+
+
 def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] | None:
     """Route 'execute pool X' / 'deposit into raydium-amm SPACEX-WSOL' to
     execute_pool_position when a concrete pool reference is present.
@@ -1645,6 +1662,12 @@ def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] |
     if not intent.execution_requested:
         return None
     text = message.strip()
+    # Strategy-build intents must NEVER route here — they need the strategy
+    # composer / search_defi_opportunities path. Prior bug: "Build me a
+    # strategy targeting 60% APY on Solana" matched the asset-on-protocol
+    # fallback as asset='APY' protocol='solana'.
+    if _STRATEGY_BUILD_VERBS_RE.search(text):
+        return None
     pool_ref: str | None = None
     m = _POOL_UUID_RE.search(text)
     if m:
@@ -1668,6 +1691,8 @@ def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] |
                 )
                 if m3:
                     asset = m3.group(1).upper()
+                    if asset in _NOISE_ASSET_TOKENS:
+                        return None
                     proto_raw = m3.group(2).strip().lower()
                     # Drop trailing chain phrase: "kamino on solana" -> "kamino"
                     proto_raw = re.sub(
@@ -2661,6 +2686,77 @@ def _is_strategy_compose_request(message: str) -> bool:
     return bool(_STRATEGY_REQUEST_RE.search(message))
 
 
+def _filter_strategy_card(
+    card_payload: dict,
+    *,
+    target_apy: float | None,
+    risk_levels: list[str] | None,
+    min_tvl: float = 1_000_000.0,
+) -> tuple[dict, int, int]:
+    """Narrow a defi_opportunities card to pools that match the user's stated
+    target APY band and TVL floor. Prevents the degen-only-pools mismatch
+    where narrative says 'targeting 60%' but card shows 455% pools.
+
+    Returns (new_payload, kept_count, original_count). When the band is empty
+    we surface the most-realistic survivors (TVL>=1M sorted by closeness to
+    target) so the card never goes blank — but we tag empty_band so the
+    narrative explains the gap.
+    """
+    if not isinstance(card_payload, dict):
+        return card_payload, 0, 0
+    items = list(card_payload.get("items") or [])
+    original_count = len(items)
+    if not items:
+        return card_payload, 0, 0
+
+    def _apy(it: dict) -> float:
+        try:
+            return float(it.get("apy") or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _tvl(it: dict) -> float:
+        try:
+            return float(it.get("tvl_usd") or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _risk(it: dict) -> str:
+        return str(it.get("risk_level") or "MEDIUM").upper()
+
+    matched: list[dict]
+    if target_apy is not None and target_apy > 0:
+        lo = max(0.5, target_apy * 0.5)
+        hi = target_apy * 1.6
+        matched = [it for it in items if lo <= _apy(it) <= hi and _tvl(it) >= min_tvl]
+    else:
+        matched = [it for it in items if _tvl(it) >= min_tvl]
+
+    if risk_levels:
+        wanted = {str(r).upper() for r in risk_levels}
+        matched = [it for it in matched if _risk(it) in wanted]
+
+    if not matched:
+        # Fall back: closest-to-target with TVL>=1M, then >=500K, then any.
+        for tvl_cap in (1_000_000.0, 500_000.0, 0.0):
+            ranked = sorted(
+                [it for it in items if _tvl(it) >= tvl_cap],
+                key=lambda it: (
+                    abs(_apy(it) - (target_apy or 0.0)),
+                    -_tvl(it),
+                ),
+            )
+            if ranked:
+                matched = ranked[:5]
+                break
+        if not matched:
+            matched = items[:5]
+
+    new_payload = dict(card_payload)
+    new_payload["items"] = matched[:8]
+    return new_payload, len(new_payload["items"]), original_count
+
+
 def _summarize_pools_for_strategy(card_payload: dict) -> str:
     """Compact bullet list of opportunities for LLM context. Bounded length."""
     if not isinstance(card_payload, dict):
@@ -2757,6 +2853,7 @@ async def _compose_strategy_via_llm(
     risk_levels: list[str] | None,
     chains: list[str] | None,
     prior_cards_summary: str = "",
+    empty_band: bool = False,
 ) -> str | None:
     """Run the LLM with strategy composition prompt + live pool data context."""
     pool_summary = _summarize_pools_for_strategy(pool_card or {})
@@ -2770,10 +2867,21 @@ async def _compose_strategy_via_llm(
             "Previously surfaced pools / cards in this chat (for continuity — refer to these "
             "if the user said 'those pools', 'these', 'previous'):\n" + prior_cards_summary
         )
+    if empty_band:
+        context_blocks.append(
+            "IMPORTANT: the live pool search returned NO pools that fit the target APY band "
+            "AND a $1M+ TVL floor. The pool list below was widened to the closest-to-target "
+            "survivors. In your narrative you MUST acknowledge that the target is unrealistic "
+            "on this chain right now, name the safer blue-chip alternatives by category "
+            "(e.g., JitoSOL liquid staking, Kamino lending, Aave V3, Lido stETH), and lower "
+            "the realistic blended APY claim."
+        )
     if pool_summary:
         context_blocks.append(
             "Live pool candidates the system just fetched for this request "
-            "(use these as your concrete pool universe):\n" + pool_summary
+            "(use these as your concrete pool universe — DO NOT invent pools "
+            "and DO NOT cite pools outside this list as if they were live data):\n"
+            + pool_summary
         )
     user_block = f"User request: {user_message}"
     if context_blocks:
@@ -2991,6 +3099,169 @@ async def _compose_prior_pools_distribution_via_llm(
         return None
 
 
+_ALLOCATE_CONTINUATION_RE = re.compile(
+    r"\b(allocate|distribute|deploy|spread|split|put|invest|deposit|stake)\b"
+    r"[^.!?\n]{0,160}"
+    r"\b(?:\$?\d|usdt|usdc|usd|eth|sol|btc|wbtc)\b",
+    re.IGNORECASE,
+)
+_SIGN_CONTINUATION_RE = re.compile(
+    r"\b(sign|execute|proceed|build\s+(?:the\s+)?(?:allocation|execution\s+plan)|"
+    r"build\s+the\s+plan|create\s+(?:the\s+)?execution|continue\s+with\s+(?:allocation|signing))\b",
+    re.IGNORECASE,
+)
+_AMOUNT_FROM_TEXT_RE = re.compile(
+    r"(?:^|\b)\$?\s*([\d,]+(?:\.\d+)?)\s*([kKmM])?\s*(usdt|usdc|usd|dollars?)?",
+    re.IGNORECASE,
+)
+
+
+def _references_prior_pools_for_allocation(
+    message: str, history_cards: list[dict] | None
+) -> bool:
+    """True when user wants to allocate / sign across prior pools.
+
+    Looser than `_references_prior_pools` — also fires on plain 'allocate $1000'
+    / 'sign these' / 'build the allocation' when a prior defi_opportunities card
+    is in history. Without the prior card we return False so a fresh allocation
+    request still hits the regular allocate_plan path.
+    """
+    if not message or not history_cards:
+        return False
+    has_prior = any(c.get("card_type") == "defi_opportunities" for c in history_cards)
+    if not has_prior:
+        return False
+    if _references_prior_pools(message):
+        return True
+    if _ALLOCATE_CONTINUATION_RE.search(message):
+        return True
+    if _SIGN_CONTINUATION_RE.search(message):
+        return True
+    return False
+
+
+def _parse_amount_from_text(text: str) -> float | None:
+    if not text:
+        return None
+    m = _AMOUNT_FROM_TEXT_RE.search(text)
+    if not m:
+        return None
+    try:
+        n = float(m.group(1).replace(",", ""))
+    except ValueError:
+        return None
+    suffix = (m.group(2) or "").lower()
+    if suffix == "k":
+        n *= 1_000
+    elif suffix == "m":
+        n *= 1_000_000
+    if n <= 0 or n > 1_000_000_000:
+        return None
+    return n
+
+
+def _build_prior_pools_allocation_payload(
+    prior_pools: list[dict],
+    *,
+    usd_amount: float,
+    risk_budget: str = "balanced",
+) -> dict | None:
+    """Compose an `allocation` card payload over the prior pool universe.
+
+    Skips the strict $200M-TVL composer floor so the SAME pools the user
+    already saw end up in the Allocation Proposal — even if they're micro-TVL
+    Solana farms. Weights via the same risk-budget ladder.
+    """
+    from src.api.schemas.agent import AllocationPayload, AllocationPosition
+    from src.allocator.composer import (
+        normalise_chain as _norm_chain,
+        bucket_risk as _bucket_risk,
+        bucket_fit as _bucket_fit,
+        weighted_sentinel as _ws,
+        score_safety as _ss,
+        score_durability as _sd,
+        score_exit as _se,
+        score_confidence as _sc,
+        derive_flags as _df,
+        PoolCandidate as _PC,
+        _ROUTER_BY_CHAIN as _ROUTERS,
+        _format_apy as _fmt_apy,
+        _format_tvl as _fmt_tvl,
+        _format_usd as _fmt_usd,
+        summarise_positions as _summarise,
+    )
+
+    if not prior_pools:
+        return None
+    weights = _weight_ladder(min(len(prior_pools), 5), risk_budget)
+    if not weights:
+        return None
+
+    positions: list[AllocationPosition] = []
+    for rank, (it, weight) in enumerate(zip(prior_pools[:5], weights), start=1):
+        try:
+            apy = float(it.get("apy") or 0.0)
+            tvl = float(it.get("tvl_usd") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        protocol = str(it.get("protocol") or "Unknown")
+        symbol = str(it.get("symbol") or "?")
+        chain_raw = str(it.get("chain") or "ethereum")
+        chain = _norm_chain(chain_raw)
+        # Risk inferred from APY/TVL, not the strict composer
+        if apy >= 80 or tvl < 1_000_000:
+            risk_l = "high"
+        elif apy >= 25 or tvl < 50_000_000:
+            risk_l = "medium"
+        else:
+            risk_l = "low"
+        # Score bands without rejecting on low TVL
+        symbol_upper = symbol.upper()
+        is_stable = any(s in symbol_upper for s in ("USD", "DAI", "FRAX", "USDC", "USDT"))
+        days_live = 200 if tvl >= 100_000_000 else 90
+        pc = _PC(
+            project=protocol,
+            symbol=symbol,
+            chain=chain_raw,
+            tvl_usd=tvl,
+            apy=apy,
+            audits=False,
+            days_live=days_live,
+            stable=is_stable,
+            il_risk="no" if "-" not in symbol else "yes",
+            exposure="single" if "-" not in symbol else "multi",
+        )
+        s = _ss(pc); d = _sd(pc); e = _se(pc); c = _sc(pc)
+        sent = _ws(s, d, e, c)
+        # Force the inferred risk band — reflects live APY/TVL not composer rubric
+        flags = _df(pc, sent)
+        positions.append(
+            AllocationPosition(
+                rank=rank,
+                protocol=protocol,
+                asset=symbol,
+                chain=chain,
+                apy=_fmt_apy(apy),
+                sentinel=sent,
+                risk=risk_l,
+                fit=_bucket_fit(sent, apy),
+                weight=weight,
+                usd=_fmt_usd(usd_amount * weight / 100.0),
+                tvl=_fmt_tvl(tvl),
+                router=_ROUTERS.get(chain, "Enso"),
+                safety=s,
+                durability=d,
+                exit=e,
+                confidence=c,
+                flags=flags,
+            )
+        )
+    if not positions:
+        return None
+    summary = _summarise(positions, usd_amount)
+    return AllocationPayload(positions=positions, **summary).model_dump()
+
+
 def _build_prior_pools_card(prior_pools: list[dict]) -> dict:
     """Re-emit a defi_opportunities card listing the same pool set the user
     is now allocating across, so the UI shows them again as concrete cards."""
@@ -3070,17 +3341,25 @@ async def run_ephemeral_turn(
             return
 
     # Prior-pools continuity: if the user references the previously surfaced
-    # pool list ("distribute X across those pools"), reuse the SAME pool
-    # universe instead of running a fresh DefiLlama search that returns
-    # different pools the user never saw.
+    # pool list ("distribute X across those pools" / "allocate $1000" /
+    # "sign these"), reuse the SAME pool universe instead of running a fresh
+    # DefiLlama search that returns different pools the user never saw.
     prior_pools_for_dist: list[dict] = []
-    if _references_prior_pools(message):
+    is_allocation_continuation = _references_prior_pools_for_allocation(
+        message, history_cards
+    )
+    if is_allocation_continuation:
         prior_pools_for_dist = _extract_prior_pool_items(history_cards)
     if prior_pools_for_dist:
+        amount_hint_val = _parse_amount_from_text(message)
         _emit_thoughts(collector, [
-            "User referenced the previously surfaced pool list (those/these/the previous pools).",
+            "User wants to allocate / distribute / sign across the previously surfaced pool list.",
             f"Reusing {len(prior_pools_for_dist)} pool(s) from the prior turn instead of searching fresh ones.",
-            "Composing distribution table over the SAME pool universe.",
+            (
+                f"Distribution amount: ${amount_hint_val:,.0f}"
+                if amount_hint_val
+                else "No amount detected in this turn — using narrative without hard $ totals."
+            ),
         ])
         for frame in collector.drain():
             yield encode_sse(frame_event_name(frame), frame.model_dump())
@@ -3089,7 +3368,7 @@ async def run_ephemeral_turn(
             user_message=message,
             prior_pools=prior_pools_for_dist,
             history=history,
-            amount_hint=None,
+            amount_hint=(f"${amount_hint_val:,.0f}" if amount_hint_val else None),
         )
         prior_card_payload = _build_prior_pools_card(prior_pools_for_dist)
         from uuid import uuid4 as _uuid4
@@ -3100,11 +3379,34 @@ async def run_ephemeral_turn(
             card_type="defi_opportunities",
             payload=prior_card_payload,
         ))
+        emitted_card_ids: list[str] = [prior_card_id]
+        # If the user supplied (or implied) an amount, also emit a typed
+        # allocation card over the SAME pool universe so the front-end's
+        # Allocation Proposal panel shows the same pools instead of the
+        # generic Aave/Uniswap default that allocate_plan returns.
+        if amount_hint_val is not None:
+            try:
+                alloc_payload = _build_prior_pools_allocation_payload(
+                    prior_pools_for_dist,
+                    usd_amount=amount_hint_val,
+                    risk_budget="balanced",
+                )
+                if alloc_payload:
+                    alloc_card_id = str(_uuid4())
+                    collector._queue.append(CardFrame(
+                        step_index=collector._step,
+                        card_id=alloc_card_id,
+                        card_type="allocation",
+                        payload=alloc_payload,
+                    ))
+                    emitted_card_ids.append(alloc_card_id)
+            except Exception as exc:
+                logger.warning("prior-pools allocation card build failed: %s", exc)
         final_text = composed or (
             "Distributing across the previously surfaced pool list. "
             "See the pool card above; sign each transaction in your wallet to deposit."
         )
-        collector.emit_final(final_text, [prior_card_id])
+        collector.emit_final(final_text, emitted_card_ids)
         for frame in collector.drain():
             yield encode_sse(frame_event_name(frame), frame.model_dump())
         return
@@ -3262,15 +3564,44 @@ async def run_ephemeral_turn(
 
                     # Strategy compose hook: when the user asked for a STRATEGY
                     # (not just a pool list), let the LLM compose a multi-section
-                    # markdown response on top of the live pool data. Card stays.
+                    # markdown response on top of the live pool data. Card stays
+                    # but is filtered to the target APY/TVL band so the visible
+                    # pools match the narrative's claimed risk profile.
                     if (
                         tool_name == "search_defi_opportunities"
                         and _is_strategy_compose_request(message)
                         and env.card_payload
                     ):
                         try:
+                            target_apy_v = tool_input.get("target_apy")
+                            risk_levels_v = tool_input.get("risk_levels")
+                            chains_v = tool_input.get("chains")
+                            # Tighten the pool universe for the card AND for the
+                            # LLM input. For a 60% target we don't want to show
+                            # 455% degen pools — they'd contradict the narrative.
+                            filtered_payload, filtered_count, original_count = _filter_strategy_card(
+                                env.card_payload,
+                                target_apy=target_apy_v,
+                                risk_levels=risk_levels_v,
+                            )
+                            # Patch the queued card frame with the filtered set so
+                            # what the user SEES matches what the narrative cites.
+                            for fr in collector._queue:
+                                if (
+                                    isinstance(fr, CardFrame)
+                                    and fr.card_id == env.card_id
+                                    and fr.card_type == "defi_opportunities"
+                                ):
+                                    fr.payload = filtered_payload
+                                    break
                             _emit_thoughts(collector, [
-                                "Composing strategy narrative on top of live pool data (multi-section ChatGPT-style output).",
+                                f"Composing strategy narrative on top of live pool data (multi-section, ChatGPT-style).",
+                                (
+                                    f"Filtered pool universe: {filtered_count}/{original_count} pools fit the target band "
+                                    f"(APY ≈ {target_apy_v}%, TVL >= 1M)."
+                                    if target_apy_v is not None
+                                    else f"Showing {filtered_count} pool(s) ranked by Sentinel objective."
+                                ),
                             ])
                             for frame in collector.drain():
                                 yield encode_sse(frame_event_name(frame), frame.model_dump())
@@ -3278,12 +3609,13 @@ async def run_ephemeral_turn(
                             composed = await _compose_strategy_via_llm(
                                 llm,
                                 user_message=message,
-                                pool_card=env.card_payload,
+                                pool_card=filtered_payload,
                                 history=history,
-                                target_apy=tool_input.get("target_apy"),
-                                risk_levels=tool_input.get("risk_levels"),
-                                chains=tool_input.get("chains"),
+                                target_apy=target_apy_v,
+                                risk_levels=risk_levels_v,
+                                chains=chains_v,
                                 prior_cards_summary=prior_cards_summary,
+                                empty_band=(filtered_count == 0 and original_count > 0),
                             )
                             if composed:
                                 final_content = composed
