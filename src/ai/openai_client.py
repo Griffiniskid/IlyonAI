@@ -746,13 +746,21 @@ CRITICAL RULES:
             error=error
         )
 
-    async def chat(self, message: str, system_prompt: str = "") -> str:
+    async def chat(
+        self,
+        message: str,
+        system_prompt: str = "",
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> str:
         """
         General AI chat for user questions.
 
         Args:
             message: User message
             system_prompt: Optional system prompt override
+            max_tokens: Optional max tokens for the response (default 300)
+            temperature: Optional sampling temperature (default 0.7)
 
         Returns:
             AI response text
@@ -781,8 +789,8 @@ If asked about a specific token, suggest sending the address for analysis."""
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": message}
                 ],
-                "temperature": 0.7,
-                "max_tokens": 300
+                "temperature": 0.7 if temperature is None else float(temperature),
+                "max_tokens": 300 if max_tokens is None else int(max_tokens),
             }
 
             async with session.post(

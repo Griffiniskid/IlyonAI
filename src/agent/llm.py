@@ -52,9 +52,10 @@ class IlyonChatModel(BaseChatModel):
         resp = await self.router.complete(
             model=self.model,
             messages=self._to_openai(messages),
-            temperature=self.temperature,
+            temperature=kw.get("temperature", self.temperature),
             stop=stop,
             tools=kw.get("tools"),
+            max_tokens=kw.get("max_tokens"),
         )
         msg = AIMessage(
             content=resp["content"],

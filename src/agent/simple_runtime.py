@@ -2789,7 +2789,7 @@ async def _compose_strategy_via_llm(
     llm_messages.append(type("Msg", (), {"type": "human", "content": user_block})())
 
     try:
-        result = await llm._agenerate(llm_messages)
+        result = await llm._agenerate(llm_messages, max_tokens=2500, temperature=0.5)
         text = result.generations[0].message.content or ""
         return text.strip() or None
     except Exception as exc:
@@ -2903,7 +2903,8 @@ async def run_ephemeral_turn(
 
     try:
         final_content = ""
-        
+        strategy_composed = False
+
         # If we detected an intent, call the tool and format result directly
         if intent:
             tool_name, tool_input = intent
@@ -3075,6 +3076,7 @@ async def run_ephemeral_turn(
                             )
                             if composed:
                                 final_content = composed
+                                strategy_composed = True
                         except Exception as exc:
                             logger.warning("strategy compose hook failed: %s", exc)
                 elif env is not None and not env.ok:
@@ -3154,7 +3156,7 @@ async def run_ephemeral_turn(
             llm_messages.append(type('Msg', (), {'type': 'human', 'content': message})())
 
             try:
-                result = await llm._agenerate(llm_messages)
+                result = await llm._agenerate(llm_messages, max_tokens=1500, temperature=0.4)
                 final_content = result.generations[0].message.content
             except Exception as exc:
                 logger.error("LLM fallback generation failed: %s: %s", type(exc).__name__, exc)
@@ -3172,7 +3174,7 @@ async def run_ephemeral_turn(
         # dump that the front-end parses (parseSwapPreview).
         is_allocate = intent and intent[0] == "allocate_plan"
         is_legacy_preview = intent and intent[0] in {"build_swap_tx", "build_bridge_tx", "build_solana_swap", "get_wallet_balance"}
-        if not is_allocate and not is_legacy_preview:
+        if not is_allocate and not is_legacy_preview and not strategy_composed:
             cleaned = _clean_response(final_content or "")
             # If clean_response stripped the whole message (pure scratchpad),
             # emit a graceful fallback instead of empty bubble.

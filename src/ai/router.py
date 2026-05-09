@@ -229,6 +229,7 @@ class AIRouter:
         temperature: float = 0.2,
         stop=None,
         tools=None,
+        max_tokens: int | None = None,
     ) -> dict:
         """OpenAI-compatible completion endpoint for LangChain agent use."""
         if not self.openai_mini:
@@ -264,7 +265,12 @@ class AIRouter:
             prompt += "\n\nAvailable tools:\n" + "\n".join(tool_descriptions)
 
         try:
-            response = await self.openai_mini.chat(prompt, system_prompt=system_prompt)
+            response = await self.openai_mini.chat(
+                prompt,
+                system_prompt=system_prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
             return {"content": response or "", "tool_calls": []}
         except Exception as e:
             logger.error(f"complete() error: {e}")

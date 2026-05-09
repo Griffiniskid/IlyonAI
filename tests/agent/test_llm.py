@@ -9,7 +9,7 @@ from src.agent.llm import IlyonChatModel
 class FakeRouter:
     """Minimal stub that mimics the router.complete() interface."""
 
-    async def complete(self, *, model, messages, temperature, stop, tools=None):
+    async def complete(self, *, model, messages, temperature, stop, tools=None, max_tokens=None):
         return {
             "content": f"echo:{messages[-1]['content']}",
             "tool_calls": [],
@@ -48,7 +48,7 @@ async def test_to_openai_mapping():
 @pytest.mark.asyncio
 async def test_tool_calls_forwarded():
     class ToolRouter:
-        async def complete(self, *, model, messages, temperature, stop, tools=None):
+        async def complete(self, *, model, messages, temperature, stop, tools=None, max_tokens=None):
             return {
                 "content": "",
                 "tool_calls": [{"id": "c1", "function": "f", "args": {}}],
