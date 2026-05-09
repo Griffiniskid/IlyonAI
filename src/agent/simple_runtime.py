@@ -1890,9 +1890,25 @@ def _detect_preference_update(message: str) -> tuple[str, dict] | None:
             params["slippage_cap_bps"] = int(m.group(1))
         except ValueError:
             pass
-    m = re.search(r"\b(?:risk\s*budget|risk\s*level)\s+(conservative|balanced|aggressive)\b", text, re.IGNORECASE)
+    m = re.search(
+        r"\b(?:risk\s*budget|risk\s*level|risk\s*profile)\s*(?:to|=|:|set\s+to)?\s*(conservative|balanced|aggressive)\b",
+        text,
+        re.IGNORECASE,
+    )
     if m:
         params["risk_budget"] = m.group(1).lower()
+    elif re.search(
+        r"\b(?:set|change|update|switch)\b[^.\n]{0,40}\b(?:risk(?:\s*budget|\s*level|\s*profile)?)\b[^.\n]{0,40}?\b(conservative|balanced|aggressive)\b",
+        text,
+        re.IGNORECASE,
+    ):
+        m2 = re.search(
+            r"\b(conservative|balanced|aggressive)\b",
+            text,
+            re.IGNORECASE,
+        )
+        if m2:
+            params["risk_budget"] = m2.group(1).lower()
     elif re.match(r"^\s*(conservative|balanced|aggressive)\s+only\b", text, re.IGNORECASE):
         params["risk_budget"] = re.match(r"^\s*(\w+)", text, re.IGNORECASE).group(1).lower()
     m = re.search(r"\bgas\s+cap\s*(?:to|=)?\s*\$?(\d+(?:\.\d+)?)", text, re.IGNORECASE)
@@ -3193,6 +3209,24 @@ def _build_prior_pools_allocation_payload(
 
     if not prior_pools:
         return None
+
+    def _weight_ladder(count: int, rb: str) -> list[int]:
+        if count <= 0:
+            return []
+        if rb == "conservative":
+            base = [35, 25, 20, 12, 8]
+        elif rb == "aggressive":
+            base = [30, 25, 20, 15, 10]
+        else:
+            base = [35, 20, 20, 15, 10]
+        trimmed = base[:count]
+        total = sum(trimmed)
+        out = [int(round(w * 100 / total)) for w in trimmed]
+        drift = 100 - sum(out)
+        if out:
+            out[0] += drift
+        return out
+
     weights = _weight_ladder(min(len(prior_pools), 5), risk_budget)
     if not weights:
         return None
