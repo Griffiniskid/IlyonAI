@@ -33,6 +33,38 @@ def _build_source_urls(*, protocol_slug: str, pool_id: str | None, project_url: 
     return urls
 
 
+def _infer_product_type(*, category: str | None, project_slug: str, symbol: str) -> str:
+    """Map a DefiLlama pool to a Sentinel product_type label.
+
+    DefiLlama returns category=None for many pools (notably every Solana pool
+    as of 2026-05). Without inference our product_type filter excludes
+    real LSTs, lending markets, etc. Fall back to project-slug + symbol heuristics.
+    """
+    if category:
+        return str(category).lower()
+    slug = (project_slug or "").lower()
+    sym = (symbol or "").lower()
+    # Liquid staking — most common LST naming on DefiLlama
+    if any(k in slug for k in ("liquid-staking", "-lst", "lido", "jito", "marinade", "sanctum", "stader")):
+        return "liquid staking"
+    # Lending markets
+    if any(k in slug for k in ("aave", "compound", "spark", "morpho", "kamino-lend", "save", "moonwell", "venus", "radiant")):
+        return "lending"
+    # Vaults
+    if any(k in slug for k in ("yearn", "vault", "beefy", "idle")):
+        return "vault"
+    # Yield farms / aggregators
+    if any(k in slug for k in ("farm", "yield-aggregator", "convex", "auto-compound")):
+        return "yield aggregator"
+    # Concentrated/AMM/DEX pools
+    if any(k in slug for k in ("amm", "dex", "swap", "uniswap", "raydium", "orca", "meteora", "curve", "balancer", "velodrome", "aerodrome")):
+        return "pool"
+    # Pendle PT/YT
+    if "pendle" in slug or sym.startswith("pt-"):
+        return "yield"
+    return "pool"
+
+
 def _candidate_from_defillama(pool: dict[str, Any]) -> OpportunityCandidate:
     apy = float(pool.get("apy") or 0.0)
     tvl = float(pool.get("tvlUsd") or pool.get("tvl_usd") or 0.0)
@@ -49,7 +81,11 @@ def _candidate_from_defillama(pool: dict[str, Any]) -> OpportunityCandidate:
         protocol=protocol,
         protocol_slug=protocol_slug,
         chain=chain,
-        product_type=str(pool.get("category") or "pool").lower(),
+        product_type=_infer_product_type(
+            category=pool.get("category"),
+            project_slug=protocol_slug,
+            symbol=str(pool.get("symbol") or ""),
+        ),
         symbol=str(pool.get("symbol") or "Unknown"),
         pool_id=pool_id,
         token_addresses=[str(token) for token in underlying if token],
