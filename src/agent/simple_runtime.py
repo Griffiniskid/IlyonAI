@@ -2879,7 +2879,14 @@ def _summarize_pools_for_strategy(card_payload: dict) -> str:
     return "\n".join(lines)
 
 
-def _strategy_system_prompt(*, target_apy: float | None, risk_levels: list[str] | None, chains: list[str] | None) -> str:
+def _strategy_system_prompt(
+    *,
+    target_apy: float | None,
+    risk_levels: list[str] | None,
+    chains: list[str] | None,
+    reinvestment_cadence: str | None = None,
+    stablecoin_only: bool = False,
+) -> str:
     apy_line = f"Target APY: {target_apy:.0f}%" if target_apy else "Target APY: not specified — infer from request."
     risk_line = (
         f"Risk preference: {', '.join(risk_levels)}"
@@ -2891,10 +2898,25 @@ def _strategy_system_prompt(*, target_apy: float | None, risk_levels: list[str] 
         if chains
         else "Chains: not specified — infer from request."
     )
+    cadence_line = (
+        f"Reinvestment cadence: {reinvestment_cadence} (the 'Reinvestment plan' "
+        "section MUST reflect this exact cadence)."
+        if reinvestment_cadence
+        else "Reinvestment cadence: not specified — pick a reasonable default."
+    )
+    stable_line = (
+        "Stablecoin-only constraint: TRUE — every pool you cite must be a "
+        "stablecoin pair (USDC/USDT/DAI/FRAX/LUSD/etc.). If the live data "
+        "block has non-stable pools, exclude them and recommend stable "
+        "alternatives by category (Aave V3 USDC, Curve 3pool, Pendle PT-USDe, "
+        "Mountain USDM)."
+        if stablecoin_only
+        else "Stablecoin-only constraint: FALSE — full asset universe allowed."
+    )
     return (
         "You are Ilyon Sentinel, a senior DeFi strategist. The user asked you to BUILD a strategy. "
         "You have your own intelligence AND access to live pool data the system already fetched.\n\n"
-        f"{apy_line}\n{risk_line}\n{chain_line}\n\n"
+        f"{apy_line}\n{risk_line}\n{chain_line}\n{cadence_line}\n{stable_line}\n\n"
         "OUTPUT FORMAT — markdown, ChatGPT-style, multi-section. ALWAYS include these sections "
         "(use real H2 headers, tables where relevant):\n\n"
         "## Reality check\n"
@@ -2997,11 +3019,17 @@ async def _compose_strategy_via_llm(
     chains: list[str] | None,
     prior_cards_summary: str = "",
     empty_band: bool = False,
+    reinvestment_cadence: str | None = None,
+    stablecoin_only: bool = False,
 ) -> str | None:
     """Run the LLM with strategy composition prompt + live pool data context."""
     pool_summary = _summarize_pools_for_strategy(pool_card or {})
     system_prompt = _strategy_system_prompt(
-        target_apy=target_apy, risk_levels=risk_levels, chains=chains
+        target_apy=target_apy,
+        risk_levels=risk_levels,
+        chains=chains,
+        reinvestment_cadence=reinvestment_cadence,
+        stablecoin_only=stablecoin_only,
     )
 
     context_blocks: list[str] = []
@@ -3319,6 +3347,19 @@ _BOOTSTRAP_ALLOC_RE = re.compile(
     r"(?:what\s+(?:should\s+i\s+do|to\s+do|next|now)|what'?s\s+the\s+(?:move|play))",
     re.IGNORECASE,
 )
+
+
+_SAFE_TO_SWAP_RE = re.compile(
+    r"\b(is\s+it\s+safe\s+to|safe\s+to|safety\s+of)\s+(?:swap|trade|exchange|convert|sell|buy)\b[^.!?\n]{0,120}",
+    re.IGNORECASE,
+)
+
+
+def _is_safety_question(message: str) -> bool:
+    """True when user asks 'is it safe to swap/trade X' — used by LLM
+    fallback to inject a Shield-flavored system prompt note.
+    """
+    return bool(_SAFE_TO_SWAP_RE.search(message or ""))
 
 
 def _detect_bootstrap_alloc(message: str) -> tuple[str, dict] | None:
@@ -3858,28 +3899,35 @@ async def run_ephemeral_turn(
             payload=prior_card_payload,
         ))
         emitted_card_ids: list[str] = [prior_card_id]
-        # If the user supplied (or implied) an amount, also emit a typed
-        # allocation card over the SAME pool universe so the front-end's
-        # Allocation Proposal panel shows the same pools instead of the
-        # generic Aave/Uniswap default that allocate_plan returns.
-        if amount_hint_val is not None:
-            try:
-                alloc_payload = _build_prior_pools_allocation_payload(
-                    prior_pools_for_dist,
-                    usd_amount=amount_hint_val,
-                    risk_budget="balanced",
-                )
-                if alloc_payload:
-                    alloc_card_id = str(_uuid4())
-                    collector._queue.append(CardFrame(
-                        step_index=collector._step,
-                        card_id=alloc_card_id,
-                        card_type="allocation",
-                        payload=alloc_payload,
-                    ))
-                    emitted_card_ids.append(alloc_card_id)
-            except Exception as exc:
-                logger.warning("prior-pools allocation card build failed: %s", exc)
+        # Always emit a typed allocation card over the SAME pool universe so
+        # the front-end's Allocation Proposal panel shows the same pools
+        # instead of the generic Aave/Uniswap default that allocate_plan
+        # returns. When the user gave no amount ("Allocate it" / "Sign and
+        # execute" / "Do that"), default to $1000 placeholder and append a
+        # note prompting the user to resize.
+        try:
+            effective_amount = amount_hint_val if amount_hint_val is not None else 1000.0
+            alloc_payload = _build_prior_pools_allocation_payload(
+                prior_pools_for_dist,
+                usd_amount=effective_amount,
+                risk_budget="balanced",
+            )
+            if alloc_payload:
+                alloc_card_id = str(_uuid4())
+                collector._queue.append(CardFrame(
+                    step_index=collector._step,
+                    card_id=alloc_card_id,
+                    card_type="allocation",
+                    payload=alloc_payload,
+                ))
+                emitted_card_ids.append(alloc_card_id)
+                if amount_hint_val is None:
+                    composed = (composed or "").rstrip() + (
+                        "\n\n_Placeholder allocation sized at $1,000 — tell me the "
+                        "amount you want to deploy and I'll resize before signing._"
+                    )
+        except Exception as exc:
+            logger.warning("prior-pools allocation card build failed: %s", exc)
         final_text = composed or (
             "Distributing across the previously surfaced pool list. "
             "See the pool card above; sign each transaction in your wallet to deposit."
@@ -4100,6 +4148,9 @@ async def run_ephemeral_turn(
                             for frame in collector.drain():
                                 yield encode_sse(frame_event_name(frame), frame.model_dump())
                             prior_cards_summary = _summarize_prior_cards(history_cards)
+                            # Re-derive cadence + stablecoin from message
+                            from src.agent.intent.defi_intent import parse_defi_intent
+                            _re_intent = parse_defi_intent(message)
                             composed = await _compose_strategy_via_llm(
                                 llm,
                                 user_message=message,
@@ -4110,6 +4161,8 @@ async def run_ephemeral_turn(
                                 chains=chains_v,
                                 prior_cards_summary=prior_cards_summary,
                                 empty_band=(filtered_count == 0 and original_count > 0),
+                                reinvestment_cadence=_re_intent.reinvestment_cadence,
+                                stablecoin_only=_re_intent.stablecoin_only,
                             )
                             if composed:
                                 # Soft scratchpad strip — preserves headers/tables
@@ -4194,9 +4247,23 @@ async def run_ephemeral_turn(
             ])
             for frame in collector.drain():
                 yield encode_sse(frame_event_name(frame), frame.model_dump())
+            safety_prompt_extra = ""
+            if _is_safety_question(message):
+                safety_prompt_extra = (
+                    "\n\nSAFETY-FIRST FRAMING: the user is asking whether a swap or "
+                    "trade is safe. Apply the Sentinel four-axis rubric in your answer: "
+                    "(1) Token quality — contract age, audit status, market cap, holder "
+                    "concentration; (2) Pool depth — TVL and 24h volume; (3) Volatility "
+                    "regime — recent drawdown / IL exposure; (4) Counter-party — DEX "
+                    "reputation. Tag the destination token explicitly as LOW/MEDIUM/HIGH "
+                    "risk and recommend slippage cap (50 bps stable, 100-300 bps mid-cap, "
+                    "500-1500 bps memecoin). Always tell the user to verify the contract "
+                    "address on Solscan/Etherscan before signing."
+                )
             base_system = (
                 "You are Ilyon Sentinel's crypto agent. You help users with DeFi, "
-                "token prices, swaps, bridges, staking, and yield opportunities.\n\n"
+                "token prices, swaps, bridges, staking, and yield opportunities."
+                + safety_prompt_extra + "\n\n"
                 "STRICT OUTPUT RULES (non-negotiable):\n"
                 "1. Reply directly to the user. Never expose your internal "
                 "thinking, scratchpad, or chain-of-thought.\n"
