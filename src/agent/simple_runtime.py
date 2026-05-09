@@ -4255,6 +4255,27 @@ async def run_ephemeral_turn(
                         payload=exec_plan_payload,
                     ))
                     emitted_card_ids.append(exec_card_id)
+                    # Tag non-baked positions on the allocation card so the
+                    # Position Stack shows a clear "no adapter" banner.
+                    steps_by_rank = {s.get("index"): s for s in (exec_plan_payload.get("steps") or [])}
+                    blocked_count = 0
+                    for pos in alloc_payload.get("positions") or []:
+                        st = steps_by_rank.get(pos.get("rank"))
+                        if st and not st.get("transaction"):
+                            blocked_count += 1
+                            flags = list(pos.get("flags") or [])
+                            marker = "No verified adapter — research only"
+                            if marker not in flags:
+                                flags.append(marker)
+                            pos["flags"] = flags
+                    if blocked_count:
+                        composed = (composed or "").rstrip() + (
+                            f"\n\n_⚠ {blocked_count} of {len(alloc_payload.get('positions') or [])} "
+                            "positions cannot be signed automatically — no Sentinel-verified adapter "
+                            "for those protocols. The remaining position(s) will produce a wallet "
+                            "popup. To deposit into the unsupported pools, visit each protocol's UI "
+                            "directly (links provided in the Constraint-matched DeFi card)._"
+                        )
                 if amount_hint_val is None:
                     composed = (composed or "").rstrip() + (
                         "\n\n_Placeholder allocation sized at $1,000 — tell me the "
