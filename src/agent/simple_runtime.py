@@ -3628,6 +3628,12 @@ def _is_refine_request(message: str, history_cards: list[dict] | None) -> bool:
     return bool(_REFINE_RE.search(message)) or bool(_REJECT_PRIOR_RE.search(message))
 
 
+_PERCENT_NEAR_NUMBER_RE = re.compile(
+    r"\b(?:targeting|target|around|about|near|at\s+least|minimum|min|over|above|under|below|up\s+to)\s+\d",
+    re.IGNORECASE,
+)
+
+
 def _parse_amount_from_text(text: str) -> float | None:
     """Parse a USD-equivalent amount from free text.
 
@@ -3635,6 +3641,10 @@ def _parse_amount_from_text(text: str) -> float | None:
     crypto amounts ("10 SOL", "0.5 ETH"), converting native via _NATIVE_USD_HINT.
     Native conversion uses approximate spot prices — fine for sizing the
     allocation card; exact USD value comes from on-chain balance at signing.
+
+    Skips numbers that are clearly APY/percent values: number followed by
+    '%', 'percent', 'pct', 'apy', 'apr', 'yield', or preceded by mode words
+    like 'targeting', 'around', 'at least'.
     """
     if not text:
         return None
@@ -3655,21 +3665,48 @@ def _parse_amount_from_text(text: str) -> float | None:
             usd = qty * price
             if 0 < usd <= 1_000_000_000:
                 return usd
-    m = _AMOUNT_FROM_TEXT_RE.search(text)
-    if not m:
-        return None
-    try:
-        n = float(m.group(1).replace(",", ""))
-    except ValueError:
-        return None
-    suffix = (m.group(2) or "").lower()
-    if suffix == "k":
-        n *= 1_000
-    elif suffix == "m":
-        n *= 1_000_000
-    if n <= 0 or n > 1_000_000_000:
-        return None
-    return n
+    # Iterate every dollar-style match, reject percent values.
+    for m in re.finditer(
+        r"(?:^|\b)\$?\s*([\d,]+(?:\.\d+)?)\s*([kKmM])?\s*(usdt|usdc|usd|dollars?)?",
+        text,
+        re.IGNORECASE,
+    ):
+        # Window around the matched number to check for percent context
+        start = max(0, m.start() - 25)
+        end = min(len(text), m.end() + 25)
+        window = text[start:end]
+        # Skip if the number is clearly a percent or APY value
+        if re.search(r"\d\s*(?:%|percent|pct)\b", window, re.IGNORECASE):
+            # Verify the % is attached to THIS number (not another nearby number)
+            local = text[m.start():m.end() + 25]
+            if re.search(r"^\$?\s*[\d,.]+\s*[kKmM]?\s*(?:%|percent|pct)\b", local, re.IGNORECASE):
+                continue
+        # Skip if the number is preceded by APY-mode words ("targeting 60", "at least 30")
+        pre = text[max(0, m.start() - 30):m.start()]
+        if re.search(r"\b(?:targeting|target|around|about|near|at\s+least|minimum|min|over|above|under|below|up\s+to)\s*$", pre, re.IGNORECASE):
+            continue
+        # Skip if number is followed by APY/APR/yield word (e.g., "60 APY")
+        post = text[m.end():m.end() + 12]
+        if re.match(r"\s*(?:apy|apr|yield)\b", post, re.IGNORECASE):
+            continue
+        # Skip currency-less plain numbers when message has no $/USDC/USD/etc.
+        # (avoid "thirty-five percent" being parsed as 35 here)
+        currency = (m.group(3) or "").lower()
+        has_dollar = "$" in text[max(0, m.start()-2):m.end()]
+        if not currency and not has_dollar:
+            continue
+        try:
+            n = float(m.group(1).replace(",", ""))
+        except ValueError:
+            continue
+        suffix = (m.group(2) or "").lower()
+        if suffix == "k":
+            n *= 1_000
+        elif suffix == "m":
+            n *= 1_000_000
+        if 0 < n <= 1_000_000_000:
+            return n
+    return None
 
 
 def _build_prior_pools_allocation_payload(
