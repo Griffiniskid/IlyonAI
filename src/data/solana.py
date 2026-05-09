@@ -196,14 +196,69 @@ class SolanaClient:
                     logger.warning(f"Helius API error after retries: code={err_code} msg={err_msg}")
 
                 # 3. Fall back to public Solana RPC for getTokenLargestAccounts.
-                #    Public mainnet supports this for any mint cardinality.
                 kind, info, b = await _largest(session, public_url)
                 if kind == "ok" and isinstance(b, dict) and 'error' not in b:
                     holders = _parse_largest(b) or []
                     if holders:
                         logger.info(f"✅ Public RPC fallback: {len(holders)} holders for {address[:8]}")
-                    return holders
-                logger.info(f"Holder fetch fallback failed for {address[:8]}: kind={kind} info={info}")
+                        return holders
+
+                # 4. Final fallback — Helius DAS getTokenAccounts paged scan.
+                #    Pull up to 5 pages (5000 accounts), sort by raw amount,
+                #    then return top N. Won't capture every whale on 5M-holder
+                #    mints but yields a representative top-N for most tokens.
+                decimals = 0
+                try:
+                    mint_payload = {"jsonrpc": "2.0", "id": 1, "method": "getAsset", "params": {"id": address}}
+                    async with session.post(helius_url, json=mint_payload, timeout=aiohttp.ClientTimeout(total=10)) as mr:
+                        if mr.status == 200:
+                            mr_data = await mr.json()
+                            token_info = ((mr_data.get('result') or {}).get('token_info') or {})
+                            decimals = int(token_info.get('decimals') or 0)
+                except Exception:
+                    decimals = 0
+                divisor = (10 ** decimals) if decimals else 1
+                all_accounts: List[Dict] = []
+                cursor = None
+                for _ in range(5):
+                    das_params = {
+                        "mint": address,
+                        "limit": 1000,
+                        "options": {"showZeroBalance": False},
+                    }
+                    if cursor:
+                        das_params["cursor"] = cursor
+                    das_payload = {"jsonrpc": "2.0", "id": 1, "method": "getTokenAccounts", "params": das_params}
+                    try:
+                        async with session.post(helius_url, json=das_payload, timeout=aiohttp.ClientTimeout(total=15)) as dr:
+                            if dr.status != 200:
+                                break
+                            das_data = await dr.json()
+                    except Exception:
+                        break
+                    if isinstance(das_data, dict) and 'error' in das_data:
+                        break
+                    result = (das_data or {}).get('result') or {}
+                    accounts = result.get('token_accounts') or []
+                    if not accounts:
+                        break
+                    all_accounts.extend(accounts)
+                    cursor = result.get('cursor')
+                    if not cursor:
+                        break
+                if all_accounts:
+                    ranked = sorted(all_accounts, key=lambda a: int(a.get('amount') or 0), reverse=True)[:limit]
+                    holders = [
+                        {
+                            'address': a.get('owner', '') or a.get('address', ''),
+                            'amount': float(int(a.get('amount') or 0)) / divisor if divisor else float(int(a.get('amount') or 0)),
+                        }
+                        for a in ranked if int(a.get('amount') or 0) > 0
+                    ]
+                    if holders:
+                        logger.info(f"✅ DAS paged fallback: {len(holders)} holders for {address[:8]} (sampled {len(all_accounts)})")
+                        return holders
+                logger.info(f"All holder fetch paths exhausted for {address[:8]}")
                 return []
 
         except Exception as e:
