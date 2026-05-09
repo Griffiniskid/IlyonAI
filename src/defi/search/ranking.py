@@ -14,8 +14,10 @@ def _candidate_exclusions(candidate: OpportunityCandidate, request: OpportunityS
     reasons: list[str] = []
     if request.chains and candidate.chain.lower() not in request.chains:
         reasons.append("chain_not_requested")
-    if request.product_types and candidate.product_type.lower() not in request.product_types:
-        reasons.append("product_type_not_requested")
+    if request.product_types:
+        cand_pt = candidate.product_type.lower()
+        if not any(pt.lower() in cand_pt or cand_pt in pt.lower() for pt in request.product_types):
+            reasons.append("product_type_not_requested")
     if request.asset_hint and request.asset_hint.upper() not in _symbol_assets(candidate.symbol):
         reasons.append("asset_mismatch")
     if request.risk_levels and candidate.risk_level.upper() not in request.risk_levels:
