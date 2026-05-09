@@ -123,6 +123,67 @@ def _chain_type(chain: str | None):
     return mapping.get(chain.lower())
 
 
+def _dedup_primary(primary: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse same-protocol-same-symbol-same-chain entries, keeping the
+    highest-TVL one. Different pool_ids of the same pair look like duplicates
+    to a user and erode trust.
+    """
+    seen: dict[tuple[str, str, str], dict[str, Any]] = {}
+    order: list[tuple[str, str, str]] = []
+    for it in primary:
+        key = (
+            (it.get("protocol") or "").lower(),
+            (it.get("symbol") or "").upper(),
+            (it.get("chain") or "").lower(),
+        )
+        cur = seen.get(key)
+        if cur is None:
+            seen[key] = it
+            order.append(key)
+        else:
+            try:
+                if float(it.get("tvl_usd") or 0) > float(cur.get("tvl_usd") or 0):
+                    seen[key] = it
+            except (TypeError, ValueError):
+                pass
+    return [seen[k] for k in order]
+
+
+def _enforce_risk_mix(
+    primary: list[dict[str, Any]],
+    excluded_pool: list[OpportunityCandidate],
+    request: OpportunitySearchRequest,
+) -> list[dict[str, Any]]:
+    """When request.risk_levels has multiple tiers, ensure the result contains
+    at least one entry per requested tier — promote tier-survivors from the
+    excluded pool if necessary.
+    """
+    wanted = {r.upper() for r in (request.risk_levels or [])}
+    if len(wanted) < 2:
+        return primary
+    present = {(it.get("risk_level") or "").upper() for it in primary}
+    missing = wanted - present
+    if not missing:
+        return primary
+    # Find replacement candidates from excluded pool that match each missing tier
+    promoted: list[dict[str, Any]] = list(primary)
+    promoted_keys = {(it.get("protocol") or "", it.get("symbol") or "", it.get("chain") or "") for it in promoted}
+    for tier in missing:
+        # Search excluded for a candidate of this tier that wasn't excluded
+        # purely on tier basis
+        for cand in excluded_pool:
+            if (cand.risk_level or "").upper() != tier:
+                continue
+            ck = (cand.protocol or "", cand.symbol or "", cand.chain or "")
+            if ck in promoted_keys:
+                continue
+            d = cand.to_dict()
+            promoted.append(d)
+            promoted_keys.add(ck)
+            break
+    return promoted[: max(1, int(request.limit or 8))]
+
+
 def _opportunity_card_payload(
     primary: list[dict[str, Any]],
     *,
@@ -197,6 +258,23 @@ def _execution_blockers(primary: list[dict[str, Any]], request: OpportunitySearc
     ]
 
 
+_STABLE_TICKERS = {
+    "USDC", "USDT", "DAI", "FRAX", "LUSD", "USDE", "SUSDE", "USDY", "PYUSD",
+    "GHO", "TUSD", "BUSD", "FDUSD", "USDP", "MIM", "MUSD", "CRVUSD",
+    "MKUSD", "AUSD", "USDD", "USDX", "SUSDS", "REUSDE", "MSUSD",
+}
+
+
+def _is_stable_pool(symbol: str) -> bool:
+    """True when the pool's symbol is composed entirely of stable assets."""
+    if not symbol:
+        return False
+    parts = [p for p in symbol.upper().replace("/", "-").replace("_", "-").split("-") if p]
+    if not parts:
+        return False
+    return all(p in _STABLE_TICKERS or any(s in p for s in ("USD", "DAI", "FRAX")) for p in parts)
+
+
 async def search_defi_opportunities(
     ctx,
     *,
@@ -210,6 +288,10 @@ async def search_defi_opportunities(
     ranking_objective: str = "constraint_fit_then_risk_adjusted_return",
     execution_requested: bool = False,
     limit: int = 8,
+    stablecoin_only: bool = False,
+    min_tvl: float | None = None,
+    protocol_filter: str | None = None,
+    exclude_pool_ids: list[str] | None = None,
 ):
     # When the caller asks for low-risk only, tighten the TVL floor and cap the
     # APY band so we don't surface high-APY low-TVL traps that look quantitatively
@@ -225,6 +307,12 @@ async def search_defi_opportunities(
     else:
         min_tvl_floor = 100_000.0
         max_apy_cap = 500.0 if max_apy is None else max_apy
+    # Caller-supplied min_tvl wins over the per-risk floor (used by refinements)
+    if min_tvl is not None:
+        try:
+            min_tvl_floor = max(min_tvl_floor, float(min_tvl))
+        except (TypeError, ValueError):
+            pass
     request = OpportunitySearchRequest(
         risk_levels=risk_levels or [],
         chains=chains or [],
@@ -251,6 +339,14 @@ async def search_defi_opportunities(
             min_apy=max(0.0, float(request.min_apy or 0.5)),
         ))
     candidates = [_candidate_from_defillama(pool) for pool in raw_pools]
+    if stablecoin_only:
+        candidates = [c for c in candidates if _is_stable_pool(c.symbol)]
+    if exclude_pool_ids:
+        excl = {str(p) for p in exclude_pool_ids if p}
+        candidates = [c for c in candidates if str(c.pool_id or "") not in excl]
+    if protocol_filter:
+        pf = protocol_filter.lower()
+        candidates = [c for c in candidates if pf in (c.protocol_slug or "").lower() or pf in (c.protocol or "").lower()]
     registry = build_default_registry()
     for candidate in candidates:
         action = "supply" if candidate.product_type in {"lending", "supply"} else (
@@ -287,6 +383,12 @@ async def search_defi_opportunities(
         )
     ranked = rank_opportunities(candidates, request)
     primary = [candidate.to_dict() for candidate in ranked.primary]
+    primary = _dedup_primary(primary)
+    primary = _enforce_risk_mix(
+        primary,
+        [e.candidate for e in ranked.excluded if "risk_not_requested" in (e.reason_codes or [])],
+        request,
+    )
     excluded = [item.to_dict() for item in ranked.excluded[:25]]
     blockers = _execution_blockers(primary, request)
     executable_count = sum(1 for candidate in primary if candidate.get("executable"))
@@ -310,6 +412,15 @@ async def search_defi_opportunities(
             "research_only_count": max(0, len(primary) - executable_count),
         },
         "execution_blockers": blockers,
+        "request_meta": {
+            "target_apy": request.target_apy,
+            "min_apy": request.min_apy,
+            "max_apy": request.max_apy,
+            "risk_levels": list(request.risk_levels or []),
+            "chains": list(request.chains or []),
+            "product_types": list(request.product_types or []),
+            "stablecoin_only": stablecoin_only,
+        },
     }
     return ok_envelope(
         data=data,

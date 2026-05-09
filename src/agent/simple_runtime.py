@@ -512,7 +512,21 @@ def _emit_thoughts(collector: StreamCollector, lines: list[str]) -> None:
         collector._queue.append(ThoughtFrame(step_index=collector._step, content=text))
 
 
+_TOKEN_NATIVE_CHAIN: dict[str, str] = {
+    "ETH": "ethereum", "WETH": "ethereum",
+    "SOL": "solana", "WSOL": "solana",
+    "BNB": "bsc", "WBNB": "bsc",
+    "MATIC": "polygon",
+    "AVAX": "avalanche",
+    "ARB": "arbitrum",
+    "OP": "optimism",
+    "BTC": "ethereum",  # WBTC most-liquid on ETH
+    "WBTC": "ethereum",
+}
+
+
 def _detect_bridge_then_stake(message: str) -> tuple[str, dict] | None:
+    # First try the strict 'from X to Y' form
     pattern = re.compile(
         r"bridge\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})\s+"
         r"from\s+(?P<src>[A-Za-z ]+?)\s+to\s+(?P<dst>[A-Za-z ]+?)\s*[,;]?\s*"
@@ -520,15 +534,32 @@ def _detect_bridge_then_stake(message: str) -> tuple[str, dict] | None:
         re.IGNORECASE,
     )
     match = pattern.search(message)
+    src: str | None = None
     if not match:
-        return None
+        # Looser form: 'bridge X TOKEN to DST and stake on PROTOCOL' (src inferred)
+        loose = re.compile(
+            r"bridge\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})\s+"
+            r"to\s+(?P<dst>[A-Za-z ]+?)\s*[,;]?\s*"
+            r"(?:(?:and|then)\s+)?stake\s+(?:it\s+)?(?:on\s+)?(?P<protocol>[A-Za-z0-9 ._-]+)",
+            re.IGNORECASE,
+        )
+        match = loose.search(message)
+        if not match:
+            return None
+        token_upper = match.group("token").upper()
+        src = _TOKEN_NATIVE_CHAIN.get(token_upper)
+        if src is None:
+            return None
+    else:
+        src = match.group("src").strip().lower()
 
     token = match.group("token").upper()
-    src = match.group("src").strip().lower()
     dst = match.group("dst").strip().lower()
+    # Strip trailing words ("solana chain" → "solana", "and" suffixes already handled by regex)
+    dst = re.sub(r"\s+chain\b.*$", "", dst).strip()
     protocol = match.group("protocol").strip().lower().replace(" ", "-")
     src_chain_id = CHAIN_IDS.get(src)
-    dst_chain_id = CHAIN_IDS.get(dst)
+    dst_chain_id = CHAIN_IDS.get(dst, CHAIN_IDS.get(dst.split()[0] if dst else ""))
     if src_chain_id is None or dst_chain_id is None:
         return None
 
@@ -1652,6 +1683,11 @@ _NOISE_ASSET_TOKENS = {
     "MIN", "MAX", "MINIMUM", "MAXIMUM", "AT", "FOR", "TO", "ON", "VIA",
     "ANY", "ALL", "TOP", "BEST", "WORST", "HIGH", "LOW", "MED", "MEDIUM",
     "LOWEST", "HIGHEST", "PROFIT", "RETURNS",
+    "EXECUTE", "EXECUTING", "EXECUTION", "DEPOSIT", "DEPOSITING", "DEPOSITS",
+    "STAKE", "STAKING", "SUPPLY", "SUPPLYING", "BUY", "SELL", "SWAP",
+    "PROCEED", "SIGN", "SIGNING", "ALLOCATE", "ALLOCATION", "DISTRIBUTE",
+    "REINVEST", "REINVESTMENT", "REINVESTMENTS", "REBALANCE", "REBALANCING",
+    "WALLET", "WALLETS",
 }
 
 
@@ -1769,6 +1805,11 @@ def _defi_intent_to_tool(intent: DefiIntent) -> tuple[str, dict] | None:
         params["max_apy"] = intent.max_apy
     if intent.asset_hint:
         params["asset_hint"] = intent.asset_hint
+    # Stablecoin-only flag carried through so search_defi_opportunities can
+    # filter symbols and the strategy compose narrative knows to talk
+    # stables-only.
+    if getattr(intent, "stablecoin_only", False):
+        params["stablecoin_only"] = True
     return "search_defi_opportunities", params
 
 
@@ -1925,6 +1966,10 @@ def _detect_preference_update(message: str) -> tuple[str, dict] | None:
 def detect_intent(message: str) -> tuple[str, dict] | None:
     """Detect intent and extract parameters from user message."""
     message_lower = message.lower()
+
+    bootstrap = _detect_bootstrap_alloc(message)
+    if bootstrap is not None:
+        return bootstrap
 
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
@@ -2412,11 +2457,46 @@ def _format_execution_plan_v3_response(data: dict) -> str:
 def _format_opportunity_search_response(data: dict) -> str:
     candidates = data.get("primary_candidates") or []
     blockers = data.get("execution_blockers") or []
+    request_meta = data.get("request_meta") or {}
     if not candidates:
-        return (
-            "I couldn't find credible DeFi opportunities matching those exact APY, risk, chain, and TVL constraints. "
-            "I did not fall back to unrelated low-risk pools; loosen the APY band or risk filter if you want broader research."
-        )
+        # Conflict-aware empty narrative — explicit when constraints are
+        # mathematically incompatible.
+        target_apy = request_meta.get("target_apy")
+        risk_levels = request_meta.get("risk_levels") or []
+        chains = request_meta.get("chains") or []
+        is_low_only = set(map(str.upper, risk_levels)) == {"LOW"}
+        # Bitcoin / unsupported chain
+        unsupported_chains = [c for c in chains if c.lower() in {"bitcoin", "btc"}]
+        parts: list[str] = []
+        if unsupported_chains:
+            parts.append(
+                f"**{', '.join(c.upper() for c in unsupported_chains)} is not currently supported** "
+                "for direct DeFi yield execution. Bitcoin yield products live on wrapped-BTC pools "
+                "on EVM chains (e.g., Ethereum, Arbitrum, Base) — try `WBTC` or `cbBTC` pools there."
+            )
+        if target_apy is not None and is_low_only and float(target_apy) >= 25.0:
+            parts.append(
+                f"**The target {float(target_apy):.0f}% APY conflicts with a LOW-risk filter.** "
+                "Low-risk DeFi (blue-chip lending like Aave V3 USDC, liquid staking like JitoSOL/Lido) "
+                "tops out at roughly 4-8% APY in current market conditions. To reach "
+                f"{float(target_apy):.0f}% you would need to allow MEDIUM or HIGH risk exposure "
+                "(concentrated LPs, boosted farms, leveraged stable looping) — those carry "
+                "impermanent loss, smart-contract, and incentive-cliff risk."
+            )
+        if target_apy is not None and float(target_apy) >= 500.0:
+            parts.append(
+                f"**A {float(target_apy):.0f}% APY target is unrealistic** in today's market — even "
+                "the most aggressive Solana memecoin LPs cap at ~500% gross APY before factoring "
+                "impermanent loss and token-price collapse. Realistic high-yield strategies "
+                "target 30-150% with active management."
+            )
+        if not parts:
+            parts.append(
+                "I couldn't find credible DeFi opportunities matching those exact APY, risk, chain, "
+                "and TVL constraints. Loosen any one filter (e.g., raise the APY ceiling, allow "
+                "MEDIUM risk, or include another chain) to widen the candidate pool."
+            )
+        return "\n\n".join(parts)
 
     lines = ["**Constraint-Matched DeFi Opportunities**", ""]
     for index, candidate in enumerate(candidates[:5], 1):
@@ -2859,6 +2939,53 @@ def _strategy_system_prompt(*, target_apy: float | None, risk_levels: list[str] 
     )
 
 
+_STRATEGY_SCRATCHPAD_LEAD_RE = re.compile(
+    r"^\s*("
+    r"we\s+(?:need|have|must|should|will|can)\s+to|"
+    r"i\s+(?:need|will|should|must)\s+to|"
+    r"let'?s\s+(?:think|compose|build|produce|consider)|"
+    r"let\s+me\s+(?:think|compose|build|produce|consider)|"
+    r"the\s+user\s+(?:wants|asked|wants)|"
+    r"based\s+on\s+the\s+(?:data|live)|"
+    r"to\s+(?:answer|produce|build|compose)|"
+    r"need\s+to\s+(?:produce|build|compose|answer)|"
+    r"first[,\s]|"
+    r"alright[,\s]|"
+    r"okay[,\s]|"
+    r"sure[,\s]|"
+    r"hmm[,\s.]"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _strip_strategy_scratchpad(text: str) -> str:
+    """Strip leading scratchpad paragraphs without touching markdown structure.
+
+    `_clean_response` is too aggressive on strategy compose output (eats
+    table rows, bullet lists). This soft pass only peels leading scratchpad
+    paragraphs until the first markdown heading or table row.
+    """
+    if not text:
+        return text
+    lines = text.split("\n")
+    drop = 0
+    for ln in lines:
+        s = ln.strip()
+        if not s:
+            drop += 1
+            continue
+        # Stop at first markdown heading or table row or list item
+        if s.startswith("#") or s.startswith("|") or s.startswith("- ") or s.startswith("* "):
+            break
+        if _STRATEGY_SCRATCHPAD_LEAD_RE.match(s):
+            drop += 1
+            continue
+        # Non-scratchpad non-markdown line — keep
+        break
+    return "\n".join(lines[drop:]).lstrip()
+
+
 async def _compose_strategy_via_llm(
     llm,
     *,
@@ -3118,29 +3245,131 @@ async def _compose_prior_pools_distribution_via_llm(
 _ALLOCATE_CONTINUATION_RE = re.compile(
     r"\b(allocate|distribute|deploy|spread|split|put|invest|deposit|stake)\b"
     r"[^.!?\n]{0,160}"
-    r"\b(?:\$?\d|usdt|usdc|usd|eth|sol|btc|wbtc)\b",
+    r"\b(?:\$?\d|usdt|usdc|usd|eth|sol|btc|wbtc|it|that|them|those|these|across|all)\b",
     re.IGNORECASE,
 )
 _SIGN_CONTINUATION_RE = re.compile(
-    r"\b(sign|execute|proceed|build\s+(?:the\s+)?(?:allocation|execution\s+plan)|"
-    r"build\s+the\s+plan|create\s+(?:the\s+)?execution|continue\s+with\s+(?:allocation|signing))\b",
+    r"\b(sign\s+(?:and\s+)?(?:execute|proceed|deploy|deposit)|"
+    r"sign\s+(?:the|all|these|those|it)|"
+    r"sign\s+them|"
+    r"execute\s+(?:and\s+)?(?:sign|now|the|it|that|all|the\s+plan)|"
+    r"proceed\s+(?:with|to|and)|"
+    r"build\s+(?:the\s+)?(?:allocation|execution\s+plan|plan)|"
+    r"create\s+(?:the\s+)?(?:execution|plan)|"
+    r"continue\s+with\s+(?:allocation|signing|execution)|"
+    r"deploy\s+(?:the|it|all|that))\b",
     re.IGNORECASE,
 )
+# Reamount: "now do $5000 instead", "make it $1000 instead", "change to $X",
+# "use $X instead", "rerun with $X"
+_REAMOUNT_CONTINUATION_RE = re.compile(
+    r"\b(now\s+do|make\s+it|change\s+to|use|rerun\s+with|do\s+(?:it|that)\s+with|"
+    r"with\s+\$?\d|but\s+(?:with|use|do)|"
+    r"redo\s+(?:with|using)|"
+    r"actually\s+\$?\d)\b[^.!?\n]{0,80}\$?\d",
+    re.IGNORECASE,
+)
+# Vague follow-up: "do that", "do it", "go ahead", "yes"
+_VAGUE_CONTINUATION_RE = re.compile(
+    r"^\s*(do\s+(?:that|it|this|the\s+thing)|go\s+ahead|yes|yep|yeah|please|let'?s\s+do\s+it|all\s+right|alright|ok)\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+# Pivot detection: changes core constraint(s) of the prior strategy/search
+# Matches: "actually make it Y", "same thing on Z", "now show on W",
+# "switch to / change to", "but on Ethereum instead", "instead make it conservative"
+_PIVOT_RE = re.compile(
+    r"\b("
+    r"actually\s+(?:make|do|set|use|on|with|let'?s)|"
+    r"same\s+(?:thing|strategy|approach)\s+(?:but\s+)?(?:on|for|in|with)|"
+    r"now\s+(?:show|do|run|build)\s+(?:on|for|in|with)|"
+    r"switch(?:ed)?\s+to|change\s+to|change\s+it|"
+    r"but\s+on\s+\w+(?:\s+instead)?|"
+    r"instead\s+(?:make|do|use|on)|"
+    r"redo\s+(?:on|with|for)|"
+    r"flip\s+to|move\s+to"
+    r")\b",
+    re.IGNORECASE,
+)
+# Refine/filter: "filter to X", "narrow to X", "only show Y", "exclude Z"
+_REFINE_RE = re.compile(
+    r"\b(filter|narrow|restrict|only\s+show|just\s+show|show\s+only|"
+    r"exclude|remove|drop|skip|hide|"
+    r"with\s+tvl|where\s+(?:apy|tvl|risk)|where\s+the)\b",
+    re.IGNORECASE,
+)
+# "Not those pools / find different / something else / try again"
+_REJECT_PRIOR_RE = re.compile(
+    r"\b(not\s+(?:those|these|them)|"
+    r"different\s+(?:ones|pools|set)|"
+    r"something\s+else|"
+    r"find\s+(?:other|different)|"
+    r"try\s+(?:again|other)|"
+    r"new\s+(?:set|search|pools))\b",
+    re.IGNORECASE,
+)
+# "the top one", "the first one", "the best one", "first pool", "highest APY one"
+_SINGLE_POOL_PICK_RE = re.compile(
+    r"\b(?:the\s+)?(?:top|first|best|highest(?:\s+apy)?|safest)\s+(?:one|pool)\b",
+    re.IGNORECASE,
+)
+# Onboarding bootstrap: "I have $X USDC, what should I do" / "what's the play"
+_BOOTSTRAP_ALLOC_RE = re.compile(
+    r"\b(?:i\s+have|got|holding)\s+\$?(?P<amount>[\d,]+(?:\.\d+)?)\s*([kKmM])?\s*"
+    r"(?:USDC|USDT|USD|DAI|dollars?)?\s*[,.]?\s*"
+    r"(?:what\s+(?:should\s+i\s+do|to\s+do|next|now)|what'?s\s+the\s+(?:move|play))",
+    re.IGNORECASE,
+)
+
+
+def _detect_bootstrap_alloc(message: str) -> tuple[str, dict] | None:
+    m = _BOOTSTRAP_ALLOC_RE.search(message)
+    if not m:
+        return None
+    try:
+        amt = float(m.group("amount").replace(",", ""))
+    except ValueError:
+        return None
+    sfx = (m.group(2) or "").lower()
+    if sfx == "k":
+        amt *= 1_000
+    elif sfx == "m":
+        amt *= 1_000_000
+    if amt <= 0 or amt > 1_000_000_000:
+        return None
+    return ("allocate_plan", {
+        "usd_amount": amt,
+        "risk_budget": "balanced",
+    })
 _AMOUNT_FROM_TEXT_RE = re.compile(
     r"(?:^|\b)\$?\s*([\d,]+(?:\.\d+)?)\s*([kKmM])?\s*(usdt|usdc|usd|dollars?)?",
     re.IGNORECASE,
 )
+_NATIVE_AMOUNT_FROM_TEXT_RE = re.compile(
+    r"(?:^|\b)([\d,]+(?:\.\d+)?)\s*([kKmM])?\s*(SOL|ETH|WETH|BTC|WBTC|BNB|MATIC|AVAX|ARB|OP)\b",
+    re.IGNORECASE,
+)
+_NATIVE_USD_HINT: dict[str, float] = {
+    "SOL": 90.0, "WSOL": 90.0,
+    "ETH": 2300.0, "WETH": 2300.0,
+    "BTC": 80000.0, "WBTC": 80000.0,
+    "BNB": 640.0, "WBNB": 640.0,
+    "MATIC": 0.13,
+    "AVAX": 18.0,
+    "ARB": 0.13,
+    "OP": 0.15,
+}
 
 
 def _references_prior_pools_for_allocation(
     message: str, history_cards: list[dict] | None
 ) -> bool:
-    """True when user wants to allocate / sign across prior pools.
+    """True when user wants to allocate / sign / re-amount / rerun across prior pools.
 
-    Looser than `_references_prior_pools` — also fires on plain 'allocate $1000'
-    / 'sign these' / 'build the allocation' when a prior defi_opportunities card
-    is in history. Without the prior card we return False so a fresh allocation
-    request still hits the regular allocate_plan path.
+    Fires when a prior `defi_opportunities` card exists AND the new message
+    matches any of: prior-pool refs ("those pools"), allocate verbs with a
+    contextual hint ("allocate it"), sign/execute verbs, re-amount phrasings
+    ("now do $X"), or a bare vague confirmation ("do that") within the
+    prior-card context.
     """
     if not message or not history_cards:
         return False
@@ -3153,12 +3382,190 @@ def _references_prior_pools_for_allocation(
         return True
     if _SIGN_CONTINUATION_RE.search(message):
         return True
+    if _REAMOUNT_CONTINUATION_RE.search(message):
+        return True
+    if _VAGUE_CONTINUATION_RE.search(message):
+        return True
     return False
 
 
+def _is_pivot_request(message: str, history_cards: list[dict] | None) -> bool:
+    """True when the user wants to regenerate the prior search/strategy with
+    different constraints (chain switch, risk switch, target switch).
+    """
+    if not message or not history_cards:
+        return False
+    has_prior = any(c.get("card_type") == "defi_opportunities" for c in history_cards)
+    if not has_prior:
+        return False
+    return bool(_PIVOT_RE.search(message))
+
+
+def _last_defi_card_constraints(history_cards: list[dict] | None) -> dict:
+    """Extract the constraint snapshot (target_apy/apy_band/chains/risk_levels/
+    product_types) from the most recent `defi_opportunities` card so a pivot
+    or refine can rebuild the search with those + new overrides.
+    """
+    if not history_cards:
+        return {}
+    for card in reversed(history_cards):
+        if card.get("card_type") != "defi_opportunities":
+            continue
+        p = card.get("payload") or {}
+        if not isinstance(p, dict):
+            continue
+        out: dict = {}
+        if p.get("target_apy") is not None:
+            out["target_apy"] = float(p.get("target_apy"))
+        band = p.get("apy_band") or [None, None]
+        if isinstance(band, (list, tuple)) and len(band) == 2:
+            if band[0] is not None:
+                out["min_apy"] = float(band[0])
+            if band[1] is not None:
+                out["max_apy"] = float(band[1])
+        if p.get("risk_levels"):
+            out["risk_levels"] = list(p.get("risk_levels") or [])
+        if p.get("chains"):
+            out["chains"] = list(p.get("chains") or [])
+        if p.get("execution_requested"):
+            out["execution_requested"] = bool(p.get("execution_requested"))
+        if p.get("objective"):
+            out["ranking_objective"] = str(p.get("objective"))
+        return out
+    return {}
+
+
+def _synthesize_pivot_search_args(
+    message: str, history_cards: list[dict] | None
+) -> dict | None:
+    """Build search_defi_opportunities args from prior card + new pivot.
+
+    Strategy: take prior card constraints as base. Re-parse message for
+    chain / risk / target overrides. Merge.
+    """
+    base = _last_defi_card_constraints(history_cards)
+    if not base:
+        return None
+    # Re-parse new message
+    fresh = parse_defi_intent(message)
+    args = dict(base)
+    # Chain override
+    if fresh.chains:
+        args["chains"] = fresh.chains
+    # Risk override
+    if fresh.risk_levels:
+        args["risk_levels"] = fresh.risk_levels
+    elif fresh.risk_budget == "conservative":
+        args["risk_levels"] = ["LOW"]
+    elif fresh.risk_budget == "aggressive":
+        args["risk_levels"] = ["MEDIUM", "HIGH"]
+    # APY override
+    if fresh.target_apy is not None:
+        args["target_apy"] = fresh.target_apy
+        if fresh.min_apy is not None:
+            args["min_apy"] = fresh.min_apy
+        if fresh.max_apy is not None:
+            args["max_apy"] = fresh.max_apy
+    if fresh.stablecoin_only:
+        args["stablecoin_only"] = True
+    args.setdefault("product_types", ["pool", "farm", "vault", "lending"])
+    args.setdefault("limit", 8)
+    args.setdefault("ranking_objective", "execution_ready_strategy" if args.get("execution_requested") else "constraint_fit_then_risk_adjusted_return")
+    return args
+
+
+def _synthesize_refine_search_args(
+    message: str, history_cards: list[dict] | None
+) -> dict | None:
+    """Build search_defi_opportunities args for a refinement of the prior
+    result. Inherits prior chain/target/risk; layers TVL/protocol filters
+    parsed from message.
+    """
+    base = _last_defi_card_constraints(history_cards)
+    if not base:
+        return None
+    args = dict(base)
+    args.setdefault("product_types", ["pool", "farm", "vault", "lending"])
+    args.setdefault("limit", 8)
+    args.setdefault("ranking_objective", "highest_sentinel_score")
+    # TVL above X parsing
+    tvl_m = re.search(
+        r"\btvl\s*(?:above|over|>|>=|at\s+least|min(?:imum)?\s+of)\s*\$?(\d+(?:\.\d+)?)\s*([kKmMbB])?",
+        message, re.IGNORECASE,
+    )
+    if tvl_m:
+        try:
+            v = float(tvl_m.group(1))
+            sfx = (tvl_m.group(2) or "").lower()
+            if sfx == "k":
+                v *= 1_000
+            elif sfx == "m":
+                v *= 1_000_000
+            elif sfx == "b":
+                v *= 1_000_000_000
+            args["min_tvl"] = v
+        except ValueError:
+            pass
+    # Protocol filter ("only Aave V3", "only Curve")
+    proto_m = re.search(
+        r"\b(?:only|just|filter\s+to)\s+([\w-]+(?:\s*v?\d)?)",
+        message, re.IGNORECASE,
+    )
+    if proto_m:
+        args["asset_hint"] = None  # don't reuse prior asset hint
+        # use protocol slug as substring for ranking re-ordering — pass via a custom kwarg
+        args["protocol_filter"] = proto_m.group(1).strip().lower().replace(" ", "-")
+    # Reject prior pools — pass exclude_pool_ids from prior card
+    if _REJECT_PRIOR_RE.search(message):
+        prior_ids = []
+        for card in (history_cards or []):
+            if card.get("card_type") == "defi_opportunities":
+                for it in (card.get("payload") or {}).get("items") or []:
+                    pid = it.get("pool_id")
+                    if pid:
+                        prior_ids.append(pid)
+        if prior_ids:
+            args["exclude_pool_ids"] = list({p for p in prior_ids})[:30]
+    return args
+
+
+def _is_refine_request(message: str, history_cards: list[dict] | None) -> bool:
+    """True when user wants to filter / narrow / exclude from the prior result."""
+    if not message or not history_cards:
+        return False
+    has_prior = any(c.get("card_type") == "defi_opportunities" for c in history_cards)
+    if not has_prior:
+        return False
+    return bool(_REFINE_RE.search(message)) or bool(_REJECT_PRIOR_RE.search(message))
+
+
 def _parse_amount_from_text(text: str) -> float | None:
+    """Parse a USD-equivalent amount from free text.
+
+    Recognises plain dollar amounts ("$1000", "1000 USDC", "1k") AND native
+    crypto amounts ("10 SOL", "0.5 ETH"), converting native via _NATIVE_USD_HINT.
+    Native conversion uses approximate spot prices — fine for sizing the
+    allocation card; exact USD value comes from on-chain balance at signing.
+    """
     if not text:
         return None
+    nm = _NATIVE_AMOUNT_FROM_TEXT_RE.search(text)
+    if nm:
+        try:
+            qty = float(nm.group(1).replace(",", ""))
+        except ValueError:
+            qty = 0.0
+        suffix = (nm.group(2) or "").lower()
+        if suffix == "k":
+            qty *= 1_000
+        elif suffix == "m":
+            qty *= 1_000_000
+        token = nm.group(3).upper()
+        price = _NATIVE_USD_HINT.get(token, 0.0)
+        if qty > 0 and price > 0:
+            usd = qty * price
+            if 0 < usd <= 1_000_000_000:
+                return usd
     m = _AMOUNT_FROM_TEXT_RE.search(text)
     if not m:
         return None
@@ -3374,21 +3781,57 @@ async def run_ephemeral_turn(
                 yield encode_sse(frame_event_name(frame), frame.model_dump())
             return
 
+    # Pivot detection: when user changes core constraint of prior strategy
+    # ("Same thing on Ethereum", "Actually make it conservative 8% on ETH",
+    # "Now show on Arbitrum instead"), bypass the prior-pools dispatch and
+    # fall through to detect_intent + parse_defi_intent so a fresh search
+    # runs with the NEW constraints. Prior `defi_opportunities` card stays
+    # in history_cards for the LLM context block.
+    pivot_requested = _is_pivot_request(message, history_cards)
+    refine_requested = _is_refine_request(message, history_cards)
+
     # Prior-pools continuity: if the user references the previously surfaced
     # pool list ("distribute X across those pools" / "allocate $1000" /
     # "sign these"), reuse the SAME pool universe instead of running a fresh
     # DefiLlama search that returns different pools the user never saw.
+    # Skip when a pivot/refine is detected so the user gets the regenerated
+    # result they asked for.
     prior_pools_for_dist: list[dict] = []
-    is_allocation_continuation = _references_prior_pools_for_allocation(
-        message, history_cards
+    is_allocation_continuation = (
+        not pivot_requested
+        and not refine_requested
+        and _references_prior_pools_for_allocation(message, history_cards)
     )
     if is_allocation_continuation:
         prior_pools_for_dist = _extract_prior_pool_items(history_cards)
+    prior_intent_override: tuple[str, dict] | None = None
     if prior_pools_for_dist:
         amount_hint_val = _parse_amount_from_text(message)
+        # Single-pool pick: "stake 10 SOL into the top one" → reroute to a
+        # single-step execute_pool_position on the first pool of the prior
+        # card. The amount comes from the native-aware parser (10 SOL→USD).
+        if _SINGLE_POOL_PICK_RE.search(message) and amount_hint_val:
+            top = prior_pools_for_dist[0]
+            top_protocol = (top.get("protocol") or "").strip()
+            top_symbol = (top.get("symbol") or "").strip()
+            top_chain = (top.get("chain") or "").strip().lower()
+            single_pool_ref = f"{top_protocol} {top_symbol}".strip()
+            if single_pool_ref:
+                params: dict = {
+                    "pool": single_pool_ref,
+                    "amount": amount_hint_val,
+                }
+                if top_chain:
+                    params["chain"] = top_chain
+                prior_intent_override = ("execute_pool_position", params)
+                # Clear prior_pools_for_dist so the LLM-allocation block below
+                # doesn't run; we'll honor prior_intent_override in the dispatch.
+                prior_pools_for_dist = []
         _emit_thoughts(collector, [
             "User wants to allocate / distribute / sign across the previously surfaced pool list.",
-            f"Reusing {len(prior_pools_for_dist)} pool(s) from the prior turn instead of searching fresh ones.",
+            f"Reusing {len(prior_pools_for_dist)} pool(s) from the prior turn instead of searching fresh ones."
+            if prior_pools_for_dist else
+            f"User picked a SINGLE pool from the prior list — routing as single-step deposit/stake.",
             (
                 f"Distribution amount: ${amount_hint_val:,.0f}"
                 if amount_hint_val
@@ -3397,6 +3840,7 @@ async def run_ephemeral_turn(
         ])
         for frame in collector.drain():
             yield encode_sse(frame_event_name(frame), frame.model_dump())
+    if prior_pools_for_dist:
         composed = await _compose_prior_pools_distribution_via_llm(
             llm,
             user_message=message,
@@ -3445,8 +3889,24 @@ async def run_ephemeral_turn(
             yield encode_sse(frame_event_name(frame), frame.model_dump())
         return
 
-    # Detect intent
-    intent = detect_intent(message)
+    # Pivot / refine dispatch — synthesize search args from prior card +
+    # new message overrides, run search_defi_opportunities directly so the
+    # user gets a fresh card on the new chain/risk/target rather than an
+    # LLM-only filler reply.
+    if prior_intent_override is not None:
+        intent = prior_intent_override
+    elif pivot_requested or refine_requested:
+        synth_args = (
+            _synthesize_pivot_search_args(message, history_cards) if pivot_requested
+            else _synthesize_refine_search_args(message, history_cards)
+        )
+        if synth_args:
+            intent = ("search_defi_opportunities", synth_args)
+        else:
+            intent = detect_intent(message)
+    else:
+        # Detect intent
+        intent = detect_intent(message)
 
     try:
         final_content = ""
@@ -3652,8 +4112,66 @@ async def run_ephemeral_turn(
                                 empty_band=(filtered_count == 0 and original_count > 0),
                             )
                             if composed:
-                                final_content = composed
-                                strategy_composed = True
+                                # Soft scratchpad strip — preserves headers/tables
+                                composed_clean = _strip_strategy_scratchpad(composed)
+                                # Reject sentinel "No response" / very short outputs
+                                # so we fall back to formatter rather than show stub
+                                stub_markers = (
+                                    "no response",
+                                    "i couldn't reach the language model",
+                                    "sorry, i can't respond",
+                                    "ai unavailable",
+                                )
+                                if (
+                                    composed_clean
+                                    and len(composed_clean.strip()) > 60
+                                    and not any(m in composed_clean.lower()[:200] for m in stub_markers)
+                                ):
+                                    final_content = composed_clean
+                                    strategy_composed = True
+                            # Execute-chain: when user said "execute it" /
+                            # "execute through my wallet" AND we have a
+                            # filtered pool universe, also emit allocation
+                            # + execution_plan cards over THOSE pools so the
+                            # research-only output becomes actionable.
+                            if (
+                                tool_input.get("execution_requested")
+                                and filtered_payload
+                                and (filtered_payload.get("items") or [])
+                            ):
+                                try:
+                                    pools_for_alloc = filtered_payload.get("items") or []
+                                    # Default size: tool_input target_apy hints
+                                    # at amount? Otherwise $1000 placeholder.
+                                    default_amount = 1000.0
+                                    rb = "balanced"
+                                    rls = (tool_input.get("risk_levels") or [])
+                                    if rls and "LOW" in [str(r).upper() for r in rls] and "HIGH" not in [str(r).upper() for r in rls]:
+                                        rb = "conservative"
+                                    elif rls and "HIGH" in [str(r).upper() for r in rls]:
+                                        rb = "aggressive"
+                                    alloc_payload_exec = _build_prior_pools_allocation_payload(
+                                        pools_for_alloc,
+                                        usd_amount=default_amount,
+                                        risk_budget=rb,
+                                    )
+                                    if alloc_payload_exec:
+                                        from uuid import uuid4 as _uuid4
+                                        alloc_id = str(_uuid4())
+                                        collector._queue.append(CardFrame(
+                                            step_index=collector._step,
+                                            card_id=alloc_id,
+                                            card_type="allocation",
+                                            payload=alloc_payload_exec,
+                                        ))
+                                        card_ids_for_final.append(alloc_id)
+                                        # Append note to final_content explaining the placeholder amount
+                                        final_content = (final_content or "").rstrip() + (
+                                            "\n\n_Placeholder allocation sized at $1,000 — tell me the "
+                                            "amount you want to deploy and I'll resize before signing._"
+                                        )
+                                except Exception as exc:
+                                    logger.warning("execute-chain card build failed: %s", exc)
                         except Exception as exc:
                             logger.warning("strategy compose hook failed: %s", exc)
                 elif env is not None and not env.ok:

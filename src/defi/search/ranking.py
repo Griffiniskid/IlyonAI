@@ -93,5 +93,28 @@ def rank_opportunities(
             primary.append(candidate)
 
     primary.sort(key=lambda candidate: _ranking_score(candidate, request), reverse=True)
-    limited = primary[: max(1, int(request.limit or 8))]
+    limit = max(1, int(request.limit or 8))
+
+    # Per-tier quota: when the user requested multiple risk levels, divide the
+    # limit so each tier gets representation. Otherwise top-by-score wins
+    # exclusively (fine for single-tier or unrestricted requests).
+    requested_tiers = [t.upper() for t in (request.risk_levels or [])]
+    if len(set(requested_tiers)) >= 2:
+        per_tier = max(1, limit // len(set(requested_tiers)))
+        bucketed: dict[str, list[OpportunityCandidate]] = {t: [] for t in set(requested_tiers)}
+        leftover: list[OpportunityCandidate] = []
+        for c in primary:
+            t = (c.risk_level or "").upper()
+            if t in bucketed and len(bucketed[t]) < per_tier:
+                bucketed[t].append(c)
+            else:
+                leftover.append(c)
+        merged: list[OpportunityCandidate] = []
+        for t in set(requested_tiers):
+            merged.extend(bucketed[t])
+        merged.extend(leftover)
+        limited = merged[:limit]
+    else:
+        limited = primary[:limit]
+
     return OpportunitySearchResult(primary=limited, excluded=excluded)

@@ -1166,6 +1166,15 @@ function inlineMarkdown(text: string, prefix: string): React.ReactNode[] {
 function MarkdownText({ text }: { text: string }) {
   const lines = text.split(/\r?\n/);
   const blocks: React.ReactNode[] = [];
+  const isPipeRow = (s: string) => /^\s*\|.*\|\s*$/.test(s);
+  const isAlignRow = (s: string) => /^\s*\|?[\s:|-]+\|?\s*$/.test(s) && /[-|:]/.test(s);
+  const splitPipeRow = (s: string): string[] => {
+    let body = s.trim();
+    if (body.startsWith("|")) body = body.slice(1);
+    if (body.endsWith("|")) body = body.slice(0, -1);
+    return body.split("|").map((c) => c.trim());
+  };
+
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
     if (!line.trim()) continue;
@@ -1174,6 +1183,40 @@ function MarkdownText({ text }: { text: string }) {
       const level = Math.min(heading[1].length, 3) as 1 | 2 | 3;
       const Tag = `h${level}` as keyof JSX.IntrinsicElements;
       blocks.push(<Tag key={`h-${i}`} className="agent-md-heading">{inlineMarkdown(heading[2], `h-${i}`)}</Tag>);
+      continue;
+    }
+    // GFM table: header row | --- row | body rows
+    if (isPipeRow(line) && i + 1 < lines.length && isAlignRow(lines[i + 1])) {
+      const header = splitPipeRow(line);
+      const rows: string[][] = [];
+      let j = i + 2;
+      while (j < lines.length && isPipeRow(lines[j])) {
+        rows.push(splitPipeRow(lines[j]));
+        j += 1;
+      }
+      blocks.push(
+        <div key={`tbl-wrap-${i}`} className="agent-md-table-wrap">
+          <table className="agent-md-table">
+            <thead>
+              <tr>
+                {header.map((h, hi) => (
+                  <th key={hi}>{inlineMarkdown(h, `th-${i}-${hi}`)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, ri) => (
+                <tr key={ri}>
+                  {r.map((c, ci) => (
+                    <td key={ci}>{inlineMarkdown(c, `td-${i}-${ri}-${ci}`)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      i = j - 1;
       continue;
     }
     if (/^[-*]\s+/.test(line.trim())) {
@@ -1191,7 +1234,13 @@ function MarkdownText({ text }: { text: string }) {
       continue;
     }
     const para = [line.trim()];
-    while (i + 1 < lines.length && lines[i + 1].trim() && !/^(#{1,6})\s+/.test(lines[i + 1]) && !/^[-*]\s+/.test(lines[i + 1].trim())) {
+    while (
+      i + 1 < lines.length &&
+      lines[i + 1].trim() &&
+      !/^(#{1,6})\s+/.test(lines[i + 1]) &&
+      !/^[-*]\s+/.test(lines[i + 1].trim()) &&
+      !isPipeRow(lines[i + 1])
+    ) {
       i += 1;
       para.push(lines[i].trim());
     }
@@ -1697,6 +1746,13 @@ const CSS = `
   .agent-md-list { margin-left: 18px; display: flex; flex-direction: column; gap: 4px; }
   .agent-md strong { color: #fff; font-weight: 850; }
   .agent-md code { border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 1px 5px; background: rgba(15,23,42,0.7); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  .agent-md-table-wrap { overflow-x: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; background: rgba(7,18,33,0.55); }
+  .agent-md-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .agent-md-table thead { background: rgba(16,185,129,0.06); }
+  .agent-md-table th, .agent-md-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); white-space: nowrap; }
+  .agent-md-table th { font-weight: 700; color: #d1fae5; letter-spacing: 0.2px; }
+  .agent-md-table tbody tr:last-child td { border-bottom: none; }
+  .agent-md-table tbody tr:hover { background: rgba(16,185,129,0.04); }
   .execution-notice-card { padding: 14px 16px; border-radius: 18px; border: 1px solid rgba(251,191,36,0.22); background: rgba(30,18,4,0.86); box-shadow: inset 0 1px 0 rgba(255,255,255,0.05); }
   .execution-notice-title { font-size: 14px; font-weight: 850; color: #fff; }
   .execution-notice-sub { margin-top: 6px; font-size: 12px; color: rgba(254,243,199,0.72); line-height: 1.55; }
