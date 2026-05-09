@@ -824,11 +824,14 @@ If asked about a specific token, suggest sending the address for analysis."""
                 if not content.strip():
                     finish = (data.get('choices', [{}])[0] or {}).get('finish_reason')
                     usage = data.get('usage', {})
+                    err_field = data.get('error') or data.get('detail')
                     logger.warning(
-                        "Chat empty content: finish=%s usage=%s msg_keys=%s",
+                        "Chat empty content: finish=%s usage=%s msg_keys=%s err=%s top_keys=%s",
                         finish,
                         usage,
                         list(msg.keys()),
+                        str(err_field)[:200] if err_field else None,
+                        list(data.keys()),
                     )
                     return "No response"
                 return content

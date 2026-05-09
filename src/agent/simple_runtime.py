@@ -2789,9 +2789,10 @@ async def _compose_strategy_via_llm(
     llm_messages.append(type("Msg", (), {"type": "human", "content": user_block})())
 
     try:
-        # 4000 tokens leaves room for reasoning models (gpt-oss-120b, R1) to
-        # think AND still emit the final multi-section markdown.
-        result = await llm._agenerate(llm_messages, max_tokens=4000, temperature=0.5)
+        # 1800 keeps the request under the upstream provider's per-call output
+        # cap (gpt-oss-120b:nitro returned empty body at 4000) while still
+        # leaving budget for reasoning + multi-section markdown.
+        result = await llm._agenerate(llm_messages, max_tokens=1800, temperature=0.5)
         text = (result.generations[0].message.content or "").strip()
         if not text:
             return None
