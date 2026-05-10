@@ -11,7 +11,12 @@ function fmtUsd(v?: number | null): string {
   if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
   if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
   if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
-  return `$${n.toFixed(2)}`;
+  if (n >= 1) return `$${n.toFixed(2)}`;
+  if (n >= 0.01) return `$${n.toFixed(4)}`;
+  if (n >= 0.0001) return `$${n.toFixed(6)}`;
+  // Sub-cent meme tokens — show 2 sig-figs in scientific-ish form so the user
+  // sees something instead of "$0.00".
+  return `$${n.toPrecision(2)}`;
 }
 
 function gradeTone(g?: string | null): string {

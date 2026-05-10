@@ -233,6 +233,9 @@ def run(base_url: str, out_path: str, *, conv_filter: str | None = None) -> int:
             }
             t0 = time.monotonic()
             events, err = post_sse(f"{base_url}/api/v1/agent", payload, timeout=120)
+            # Brief settle so prior turn's DB persist commits before next turn
+            # reads history (assistant message persist happens after SSE close).
+            time.sleep(0.6)
             elapsed = int((time.monotonic() - t0) * 1000)
             collected = collect(events)
             tr = TurnResult(
