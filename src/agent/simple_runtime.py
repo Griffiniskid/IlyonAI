@@ -4150,7 +4150,6 @@ async def run_ephemeral_turn(
                 for hc in reversed(history_cards):
                     ct = (hc.get("card_type") or "").lower()
                     if ct in {"execution_plan_v3", "execution_plan_v2", "execution_plan", "allocation"}:
-                        from src.api.schemas.agent import CardFrame
                         try:
                             collector._step += 1
                             cf = CardFrame(
