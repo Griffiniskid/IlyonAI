@@ -51,10 +51,11 @@ _AMOUNT_ASSET_RE = re.compile(
     r"\s+(-?)\$([\d,]+(?:\.\d+)?)\s*([kKmM])?\s*([A-Za-z]{2,10})?",
     re.IGNORECASE,
 )
-# Bare $X amount fallback — "$1500 USDC", "$50 million" — captured when context
-# words above didn't match.
+# Bare $X / X$ amount fallback — "$1500 USDC", "$50 million", "10$" — captured
+# when anchored verb patterns didn't match.
 _BARE_AMOUNT_USD_RE = re.compile(
-    r"\$\s*([\d,]+(?:\.\d+)?)\s*(million|billion|[kKmM])?\b",
+    r"(?:\$\s*([\d,]+(?:\.\d+)?)\s*(million|billion|[kKmM])?"
+    r"|([\d,]+(?:\.\d+)?)\s*(million|billion|[kKmM])?\s*\$)",
     re.IGNORECASE,
 )
 
@@ -83,9 +84,11 @@ class DefiIntent:
 
 
 _LIMIT_WORD_RE = re.compile(
-    r"\b(?:just\s+|only\s+|exactly\s+|give\s+me\s+|i\s+(?:need|want)\s+)?"
-    r"(one|two|three|four|five|single|1|2|3|4|5|6|7|8|10)\s+"
-    r"(?:pool|pools|opportunit(?:y|ies)|option|options|result|results|pick|picks|choice|choices)\b",
+    r"\b(?:just\s+|only\s+|exactly\s+|give\s+me\s+|show\s+me\s+|top\s+|i\s+(?:need|want)\s+)?"
+    r"(one|two|three|four|five|six|seven|eight|nine|ten|single|1|2|3|4|5|6|7|8|9|10)\s+"
+    r"(?:pool|pools|yield|yields|opportunit(?:y|ies)|option|options|result|results|"
+    r"pick|picks|choice|choices|position|positions|farm|farms|vault|vaults|"
+    r"recommendation|recommendations)\b",
     re.IGNORECASE,
 )
 _LIMIT_WORD_TO_INT = {
@@ -94,7 +97,11 @@ _LIMIT_WORD_TO_INT = {
     "three": 3, "3": 3,
     "four": 4, "4": 4,
     "five": 5, "5": 5,
-    "6": 6, "7": 7, "8": 8, "10": 10,
+    "six": 6, "6": 6,
+    "seven": 7, "7": 7,
+    "eight": 8, "8": 8,
+    "nine": 9, "9": 9,
+    "ten": 10, "10": 10,
 }
 
 
@@ -248,17 +255,22 @@ def _parse_amount_and_asset(text: str) -> tuple[float | None, str | None]:
         if asset and asset.lower() in _CHAIN_ALIASES:
             asset = None
         return amount, asset
-    # Bare "$X" / "$50 million" fallback — only fires when no anchored verb was
-    # found. Lets "Build me a strategy with $1500 USDC" / "I have $50 million
-    # USDC" surface an amount even when the verb pattern misses.
+    # Bare "$X" / "X$" / "$50 million" fallback — only fires when no anchored
+    # verb was found. Lets "Build me a strategy with $1500 USDC", "I have $50
+    # million USDC", and "Execute deposit ... with 10$" all surface an amount.
     bare = _BARE_AMOUNT_USD_RE.search(text)
     if not bare:
         return None, None
     try:
-        amount = float(bare.group(1).replace(",", ""))
-    except ValueError:
+        # Pattern A: "$X" → group1 = digits, group2 = suffix
+        # Pattern B: "X$" → group3 = digits, group4 = suffix
+        digits = bare.group(1) or bare.group(3)
+        suffix = (bare.group(2) or bare.group(4) or "").lower()
+        if not digits:
+            return None, None
+        amount = float(digits.replace(",", ""))
+    except (ValueError, IndexError):
         return None, None
-    suffix = (bare.group(2) or "").lower()
     if suffix == "k":
         amount *= 1_000
     elif suffix in {"m", "million"}:

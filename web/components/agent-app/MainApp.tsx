@@ -5063,8 +5063,33 @@ export default function MainApp() {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const eth: any = (window as any).ethereum;
             if (!eth) throw new Error("MetaMask not found");
+            // Ensure wallet is on the right chain before sending. Without this,
+            // MetaMask returns a generic "Unexpected error" when the requested
+            // tx targets a chain different from the wallet's current network.
+            const chainIdHex = (tx as { chain_id?: number | null }).chain_id != null
+              ? `0x${Number((tx as { chain_id: number }).chain_id).toString(16)}`
+              : null;
+            if (chainIdHex) {
+              try {
+                const current = await eth.request({ method: "eth_chainId" });
+                if (String(current).toLowerCase() !== chainIdHex.toLowerCase()) {
+                  await eth.request({
+                    method: "wallet_switchEthereumChain",
+                    params: [{ chainId: chainIdHex }],
+                  });
+                }
+              } catch (switchErr: unknown) {
+                console.warn("[sign-batch] chain switch failed", switchErr);
+              }
+            }
             const accs = await eth.request({ method: "eth_accounts" });
-            const params = [{ from: accs[0], to: tx.to, data: tx.data, value: tx.value || "0x0" }];
+            const params = [{
+              from: accs[0],
+              to: tx.to,
+              data: tx.data,
+              value: tx.value || "0x0",
+              ...(chainIdHex ? { chainId: chainIdHex } : {}),
+            }];
             const hash = await eth.request({ method: "eth_sendTransaction", params });
             showToast(`Step ${step.index} signed: ${String(hash).slice(0, 12)}…`, "success");
           }
@@ -5195,7 +5220,58 @@ export default function MainApp() {
           from = requested?.[0];
         }
         if (!from) throw new Error("No EVM account connected.");
-        const params = [{ from, to: tx.to, data: tx.data, value: tx.value || "0x0" }];
+        // Wallet network must match tx.chain_id, otherwise MetaMask returns
+        // generic "Unexpected error" with no hint. Switch (or add) before send.
+        const chainIdHex = tx.chain_id != null
+          ? `0x${Number(tx.chain_id).toString(16)}`
+          : null;
+        if (chainIdHex) {
+          const current = await eth.request({ method: "eth_chainId" }).catch(() => null);
+          if (current && String(current).toLowerCase() !== chainIdHex.toLowerCase()) {
+            try {
+              await eth.request({
+                method: "wallet_switchEthereumChain",
+                params: [{ chainId: chainIdHex }],
+              });
+            } catch (switchErr: unknown) {
+              const code = (switchErr as { code?: number }).code;
+              if (code === 4902 || code === -32603) {
+                // Chain not added — try to add it (best effort).
+                const ADD_CHAIN_PARAMS: Record<number, Record<string, unknown>> = {
+                  1: { chainName: "Ethereum", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: ["https://eth.llamarpc.com"], blockExplorerUrls: ["https://etherscan.io"] },
+                  10: { chainName: "Optimism", nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 }, rpcUrls: ["https://mainnet.optimism.io"], blockExplorerUrls: ["https://optimistic.etherscan.io"] },
+                  56: { chainName: "BNB Smart Chain", nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 }, rpcUrls: ["https://bsc-dataseed.binance.org"], blockExplorerUrls: ["https://bscscan.com"] },
+                  137: { chainName: "Polygon", nativeCurrency: { name: "MATIC", symbol: "MATIC", decimals: 18 }, rpcUrls: ["https://polygon-rpc.com"], blockExplorerUrls: ["https://polygonscan.com"] },
+                  8453: { chainName: "Base", nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 }, rpcUrls: ["https://mainnet.base.org"], blockExplorerUrls: ["https://basescan.org"] },
+                  42161: { chainName: "Arbitrum One", nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 }, rpcUrls: ["https://arb1.arbitrum.io/rpc"], blockExplorerUrls: ["https://arbiscan.io"] },
+                  43114: { chainName: "Avalanche", nativeCurrency: { name: "AVAX", symbol: "AVAX", decimals: 18 }, rpcUrls: ["https://api.avax.network/ext/bc/C/rpc"], blockExplorerUrls: ["https://snowtrace.io"] },
+                };
+                const addParams = ADD_CHAIN_PARAMS[Number(tx.chain_id)];
+                if (addParams) {
+                  await eth.request({
+                    method: "wallet_addEthereumChain",
+                    params: [{ chainId: chainIdHex, ...addParams }],
+                  });
+                  await eth.request({
+                    method: "wallet_switchEthereumChain",
+                    params: [{ chainId: chainIdHex }],
+                  });
+                } else {
+                  throw new Error(`Switch your wallet to chain id ${tx.chain_id} first.`);
+                }
+              } else {
+                throw switchErr;
+              }
+            }
+          }
+        }
+        const params = [{
+          from,
+          to: tx.to,
+          data: tx.data,
+          value: tx.value || "0x0",
+          ...(chainIdHex ? { chainId: chainIdHex } : {}),
+        }];
         const hash = await eth.request({ method: "eth_sendTransaction", params });
         showToast(`Signed: ${String(hash).slice(0, 12)}…`, "success");
       } else {

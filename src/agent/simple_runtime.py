@@ -1826,13 +1826,35 @@ def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] |
     amount_is_usd = False
     am = re.search(
         r"\b(?:with|for|amount|of|=)\s*(\$)?\s*(\d+(?:[\.,]\d+)?)\s*([kKmM])?\s*"
-        r"(?P<unit>USDC|USDT|USD|DAI|FRAX|dollars?)?",
+        r"(?P<unit>USDC|USDT|USD|DAI|FRAX|dollars?|\$)?",
         text,
         re.IGNORECASE,
     )
     if not am:
-        # Bare "$X" form
+        # Bare "$X" or "X$" form
         am = re.search(r"(\$)\s*(\d+(?:[\.,]\d+)?)\s*([kKmM])?", text)
+        if not am:
+            am = re.search(r"(\d+(?:[\.,]\d+)?)\s*([kKmM])?\s*(\$)", text)
+            if am:
+                # Reorder groups to (dollar_marker, digits, suffix) for consistency
+                # with the other branches below.
+                class _GroupShim:
+                    def __init__(self, m):
+                        self._m = m
+                    def group(self, i):
+                        if i == 1:
+                            return "$"
+                        if i == 2:
+                            return self._m.group(1)
+                        if i == 3:
+                            return self._m.group(2)
+                        return None
+                    def groupdict(self):
+                        return {"unit": "$"}
+                    @property
+                    def lastindex(self):
+                        return 3
+                am = _GroupShim(am)
     if am:
         try:
             dollar_sign = bool(am.group(1)) if am.lastindex and am.lastindex >= 1 else False
@@ -1881,6 +1903,8 @@ def _defi_intent_to_tool(intent: DefiIntent) -> tuple[str, dict] | None:
             params["max_apy"] = intent.max_apy
         if intent.risk_levels:
             params["risk_levels"] = intent.risk_levels
+        if getattr(intent, "limit", None):
+            params["max_positions"] = int(intent.limit)
         return "allocate_plan", params
 
     if intent.intent not in {"search_defi_opportunities", "execute_yield_strategy"}:
