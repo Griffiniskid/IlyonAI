@@ -79,6 +79,34 @@ class DefiIntent:
     risk_budget: str = "balanced"
     stablecoin_only: bool = False
     reinvestment_cadence: str | None = None
+    limit: int | None = None
+
+
+_LIMIT_WORD_RE = re.compile(
+    r"\b(?:just\s+|only\s+|exactly\s+|give\s+me\s+|i\s+(?:need|want)\s+)?"
+    r"(one|two|three|four|five|single|1|2|3|4|5|6|7|8|10)\s+"
+    r"(?:pool|pools|opportunit(?:y|ies)|option|options|result|results|pick|picks|choice|choices)\b",
+    re.IGNORECASE,
+)
+_LIMIT_WORD_TO_INT = {
+    "one": 1, "single": 1, "1": 1,
+    "two": 2, "2": 2,
+    "three": 3, "3": 3,
+    "four": 4, "4": 4,
+    "five": 5, "5": 5,
+    "6": 6, "7": 7, "8": 8, "10": 10,
+}
+
+
+def _parse_limit(text: str) -> int | None:
+    """Detect 'top 1 pool', 'just 1 pool', 'one pool', '3 picks', etc.
+    Returns the requested limit or None when unspecified."""
+    if not text:
+        return None
+    m = _LIMIT_WORD_RE.search(text)
+    if not m:
+        return None
+    return _LIMIT_WORD_TO_INT.get(m.group(1).lower())
 
 
 def _parse_chains(text: str) -> list[str]:
@@ -257,6 +285,7 @@ def parse_defi_intent(message: str) -> DefiIntent:
     risk_levels = _parse_risk_levels(text)
     target_apy, apy_mode, min_apy, max_apy = _parse_apy(text)
     amount_usd, asset_hint = _parse_amount_and_asset(text)
+    limit = _parse_limit(text)
     negated_execution = bool(_NEGATION_EXEC_TERMS.search(text))
     execution_requested = bool(_EXECUTION_TERMS.search(text)) and not negated_execution
     reinvestment_requested = bool(_REINVEST_TERMS.search(text))
@@ -308,4 +337,5 @@ def parse_defi_intent(message: str) -> DefiIntent:
         risk_budget=_risk_budget_for(risk_levels, text),
         stablecoin_only=stablecoin_only,
         reinvestment_cadence=cadence,
+        limit=limit,
     )

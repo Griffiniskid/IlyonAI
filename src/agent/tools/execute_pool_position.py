@@ -164,6 +164,24 @@ def _pick_asset_in(meta: dict[str, Any]) -> str:
     return "USDC"
 
 
+_TOKEN_USD_HINT_LOCAL: dict[str, float] = {
+    "SOL": 90.0, "WSOL": 90.0,
+    "ETH": 2300.0, "WETH": 2300.0, "STETH": 2300.0, "WSTETH": 2400.0, "WEETH": 2400.0,
+    "BNB": 640.0, "WBNB": 640.0,
+    "MATIC": 0.13, "WMATIC": 0.13, "POL": 0.13,
+    "AVAX": 18.0, "WAVAX": 18.0,
+    "BTC": 80000.0, "WBTC": 80000.0, "CBBTC": 80000.0, "BTC.B": 80000.0,
+    "ARB": 0.13, "OP": 0.15, "AERO": 0.95, "VELO": 0.05,
+    "USDC": 1.0, "USDT": 1.0, "DAI": 1.0, "FRAX": 1.0, "USDE": 1.0, "SUSDE": 1.05,
+    "GHO": 1.0, "PYUSD": 1.0, "TUSD": 1.0, "BUSD": 1.0, "FDUSD": 1.0,
+    "MIM": 1.0, "MKUSD": 1.0, "CRVUSD": 1.0, "USDS": 1.0, "SUSDS": 1.05,
+}
+
+_STABLE_TICKERS = {"USDC", "USDT", "USD", "DAI", "FRAX", "USDE", "GHO", "PYUSD",
+                   "TUSD", "BUSD", "FDUSD", "MIM", "MKUSD", "CRVUSD", "USDS", "SUSDS",
+                   "USDD", "USDX", "AUSD", "USDY", "MUSD"}
+
+
 async def execute_pool_position(
     ctx,
     *,
@@ -174,6 +192,7 @@ async def execute_pool_position(
     user_address: str | None = None,
     slippage_bps: int = 50,
     research_thesis: str | None = None,
+    amount_is_usd: bool = False,
 ):
     """One-shot pool deposit. `pool` may be a DefiLlama pool UUID or a
     'protocol pair' string like 'raydium-amm SPACEX-WSOL'.
@@ -236,6 +255,20 @@ async def execute_pool_position(
     protocol = str(meta.get("project", "")).lower()
     pool_symbol = str(meta.get("symbol", ""))
     final_asset_in = asset_in or _pick_asset_in(meta)
+
+    # USD-denominated amount → native units conversion. When the user typed
+    # "$100" or "with 100 USDC" but the pool's primary asset is non-stable
+    # (WSOL, ETH, BTC, etc.), the raw amount must be re-denominated into the
+    # source asset's native units. Otherwise "100" gets sent as 100 WSOL
+    # (~$9,400) and the wallet popup shows "Not enough SOL".
+    final_asset_upper = (final_asset_in or "").upper()
+    if amount_is_usd and final_asset_upper not in _STABLE_TICKERS:
+        usd_price = _TOKEN_USD_HINT_LOCAL.get(final_asset_upper)
+        if usd_price and usd_price > 0:
+            converted = amt / usd_price
+            # Guard: never convert below 0.0001 (dust).
+            if converted >= 0.0001:
+                amt = converted
 
     # Wallet/chain compatibility preflight. If the primary wallet is the
     # wrong format for this pool, swap in the matching ctx field before

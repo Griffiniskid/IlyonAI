@@ -1819,31 +1819,43 @@ def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] |
             pool_ref = f"{proto_token.group(1).lower()} {pool_ref}"
     # Amount detection: prefer explicit "with $X" / "for $X" / "$X" /
     # "X USD" / "X USDC" patterns over the intent.amount_usd default.
+    # Also track whether the amount is USD-denominated ($, usdc, usdt, usd) so
+    # execute_pool_position can convert to native units when the pool's primary
+    # asset is non-stable (WSOL, ETH, etc.).
     explicit_amt: float | None = None
+    amount_is_usd = False
     am = re.search(
-        r"\b(?:with|for|amount|of|=)\s*\$?\s*(\d+(?:[\.,]\d+)?)\s*([kKmM])?",
+        r"\b(?:with|for|amount|of|=)\s*(\$)?\s*(\d+(?:[\.,]\d+)?)\s*([kKmM])?\s*"
+        r"(?P<unit>USDC|USDT|USD|DAI|FRAX|dollars?)?",
         text,
         re.IGNORECASE,
     )
     if not am:
-        am = re.search(r"\$\s*(\d+(?:[\.,]\d+)?)\s*([kKmM])?", text)
+        # Bare "$X" form
+        am = re.search(r"(\$)\s*(\d+(?:[\.,]\d+)?)\s*([kKmM])?", text)
     if am:
         try:
-            n = float(am.group(1).replace(",", ""))
-            sfx = (am.group(2) or "").lower()
+            dollar_sign = bool(am.group(1)) if am.lastindex and am.lastindex >= 1 else False
+            n = float(am.group(2).replace(",", ""))
+            sfx = (am.group(3) or "").lower()
             if sfx == "k":
                 n *= 1_000
             elif sfx == "m":
                 n *= 1_000_000
+            unit = (am.groupdict().get("unit") or "").upper()
+            if dollar_sign or unit in {"USDC", "USDT", "USD", "DAI", "FRAX", "DOLLAR", "DOLLARS"}:
+                amount_is_usd = True
             if 0 < n <= 1_000_000_000:
                 explicit_amt = n
         except (TypeError, ValueError):
             pass
     if explicit_amt is None:
         explicit_amt = intent.amount_usd if (intent.amount_usd is not None and intent.amount_usd > 0) else 100.0
+        amount_is_usd = True
     params: dict = {
         "pool": pool_ref,
         "amount": explicit_amt,
+        "amount_is_usd": amount_is_usd,
     }
     chain_hint_match = re.search(r"\bon\s+(solana|ethereum|polygon|arbitrum|base|optimism|bsc|avalanche)\b", text, re.I)
     if chain_hint_match:
@@ -1880,7 +1892,7 @@ def _defi_intent_to_tool(intent: DefiIntent) -> tuple[str, dict] | None:
         "chains": intent.chains,
         "ranking_objective": intent.ranking_objective,
         "execution_requested": intent.execution_requested,
-        "limit": 8,
+        "limit": int(getattr(intent, "limit", None) or 8),
     }
     if intent.target_apy is not None:
         params["target_apy"] = intent.target_apy
