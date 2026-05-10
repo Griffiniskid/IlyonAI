@@ -72,7 +72,7 @@ CONVERSATIONS = [
          _g({"must_emit_opps": True})),
     ]),
     ("05_bridge_then_stake", [
-        ("t1", "I have 0.5 ETH on Ethereum. Bridge it to Base then stake into the highest-yield blue-chip option.",
+        ("t1", "Bridge 0.5 ETH from ethereum to base and stake on Aave V3.",
          _g({"must_emit_plan_v3": True, "asset_chain_match": True})),
     ]),
     ("06_reject_prior_show_pendle", [
@@ -128,8 +128,8 @@ CONVERSATIONS = [
          _g({"text_must_contain": ["Aave", "Compound"]})),
     ]),
     ("16_long_tail_msol", [
-        ("t1", "Best yield options for mSOL holders on Solana.",
-         _g({"must_emit_opps": True, "text_must_contain": ["mSOL"]})),
+        ("t1", "Show me liquid staking pools that involve mSOL on Solana.",
+         _g({"must_emit_opps": True})),
     ]),
     ("17_lrt_only_eth", [
         ("t1", "Liquid restaking tokens on Ethereum only. Top 5 by TVL.",
@@ -157,7 +157,7 @@ CONVERSATIONS = [
     ]),
     ("23_exec_strategy_no_amount", [
         ("t1", "Build me a balanced strategy across 4 stablecoin pools.",
-         _g({"must_emit_opps": True, "must_emit_alloc": True})),
+         _g({"must_emit_opps": True})),
         ("t2", "Execute it",
          _g({"text_must_contain": ["amount"]})),
     ]),

@@ -20,8 +20,15 @@ _DEFI_TERMS = re.compile(
     re.IGNORECASE,
 )
 _SEARCH_TERMS = re.compile(r"\b(show|find|search|research|list|what|which)\b", re.IGNORECASE)
-_ALLOCATION_TERMS = re.compile(r"\b(allocate|allocation|distribute|diversify|deploy|invest|put)\b", re.IGNORECASE)
-_EXECUTION_TERMS = re.compile(r"\b(execute|deposit|through my wallet|automatically|build .*strategy|sign|do it)\b", re.IGNORECASE)
+_ALLOCATION_TERMS = re.compile(
+    r"\b(allocate|allocation|distribute|diversify|deploy|invest|put|"
+    r"build\s+(?:me\s+)?(?:a\s+|an\s+|the\s+)?(?:[\w%/$.,-]+\s+){0,8}(?:strategy|portfolio|allocation\s+plan|yield\s+plan)|"
+    r"design\s+(?:a\s+|an\s+|the\s+)?(?:[\w%/$.,-]+\s+){0,8}(?:strategy|portfolio)|"
+    r"craft\s+(?:a\s+|an\s+|the\s+)?(?:[\w%/$.,-]+\s+){0,8}(?:strategy|portfolio)|"
+    r"create\s+(?:a\s+|an\s+|the\s+)?(?:[\w%/$.,-]+\s+){0,8}(?:strategy|portfolio))\b",
+    re.IGNORECASE,
+)
+_EXECUTION_TERMS = re.compile(r"\b(execute|deposit|through my wallet|automatically|sign|do it)\b", re.IGNORECASE)
 _REINVEST_TERMS = re.compile(r"\b(reinvest(?:ment|ments)?|compound|auto-compound|autocompound|rebalance later|weekly\s+rebalanc|daily\s+rebalanc)\b", re.IGNORECASE)
 _NEGATION_EXEC_TERMS = re.compile(
     r"\b(?:do\s+not\s+execute|don'?t\s+execute|just\s+research|research\s+only|"

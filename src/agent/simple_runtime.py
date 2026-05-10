@@ -1683,8 +1683,9 @@ def _detect_direct_pool_deposit(message: str) -> tuple[str, dict] | None:
 
 _STRATEGY_BUILD_VERBS_RE = re.compile(
     r"\b(build|design|create|craft|propose|recommend|outline|develop|research(?:\s+and\s+(?:build|design|create|craft|propose|recommend|outline|develop))?)"
-    r"\s+(?:me\s+|us\s+)?(?:a|an|the)?\s*[\w%/$.,-]*\s*"
-    r"(?:strategy|strategies|portfolio|allocation\s+plan|yield\s+plan|farm\s+plan)\b",
+    r"\s+(?:me\s+|us\s+)?(?:a|an|the)?\s*"
+    r"(?:[\w%/$.,-]+\s+){0,8}"
+    r"(?:strategy|strategies|portfolio|allocation\s+plan|yield\s+plan|farm\s+plan|diversified\s+yield|yield\s+strategy)\b",
     re.IGNORECASE,
 )
 _NOISE_ASSET_TOKENS = {
@@ -3030,6 +3031,28 @@ _STRATEGY_SCRATCHPAD_LEAD_RE = re.compile(
 )
 
 
+_AI_SELF_REF_RE = re.compile(
+    r"\b(?:as\s+an?\s+AI(?:\s+(?:assistant|model|language\s+model))?|"
+    r"I\s+am\s+an?\s+AI(?:\s+(?:assistant|model|language\s+model))?|"
+    r"I'?m\s+an?\s+AI(?:\s+(?:assistant|model|language\s+model))?|"
+    r"as\s+a\s+language\s+model|"
+    r"as\s+ChatGPT|as\s+GPT-?4|"
+    r"I\s+(?:cannot|can'?t)\s+(?:provide|give)\s+(?:financial|investment)\s+advice"
+    r"[^.]*\.?)",
+    re.IGNORECASE,
+)
+
+
+def _scrub_ai_self_refs(text: str) -> str:
+    """Strip 'as an AI', 'I'm a language model', etc. — these leak from base
+    LLM safety priors and break Sentinel's voice. We're a research tool, not
+    an LLM persona. Sentence is replaced with a soft elision so surrounding
+    paragraph stays coherent."""
+    if not text:
+        return text
+    return _AI_SELF_REF_RE.sub("", text)
+
+
 def _strip_strategy_scratchpad(text: str) -> str:
     """Strip leading scratchpad paragraphs without touching markdown structure.
 
@@ -3039,6 +3062,7 @@ def _strip_strategy_scratchpad(text: str) -> str:
     """
     if not text:
         return text
+    text = _scrub_ai_self_refs(text)
     lines = text.split("\n")
     drop = 0
     for ln in lines:
@@ -3399,10 +3423,12 @@ _SINGLE_POOL_PICK_RE = re.compile(
 )
 # Onboarding bootstrap: "I have $X USDC, what should I do" / "what's the play"
 _BOOTSTRAP_ALLOC_RE = re.compile(
-    r"\b(?:i\s+have|got|holding)\s+\$?(?P<amount>[\d,]+(?:\.\d+)?)\s*([kKmM])?\s*"
-    r"(?:USDC|USDT|USD|DAI|dollars?)?\s*[,.]?\s*"
-    r"(?:what\s+(?:should\s+i\s+do|to\s+do|next|now)|what'?s\s+the\s+(?:move|play))",
-    re.IGNORECASE,
+    r"\b(?:i\s+have|got|holding|sitting\s+on|with)\s+\$?(?P<amount>[\d,]+(?:\.\d+)?)\s*([kKmM])?\s*"
+    r"(?:in\s+)?"
+    r"(?:USDC|USDT|USD|DAI|dollars?)?"
+    r".{0,120}?"
+    r"(?:what\s+(?:should\s+i\s+do|to\s+do|next|now|do\s+i\s+do|can\s+i\s+do)|what'?s\s+the\s+(?:move|play|best))",
+    re.IGNORECASE | re.DOTALL,
 )
 
 

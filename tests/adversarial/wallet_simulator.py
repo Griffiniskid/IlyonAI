@@ -154,7 +154,7 @@ class WalletSimulator:
         if not to or not isinstance(to, str) or not to.startswith("0x") or len(to) != 42:
             return StepSimResult(sid, "evm", False, False, False, error=f"invalid `to`: {to!r}")
         try:
-            int(value)
+            value_int = int(value, 16) if isinstance(value, str) and value.lower().startswith("0x") else int(value)
         except (TypeError, ValueError):
             return StepSimResult(sid, "evm", False, False, False, error=f"invalid value: {value!r}")
         if not isinstance(data, str) or not data.startswith("0x"):
@@ -185,7 +185,7 @@ class WalletSimulator:
                 {
                     "to": Web3.to_checksum_address(to),
                     "data": data,
-                    "value": int(value),
+                    "value": value_int,
                     "from": self.evm_address,
                 }
             )
