@@ -5088,7 +5088,6 @@ export default function MainApp() {
               to: tx.to,
               data: tx.data,
               value: tx.value || "0x0",
-              ...(chainIdHex ? { chainId: chainIdHex } : {}),
             }];
             const hash = await eth.request({ method: "eth_sendTransaction", params });
             showToast(`Step ${step.index} signed: ${String(hash).slice(0, 12)}…`, "success");
@@ -5208,6 +5207,21 @@ export default function MainApp() {
         const result = await sol.signAndSendTransaction(vtx);
         const signature: string = result?.signature ?? result;
         showToast(`Signed: ${String(signature).slice(0, 12)}…`, "success");
+        // Auto-confirm via chat: tell Sentinel the tx hash so it can verify
+        // on Solscan and emit a "money is in pool" follow-up. The user's
+        // prior chat session_id is reused.
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const stepLite = step as any;
+          const protocolUrl = stepLite?.transaction?.protocol_url || stepLite?.protocol_url || "";
+          const sigShort = String(signature).slice(0, 12);
+          const stmt = protocolUrl
+            ? `Step ${stepLite?.index ?? "?"} signed on Solana: tx ${signature}. Solscan: https://solscan.io/tx/${signature} . Verify the swap landed, then finalise the LP add at ${protocolUrl}`
+            : `Step ${stepLite?.index ?? "?"} signed on Solana: tx ${signature}. Solscan: https://solscan.io/tx/${signature} . Confirm the receipt and let me know if the funds reached the pool.`;
+          void send(stmt);
+        } catch (chatErr) {
+          console.warn("[handleSignStep] post-sign chat fire failed", chatErr);
+        }
       } else if (tx.chain_kind === "evm" && tx.to && tx.data) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const eth: any = (window as any).ethereum;

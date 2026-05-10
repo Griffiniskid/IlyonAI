@@ -157,6 +157,18 @@ class SolanaYieldBuilderAdapter:
                     "Solana transactions submit immediately after signing; double-check the protocol address.",
                 ],
             )
+            # Surface the protocol's direct LP-entry URL on the step so the
+            # frontend can show "Open in Raydium →" / "Finalise on Orca" etc.
+            proto_url = raw.get("protocolUrl") or raw.get("protocol_url")
+            if proto_url:
+                # ExecutionStepV3 doesn't have a dedicated field; we stash it
+                # on the transaction dict for the frontend to read. The Pydantic
+                # schema preserves unknown keys via `model_config(extra='allow')`
+                # in newer versions; if it doesn't, falling back to embedding
+                # the URL in description (already done in raydium.js) keeps it
+                # visible.
+                if step.transaction:
+                    setattr(step.transaction, "protocol_url", proto_url)
             steps.append(step)
             depends_on = [step.step_id]
         return steps
