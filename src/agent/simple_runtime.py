@@ -1872,8 +1872,8 @@ def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] |
                 n *= 1_000
             elif sfx == "m":
                 n *= 1_000_000
-            unit = (am.groupdict().get("unit") or "").upper()
-            if dollar_sign or unit in {"USDC", "USDT", "USD", "DAI", "FRAX", "DOLLAR", "DOLLARS"}:
+            unit = (am.groupdict().get("unit") or "").upper() if hasattr(am, "groupdict") else ""
+            if dollar_sign or unit in {"USDC", "USDT", "USD", "DAI", "FRAX", "DOLLAR", "DOLLARS", "$"}:
                 amount_is_usd = True
             if 0 < n <= 1_000_000_000:
                 explicit_amt = n
