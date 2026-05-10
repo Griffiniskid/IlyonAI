@@ -1553,6 +1553,53 @@ _AAVE_SUPPLY_RE = re.compile(
 _AAVE_HINT = re.compile(r"\baave\b", re.IGNORECASE)
 
 
+_GENERIC_SUPPLY_RE = re.compile(
+    r"^\s*(?:supply|deposit|lend|stake)\s+"
+    r"(?P<amount>[\d,]+(?:\.\d+)?)\s+"
+    r"(?P<asset>[A-Za-z]{2,10})\s+"
+    r"(?:on|to|via|into)\s+"
+    r"(?P<protocol>[A-Za-z][A-Za-z0-9 \-_.]{1,30}?)\s+"
+    r"on\s+"
+    r"(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|bnb|solana|"
+    r"linea|mantle|zksync|scroll|blast|mode|berachain|sonic|sei|fantom|celo|near|"
+    r"cosmos|metis|gnosis|moonbeam|tron|aptos|sui)\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_generic_supply(message: str) -> tuple[str, dict] | None:
+    """Generic 'supply N TOKEN on/via PROTOCOL on CHAIN' detector.
+
+    Routes to execute_pool_position with `pool='<protocol> <asset>'` so the
+    protocol resolver can find the matching DefiLlama pool. Covers Venus,
+    Compound, Spark, Morpho, Moonwell, Radiant, etc. when the user names
+    the protocol explicitly.
+    """
+    m = _GENERIC_SUPPLY_RE.search(message)
+    if not m:
+        return None
+    asset = m.group("asset").upper()
+    if asset in _NOISE_ASSET_TOKENS:
+        return None
+    amount = m.group("amount").replace(",", "")
+    proto = m.group("protocol").strip().lower().replace(" ", "-")
+    # Drop trailing chain alias accidentally captured ("venus on bsc" -> "venus")
+    proto = re.sub(
+        r"-(?:on|via|to)$",
+        "",
+        proto,
+    )
+    chain = m.group("chain").lower()
+    if chain in {"bnb"}:
+        chain = "bsc"
+    return ("execute_pool_position", {
+        "pool": f"{proto} {asset}",
+        "amount": float(amount),
+        "asset_in": asset,
+        "chain": chain,
+    })
+
+
 def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
     """Match prompts like 'supply 100 USDC to Aave V3 on Ethereum' / 'execute Aave USDC supply 100'."""
     if not _AAVE_HINT.search(message):
@@ -2012,7 +2059,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
         return multi_step
-    for detector in (_detect_direct_pool_deposit, _detect_aave_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_direct_pool_deposit, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
