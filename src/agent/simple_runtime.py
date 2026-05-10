@@ -1824,12 +1824,20 @@ def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] |
     # asset is non-stable (WSOL, ETH, etc.).
     explicit_amt: float | None = None
     amount_is_usd = False
+    # Two-pass: first try unit-required (so "with 10$" matches the trailing $),
+    # then fall back to unit-optional.
     am = re.search(
         r"\b(?:with|for|amount|of|=)\s*(\$)?\s*(\d+(?:[\.,]\d+)?)\s*([kKmM])?\s*"
-        r"(?P<unit>USDC|USDT|USD|DAI|FRAX|dollars?|\$)?",
+        r"(?P<unit>USDC|USDT|USD|DAI|FRAX|dollars?|\$)",
         text,
         re.IGNORECASE,
     )
+    if not am:
+        am = re.search(
+            r"\b(?:with|for|amount|of|=)\s*(\$)?\s*(\d+(?:[\.,]\d+)?)\s*([kKmM])?",
+            text,
+            re.IGNORECASE,
+        )
     if not am:
         # Bare "$X" or "X$" form
         am = re.search(r"(\$)\s*(\d+(?:[\.,]\d+)?)\s*([kKmM])?", text)
