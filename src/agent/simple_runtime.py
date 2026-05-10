@@ -24,6 +24,7 @@ from src.agent.intent.validation import (
 )
 from src.agent.llm import IlyonChatModel
 from src.agent.streaming import StreamCollector, encode_sse, frame_event_name
+import uuid
 from src.api.schemas.agent import ThoughtFrame, ToolFrame, ObservationFrame, FinalFrame, DoneFrame, CardFrame, PlanBlockedFrame
 
 from src.storage.agent_chats import append_message, list_messages
@@ -4142,7 +4143,28 @@ async def run_ephemeral_turn(
                 step_index=collector._step,
                 content="Continuing from the prior allocation/execution plan in this conversation...",
             ))
-            collector.emit_final(replay, [])
+            # Re-emit the most recent execution_plan card so signing UI
+            # reappears for "Execute the plan" / "Yes proceed" follow-ups.
+            replay_card_ids: list[str] = []
+            if history_cards:
+                for hc in reversed(history_cards):
+                    ct = (hc.get("card_type") or "").lower()
+                    if ct in {"execution_plan_v3", "execution_plan_v2", "execution_plan", "allocation"}:
+                        from src.api.schemas.agent import CardFrame
+                        try:
+                            collector._step += 1
+                            cf = CardFrame(
+                                step_index=collector._step,
+                                card_id=hc.get("card_id") or f"replay-{uuid.uuid4().hex[:10]}",
+                                card_type=hc.get("card_type"),
+                                payload=hc.get("payload") or {},
+                            )
+                            collector._queue.append(cf)
+                            replay_card_ids.append(cf.card_id)
+                        except Exception:
+                            pass
+                        break
+            collector.emit_final(replay, replay_card_ids)
             for frame in collector.drain():
                 yield encode_sse(frame_event_name(frame), frame.model_dump())
             return

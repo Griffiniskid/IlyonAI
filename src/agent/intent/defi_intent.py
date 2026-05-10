@@ -102,7 +102,7 @@ def _parse_product_types(text: str) -> list[str]:
         product_types.append("lending")
     if "stake" in lowered or "staking" in lowered:
         product_types.append("staking")
-    if not product_types and re.search(r"\b(yield|apy|apr|opportunit(?:y|ies))\b", lowered):
+    if not product_types and re.search(r"\b(yield|yields|yielding|apy|apr|opportunit(?:y|ies)|earnings?|returns?)\b", lowered):
         product_types.extend(["pool", "farm", "vault", "lending"])
     return product_types
 

@@ -68,7 +68,8 @@ def _infer_product_type(*, category: str | None, project_slug: str, symbol: str)
 def _candidate_from_defillama(pool: dict[str, Any]) -> OpportunityCandidate:
     apy = float(pool.get("apy") or 0.0)
     tvl = float(pool.get("tvlUsd") or pool.get("tvl_usd") or 0.0)
-    chain = str(pool.get("chain") or "unknown")
+    raw_chain = str(pool.get("chain") or "unknown")
+    chain = _canonical_chain(raw_chain) or raw_chain.lower()
     protocol = str(pool.get("project") or "Unknown")
     protocol_slug = protocol.lower().replace(" ", "-").replace(".", "-")
     pool_id = str(pool.get("pool") or pool.get("pool_id") or "") or None
@@ -161,11 +162,77 @@ _CHAIN_ALIAS_MAP = {
 }
 
 
+_DEFILLAMA_RAW_TO_CANONICAL = {
+    "op mainnet": "optimism",
+    "optimism": "optimism",
+    "binance": "bsc",
+    "binance smart chain": "bsc",
+    "bnb smart chain": "bsc",
+    "bnb chain": "bsc",
+    "bsc": "bsc",
+    "polygon zkevm": "polygon zkevm",
+    "polygon pos": "polygon",
+    "polygon": "polygon",
+    "matic": "polygon",
+    "ethereum": "ethereum",
+    "arbitrum": "arbitrum",
+    "arbitrum one": "arbitrum",
+    "arbitrum nova": "arbitrum nova",
+    "avalanche": "avalanche",
+    "avax": "avalanche",
+    "base": "base",
+    "solana": "solana",
+    "linea": "linea",
+    "mantle": "mantle",
+    "zksync era": "zksync era",
+    "scroll": "scroll",
+    "blast": "blast",
+    "mode": "mode",
+    "berachain": "berachain",
+    "sonic": "sonic",
+    "sei": "sei",
+    "ton": "ton",
+    "aptos": "aptos",
+    "sui": "sui",
+    "tron": "tron",
+    "fantom": "fantom",
+    "celo": "celo",
+    "near": "near",
+    "cosmos": "cosmos",
+    "osmosis": "osmosis",
+    "injective": "injective",
+    "kava": "kava",
+    "cronos": "cronos",
+    "metis": "metis",
+    "gnosis": "gnosis",
+    "moonbeam": "moonbeam",
+    "moonriver": "moonriver",
+    "harmony": "harmony",
+    "klaytn": "klaytn",
+    "zora": "zora",
+    "manta": "manta",
+    "starknet": "starknet",
+    "hyperliquid l1": "hyperliquid",
+    "hyperliquid": "hyperliquid",
+    "monad": "monad",
+    "katana": "katana",
+    "cardano": "cardano",
+}
+
+
 def _canonical_chain(chain: str | None) -> str | None:
     if not chain:
         return None
     s = str(chain).strip().lower().replace("_", "-")
-    return _CHAIN_ALIAS_MAP.get(s, s)
+    if s in _CHAIN_ALIAS_MAP:
+        return _CHAIN_ALIAS_MAP[s]
+    if s in _DEFILLAMA_RAW_TO_CANONICAL:
+        return _DEFILLAMA_RAW_TO_CANONICAL[s]
+    # Try with hyphens collapsed to spaces
+    s_space = s.replace("-", " ")
+    if s_space in _DEFILLAMA_RAW_TO_CANONICAL:
+        return _DEFILLAMA_RAW_TO_CANONICAL[s_space]
+    return s
 
 
 def _chain_type(chain: str | None):
