@@ -4425,6 +4425,37 @@ async def run_ephemeral_turn(
         if intent:
             tool_name, tool_input = intent
 
+            # Chain stickiness: when the new turn's args lack a chain filter
+            # but a prior `defi_opportunities` card narrowed to a specific
+            # chain in this conversation, inherit it. Prevents drift from
+            # "yields on Solana" -> "1 pool" jumping to TON/Avalanche.
+            if (
+                tool_name in {"search_defi_opportunities", "get_staking_options"}
+                and (not tool_input.get("chains") or tool_input.get("chains") == [])
+                and history_cards
+            ):
+                # Skip when user explicitly mentioned an "any chain" / "all chains" cue.
+                _msg_lower = message.lower()
+                if not re.search(r"\b(any|all|every|across|across\s+chains|any\s+chain|all\s+chains)\b", _msg_lower):
+                    inherited: list[str] = []
+                    for hc in reversed(history_cards):
+                        if (hc.get("card_type") or "").lower() in {"defi_opportunities", "stake"}:
+                            payload = hc.get("payload") or {}
+                            chains_prior = payload.get("chains") or []
+                            if not chains_prior:
+                                # Inherit from the items' chain field if filter wasn't set
+                                items = payload.get("items") or payload.get("staking_options") or []
+                                derived = sorted({str(it.get("chain") or "").lower() for it in items if it.get("chain")})
+                                derived = [c for c in derived if c]
+                                # Only inherit when prior was strictly single-chain
+                                if len(derived) == 1:
+                                    inherited = derived
+                            elif len(chains_prior) <= 2:
+                                inherited = list(chains_prior)
+                            break
+                    if inherited:
+                        tool_input["chains"] = inherited
+
             if tool_name == "explain_sentinel_methodology":
                 _emit_thoughts(collector, [
                     "Parsed Sentinel methodology request and selected explanation mode.",
