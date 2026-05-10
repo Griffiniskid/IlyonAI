@@ -5279,15 +5279,72 @@ export default function MainApp() {
             }
           }
         }
+        // Pre-flight: fetch native balance, fail fast with actionable error
+        // when user has 0 native (gas) — Phantom otherwise shows the popup,
+        // user signs, then the broadcast fails with generic "Unexpected
+        // error". Better to refuse upfront than waste the user's click.
+        try {
+          const bal = await eth.request({ method: "eth_getBalance", params: [from, "latest"] });
+          const balWei = BigInt(String(bal || "0x0"));
+          if (balWei === 0n) {
+            throw new Error(
+              `Wallet has 0 native gas token on chain ${tx.chain_id}. ` +
+              `Top up a small amount of ETH (or chain native asset) before signing.`
+            );
+          }
+        } catch (balErr: unknown) {
+          const m = (balErr as { message?: string })?.message || "";
+          if (m.toLowerCase().includes("0 native gas")) throw balErr;
+          // RPC issue probing balance — non-fatal, continue.
+          console.warn("[handleSignStep] balance probe non-fatal", balErr);
+        }
+        // Estimate gas client-side so Phantom doesn't have to. If estimate
+        // reverts, surface the revert reason instead of "Unexpected error".
+        let gasHex: string | undefined = undefined;
+        try {
+          const est = await eth.request({
+            method: "eth_estimateGas",
+            params: [{ from, to: tx.to, data: tx.data, value: tx.value || "0x0" }],
+          });
+          if (est) {
+            // Add 25% buffer
+            const padded = (BigInt(String(est)) * 125n) / 100n;
+            gasHex = `0x${padded.toString(16)}`;
+          }
+        } catch (estErr: unknown) {
+          const em = (estErr as { message?: string })?.message || String(estErr);
+          // If estimate reverts, the supply tx itself will revert. Surface why.
+          throw new Error(`Tx will revert (gas estimation failed): ${em.slice(0, 200)}`);
+        }
         const params = [{
           from,
           to: tx.to,
           data: tx.data,
           value: tx.value || "0x0",
-          ...(chainIdHex ? { chainId: chainIdHex } : {}),
+          ...(gasHex ? { gas: gasHex } : {}),
         }];
         const hash = await eth.request({ method: "eth_sendTransaction", params });
         showToast(`Signed: ${String(hash).slice(0, 12)}…`, "success");
+        // Auto-confirm post-sign for EVM too
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const stepLite = step as any;
+          const sigShort = String(hash).slice(0, 12);
+          const explorerByChain: Record<number, string> = {
+            1: "https://etherscan.io/tx/",
+            10: "https://optimistic.etherscan.io/tx/",
+            56: "https://bscscan.com/tx/",
+            137: "https://polygonscan.com/tx/",
+            8453: "https://basescan.org/tx/",
+            42161: "https://arbiscan.io/tx/",
+            43114: "https://snowtrace.io/tx/",
+          };
+          const explorer = explorerByChain[Number(tx.chain_id)] || "";
+          const stmt = `Step ${stepLite?.index ?? "?"} signed on chain_id=${tx.chain_id}: tx ${hash}. ${explorer ? explorer + hash : ""} . Verify on the explorer above and confirm the deposit landed.`;
+          void send(stmt);
+        } catch (chatErr) {
+          console.warn("[handleSignStep] EVM post-sign chat fire failed", chatErr);
+        }
       } else {
         const msg = `Unsupported transaction shape (chain_kind=${tx.chain_kind}, has_serialized=${!!tx.serialized}, has_to=${!!tx.to}).`;
         showToast(msg, "info");
