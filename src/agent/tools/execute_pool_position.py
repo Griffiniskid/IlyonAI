@@ -364,4 +364,5 @@ async def execute_pool_position(
         user_address=user_address,
         slippage_bps=slippage_bps,
         research_thesis=research_thesis or f"Direct deposit into {protocol} {pool_symbol} on {chain}.",
+        extra=extra,
     )

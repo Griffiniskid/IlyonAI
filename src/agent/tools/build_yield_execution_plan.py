@@ -32,6 +32,7 @@ async def build_yield_execution_plan(
     slippage_bps: int = 50,
     inventory: dict[str, Any] | None = None,
     research_thesis: str | None = None,
+    extra: dict[str, Any] | None = None,
 ):
     if not user_address:
         wallet = getattr(ctx, "wallet", None)
@@ -80,6 +81,7 @@ async def build_yield_execution_plan(
             user_address=user_address,
             asset_out=asset_out,
             slippage_bps=slippage_bps,
+            extra=extra,
         ))
     except ValueError as exc:
         plan = ExecutionPlanV3.new(
