@@ -265,7 +265,9 @@ async def execute_pool_position(
     if amount_is_usd and final_asset_upper not in _STABLE_TICKERS:
         usd_price = _TOKEN_USD_HINT_LOCAL.get(final_asset_upper)
         if usd_price and usd_price > 0:
-            converted = amt / usd_price
+            from decimal import Decimal
+            amt_float = float(amt) if not isinstance(amt, float) else amt
+            converted = amt_float / usd_price
             # Guard: never convert below 0.0001 (dust).
             if converted >= 0.0001:
                 amt = converted
