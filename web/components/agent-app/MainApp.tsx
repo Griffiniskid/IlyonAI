@@ -5286,7 +5286,7 @@ export default function MainApp() {
         try {
           const bal = await eth.request({ method: "eth_getBalance", params: [from, "latest"] });
           const balWei = BigInt(String(bal || "0x0"));
-          if (balWei === 0n) {
+          if (balWei === BigInt(0)) {
             throw new Error(
               `Wallet has 0 native gas token on chain ${tx.chain_id}. ` +
               `Top up a small amount of ETH (or chain native asset) before signing.`
@@ -5308,7 +5308,7 @@ export default function MainApp() {
           });
           if (est) {
             // Add 25% buffer
-            const padded = (BigInt(String(est)) * 125n) / 100n;
+            const padded = (BigInt(String(est)) * BigInt(125)) / BigInt(100);
             gasHex = `0x${padded.toString(16)}`;
           }
         } catch (estErr: unknown) {
