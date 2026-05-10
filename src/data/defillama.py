@@ -13,12 +13,16 @@ No API key required.
 """
 
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
 import aiohttp
 
 from src.chains.base import ChainType
 from src.defi.opportunity_taxonomy import classify_defi_record
+
+_POOLS_CACHE: dict[str, Any] = {"data": None, "fetched_at": 0.0}
+_POOLS_CACHE_TTL_SECS = 30.0
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +270,28 @@ class DefiLlamaClient:
         # Sort by APY descending
         filtered.sort(key=lambda x: x.get("apy", 0), reverse=True)
         return filtered
+
+    async def get_all_pools_normalized(self) -> List[Dict[str, Any]]:
+        """Fetch every DefiLlama yield pool, normalize, cache for 30s in-process.
+
+        Returns the full universe — every chain, every protocol, every pool —
+        with no chain/TVL/APY filtering. Filters are applied downstream by the
+        caller (e.g. ranking/exclusion in search_defi_opportunities).
+        """
+        now = time.monotonic()
+        cached = _POOLS_CACHE.get("data")
+        if cached is not None and (now - float(_POOLS_CACHE.get("fetched_at") or 0.0)) < _POOLS_CACHE_TTL_SECS:
+            return cached
+        data = await self._get(f"{DEFILLAMA_YIELDS_URL}/pools")
+        if not data or not isinstance(data, dict):
+            return cached or []
+        pools = data.get("data", [])
+        if not isinstance(pools, list):
+            return cached or []
+        normalized = [_normalize_pool_record(p) for p in pools if isinstance(p, dict)]
+        _POOLS_CACHE["data"] = normalized
+        _POOLS_CACHE["fetched_at"] = now
+        return normalized
 
     async def get_pool_history(self, pool_id: str) -> List[Dict[str, Any]]:
         """Get historical APY/TVL data for a specific pool."""

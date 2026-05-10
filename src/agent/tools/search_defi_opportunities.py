@@ -101,6 +101,73 @@ def _candidate_from_defillama(pool: dict[str, Any]) -> OpportunityCandidate:
     )
 
 
+_CHAIN_ALIAS_MAP = {
+    "eth": "ethereum",
+    "ether": "ethereum",
+    "ethereum": "ethereum",
+    "mainnet": "ethereum",
+    "matic": "polygon",
+    "polygon": "polygon",
+    "pos": "polygon",
+    "polygon-pos": "polygon",
+    "bsc": "bsc",
+    "bnb": "bsc",
+    "binance": "bsc",
+    "binance-smart-chain": "bsc",
+    "sol": "solana",
+    "solana": "solana",
+    "arb": "arbitrum",
+    "arbitrum": "arbitrum",
+    "arbitrum-one": "arbitrum",
+    "op": "optimism",
+    "optimism": "optimism",
+    "avax": "avalanche",
+    "avalanche": "avalanche",
+    "base": "base",
+    "linea": "linea",
+    "mantle": "mantle",
+    "zksync": "zksync era",
+    "zksync-era": "zksync era",
+    "scroll": "scroll",
+    "blast": "blast",
+    "mode": "mode",
+    "berachain": "berachain",
+    "bera": "berachain",
+    "sonic": "sonic",
+    "sei": "sei",
+    "ton": "ton",
+    "aptos": "aptos",
+    "sui": "sui",
+    "tron": "tron",
+    "fantom": "fantom",
+    "ftm": "fantom",
+    "celo": "celo",
+    "near": "near",
+    "cosmos": "cosmos",
+    "osmosis": "osmosis",
+    "injective": "injective",
+    "kava": "kava",
+    "cronos": "cronos",
+    "metis": "metis",
+    "gnosis": "gnosis",
+    "xdai": "gnosis",
+    "moonbeam": "moonbeam",
+    "moonriver": "moonriver",
+    "harmony": "harmony",
+    "klaytn": "klaytn",
+    "zora": "zora",
+    "manta": "manta",
+    "starknet": "starknet",
+}
+
+
+def _canonical_chain(chain: str | None) -> str | None:
+    if not chain:
+        return None
+    s = str(chain).strip().lower().replace("_", "-")
+    return _CHAIN_ALIAS_MAP.get(s, s)
+
+
 def _chain_type(chain: str | None):
     if not chain:
         return None
@@ -298,27 +365,32 @@ async def search_defi_opportunities(
     # safe but are actually thin liquidity. "Conservative" in the user's words
     # should mean conservative in candidates too.
     risk_set = {r.upper() for r in (risk_levels or [])}
+    # Floors mean "minimum TVL to be considered a non-trap candidate".
+    # Conservative tier still filters thin liquidity, but high-tier traders
+    # need access to the long tail down to ~$10K TVL pools.
     if risk_set == {"LOW"}:
-        min_tvl_floor = 10_000_000.0
+        min_tvl_floor = 5_000_000.0
         max_apy_cap = 50.0 if max_apy is None else max_apy
     elif risk_set == {"MEDIUM"} or risk_set == {"LOW", "MEDIUM"}:
-        min_tvl_floor = 1_000_000.0
-        max_apy_cap = 200.0 if max_apy is None else max_apy
+        min_tvl_floor = 500_000.0
+        max_apy_cap = 300.0 if max_apy is None else max_apy
     else:
-        min_tvl_floor = 100_000.0
-        max_apy_cap = 500.0 if max_apy is None else max_apy
+        min_tvl_floor = 10_000.0
+        max_apy_cap = 10_000.0 if max_apy is None else max_apy
     # Caller-supplied min_tvl wins over the per-risk floor (used by refinements)
     if min_tvl is not None:
         try:
             min_tvl_floor = max(min_tvl_floor, float(min_tvl))
         except (TypeError, ValueError):
             pass
+    canonical_chains = [_canonical_chain(c) for c in (chains or []) if c]
+    canonical_chains = [c for c in canonical_chains if c]
     request = OpportunitySearchRequest(
         risk_levels=risk_levels or [],
-        chains=chains or [],
+        chains=canonical_chains,
         product_types=product_types or [],
         target_apy=target_apy,
-        min_apy=0.5 if min_apy is None else min_apy,
+        min_apy=0.0 if min_apy is None else min_apy,
         max_apy=max_apy_cap,
         min_tvl=min_tvl_floor,
         ranking_objective=ranking_objective,
@@ -330,14 +402,14 @@ async def search_defi_opportunities(
     if defillama is None:
         return err_envelope("defillama_unavailable", "DefiLlama pool search is not available on this server.")
 
-    raw_pools: list[dict[str, Any]] = []
-    chains_to_query = request.chains or [None]
-    for chain in chains_to_query:
-        raw_pools.extend(await defillama.get_pools(
-            chain=_chain_type(chain),
-            min_tvl=request.min_tvl,
-            min_apy=max(0.0, float(request.min_apy or 0.5)),
-        ))
+    # Single full-universe fetch — every chain, every protocol, every pool.
+    # Chain restriction is enforced downstream in _candidate_exclusions against
+    # the raw chain string returned by DefiLlama (handles Linea, Mantle, zkSync,
+    # Berachain, Sonic, Sei, Blast, Mode, Scroll, etc. without an enum mapping).
+    if hasattr(defillama, "get_all_pools_normalized"):
+        raw_pools = await defillama.get_all_pools_normalized()
+    else:
+        raw_pools = await defillama.get_pools(chain=None, min_tvl=0, min_apy=0)
     candidates = [_candidate_from_defillama(pool) for pool in raw_pools]
     if stablecoin_only:
         candidates = [c for c in candidates if _is_stable_pool(c.symbol)]

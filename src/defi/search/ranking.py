@@ -30,7 +30,7 @@ def _candidate_exclusions(candidate: OpportunityCandidate, request: OpportunityS
     tvl = float(candidate.tvl_usd or 0.0)
     if tvl < request.min_tvl:
         reasons.append("tvl_below_discovery_floor")
-    if not request.include_experimental and apy > 500.0:
+    if not request.include_experimental and apy > 1000.0:
         reasons.append("apy_outlier_without_experimental_opt_in")
     return reasons
 

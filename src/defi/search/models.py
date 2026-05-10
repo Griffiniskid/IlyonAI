@@ -10,13 +10,13 @@ class OpportunitySearchRequest:
     chains: list[str] = field(default_factory=list)
     product_types: list[str] = field(default_factory=list)
     target_apy: float | None = None
-    min_apy: float | None = 0.5
-    max_apy: float | None = 500.0
-    min_tvl: float = 100_000.0
+    min_apy: float | None = 0.0
+    max_apy: float | None = 10_000.0
+    min_tvl: float = 10_000.0
     ranking_objective: str = "constraint_fit_then_risk_adjusted_return"
     limit: int = 8
     execution_requested: bool = False
-    include_experimental: bool = False
+    include_experimental: bool = True
     asset_hint: str | None = None
 
     def __post_init__(self) -> None:
