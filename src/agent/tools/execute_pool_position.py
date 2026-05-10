@@ -16,6 +16,10 @@ from typing import Any, Optional
 
 import aiohttp
 
+from src.agent.protocol_urls import (
+    is_pool_link_action,
+    pool_protocol_url,
+)
 from src.agent.tools._base import err_envelope, ok_envelope
 from src.agent.tools.build_yield_execution_plan import build_yield_execution_plan
 
@@ -330,6 +334,48 @@ async def execute_pool_position(
 
     is_lp = "-" in pool_symbol or "/" in pool_symbol
     action = "deposit_lp" if is_lp else "supply"
+
+    # Pool-deposit execution is temporarily disabled. Emit a pool_link card
+    # that points the user directly to the EXACT pool on the protocol app,
+    # so they can finalise the deposit there. Direct execution stays enabled
+    # for swaps, bridges, and single-asset LST staking (handled elsewhere).
+    if is_pool_link_action(action=action, protocol=protocol):
+        url = pool_protocol_url(
+            chain=chain,
+            project=protocol,
+            pool_address=meta.get("pool_address") or meta.get("poolAddress"),
+            underlying_tokens=meta.get("underlyingTokens") or meta.get("underlying_tokens"),
+            pool_symbol=pool_symbol,
+            project_url=meta.get("url"),
+        )
+        sentinel = meta.get("sentinel") or {}
+        card = {
+            "card_type": "pool_link",
+            "title": f"{protocol} · {pool_symbol}",
+            "protocol": protocol,
+            "chain": chain,
+            "pool_symbol": pool_symbol,
+            "pool_id": meta.get("pool"),
+            "pool_address": meta.get("pool_address") or meta.get("poolAddress"),
+            "apy_pct": meta.get("apy") or meta.get("apyBase"),
+            "apy_base_pct": meta.get("apyBase"),
+            "apy_reward_pct": meta.get("apyReward"),
+            "tvl_usd": meta.get("tvlUsd"),
+            "underlying_tokens": meta.get("underlyingTokens") or meta.get("underlying_tokens"),
+            "sentinel": sentinel,
+            "url": url,
+            "amount": str(amt),
+            "asset_in": final_asset_in,
+            "amount_is_usd": amount_is_usd,
+            "research_thesis": research_thesis,
+            "exec_status": "link_only",
+            "notice": (
+                "Direct pool execution is temporarily unavailable. "
+                "Open this pool on the protocol app to deposit — your wallet "
+                "will sign there. The link points to the exact pool listed."
+            ),
+        }
+        return ok_envelope(data=card, card_type="pool_link", card_payload=card)
 
     extra: dict[str, Any] = {
         "pool_id": meta.get("pool"),

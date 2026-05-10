@@ -66,6 +66,10 @@ class PoolCandidate:
     il_risk: str  # "no" | "yes"
     exposure: str  # "single" | "multi"
     raw_flags: tuple[str, ...] = ()
+    pool_id: str | None = None
+    pool_address: str | None = None
+    underlying_tokens: tuple[str, ...] = ()
+    project_url: str | None = None
 
 
 def normalise_chain(chain_raw: str) -> ChainTone:
@@ -314,11 +318,20 @@ def compose_allocation(
 
     weights = _assign_weights(len(selected), risk_budget)
     positions: list[AllocationPosition] = []
+    from src.agent.protocol_urls import pool_protocol_url
     for rank_idx, ((p, s, d, e, c, risk), weight) in enumerate(zip(selected, weights), start=1):
         sent = weighted_sentinel(s, d, e, c)
         chain = normalise_chain(p.chain)
         fit = bucket_fit(sent, p.apy)
         flags = derive_flags(p, sent)
+        url = pool_protocol_url(
+            chain=p.chain,
+            project=p.project,
+            pool_address=p.pool_address,
+            underlying_tokens=list(p.underlying_tokens) if p.underlying_tokens else None,
+            pool_symbol=p.symbol,
+            project_url=p.project_url,
+        )
         positions.append(
             AllocationPosition(
                 rank=rank_idx,
@@ -338,6 +351,9 @@ def compose_allocation(
                 exit=e,
                 confidence=c,
                 flags=flags,
+                protocol_url=url,
+                pool_id=p.pool_id,
+                pool_address=p.pool_address,
             )
         )
     return positions
@@ -465,6 +481,8 @@ def execution_steps_from_positions(
                 gas=f"~${gas_usd:,.2f}",
                 step_id=f"alloc_step_{p.rank}",
                 protocol=p.protocol,
+                protocol_url=getattr(p, "protocol_url", None),
+                exec_status="link_only",
             )
         )
     return [s.model_dump() for s in steps]

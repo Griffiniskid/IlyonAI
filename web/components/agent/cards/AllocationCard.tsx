@@ -1,7 +1,7 @@
 "use client";
 
 import type { AllocationPayload } from "@/types/agent";
-import { ArrowRight, BadgeCheck, Layers3, Network, Rocket, ShieldCheck, Sparkles, TrendingUp } from "lucide-react";
+import { AlertTriangle, ArrowRight, BadgeCheck, ExternalLink, Layers3, Network, ShieldCheck, Sparkles, TrendingUp } from "lucide-react";
 
 interface Props {
   payload: AllocationPayload;
@@ -30,13 +30,13 @@ function StatTile({ label, value, sub }: { label: string; value: string; sub?: s
   );
 }
 
-function dispatchExecutePosition(position: AllocationPayload["positions"][0]) {
-  if (typeof window === "undefined") return;
-  const ref = `${position.protocol} ${position.asset}`.trim();
-  const usd = String(position.usd || "").replace(/[^0-9.]/g, "");
-  const amount = usd && Number(usd) > 0 ? Number(usd) : 100;
-  const message = `Execute deposit into pool ${ref} with $${amount}`;
-  window.dispatchEvent(new CustomEvent("ilyon:execute-pool", { detail: { pool: ref, message } }));
+function shortHost(url: string | null | undefined): string {
+  if (!url) return "";
+  try {
+    return new URL(url).host.replace(/^www\./, "");
+  } catch {
+    return url.slice(0, 32);
+  }
 }
 
 function PositionRow({ position }: { position: AllocationPayload["positions"][0] }) {
@@ -98,14 +98,22 @@ function PositionRow({ position }: { position: AllocationPayload["positions"][0]
       </div>
 
       <div className="mt-3 flex justify-end">
-        <button
-          type="button"
-          onClick={() => dispatchExecutePosition(position)}
-          data-testid="allocation-row-execute"
-          className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/40 bg-emerald-300/15 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.18em] text-emerald-50 hover:bg-emerald-300/25"
-        >
-          <Rocket className="h-3 w-3" /> Execute this position
-        </button>
+        {position.protocol_url ? (
+          <a
+            href={position.protocol_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="allocation-row-link"
+            className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/40 bg-emerald-300/15 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.18em] text-emerald-50 hover:bg-emerald-300/25"
+            title={shortHost(position.protocol_url)}
+          >
+            <ExternalLink className="h-3 w-3" /> Open on {position.protocol}
+          </a>
+        ) : (
+          <span className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
+            Open the protocol app to deposit
+          </span>
+        )}
       </div>
     </div>
   );
@@ -145,6 +153,16 @@ export function AllocationCard({ payload }: Props) {
         </div>
       </div>
 
+      <div className="relative px-5 pt-4">
+        <div className="flex items-start gap-2 rounded-2xl border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-xs text-amber-100">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span>
+            Direct pool execution is temporarily unavailable. Each position
+            links to the EXACT pool on the protocol app — deposit there.
+            Sentinel scoring, sizing, and strategy stay live.
+          </span>
+        </div>
+      </div>
       <div className="relative p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-black text-white"><Layers3 className="h-4 w-4 text-cyan-200" /> Position Stack</div>

@@ -1,7 +1,7 @@
 "use client";
 
 import type { ExecutionPlanPayload } from "@/types/agent";
-import { AlertTriangle, ArrowRight, CheckCircle2, Clock, LockKeyhole, Play, Route, Wallet, Zap } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Clock, ExternalLink, LockKeyhole, Play, Route, Wallet, Zap } from "lucide-react";
 
 interface Props {
   payload: ExecutionPlanPayload;
@@ -20,6 +20,7 @@ function StatTile({ label, value, sub }: { label: string; value: string; sub?: s
 }
 
 function ExecutionRow({ step }: { step: ExecutionPlanPayload["steps"][0] }) {
+  const isLinkOnly = step.exec_status === "link_only" || (!step.transaction && Boolean(step.protocol_url));
   return (
     <div data-testid="execution-row" className="relative rounded-3xl border border-white/10 bg-slate-950/55 p-4">
       <div className="absolute left-7 top-14 h-[calc(100%-3.5rem)] w-px bg-gradient-to-b from-amber-300/40 to-transparent" />
@@ -43,15 +44,30 @@ function ExecutionRow({ step }: { step: ExecutionPlanPayload["steps"][0] }) {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 rounded-2xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs font-bold text-emerald-100">
-          <LockKeyhole className="h-4 w-4" /> Wallet gated
-        </div>
+        {isLinkOnly && step.protocol_url ? (
+          <a
+            href={step.protocol_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="execution-row-link"
+            className="inline-flex items-center gap-2 rounded-2xl border border-emerald-300/40 bg-emerald-300/15 px-3 py-2 text-xs font-bold text-emerald-100 transition hover:bg-emerald-300/25"
+          >
+            <ExternalLink className="h-4 w-4" /> Open on {step.protocol || "protocol"}
+          </a>
+        ) : (
+          <div className="flex items-center gap-2 rounded-2xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs font-bold text-emerald-100">
+            <LockKeyhole className="h-4 w-4" /> Wallet gated
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 export function ExecutionPlanCard({ payload, onStartSigning, onRerunAllocation }: Props) {
+  const allLinkOnly = (payload.steps || []).length > 0 && (payload.steps || []).every(
+    (s) => s.exec_status === "link_only" || (!s.transaction && Boolean(s.protocol_url))
+  );
   return (
     <div data-testid="execution-plan-card" className="relative overflow-hidden rounded-[28px] border border-amber-300/25 bg-[#1b1205]/95 shadow-[0_28px_100px_rgba(245,158,11,0.16)]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(251,191,36,0.22),transparent_32%),radial-gradient(circle_at_bottom_left,rgba(168,85,247,0.18),transparent_34%)]" />
@@ -95,9 +111,20 @@ export function ExecutionPlanCard({ payload, onStartSigning, onRerunAllocation }
             <CheckCircle2 className="h-4 w-4 text-emerald-300" /> Follow-up steps unlock only after prior receipt confirmation.
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            <button type="button" disabled={!payload.requires_signature} onClick={() => onStartSigning?.(payload)} className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-300 to-orange-300 px-5 py-3 text-sm font-black text-amber-950 shadow-lg shadow-amber-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-40">
-              <Play className="h-4 w-4" /> Start signing
-            </button>
+            {!allLinkOnly && (
+              <button type="button" disabled={!payload.requires_signature} onClick={() => onStartSigning?.(payload)} className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-300 to-orange-300 px-5 py-3 text-sm font-black text-amber-950 shadow-lg shadow-amber-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-40">
+                <Play className="h-4 w-4" /> Start signing
+              </button>
+            )}
+            {allLinkOnly && (
+              <div className="flex items-start gap-2 rounded-2xl border border-emerald-300/30 bg-emerald-300/10 px-4 py-3 text-xs text-emerald-100">
+                <ExternalLink className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-200" />
+                <span>
+                  Direct pool execution is temporarily unavailable. Use each
+                  &quot;Open on …&quot; link above to deposit on the protocol app.
+                </span>
+              </div>
+            )}
             <button type="button" onClick={onRerunAllocation} className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-slate-100 transition hover:bg-white/10">
               <Clock className="h-4 w-4" /> Re-run / rebalance
             </button>

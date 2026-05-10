@@ -60,6 +60,9 @@ class AllocationPosition(_Strict):
     exit: int = Field(ge=0, le=100)
     confidence: int = Field(ge=0, le=100)
     flags: list[str] = Field(default_factory=list)
+    protocol_url: Optional[str] = None
+    pool_id: Optional[str] = None
+    pool_address: Optional[str] = None
 
 
 class AllocationPayload(_CardPayloadBase):
@@ -105,6 +108,8 @@ class ExecutionStep(_Strict):
     pool_id: Optional[str] = None
     transaction: Optional[ExecutionStepTx] = None
     blocker: Optional[str] = None
+    protocol_url: Optional[str] = None
+    exec_status: Optional[str] = None  # "link_only" suppresses sign UI
 
 
 class ExecutionPlanPayload(_CardPayloadBase):

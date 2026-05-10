@@ -21,6 +21,7 @@ import type {
 } from "@/types/agent";
 import { TrendingUp, TrendingDown, ExternalLink } from "lucide-react";
 import { AllocationCard as DemoAllocationCard } from "./AllocationCard";
+import { PoolLinkCard, type PoolLinkPayload } from "./PoolLinkCard";
 import { SentinelMatrixCard as DemoSentinelMatrixCard } from "./SentinelMatrixCard";
 import { ExecutionPlanCard as DemoExecutionPlanCard } from "./ExecutionPlanCard";
 import { DefiOpportunitiesCard } from "./DefiOpportunitiesCard";
@@ -619,6 +620,8 @@ export function CardRenderer({ card, onStartSigning, onRerunAllocation, onSignSt
       return <SentinelEntityCard payload={payload as unknown as SentinelEntityCardPayload} />;
     case "defi_opportunities":
       return <DefiOpportunitiesCard payload={payload as unknown as DefiOpportunitiesPayload} />;
+    case "pool_link":
+      return <PoolLinkCard payload={payload as unknown as PoolLinkPayload} />;
     case "execution_plan_v3":
       return <ExecutionPlanV3Card payload={payload as unknown as ExecutionPlanV3Payload} onSignStep={onSignStep} />;
     case "token":

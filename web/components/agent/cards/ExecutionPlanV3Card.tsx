@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ExecutionPlanV3Payload, ExecutionPlanV3Step, ExecutionPlanV3Blocker } from "@/types/agent";
-import { AlertTriangle, ArrowRight, CheckCircle2, Clock, LockKeyhole, Play, Power, Route, ShieldAlert, Wallet, Zap } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Clock, ExternalLink, LockKeyhole, Play, Power, Route, ShieldAlert, Wallet, Zap } from "lucide-react";
 
 interface Props {
   payload: ExecutionPlanV3Payload;
@@ -46,6 +46,7 @@ function StepRow({
   onSignStep?: (planId: string, stepId: string) => void;
 }) {
   const badge = statusBadge(step.status);
+  const isLinkOnly = step.exec_status === "link_only" || (!step.transaction && Boolean(step.protocol_url));
   const canSign = isFirstReady && step.status === "ready" && (!needsAcknowledge || acknowledged);
   return (
     <div data-testid="execution-plan-v3-step" data-step-id={step.step_id} className="relative rounded-3xl border border-white/10 bg-slate-950/55 p-4">
@@ -93,7 +94,18 @@ function StepRow({
           <span className={`inline-flex items-center gap-1 rounded-2xl border px-3 py-1.5 text-xs font-bold ${badge.className}`}>
             <LockKeyhole className="h-3.5 w-3.5" /> {badge.label}
           </span>
-          {step.status === "ready" && isFirstReady && onSignStep && (
+          {isLinkOnly && step.protocol_url && (
+            <a
+              href={step.protocol_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid={`open-protocol-${step.step_id}`}
+              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-300/40 bg-emerald-300/15 px-4 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-300/25"
+            >
+              <ExternalLink className="h-3.5 w-3.5" /> Open on {step.protocol}
+            </a>
+          )}
+          {!isLinkOnly && step.status === "ready" && isFirstReady && onSignStep && (
             <button
               type="button"
               data-testid={`sign-step-${step.step_id}`}
@@ -131,7 +143,15 @@ export function ExecutionPlanV3Card({ payload, onSignStep }: Props) {
   const lastSignedStepIdRef = useRef<string | null>(null);
   const steps = payload.steps || [];
   const totals = payload.totals || ({} as ExecutionPlanV3Payload["totals"]);
-  const firstReady = steps.find((step) => step.status === "ready");
+  const allLinkOnly = steps.length > 0 && steps.every(
+    (s) => s.exec_status === "link_only" || (!s.transaction && Boolean(s.protocol_url))
+  );
+  const firstReady = steps.find(
+    (step) =>
+      step.status === "ready" &&
+      step.exec_status !== "link_only" &&
+      (step.transaction || !step.protocol_url)
+  );
   const needsAck = payload.requires_double_confirm || payload.risk_gate !== "clear";
   const allDone = steps.length > 0 && steps.every((step) => step.status === "confirmed" || step.status === "skipped");
   const hasFailed = steps.some((step) => step.status === "failed");
@@ -197,6 +217,19 @@ export function ExecutionPlanV3Card({ payload, onSignStep }: Props) {
         </div>
       )}
 
+      {allLinkOnly && (
+        <div className="relative border-b border-white/10 px-5 py-3">
+          <div className="flex items-start gap-2 rounded-2xl border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-xs text-emerald-100">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-200" />
+            <span>
+              Direct pool execution is temporarily unavailable. Use the
+              &quot;Open on …&quot; link on each step to deposit on the protocol
+              app — your wallet will sign there. Swap and bridge prerequisites
+              still sign here.
+            </span>
+          </div>
+        </div>
+      )}
       <div className="relative p-5">
         <div className="mb-3 flex items-center gap-2 text-sm font-black text-white"><Route className="h-4 w-4 text-amber-200" /> Ordered route</div>
         <div className="space-y-3">

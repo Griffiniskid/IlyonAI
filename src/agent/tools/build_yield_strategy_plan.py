@@ -14,6 +14,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import uuid4
 
+from src.agent.protocol_urls import is_pool_link_action, pool_protocol_url
 from src.agent.tools._base import err_envelope, ok_envelope
 from src.defi.execution.adapters.base import YieldBuildRequest
 from src.defi.execution.capabilities import build_default_registry
@@ -76,35 +77,73 @@ async def build_yield_strategy_plan(
     if deposit_amount_dec <= 0:
         return err_envelope("invalid_amount", "deposit_amount must be > 0.")
 
-    registry = build_default_registry()
-    capability = registry.find(chain=deposit_chain, protocol=deposit_protocol, action=deposit_action)
-    if not capability.supported:
-        plan = ExecutionPlanV3.new(
-            title=f"{deposit_protocol} {deposit_action}",
-            summary=f"Direct execution for {deposit_protocol} {deposit_action} on {deposit_chain} is not supported yet.",
-        )
-        from src.defi.execution.models import ExecutionBlocker
-        plan.add_blocker(ExecutionBlocker(
-            code="unsupported_adapter",
-            severity="blocker",
-            title="No verified adapter",
-            detail=capability.reason or "Unsupported adapter combination.",
-            affected_step_ids=[],
-        ))
-        return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
+    # Pool execution temporarily unavailable. When the deposit action is a
+    # pool-link action, emit a synthesized link-only deposit step (with the
+    # exact protocol-pool URL) instead of building a real signable tx. Bridge
+    # / swap prerequisites still emit normally below.
+    pool_link_deposit = is_pool_link_action(action=deposit_action, protocol=deposit_protocol)
 
-    adapter = registry.adapter_for(chain=deposit_chain, protocol=deposit_protocol, action=deposit_action)
-    assert adapter is not None
-    deposit_steps = await adapter.build(YieldBuildRequest(
-        chain=deposit_chain,
-        protocol=deposit_protocol,
-        asset_in=deposit_asset,
-        amount_in=deposit_amount_dec,
-        user_address=user_address,
-        slippage_bps=slippage_bps,
-    ))
-    if not deposit_steps:
-        return err_envelope("adapter_returned_no_steps", "Adapter returned no steps for this deposit.")
+    if pool_link_deposit:
+        deposit_url = pool_protocol_url(
+            chain=deposit_chain,
+            project=deposit_protocol,
+            pool_symbol=deposit_asset,
+        )
+        deposit_steps = [
+            make_step(
+                index=999,  # rebased below
+                action="supply",
+                title=f"Open {deposit_protocol} on {deposit_chain} to deposit {deposit_amount_dec} {deposit_asset}",
+                description=(
+                    "Direct pool execution is temporarily unavailable. "
+                    f"Open the protocol app to finalise the deposit: {deposit_url}"
+                ),
+                chain=deposit_chain,
+                wallet="MetaMask" if (deposit_chain or "").lower() != "solana" else "Phantom",
+                protocol=deposit_protocol,
+                asset_in=deposit_asset,
+                amount_in=str(deposit_amount_dec),
+                slippage_bps=slippage_bps,
+                gas_estimate_usd=0.0,
+                duration_estimate_s=60,
+                risk_warnings=[
+                    f"Final deposit happens on the protocol app: {deposit_url}",
+                ],
+                protocol_url=deposit_url,
+                exec_status="link_only",
+            )
+        ]
+        capability = type("Cap", (), {"adapter_id": "pool_link", "supported": True})()
+    else:
+        registry = build_default_registry()
+        capability = registry.find(chain=deposit_chain, protocol=deposit_protocol, action=deposit_action)
+        if not capability.supported:
+            plan = ExecutionPlanV3.new(
+                title=f"{deposit_protocol} {deposit_action}",
+                summary=f"Direct execution for {deposit_protocol} {deposit_action} on {deposit_chain} is not supported yet.",
+            )
+            from src.defi.execution.models import ExecutionBlocker
+            plan.add_blocker(ExecutionBlocker(
+                code="unsupported_adapter",
+                severity="blocker",
+                title="No verified adapter",
+                detail=capability.reason or "Unsupported adapter combination.",
+                affected_step_ids=[],
+            ))
+            return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
+
+        adapter = registry.adapter_for(chain=deposit_chain, protocol=deposit_protocol, action=deposit_action)
+        assert adapter is not None
+        deposit_steps = await adapter.build(YieldBuildRequest(
+            chain=deposit_chain,
+            protocol=deposit_protocol,
+            asset_in=deposit_asset,
+            amount_in=deposit_amount_dec,
+            user_address=user_address,
+            slippage_bps=slippage_bps,
+        ))
+        if not deposit_steps:
+            return err_envelope("adapter_returned_no_steps", "Adapter returned no steps for this deposit.")
 
     prerequisite_steps: list = []
     next_index = 1

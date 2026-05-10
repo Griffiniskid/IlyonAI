@@ -6,6 +6,7 @@ import logging
 from typing import Any, Sequence
 from uuid import uuid4
 
+from src.agent.protocol_urls import pool_protocol_url
 from src.agent.tools._base import err_envelope, ok_envelope
 from src.allocator.composer import (
     PoolCandidate,
@@ -36,9 +37,15 @@ _CHAIN_SHORT_TO_FULL = {
 
 
 async def _bake_step_transactions(ctx, steps: list[dict], positions: list) -> list[dict]:
-    """For each allocation step, call execute_pool_position to obtain a real
-    unsigned transaction and embed it on the step — in parallel for speed.
+    """DISABLED in no-exec build: pool execution temporarily unavailable.
+
+    The function is preserved for caller compatibility but returns the
+    incoming steps untouched. Frontend renders protocol_url CTAs.
     """
+    return list(steps)
+
+
+async def _bake_step_transactions_DISABLED_LEGACY(ctx, steps: list[dict], positions: list) -> list[dict]:
     from src.agent.tools.execute_pool_position import execute_pool_position
     pos_by_index = {p.rank: p for p in positions}
 
@@ -177,6 +184,9 @@ def _infer_days_live(pool: dict[str, Any]) -> int:
 
 
 def _pool_to_candidate(pool: dict[str, Any]) -> PoolCandidate:
+    underlying = pool.get("underlyingTokens") or pool.get("underlying_tokens") or []
+    if isinstance(underlying, str):
+        underlying = [underlying]
     return PoolCandidate(
         project=str(pool.get("project") or "Unknown"),
         symbol=str(pool.get("symbol") or "?"),
@@ -189,6 +199,10 @@ def _pool_to_candidate(pool: dict[str, Any]) -> PoolCandidate:
         il_risk=str(pool.get("ilRisk", "no") or "no"),
         exposure=_infer_exposure(pool),
         raw_flags=(),
+        pool_id=str(pool.get("pool") or "") or None,
+        pool_address=str(pool.get("pool_address") or pool.get("poolAddress") or "") or None,
+        underlying_tokens=tuple(str(t) for t in underlying if t),
+        project_url=str(pool.get("url") or "") or None,
     )
 from src.api.schemas.agent import (
     AllocationPayload,
@@ -272,7 +286,22 @@ def _build_flags(profile: dict[str, Any]) -> list[str]:
 
 def _build_position(profile: dict[str, Any], *, rank: int, weight: int, usd_amount: float) -> AllocationPosition:
     summary = profile.get("summary") or {}
-    chain = normalise_chain(str(profile.get("chain") or "mainnet"))
+    raw_chain = str(profile.get("chain") or "mainnet")
+    chain = normalise_chain(raw_chain)
+    project_slug = str(profile.get("protocol_slug") or profile.get("project") or profile.get("protocol") or "")
+    underlying = profile.get("underlying_tokens") or profile.get("underlyingTokens") or []
+    if isinstance(underlying, str):
+        underlying = [underlying]
+    pool_id = str(profile.get("pool_id") or profile.get("pool") or "") or None
+    pool_address = str(profile.get("pool_address") or profile.get("poolAddress") or "") or None
+    protocol_url = pool_protocol_url(
+        chain=raw_chain,
+        project=project_slug,
+        pool_address=pool_address,
+        underlying_tokens=underlying,
+        pool_symbol=str(profile.get("symbol") or ""),
+        project_url=profile.get("project_url") or profile.get("url"),
+    )
     return AllocationPosition(
         rank=rank,
         protocol=_protocol_name(profile),
@@ -291,6 +320,9 @@ def _build_position(profile: dict[str, Any], *, rank: int, weight: int, usd_amou
         exit=int(round(summary.get("exit_liquidity_score") or 0)),
         confidence=int(round(summary.get("confidence_score") or 0)),
         flags=_build_flags(profile),
+        protocol_url=protocol_url,
+        pool_id=pool_id,
+        pool_address=pool_address,
     )
 
 
@@ -578,17 +610,16 @@ async def _allocate_from_engine(
         weighted_sentinel=summary["weighted_sentinel"],
     )
     steps = execution_steps_from_positions(positions, usd_amount)
-    # Pre-bake real unsigned transactions into each step so the bulk
-    # 'Start signing' and per-row Execute buttons land on a wallet popup
-    # without an extra agent round-trip.
-    steps = await _bake_step_transactions(ctx, steps, positions)
+    # Pool execution is temporarily unavailable: do NOT bake transactions.
+    # Steps already carry `protocol_url` and `exec_status="link_only"`, so
+    # the frontend renders an "Open on <Protocol>" link instead of Sign.
     execution_plan_payload = ExecutionPlanPayload(
         steps=steps,
         total_gas=total_gas_from_steps(steps),
         slippage_cap="0.5%",
         wallets=wallets_summary_from_steps(steps),
         tx_count=len(steps),
-        requires_signature=True,
+        requires_signature=False,
     )
 
     chain_scope = ", ".join(chains or []) if chains else None
@@ -673,14 +704,15 @@ async def _allocate_from_defillama(
         weighted_sentinel=summary["weighted_sentinel"],
     )
     steps = execution_steps_from_positions(positions, usd_amount)
-    steps = await _bake_step_transactions(ctx, steps, positions)
+    # Pool execution temporarily unavailable. Steps carry protocol_url +
+    # exec_status="link_only"; no baked transactions, no Sign UI.
     execution_plan_payload = ExecutionPlanPayload(
         steps=steps,
         total_gas=total_gas_from_steps(steps),
         slippage_cap="0.5%",
         wallets=wallets_summary_from_steps(steps),
         tx_count=len(steps),
-        requires_signature=True,
+        requires_signature=False,
     )
     chain_scope = ", ".join(chains or []) if chains else None
     envelope = ok_envelope(

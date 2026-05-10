@@ -4,6 +4,7 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from src.agent.protocol_urls import is_pool_link_action, pool_protocol_url
 from src.agent.tools._base import err_envelope, ok_envelope
 from src.defi.execution.adapters.base import YieldBuildRequest
 from src.defi.execution.capabilities import build_default_registry
@@ -47,6 +48,45 @@ async def build_yield_execution_plan(
     amount = _coerce_amount(amount_in)
     if amount <= 0:
         return err_envelope("invalid_amount", "amount_in must be a positive decimal value.")
+
+    # Pool-deposit execution is temporarily disabled. Short-circuit to a
+    # pool_link card so users can deposit on the protocol app instead. Swaps,
+    # bridges, and single-asset LST staking still flow through this builder.
+    if is_pool_link_action(action=action, protocol=protocol):
+        extra_dict = extra or {}
+        url = pool_protocol_url(
+            chain=chain,
+            project=protocol,
+            pool_address=extra_dict.get("pool_address") or extra_dict.get("poolAddress"),
+            underlying_tokens=extra_dict.get("underlying_tokens") or extra_dict.get("underlyingTokens"),
+            pool_symbol=extra_dict.get("pool_symbol") or extra_dict.get("poolSymbol"),
+            project_url=extra_dict.get("project_url"),
+        )
+        card = {
+            "card_type": "pool_link",
+            "title": f"{protocol.title()} · {action.replace('_', ' ').title()}",
+            "protocol": protocol,
+            "chain": chain,
+            "pool_symbol": extra_dict.get("pool_symbol") or asset_in,
+            "pool_id": extra_dict.get("pool_id"),
+            "pool_address": extra_dict.get("pool_address") or extra_dict.get("poolAddress"),
+            "apy_pct": extra_dict.get("apy"),
+            "tvl_usd": extra_dict.get("tvl_usd"),
+            "underlying_tokens": extra_dict.get("underlying_tokens") or extra_dict.get("underlyingTokens"),
+            "sentinel": extra_dict.get("sentinel") or {},
+            "url": url,
+            "amount": str(amount),
+            "asset_in": asset_in,
+            "amount_is_usd": bool(extra_dict.get("amount_is_usd")),
+            "research_thesis": research_thesis,
+            "exec_status": "link_only",
+            "notice": (
+                "Direct pool execution is temporarily unavailable. "
+                "Open this pool on the protocol app to deposit — your wallet "
+                "will sign there. The link points to the exact pool listed."
+            ),
+        }
+        return ok_envelope(data=card, card_type="pool_link", card_payload=card)
 
     registry = build_default_registry()
     capability = registry.find(chain=chain, protocol=protocol, action=action)

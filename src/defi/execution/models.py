@@ -69,6 +69,8 @@ class ExecutionStepV3:
     transaction: UnsignedStepTransaction | None = None
     receipt: dict[str, Any] | None = None
     risk_warnings: list[str] = field(default_factory=list)
+    protocol_url: str | None = None
+    exec_status: str | None = None  # "link_only" suppresses sign UI
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -93,6 +95,8 @@ class ExecutionStepV3:
             "transaction": self.transaction.to_dict() if self.transaction else None,
             "receipt": self.receipt,
             "risk_warnings": list(self.risk_warnings),
+            "protocol_url": self.protocol_url,
+            "exec_status": self.exec_status,
         }
         return data
 

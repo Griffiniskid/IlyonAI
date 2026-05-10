@@ -41,6 +41,9 @@ export interface AllocationPosition {
   exit: number;
   confidence: number;
   flags: string[];
+  protocol_url?: string | null;
+  pool_id?: string | null;
+  pool_address?: string | null;
 }
 
 export interface AllocationPayload {
@@ -75,6 +78,13 @@ export interface ExecutionStep {
   router: string;
   wallet: WalletKind;
   gas: string;
+  step_id?: string | null;
+  protocol?: string | null;
+  pool_id?: string | null;
+  transaction?: Record<string, unknown> | null;
+  blocker?: string | null;
+  protocol_url?: string | null;
+  exec_status?: "link_only" | string | null;
 }
 
 export interface ExecutionPlanPayload {
@@ -308,6 +318,8 @@ export interface ExecutionPlanV3Step {
   transaction?: ExecutionPlanV3StepTransaction | null;
   receipt?: Record<string, unknown> | null;
   risk_warnings: string[];
+  protocol_url?: string | null;
+  exec_status?: "link_only" | string | null;
 }
 
 export interface ExecutionPlanV3Blocker {
