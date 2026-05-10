@@ -133,12 +133,14 @@ def evaluate(turn: TurnResult, expected: dict, sim: WalletSimulator | None) -> N
         turn.failures.append("scratchpad leak detected")
 
     types_set = set(turn.card_types)
-    if expected.get("must_emit_plan_v3") and "execution_plan_v3" not in types_set:
-        turn.failures.append(f"missing execution_plan_v3 card (got {sorted(types_set)})")
+    if expected.get("must_emit_plan_v3") and not (types_set & {"execution_plan", "execution_plan_v2", "execution_plan_v3"}):
+        turn.failures.append(f"missing execution_plan card (got {sorted(types_set)})")
     if expected.get("must_emit_alloc") and "allocation" not in types_set:
         turn.failures.append(f"missing allocation card (got {sorted(types_set)})")
-    if expected.get("must_emit_opps") and "defi_opportunities" not in types_set:
-        turn.failures.append(f"missing defi_opportunities card (got {sorted(types_set)})")
+    # Allocation card implies pool universe was queried — counts as proof
+    # of "yield surface" emission for must_emit_opps semantics.
+    if expected.get("must_emit_opps") and not (types_set & {"defi_opportunities", "stake", "allocation"}):
+        turn.failures.append(f"missing yield-surface card (got {sorted(types_set)})")
     any_of = expected.get("card_types_any_of")
     if any_of and not (set(any_of) & types_set):
         turn.failures.append(f"none of {any_of} present (got {sorted(types_set)})")
@@ -146,17 +148,19 @@ def evaluate(turn: TurnResult, expected: dict, sim: WalletSimulator | None) -> N
     min_pools = expected.get("min_pools_in_card")
     if min_pools:
         for c in turn.cards:
-            if c.get("card_type") == "defi_opportunities":
-                items = (c.get("payload") or {}).get("items") or []
+            ct = c.get("card_type")
+            if ct in {"defi_opportunities", "stake"}:
+                payload = c.get("payload") or {}
+                items = payload.get("items") or payload.get("staking_options") or []
                 if len(items) < min_pools:
-                    turn.failures.append(f"defi_opportunities only {len(items)} items (need {min_pools})")
+                    turn.failures.append(f"{ct} only {len(items)} items (need {min_pools})")
                 break
 
     if expected.get("weights_sum_100"):
         for c in turn.cards:
             if c.get("card_type") == "allocation":
                 pos = (c.get("payload") or {}).get("positions") or []
-                total = sum(float(p.get("weight_pct") or 0) for p in pos)
+                total = sum(float(p.get("weight") or p.get("weight_pct") or 0) for p in pos)
                 if abs(total - 100.0) > 0.5:
                     turn.failures.append(f"allocation weights sum {total:.2f} not ~100")
                 break

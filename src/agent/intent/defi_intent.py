@@ -16,7 +16,9 @@ _CHAIN_ALIASES = {
 }
 
 _DEFI_TERMS = re.compile(
-    r"\b(pool|pools|farm|farms|vault|vaults|yield|apy|apr|staking|stake|lending|strategy|opportunit(?:y|ies))\b",
+    r"\b(pool|pools|farm|farms|farming|vault|vaults|yield|yields|yielding|apy|apr|"
+    r"staking|stake|stakes|lending|lend|lends|strategy|strategies|"
+    r"opportunit(?:y|ies)|liquidit(?:y|ies)|defi|positions?)\b",
     re.IGNORECASE,
 )
 _SEARCH_TERMS = re.compile(r"\b(show|find|search|research|list|what|which)\b", re.IGNORECASE)
@@ -44,7 +46,15 @@ _STABLECOIN_TERMS = re.compile(
     re.IGNORECASE,
 )
 _AMOUNT_ASSET_RE = re.compile(
-    r"\b(?:i have|allocate|deploy|distribute|invest|put)\s+(-?)\$?([\d,]+(?:\.\d+)?)\s*([kKmM])?\s*([A-Za-z]{2,10})?",
+    r"\b(?:i have|allocate|deploy|distribute|invest|put|with|of|using|totaling|"
+    r"split\s+across\s+\d+\s+pools?,?|across\s+\d+\s+pools?,?)"
+    r"\s+(-?)\$([\d,]+(?:\.\d+)?)\s*([kKmM])?\s*([A-Za-z]{2,10})?",
+    re.IGNORECASE,
+)
+# Bare $X amount fallback — "$1500 USDC", "$50 million" — captured when context
+# words above didn't match.
+_BARE_AMOUNT_USD_RE = re.compile(
+    r"\$\s*([\d,]+(?:\.\d+)?)\s*(million|billion|[kKmM])?\b",
     re.IGNORECASE,
 )
 
@@ -192,25 +202,42 @@ def _parse_apy(text: str) -> tuple[float | None, str | None, float | None, float
 
 def _parse_amount_and_asset(text: str) -> tuple[float | None, str | None]:
     match = _AMOUNT_ASSET_RE.search(text)
-    if not match:
+    if match:
+        sign = match.group(1) or ""
+        raw = match.group(2).replace(",", "")
+        try:
+            amount = float(raw)
+        except ValueError:
+            return None, None
+        if sign == "-":
+            amount = -amount
+        suffix = (match.group(3) or "").lower()
+        if suffix == "k":
+            amount *= 1_000
+        elif suffix == "m":
+            amount *= 1_000_000
+        asset = (match.group(4) or "").upper() or None
+        if asset and asset.lower() in _CHAIN_ALIASES:
+            asset = None
+        return amount, asset
+    # Bare "$X" / "$50 million" fallback — only fires when no anchored verb was
+    # found. Lets "Build me a strategy with $1500 USDC" / "I have $50 million
+    # USDC" surface an amount even when the verb pattern misses.
+    bare = _BARE_AMOUNT_USD_RE.search(text)
+    if not bare:
         return None, None
-    sign = match.group(1) or ""
-    raw = match.group(2).replace(",", "")
     try:
-        amount = float(raw)
+        amount = float(bare.group(1).replace(",", ""))
     except ValueError:
         return None, None
-    if sign == "-":
-        amount = -amount
-    suffix = (match.group(3) or "").lower()
+    suffix = (bare.group(2) or "").lower()
     if suffix == "k":
         amount *= 1_000
-    elif suffix == "m":
+    elif suffix in {"m", "million"}:
         amount *= 1_000_000
-    asset = (match.group(4) or "").upper() or None
-    if asset and asset.lower() in _CHAIN_ALIASES:
-        asset = None
-    return amount, asset
+    elif suffix == "billion":
+        amount *= 1_000_000_000
+    return amount, None
 
 
 def _risk_budget_for(risk_levels: list[str], text: str) -> str:
