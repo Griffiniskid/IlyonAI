@@ -117,6 +117,36 @@ class WalletSimulator:
         self._evm_clients[chain_id] = w3
         return w3
 
+    def sanity_check_amount(self, step: dict[str, Any], *, expected_usd: float | None = None) -> str | None:
+        """Cross-check step.amount_in against expected USD value to catch
+        unit-of-measure bugs (e.g., 100 WSOL planned when user said $100).
+
+        Returns a human-readable warning string or None when amount is sane.
+        """
+        if expected_usd is None or expected_usd <= 0:
+            return None
+        try:
+            amt = float(step.get("amount_in") or 0)
+        except (TypeError, ValueError):
+            return None
+        asset = (step.get("asset_in") or "").upper()
+        # Approximate USD value of the planned step
+        TOKEN_USD = {
+            "SOL": 90.0, "WSOL": 90.0, "ETH": 2300.0, "WETH": 2300.0,
+            "BNB": 640.0, "BTC": 80000.0, "WBTC": 80000.0, "AVAX": 18.0,
+            "MATIC": 0.13, "ARB": 0.13, "OP": 0.15,
+        }
+        unit_usd = TOKEN_USD.get(asset, 1.0)  # stables default to 1.0
+        planned_usd = amt * unit_usd
+        if planned_usd <= 0:
+            return None
+        ratio = planned_usd / expected_usd
+        if ratio > 50.0:
+            return f"Amount sanity FAIL: {amt} {asset} = ~${planned_usd:,.0f}, but user asked for ~${expected_usd:,.0f} ({ratio:.0f}× over)."
+        if ratio < 0.02:
+            return f"Amount sanity FAIL: {amt} {asset} = ~${planned_usd:,.2f}, but user asked for ~${expected_usd:,.0f} ({ratio:.3f}× under)."
+        return None
+
     def simulate_step(self, step: dict[str, Any]) -> StepSimResult:
         tx = step.get("transaction") or {}
         kind = (tx.get("chain_kind") or "").lower()
