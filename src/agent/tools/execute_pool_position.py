@@ -340,19 +340,30 @@ async def execute_pool_position(
     if chain.lower() in {"solana", "sol"}:
         # Solana yield-builder accepts an optional `lpMint` to skip the
         # prep-swap and route a single one-tx deposit into the LP token.
-        # Only attach it when we have a real base58 Solana mint —
-        # DefiLlama sometimes returns ETH-style hex strings in
-        # `underlyingTokens` for cross-chain mirrors, which would 400 the
-        # sidecar with `Invalid Solana public key`. When unsure, drop the
-        # field and let the adapter fall through to its prep-swap path.
-        candidates = []
-        if meta.get("pool_address") or meta.get("poolAddress"):
-            candidates.append(meta.get("pool_address") or meta.get("poolAddress"))
-        for tok in (meta.get("underlyingTokens") or []):
-            candidates.append(tok)
-        valid = next((c for c in candidates if _is_solana_pubkey(c)), None)
-        if valid:
-            extra["lpMint"] = valid
+        # Only attach it when we have a real base58 Solana mint AND the
+        # protocol is one whose LP is actually a fungible Jupiter-routable
+        # mint (Sanctum LSTs, Marinade mSOL, etc.). For Raydium AMM v4 /
+        # Orca AMM, underlyingTokens are pair tokens (e.g. AURA), not the
+        # LP mint — passing them as lpMint causes Jupiter to 400 because
+        # the meme token isn't on Jupiter's tradable list. Always fall
+        # through to the prep-swap path for AMM-style pools.
+        AMM_PROTOS_NO_LPMINT = {
+            "raydium", "raydium-amm", "raydium-amm-v3", "raydium-clmm", "raydium-cp",
+            "orca", "orca-dex", "orca-whirlpools", "orca-clmm",
+            "meteora", "meteora-dlmm", "meteora-amm", "meteora-vault",
+            "lifinity", "lifinity-v2",
+            "kamino-liquidity", "blackhole-clmm", "supernova-cl",
+            "shadow-exchange-clmm", "steer-protocol", "gmtrade",
+        }
+        if protocol.lower() not in AMM_PROTOS_NO_LPMINT:
+            candidates = []
+            if meta.get("pool_address") or meta.get("poolAddress"):
+                candidates.append(meta.get("pool_address") or meta.get("poolAddress"))
+            for tok in (meta.get("underlyingTokens") or []):
+                candidates.append(tok)
+            valid = next((c for c in candidates if _is_solana_pubkey(c)), None)
+            if valid:
+                extra["lpMint"] = valid
 
     return await build_yield_execution_plan(
         ctx,
