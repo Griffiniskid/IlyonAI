@@ -42,13 +42,25 @@ class SolanaYieldBuilderAdapter:
         "orca", "orca-dex", "orca-whirlpools", "orca-clmm",
         "meteora", "meteora-dlmm", "meteora-vault", "meteora-amm",
         "raydium", "raydium-amm", "raydium-clmm", "raydium-amm-v3", "raydium-cp",
-        "marinade", "marinade-finance", "marinade-native",
+        "marinade", "marinade-finance", "marinade-native", "marinade-liquid-staking",
         "jito", "jito-liquid-staking",
         "sanctum", "sanctum-infinity", "sanctum-liquid-staking",
-        "drift", "drift-perps", "drift-spot",
+        "drift", "drift-perps", "drift-spot", "drift-staked-sol",
         "lulo", "lulo-finance",
         "save", "save-finance",
         "lifinity", "lifinity-v2",
+        # Long-tail Solana DEX/yield protocols — routed through the sidecar's
+        # generic Jupiter LP/swap path. The sidecar will emit a Jupiter swap
+        # quote → LP-mint deposit when the protocol module isn't pre-wired.
+        "gmtrade", "phoenix", "cropper", "crema", "goosefx", "aldrin", "serum",
+        "fluxbeam", "dexlab", "stepn", "openbook", "openbook-v2", "invariant",
+        "symmetry", "symmetry-baskets", "marginfi", "marginfi-lst",
+        "jupiter", "jupiter-lend", "jupiter-staked-sol",
+        "hastra", "onre", "bybit-staked-sol", "binance-staked-sol",
+        "doublezero-staked-sol", "phantom-sol", "helius-staked-sol",
+        "dfdv-staked-sol", "the-vault-liquid-staking", "hylo-lsts",
+        "blackhole-clmm", "supernova-cl", "shadow-exchange-clmm",
+        "steer-protocol", "zeebu",
     })
     actions: frozenset[str] = frozenset({
         "supply", "deposit", "stake", "deposit_lp",

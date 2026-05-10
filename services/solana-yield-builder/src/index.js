@@ -67,6 +67,7 @@ registerAdapter("raydium-cp", raydium);
 // the Raydium adapter's prep-swap path so the user still gets a signable
 // Jupiter route into one of the underlying assets.
 registerAdapter("drift", raydium);
+registerAdapter("drift-staked-sol", raydium);
 registerAdapter("lulo", raydium);
 registerAdapter("lulo-finance", raydium);
 registerAdapter("save", raydium);
@@ -74,6 +75,43 @@ registerAdapter("save-finance", raydium);
 registerAdapter("lifinity", raydium);
 registerAdapter("lifinity-v2", raydium);
 registerAdapter("solend", raydium);
+// Long-tail Solana DEX/yield protocols routed through the Raydium prep-swap
+// fallback. The user gets a signable Jupiter route into the pool's quote
+// asset; final LP entry must be done on the protocol's UI for those without
+// a dedicated SDK module.
+registerAdapter("gmtrade", raydium);
+registerAdapter("phoenix", raydium);
+registerAdapter("cropper", raydium);
+registerAdapter("crema", raydium);
+registerAdapter("goosefx", raydium);
+registerAdapter("aldrin", raydium);
+registerAdapter("serum", raydium);
+registerAdapter("fluxbeam", raydium);
+registerAdapter("dexlab", raydium);
+registerAdapter("openbook", raydium);
+registerAdapter("openbook-v2", raydium);
+registerAdapter("invariant", raydium);
+registerAdapter("symmetry", raydium);
+registerAdapter("symmetry-baskets", raydium);
+registerAdapter("marginfi", raydium);
+registerAdapter("marginfi-lst", raydium);
+registerAdapter("hastra", raydium);
+registerAdapter("onre", raydium);
+registerAdapter("bybit-staked-sol", raydium);
+registerAdapter("binance-staked-sol", raydium);
+registerAdapter("doublezero-staked-sol", raydium);
+registerAdapter("phantom-sol", raydium);
+registerAdapter("helius-staked-sol", raydium);
+registerAdapter("dfdv-staked-sol", raydium);
+registerAdapter("the-vault-liquid-staking", raydium);
+registerAdapter("hylo-lsts", raydium);
+registerAdapter("blackhole-clmm", raydium);
+registerAdapter("supernova-cl", raydium);
+registerAdapter("shadow-exchange-clmm", raydium);
+registerAdapter("steer-protocol", raydium);
+registerAdapter("zeebu", raydium);
+registerAdapter("jupiter-lend", raydium);
+registerAdapter("jupiter-staked-sol", raydium);
 
 function resolveAdapter(name) {
   if (!name) return null;
