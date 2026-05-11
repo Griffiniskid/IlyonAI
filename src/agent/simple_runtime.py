@@ -4456,23 +4456,57 @@ async def run_ephemeral_turn(
             # whichever LP card type was last shown.
             prior_protocol = (payload.get("protocol") or "").lower()
             prior_chain = (payload.get("chain") or "").lower()
+            # execution_plan_v3 carries the protocol/chain on each step,
+            # not at the top level. Pull from the first step when needed.
+            if t == "execution_plan_v3":
+                _steps = payload.get("steps") or []
+                if _steps and not prior_protocol:
+                    prior_protocol = str(_steps[0].get("protocol") or "").lower()
+                if _steps and not prior_chain:
+                    prior_chain = str(_steps[0].get("chain") or "").lower()
             prior_pool_symbol = (
                 payload.get("pool_symbol")
                 or (payload.get("pair") or {}).get("token0", {}).get("symbol", "") + "-" + (payload.get("pair") or {}).get("token1", {}).get("symbol", "")
                 or ""
             ).strip("-")
-            prior_amount = float(
-                payload.get("amount")
-                or payload.get("input_amount_usd")
-                or (payload.get("steps", [{}])[0].get("amount_in") if t == "execution_plan_v3" else 0)
-                or 0
-            )
+            # Prior amount: pool_link / pool_deposit_v3 carry a human-readable
+            # USD; execution_plan_v3 stores atomic units on steps. Parse the
+            # plan summary ("Supply 50 USDC via aave-v3 on ethereum") to
+            # recover the human amount instead of using raw atoms which are
+            # giant numbers that break downstream validation.
+            prior_amount = 0.0
+            if payload.get("amount") is not None:
+                try:
+                    prior_amount = float(payload.get("amount"))
+                except (TypeError, ValueError):
+                    pass
+            if prior_amount == 0.0 and payload.get("input_amount_usd") is not None:
+                try:
+                    prior_amount = float(payload.get("input_amount_usd"))
+                except (TypeError, ValueError):
+                    pass
+            if prior_amount == 0.0 and t == "execution_plan_v3":
+                _summary = str(payload.get("summary") or payload.get("title") or "")
+                _m = re.search(r"\b(?:Supply|Deposit|Stake|Add)\s+\$?([\d,]+(?:\.\d+)?)\b", _summary, re.IGNORECASE)
+                if _m:
+                    try:
+                        prior_amount = float(_m.group(1).replace(",", ""))
+                    except (TypeError, ValueError):
+                        pass
+            if prior_amount == 0.0:
+                prior_amount = 100.0  # safe USD default; user can refine
             prior_asset_in = (
                 payload.get("asset_in")
                 or (payload.get("input_token") or {}).get("symbol")
                 or (payload.get("steps", [{}])[0].get("asset_in") if t == "execution_plan_v3" else None)
                 or "USDC"
             )
+            if t == "execution_plan_v3":
+                # Parse asset from summary if step asset_in missing.
+                _summary2 = str(payload.get("summary") or payload.get("title") or "")
+                _ma = re.search(r"\b(?:Supply|Deposit|Stake|Add)\s+\$?[\d,]+(?:\.\d+)?\s+([A-Z]{2,10})\b", _summary2)
+                if _ma and prior_asset_in in {"USDC", "", None}:
+                    prior_asset_in = _ma.group(1).upper()
 
             m_amt = _LP_AMOUNT_DELTA_RE.search(message.strip())
             m_chain = _LP_CHAIN_SWITCH_RE.search(message.strip())
