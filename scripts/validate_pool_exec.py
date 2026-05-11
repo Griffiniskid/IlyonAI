@@ -653,17 +653,22 @@ def build_corpus() -> list[Convo]:
     ]))
     corpus.append(Convo("enso-multi-aave-yearn-switch", "evm", [
         Turn("Supply 100 USDC to Aave V3 on Ethereum",
-             expect_card_types={"execution_plan_v3"}),
+             expect_card_types={"execution_plan_v3"},
+             expect_text_substrings=["aave-v3"]),
         Turn("Actually use Yearn instead",
-             expect_card_types={"execution_plan_v3"}),
+             expect_card_types={"execution_plan_v3"},
+             expect_text_substrings=["yearn"]),
     ]))
     corpus.append(Convo("enso-multi-chain-curve", "evm", [
         Turn("Add liquidity to Curve DAI-USDC on Ethereum $50",
-             expect_card_types={"execution_plan_v3"}),
+             expect_card_types={"execution_plan_v3"},
+             expect_text_substrings=["ethereum"]),
         Turn("Try Polygon instead",
-             expect_card_types={"execution_plan_v3"}),
+             expect_card_types={"execution_plan_v3"},
+             expect_text_substrings=["polygon"]),
         Turn("And Arbitrum?",
-             expect_card_types={"execution_plan_v3"}),
+             expect_card_types={"execution_plan_v3"},
+             expect_text_substrings=["arbitrum"]),
     ]))
 
     return corpus
