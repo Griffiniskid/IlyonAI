@@ -472,6 +472,20 @@ STABLE_LP_EXEC_PROTOCOLS = frozenset({
     "curve", "curve-dex", "curve-finance", "curve-stable",
 })
 
+# V2 LP protocols where dual-token addLiquidity executes natively. Requires
+# the user to provide BOTH sides (parser captures "X TOKEN_A and Y TOKEN_B").
+# Single-sided V2 zap (swap + add) is a follow-up phase.
+V2_LP_EXEC_PROTOCOLS = frozenset({
+    "uniswap-v2", "uniswap", "univ2", "uniswap2",
+    "sushiswap", "sushi", "sushiswap-v2",
+    "pancakeswap-v2", "pancakeswap", "pancake-v2", "pancake", "pancakeswap-amm",
+    "quickswap",
+    "camelot",
+    "velodrome-v1", "velodrome",
+    "baseswap",
+    "trader-joe-v1", "trader-joe", "traderjoe",
+})
+
 # Concentrated-liquidity protocols where Enso silently routes to aUSDC or
 # fails — always redirect to the protocol app until Phase 4 range UI ships.
 V3_PROTOCOLS = frozenset({
@@ -538,6 +552,14 @@ def is_pool_link_action(*, action: str | None, protocol: str | None, chain: str 
 
     # Curve / Balancer stable single-sided executes natively (Phase 6 adapter).
     if a in {"deposit_lp", "provide_liquidity", "add_liquidity"} and p in STABLE_LP_EXEC_PROTOCOLS:
+        return False
+
+    # V2 dual-token addLiquidity executes natively (Phase 7 baseline). Note: the
+    # adapter requires BOTH amounts in extra; runtime supplies them when the
+    # parser matches the "X TOKEN_A and Y TOKEN_B" phrasing. If only one amount
+    # is present, build_yield_execution_plan emits a structured blocker rather
+    # than a pool_link redirect, which keeps the matrix coverage explicit.
+    if a in {"deposit_lp", "provide_liquidity", "add_liquidity"} and p in V2_LP_EXEC_PROTOCOLS:
         return False
 
     # Generic deposit_lp / add_liquidity on EVM — redirect until Phase 2 V2 zap.

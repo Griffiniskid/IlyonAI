@@ -269,6 +269,7 @@ async def execute_pool_position(
     slippage_bps: int = 50,
     research_thesis: str | None = None,
     amount_is_usd: bool = False,
+    extra: dict[str, Any] | None = None,
 ):
     """One-shot pool deposit. `pool` may be a DefiLlama pool UUID or a
     'protocol pair' string like 'raydium-amm SPACEX-WSOL'.
@@ -407,12 +408,17 @@ async def execute_pool_position(
     is_lp = "-" in pool_symbol or "/" in pool_symbol
     action = "deposit_lp" if is_lp else "supply"
 
-    extra: dict[str, Any] = {
+    extra_out: dict[str, Any] = {
         "pool_id": meta.get("pool"),
         "pool_symbol": pool_symbol,
     }
     if meta.get("underlyingTokens"):
-        extra["underlying_tokens"] = meta.get("underlyingTokens")
+        extra_out["underlying_tokens"] = meta.get("underlyingTokens")
+    # Caller-supplied extra (e.g. dual-token V2 amounts from the parser) wins
+    # over the meta-derived defaults so adapters can rely on it.
+    if extra:
+        extra_out.update(extra)
+    extra = extra_out
     if chain.lower() in {"solana", "sol"}:
         # Solana yield-builder accepts an optional `lpMint` to skip the
         # prep-swap and route a single one-tx deposit into the LP token.

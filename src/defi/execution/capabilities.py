@@ -59,6 +59,7 @@ def build_default_registry() -> AdapterRegistry:
     from src.defi.execution.adapters.erc4626 import ERC4626VaultAdapter
     from src.defi.execution.adapters.enso_shortcut import EnsoShortcutAdapter
     from src.defi.execution.adapters.solana_yield_builder import SolanaYieldBuilderAdapter
+    from src.defi.execution.adapters.uniswap_v2 import UniswapV2DualTokenAdapter
     from src.defi.execution.adapters.wallet_assistant import WalletAssistantAdapter
 
     return AdapterRegistry(
@@ -66,6 +67,7 @@ def build_default_registry() -> AdapterRegistry:
             AaveV3SupplyAdapter(),
             CompoundV3SupplyAdapter(),
             CurveSingleSidedAdapter(),
+            UniswapV2DualTokenAdapter(),
             ERC4626VaultAdapter(),
             EnsoShortcutAdapter(),
             SolanaYieldBuilderAdapter(),

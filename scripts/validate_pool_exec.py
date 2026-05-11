@@ -345,9 +345,23 @@ def build_corpus() -> list[Convo]:
         Turn("Deposit 100 USDC into Yearn USDC vault on Ethereum",
              expect_card_types={"pool_link"}),
     ]))
-    corpus.append(Convo("evm-univ2-deposit", "evm", [
+    # Single-amount V2 → still pool_link (dual-token adapter needs both legs).
+    corpus.append(Convo("evm-univ2-single-amount", "evm", [
         Turn("Add liquidity to Uniswap V2 USDC-WETH on Ethereum with $100",
-             expect_card_types={"pool_link"}),
+             expect_card_types={"execution_plan_v3"}),  # blocker plan, not pool_link
+    ]))
+    # Dual-token V2 — executes natively via UniswapV2DualTokenAdapter.
+    corpus.append(Convo("evm-univ2-dual-token", "evm", [
+        Turn("Add liquidity to Uniswap V2 USDC-WETH on Ethereum with 100 USDC and 0.05 WETH",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("evm-sushiswap-dual-token", "evm", [
+        Turn("Add liquidity to SushiSwap USDC-WETH on Ethereum with 50 USDC and 0.025 WETH",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("evm-pancakeswap-v2-dual-token", "evm", [
+        Turn("Add liquidity to PancakeSwap V2 USDC-WBNB on BSC with 50 USDC and 0.1 WBNB",
+             expect_card_types={"execution_plan_v3"}),
     ]))
 
     # ==================================================================

@@ -1773,6 +1773,11 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     and the inverted 'Deposit $100 into PancakeSwap V3 USDT-BNB on BSC' form,
     routing to execute_pool_position with a "protocol pair" pool ref so the
     pool resolver + pool_link gate fire correctly.
+
+    Also detects the V2 dual-token form 'with 100 USDC and 0.05 WETH' and
+    forwards both legs via extra={token_a, amount_a, token_b, amount_b} so
+    the UniswapV2DualTokenAdapter builds a 3-step approve/approve/addLiquidity
+    plan instead of falling through to pool_link.
     """
     text = message.strip()
     m = _ADD_LIQUIDITY_RE.search(text) or _ADD_LIQUIDITY_INV_RE.search(text)
@@ -1805,9 +1810,45 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
         return None
     if amount <= 0:
         return None
+
+    # V2 dual-token capture: 'with X TOKEN_A and Y TOKEN_B'. Optional and only
+    # used when the first amount was native (not USD-denominated). Two halves of
+    # a single regex so we can stretch each side independently.
+    extra: dict = {}
+    dual_re = re.compile(
+        r"(?P<amt_a>[\d,]+(?:\.\d+)?)\s+(?P<tok_a>[A-Za-z]{2,10})"
+        r"\s+and\s+"
+        r"(?P<amt_b>[\d,]+(?:\.\d+)?)\s+(?P<tok_b>[A-Za-z]{2,10})",
+        re.IGNORECASE,
+    )
+    dm = dual_re.search(text)
+    if dm:
+        try:
+            amt_a = float(dm.group("amt_a").replace(",", ""))
+            amt_b = float(dm.group("amt_b").replace(",", ""))
+        except (TypeError, ValueError):
+            amt_a = amt_b = 0.0
+        tok_a = dm.group("tok_a").upper()
+        tok_b = dm.group("tok_b").upper()
+        if amt_a > 0 and amt_b > 0 and tok_a and tok_b:
+            extra.update({
+                "token_a": tok_a,
+                "amount_a": amt_a,
+                "token_b": tok_b,
+                "amount_b": amt_b,
+                "dual_token": True,
+            })
+            # When dual-token captures, the `amount` field still passes through
+            # as the USD-equivalent for budgeting / UI, but the adapter reads
+            # the two legs from extra.
+            asset_in = tok_a
+
+    params: dict = {"pool": pool_ref, "amount": amount, "asset_in": asset_in}
+    if extra:
+        params["extra"] = extra
     return (
         "execute_pool_position",
-        {"pool": pool_ref, "amount": amount, "asset_in": asset_in},
+        params,
     )
 
 
