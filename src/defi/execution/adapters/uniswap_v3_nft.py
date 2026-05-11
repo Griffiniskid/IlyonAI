@@ -212,9 +212,73 @@ class UniswapV3NFTAdapter:
             pool.tick, lower_pct, upper_pct, pool.tick_spacing
         )
 
-        # 3) USD price hints (default to 1.0 for stables, fetched price for blue chips).
-        price0 = float(extra.get("price_token0_usd") or 1.0)
-        price1 = float(extra.get("price_token1_usd") or 1.0)
+        # 3) USD price hints — derive from on-chain tick when not supplied.
+        # Default of 1.0/1.0 produced garbage ratios for USDC/WETH (WETH at $1
+        # vs $2300 collapsed amount1 to zero). Use a curated symbol→USD map +
+        # tick-derived inversion so the optimal-ratio math sees realistic
+        # token-relative prices.
+        _USD_HINT = {
+            "USDC": 1.0, "USDT": 1.0, "DAI": 1.0, "BUSD": 1.0, "FDUSD": 1.0,
+            "TUSD": 1.0, "USDC.E": 1.0, "USDBC": 1.0, "USDE": 1.0, "SUSDE": 1.05,
+            "SDAI": 1.04, "USDS": 1.0, "FRAX": 1.0, "LUSD": 1.0,
+            "WETH": 2300.0, "ETH": 2300.0, "STETH": 2300.0, "WSTETH": 2700.0,
+            "RETH": 2550.0, "WEETH": 2400.0, "CBETH": 2400.0,
+            "WBTC": 80000.0, "BTC": 80000.0, "CBBTC": 80000.0,
+            "WBNB": 640.0, "BNB": 640.0, "MATIC": 0.55, "WMATIC": 0.55,
+            "POL": 0.55, "AVAX": 35.0, "WAVAX": 35.0, "ARB": 0.45, "OP": 1.4,
+            "AERO": 0.85, "VELO": 0.07, "CRV": 0.45, "CVX": 2.4,
+            "GMX": 18.0, "PENDLE": 4.0, "AAVE": 200.0, "LDO": 1.0,
+        }
+
+        def _resolve_usd_hint(token_addr: str) -> float | None:
+            meta_pair = (token0_meta, token1_meta)
+            for meta in meta_pair:
+                if not meta:
+                    continue
+                addr_l, _dec = meta
+                if addr_l.lower() == token_addr.lower():
+                    # No symbol stored in meta tuple; use reverse-symbol lookup
+                    # via asset_registry mapping below.
+                    break
+            return None
+
+        async def _symbol_for_addr(addr: str) -> str | None:
+            for chain_key, sym in [(chain_norm, "USDC"), (chain_norm, "USDT"),
+                                   (chain_norm, "DAI"), (chain_norm, "WETH"),
+                                   (chain_norm, "WBTC"), (chain_norm, "STETH"),
+                                   (chain_norm, "WSTETH"), (chain_norm, "RETH"),
+                                   (chain_norm, "WBNB"), (chain_norm, "WMATIC"),
+                                   (chain_norm, "WAVAX"), (chain_norm, "ARB"),
+                                   (chain_norm, "AERO"), (chain_norm, "OP"),
+                                   (chain_norm, "USDC.E"), (chain_norm, "USDBC")]:
+                meta = await resolve_any_evm_token(chain_key, sym)
+                if meta and meta[0].lower() == addr.lower():
+                    return sym
+            return None
+
+        sym0 = await _symbol_for_addr(pool.token0)
+        sym1 = await _symbol_for_addr(pool.token1)
+        # Tick-derived price (token1 per token0 in human units).
+        from src.data.v3_tick_math import price_from_tick
+        tick_price = float(price_from_tick(pool.tick, decimals0, decimals1))
+
+        price0 = extra.get("price_token0_usd")
+        price1 = extra.get("price_token1_usd")
+        if price0 is None and sym0 and sym0.upper() in _USD_HINT:
+            price0 = _USD_HINT[sym0.upper()]
+        if price1 is None and sym1 and sym1.upper() in _USD_HINT:
+            price1 = _USD_HINT[sym1.upper()]
+        # If only one side known, derive the other from tick price.
+        if price0 is None and price1 is not None and tick_price > 0:
+            price0 = float(price1) * tick_price
+        if price1 is None and price0 is not None and tick_price > 0:
+            price1 = float(price0) / tick_price
+        if price0 is None:
+            price0 = 1.0
+        if price1 is None:
+            price1 = 1.0
+        price0 = float(price0)
+        price1 = float(price1)
 
         # 4) Optimal ratio for selected range.
         ratio0, ratio1 = optimal_ratio_for_range(
@@ -347,17 +411,33 @@ class UniswapV3NFTAdapter:
         # --- Approve token0 to NFP manager ---
         # MAX uint256 approve so future deposits skip this step.
         max_uint = (1 << 256) - 1
-        # Estimated amounts the mint will pull (using ratio split * input USD).
-        # In reality the actual amount after swap may be more or less; we pad
-        # by 1% so mint doesn't revert.
-        amount0_desired = max(swap0_units, int(input_units_total * float(ratio0))) if not is_input_token1 else 0
-        amount1_desired = max(swap1_units, int(input_units_total * float(ratio1))) if not is_input_token0 else 0
-        # When input IS one of the pool tokens, that side of the desired is
-        # the remainder after subtracting the swapped amount.
+        # Estimated amounts the mint will pull. Side A is what the user
+        # keeps (input minus what they swap to the other side); side B is
+        # the swap-out estimate (compute from USD value + price).
+        # Input USD total (use price of side that user supplies natively).
+        input_usd_total = Decimal(input_units_total) / (Decimal(10) ** input_dec)
         if is_input_token0:
-            amount0_desired = input_units_total - swap1_units
+            input_usd_total *= Decimal(price0)
+        elif is_input_token1:
+            input_usd_total *= Decimal(price1)
+        else:
+            # Foreign-token input — assume input token is priced like USDC.
+            input_usd_total *= Decimal(1)
+
+        usd_for_token0 = input_usd_total * ratio0
+        usd_for_token1 = input_usd_total * ratio1
+
+        amount0_desired = int(
+            usd_for_token0 * (Decimal(10) ** decimals0) / Decimal(price0 or 1.0)
+        )
+        amount1_desired = int(
+            usd_for_token1 * (Decimal(10) ** decimals1) / Decimal(price1 or 1.0)
+        )
+        # Override side held natively: user kept (input - swap_out_side).
+        if is_input_token0:
+            amount0_desired = max(input_units_total - swap1_units, amount0_desired)
         if is_input_token1:
-            amount1_desired = input_units_total - swap0_units
+            amount1_desired = max(input_units_total - swap0_units, amount1_desired)
 
         # Approve token0 → NFP manager
         steps.append(make_step(
