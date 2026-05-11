@@ -311,8 +311,9 @@ def pool_protocol_url(
 
     if proj in {"curve-dex", "curve", "curve-llamalend"}:
         c_ch = _CURVE_CHAIN.get(ch, "ethereum")
-        # Curated address → slug for top mainnet pools.
-        _CURVE_ADDR_TO_SLUG = {
+        # Curated address → slug for top mainnet pools (only Ethereum has
+        # stable slugs — other chains use the contract-address path).
+        _CURVE_ADDR_TO_SLUG_ETH = {
             "0xbebc44782c7db0a1a60cb6fe97d0b483032ff1c7": "3pool",
             "0xdc24316b9ae028f1497c275eb9192a3ea0f67022": "steth",
             "0xa5407eae9ba41422680e2e00537571bcc53efbfd": "susd",
@@ -320,11 +321,15 @@ def pool_protocol_url(
             "0xed279fdd11ca84beef15af5d39bb4d4bee23f0ca": "lusd",
             "0x06325440d014e39736583c165c2963ba99faf14e": "steth",
         }
-        slug = _CURVE_ADDR_TO_SLUG.get((pa or "").lower())
-        if slug:
-            return f"https://curve.fi/dex/#/{c_ch}/pools/{slug}/deposit"
-        if pa:
-            return f"https://curve.fi/dex/#/{c_ch}/pools/{pa}/deposit"
+        pa_l = (pa or "").lower()
+        if c_ch == "ethereum":
+            slug = _CURVE_ADDR_TO_SLUG_ETH.get(pa_l)
+            if slug:
+                return f"https://curve.fi/dex/#/{c_ch}/pools/{slug}/deposit"
+            if pa:
+                return f"https://curve.fi/dex/#/{c_ch}/pools/{pa}/deposit"
+        # For non-Ethereum, the address may be from a different pool — keep
+        # the user filtered to their pair via search instead of guessing.
         if sym:
             return f"https://curve.fi/#/{c_ch}/pools?search={quote_plus(sym)}"
         return f"https://curve.fi/#/{c_ch}/pools"
@@ -457,8 +462,18 @@ def pool_protocol_url(
         return "https://app.meteora.ag/"
 
     if proj in {"kamino-lend", "kamino-finance", "kamino"}:
+        # Lending reserve deep link if we have a reserve / mint address.
+        if pa:
+            return f"https://app.kamino.finance/lending/reserves/{pa}"
+        # Fall back to pair-search on the lending dashboard.
+        if sym:
+            return f"https://app.kamino.finance/lending?search={quote_plus(sym)}"
         return "https://app.kamino.finance/lending"
     if proj in {"kamino-liquidity", "kamino-vault"}:
+        if pa:
+            return f"https://app.kamino.finance/liquidity/strategies/{pa}"
+        if sym:
+            return f"https://app.kamino.finance/liquidity?search={quote_plus(sym)}"
         return "https://app.kamino.finance/liquidity"
 
     if proj in {"marinade-finance", "marinade-native", "marinade", "marinade-liquid-staking"}:
