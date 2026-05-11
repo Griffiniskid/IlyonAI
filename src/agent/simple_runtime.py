@@ -4722,7 +4722,7 @@ async def run_ephemeral_turn(
             prior_asset_in = (
                 payload.get("asset_in")
                 or (payload.get("input_token") or {}).get("symbol")
-                or (payload.get("steps", [{}])[0].get("asset_in") if t == "execution_plan_v3" else None)
+                or ((payload.get("steps") or [{}])[0].get("asset_in") if t == "execution_plan_v3" else None)
                 or "USDC"
             )
             if t == "execution_plan_v3":
