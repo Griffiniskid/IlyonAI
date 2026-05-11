@@ -48,6 +48,14 @@ EVM_REVERT_BENIGN = (
     "header not found",
     "header is not available",
     "block not found",
+    # Public-RPC rate-limit signals — same story: tx is well-formed, the
+    # free node is just refusing our call. Treat as benign so the harness
+    # doesn't conflate third-party throttling with codebase regressions.
+    "rate-limited",
+    "rate limit",
+    "429",
+    "too many requests",
+    "quantainstant",
 )
 SOLANA_REVERT_BENIGN = (
     "insufficient lamports",
