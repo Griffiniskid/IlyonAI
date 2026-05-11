@@ -252,10 +252,28 @@ def pool_protocol_url(
     # --- EVM lending ---
     if proj in {"aave-v3", "aave-v2", "aave"}:
         market = _AAVE_MARKET.get(ch, "proto_mainnet_v3")
-        if first_under:
+        # When first_under isn't supplied by the caller, fall back to a
+        # canonical (chain, asset symbol) → address registry so we still
+        # deep-link to the reserve overview instead of the markets index.
+        _AAVE_FALLBACK_ASSET: dict[tuple[str, str], str] = {
+            ("ethereum", "USDC"): "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+            ("ethereum", "USDT"): "0xdac17f958d2ee523a2206206994597c13d831ec7",
+            ("ethereum", "DAI"): "0x6b175474e89094c44da98b954eedeac495271d0f",
+            ("ethereum", "WETH"): "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+            ("base", "USDC"): "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+            ("base", "WETH"): "0x4200000000000000000000000000000000000006",
+            ("arbitrum", "USDC"): "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+            ("polygon", "USDC"): "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359",
+            ("optimism", "USDC"): "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+            ("avalanche", "USDC"): "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e",
+        }
+        sym_up = (sym or "").upper().strip()
+        fallback_asset = _AAVE_FALLBACK_ASSET.get((ch, sym_up))
+        target = first_under or fallback_asset
+        if target:
             return (
                 "https://app.aave.com/reserve-overview/"
-                f"?underlyingAsset={first_under.lower()}&marketName={market}"
+                f"?underlyingAsset={target.lower()}&marketName={market}"
             )
         return "https://app.aave.com/markets/"
 
@@ -340,7 +358,15 @@ def pool_protocol_url(
         return "https://pancakeswap.finance/liquidity"
 
     if proj in {"sushiswap", "sushiswap-v3"}:
-        return "https://www.sushi.com/pool"
+        # SushiSwap deep link uses {chainId}:{pairAddress}/add form.
+        _SUSHI_CHAIN_ID = {
+            "ethereum": "1", "polygon": "137", "arbitrum": "42161",
+            "optimism": "10", "base": "8453", "bsc": "56", "avalanche": "43114",
+        }
+        cid = _SUSHI_CHAIN_ID.get(ch, "1")
+        if pa:
+            return f"https://www.sushi.com/pool/{cid}:{pa}/add"
+        return f"https://www.sushi.com/pool?chainId={cid}"
 
     if proj in {"camelot-v3", "camelot"}:
         return "https://app.camelot.exchange/pools"

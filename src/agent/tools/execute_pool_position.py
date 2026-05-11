@@ -263,10 +263,16 @@ async def execute_pool_position(
     if isinstance(chain_from_caller, str) and chain_from_caller.strip():
         chain = chain_from_caller.strip().lower()
     pool_symbol = str(meta.get("symbol", ""))
-    # Parser-provided pair wins — meta.symbol can be the search result's pair
-    # (e.g. "LUSD-3CRV") when user asked for a specific pair ("DAI-USDC").
-    # Extract pair from `pool` arg shape "protocol PAIR".
-    requested_pair_match = re.search(r"\b([A-Z][A-Z0-9.]{1,9}[-/_][A-Z][A-Z0-9.]{1,9})\b", str(pool or "").upper())
+    # Parser-provided pair AND protocol win — meta from DefiLlama search can
+    # return a totally unrelated pool ("uniswap-v3" when user asked for
+    # "pancakeswap-v3", "maple" when user asked for "yearn", "orca" when
+    # user asked for "meteora"). The `pool` arg from _detect_add_liquidity
+    # carries the canonical "<proto> <PAIR>" form.
+    pool_arg_str = str(pool or "")
+    requested_proto_match = re.match(r"\s*([a-z][a-z0-9.\-]{2,30})\s+[A-Z]", pool_arg_str)
+    if requested_proto_match:
+        protocol = requested_proto_match.group(1).lower()
+    requested_pair_match = re.search(r"\b([A-Z][A-Z0-9.]{1,9}[-/_][A-Z][A-Z0-9.]{1,9})\b", pool_arg_str.upper())
     if requested_pair_match:
         pool_symbol = requested_pair_match.group(1).replace("/", "-").replace("_", "-")
     final_asset_in = asset_in or _pick_asset_in(meta)
