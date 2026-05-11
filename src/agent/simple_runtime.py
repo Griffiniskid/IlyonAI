@@ -4450,6 +4450,9 @@ async def run_ephemeral_turn(
                                 if top_chain:
                                     params["chain"] = top_chain
                                 prior_intent_override = ("execute_pool_position", params)
+                                # Block the prior-pools allocation/execution_plan
+                                # builder from running concurrently below.
+                                prior_pools_for_dist = []
                                 break
 
         if prior_intent_override is None and prev_lp:
@@ -4541,6 +4544,7 @@ async def run_ephemeral_turn(
                             "amount_in": new_amount,
                         },
                     )
+                    prior_pools_for_dist = []
                 elif prior_protocol and prior_pool_symbol:
                     pool_ref = f"{prior_protocol} {prior_pool_symbol}".strip()
                     prior_intent_override = (
@@ -4551,6 +4555,7 @@ async def run_ephemeral_turn(
                             "asset_in": new_asset_in,
                         },
                     )
+                    prior_pools_for_dist = []
 
     if prior_pools_for_dist:
         amount_hint_val = _parse_amount_from_text(message)
