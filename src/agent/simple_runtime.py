@@ -1745,6 +1745,8 @@ _ADD_LIQUIDITY_RE = re.compile(
     r"^\s*(?:add|provide|deposit)\s+(?:liquidity\s+)?"
     r"(?:to|in|into|on)\s+"
     rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}"
+    # Optional trailing pool-variant suffix ("DLMM", "CLMM", "AMM", "V3").
+    r"(?:\s+(?:DLMM|CLMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion|V\d|v\d|pool))?"
     r"(?:\s+\d+(?:\.\d+)?\s*%)?"
     r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?"
     rf"\s+{_AMOUNT_USD_OR_TOKEN_RE}\s*$",
@@ -1758,6 +1760,8 @@ _ADD_LIQUIDITY_INV_RE = re.compile(
     r"(?P<native>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10}))"
     r"\s+(?:into|in|to|on)\s+"
     rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}"
+    # Optional trailing pool-variant suffix ("DLMM", "CLMM", "AMM", "V3").
+    r"(?:\s+(?:DLMM|CLMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion|V\d|v\d|pool))?"
     r"(?:\s+\d+(?:\.\d+)?\s*%)?"
     r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?\s*$",
     re.IGNORECASE,

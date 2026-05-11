@@ -327,16 +327,18 @@ def build_corpus() -> list[Convo]:
     # GROUP C — EVM stable / vault / V2 redirect with kind labels
     # ==================================================================
     # Curve native single-sided — ships an execution_plan_v3 (approve + add_liquidity).
-    corpus.append(Convo("evm-curve-3pool-usdc", "evm", [
-        Turn("Add liquidity to Curve 3pool with 100 USDC on Ethereum",
+    # Phrasing matches _ADD_LIQUIDITY_RE: "Add liquidity to PROTOCOL PAIR on CHAIN AMOUNT"
+    # OR _ADD_LIQUIDITY_INV_RE: "Deposit AMOUNT into PROTOCOL PAIR on CHAIN".
+    corpus.append(Convo("evm-curve-dai-usdc", "evm", [
+        Turn("Add liquidity to Curve DAI-USDC on Ethereum $100",
              expect_card_types={"execution_plan_v3"}),
     ]))
-    corpus.append(Convo("evm-curve-3pool-dai", "evm", [
-        Turn("Deposit 50 DAI into Curve 3pool on Ethereum",
+    corpus.append(Convo("evm-curve-dai-usdt", "evm", [
+        Turn("Deposit 50 DAI into Curve DAI-USDT on Ethereum",
              expect_card_types={"execution_plan_v3"}),
     ]))
-    corpus.append(Convo("evm-curve-2pool-arb", "evm", [
-        Turn("Add liquidity to Curve 2pool with 25 USDC on Arbitrum",
+    corpus.append(Convo("evm-curve-usdc-arb", "evm", [
+        Turn("Add liquidity to Curve USDC-USDT on Arbitrum $25",
              expect_card_types={"execution_plan_v3"}),
     ]))
     corpus.append(Convo("evm-yearn-vault", "evm", [
