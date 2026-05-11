@@ -4417,34 +4417,91 @@ async def run_ephemeral_turn(
         # Prior-search → "top one" pick. When the prior turn was a search
         # result (defi_opportunities), recognize "add liquidity with $X to the
         # top one" / "execute with X" and pull the first opportunity item.
+        #
+        # BEFORE falling back to the top of a search list (which can pick a
+        # totally unrelated pool when the search missed the user's named
+        # target — DefiLlama down → search returns Hyperliquid junk), scan
+        # PRIOR USER MESSAGES for an explicit "<protocol> <pair>" mention
+        # like "Raydium AMM SPACEX-WSOL" and prefer that hint.
         if prior_intent_override is None and history_cards:
             top_match = _LP_TOP_ONE_RE.search(message.strip())
             if top_match:
-                for hc in reversed(history_cards):
-                    if (hc.get("card_type") or "").lower() == "defi_opportunities":
-                        items = ((hc.get("payload") or {}).get("items") or [])
-                        if items:
-                            top = items[0]
-                            top_proto = (top.get("project") or top.get("protocol") or "").strip().lower()
-                            top_sym = (top.get("symbol") or "").strip()
-                            top_chain = (top.get("chain") or "").strip().lower()
-                            if top_proto and top_sym:
-                                try:
-                                    amt_val = float(top_match.group("usd").replace(",", ""))
-                                except (TypeError, ValueError):
-                                    amt_val = 50.0
-                                params = {
-                                    "pool": f"{top_proto} {top_sym}".strip(),
-                                    "amount": amt_val,
-                                    "asset_in": "USDC",
-                                }
-                                if top_chain:
-                                    params["chain"] = top_chain
-                                prior_intent_override = ("execute_pool_position", params)
-                                # Block the prior-pools allocation/execution_plan
-                                # builder from running concurrently below.
-                                prior_pools_for_dist = []
-                                break
+                # Try to recover an explicit protocol+pair hint from earlier
+                # user messages in this session.
+                prior_hint_proto: str | None = None
+                prior_hint_pair: str | None = None
+                prior_hint_chain: str | None = None
+                if history:
+                    _HINT_RE = re.compile(
+                        r"\b(?P<proto>raydium-amm|raydium-clmm|raydium|orca-whirlpools|orca-clmm|orca|"
+                        r"meteora-dlmm|meteora|kamino-lend|kamino-liquidity|kamino|"
+                        r"aerodrome-slipstream|aerodrome|velodrome|"
+                        r"uniswap[ -]v[34]|uniswap|pancakeswap[ -]v[23]|pancakeswap|"
+                        r"sushiswap[ -]v[23]?|sushiswap|"
+                        r"curve(?:-dex)?|balancer(?:-v[23])?|yearn(?:-finance)?|morpho(?:-blue)?|"
+                        r"aave[ -]v[23]|aave|compound[ -]v[23]|compound|spark|moonwell|venus|pendle)"
+                        r"(?:[ -](?:v[234]|amm|clmm|dex|slipstream|whirlpools))?\s+"
+                        r"(?P<pair>[A-Za-z][A-Za-z0-9.]{0,9}[-/_][A-Za-z][A-Za-z0-9.]{0,9})",
+                        re.IGNORECASE,
+                    )
+                    _CHAIN_HINT_RE = re.compile(
+                        r"\bon\s+(?P<chain>ethereum|solana|polygon|arbitrum|base|optimism|bsc|bnb|avalanche)\b",
+                        re.IGNORECASE,
+                    )
+                    for prior in reversed(history):
+                        if (prior.get("role") or "").lower() != "user":
+                            continue
+                        prior_text = str(prior.get("content") or "")
+                        hm = _HINT_RE.search(prior_text)
+                        if hm:
+                            prior_hint_proto = re.sub(r"\s+", "-", hm.group("proto").lower())
+                            prior_hint_pair = hm.group("pair").upper().replace("/", "-")
+                            cm = _CHAIN_HINT_RE.search(prior_text)
+                            if cm:
+                                cc = cm.group("chain").lower()
+                                prior_hint_chain = "bsc" if cc in {"bsc", "bnb"} else cc
+                            break
+
+                if prior_hint_proto and prior_hint_pair:
+                    try:
+                        amt_val = float(top_match.group("usd").replace(",", ""))
+                    except (TypeError, ValueError):
+                        amt_val = 50.0
+                    params = {
+                        "pool": f"{prior_hint_proto} {prior_hint_pair}".strip(),
+                        "amount": amt_val,
+                        "asset_in": "USDC",
+                    }
+                    if prior_hint_chain:
+                        params["chain"] = prior_hint_chain
+                    prior_intent_override = ("execute_pool_position", params)
+                    prior_pools_for_dist = []
+                else:
+                    for hc in reversed(history_cards):
+                        if (hc.get("card_type") or "").lower() == "defi_opportunities":
+                            items = ((hc.get("payload") or {}).get("items") or [])
+                            if items:
+                                top = items[0]
+                                top_proto = (top.get("project") or top.get("protocol") or "").strip().lower()
+                                top_sym = (top.get("symbol") or "").strip()
+                                top_chain = (top.get("chain") or "").strip().lower()
+                                if top_proto and top_sym:
+                                    try:
+                                        amt_val = float(top_match.group("usd").replace(",", ""))
+                                    except (TypeError, ValueError):
+                                        amt_val = 50.0
+                                    params = {
+                                        "pool": f"{top_proto} {top_sym}".strip(),
+                                        "amount": amt_val,
+                                        "asset_in": "USDC",
+                                    }
+                                    if top_chain:
+                                        params["chain"] = top_chain
+                                    prior_intent_override = ("execute_pool_position", params)
+                                    # Block the prior-pools allocation/execution_plan
+                                    # builder from running concurrently below.
+                                    prior_pools_for_dist = []
+                                    break
 
         if prior_intent_override is None and prev_lp:
             payload = prev_lp.get("payload") or {}

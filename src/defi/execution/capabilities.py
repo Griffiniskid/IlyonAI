@@ -55,6 +55,7 @@ def build_default_registry() -> AdapterRegistry:
     """
     from src.defi.execution.adapters.aave_v3 import AaveV3SupplyAdapter
     from src.defi.execution.adapters.compound_v3 import CompoundV3SupplyAdapter
+    from src.defi.execution.adapters.curve import CurveSingleSidedAdapter
     from src.defi.execution.adapters.erc4626 import ERC4626VaultAdapter
     from src.defi.execution.adapters.enso_shortcut import EnsoShortcutAdapter
     from src.defi.execution.adapters.solana_yield_builder import SolanaYieldBuilderAdapter
@@ -64,6 +65,7 @@ def build_default_registry() -> AdapterRegistry:
         adapters=[
             AaveV3SupplyAdapter(),
             CompoundV3SupplyAdapter(),
+            CurveSingleSidedAdapter(),
             ERC4626VaultAdapter(),
             EnsoShortcutAdapter(),
             SolanaYieldBuilderAdapter(),

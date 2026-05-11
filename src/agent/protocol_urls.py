@@ -465,6 +465,13 @@ SUPPLY_EXEC_PROTOCOLS = frozenset({
     "compound-v3", "compound-v2", "compound",
 })
 
+# EVM stable LP protocols where single-sided add_liquidity executes natively
+# (Curve / Balancer single-asset join). Bypasses the link-only fallback for
+# action=add_liquidity / deposit_lp / provide_liquidity.
+STABLE_LP_EXEC_PROTOCOLS = frozenset({
+    "curve", "curve-dex", "curve-finance", "curve-stable",
+})
+
 # Concentrated-liquidity protocols where Enso silently routes to aUSDC or
 # fails — always redirect to the protocol app until Phase 4 range UI ships.
 V3_PROTOCOLS = frozenset({
@@ -528,6 +535,10 @@ def is_pool_link_action(*, action: str | None, protocol: str | None, chain: str 
     # V3 always redirects on EVM.
     if a in {"deposit_lp", "provide_liquidity", "add_liquidity"} and p in V3_PROTOCOLS:
         return True
+
+    # Curve / Balancer stable single-sided executes natively (Phase 6 adapter).
+    if a in {"deposit_lp", "provide_liquidity", "add_liquidity"} and p in STABLE_LP_EXEC_PROTOCOLS:
+        return False
 
     # Generic deposit_lp / add_liquidity on EVM — redirect until Phase 2 V2 zap.
     if a in {"deposit_lp", "provide_liquidity", "add_liquidity"}:
