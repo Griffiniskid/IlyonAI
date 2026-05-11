@@ -4378,15 +4378,24 @@ async def run_ephemeral_turn(
     # rebuild the prior intent with the delta instead of routing to search
     # or asking for clarification.
     _LP_AMOUNT_DELTA_RE = re.compile(
-        r"(?:make\s+it|change(?:\s+to)?|set\s+(?:it\s+)?to|how\s+about|what\s+if(?:\s+i\s+(?:use|with))?|with)\s*\$?\s*(?P<usd>[\d,]+(?:\.\d+)?)\s*$",
+        r"(?:make\s+it|change(?:\s+to)?|set\s+(?:it\s+)?to|how\s+about|what\s+if(?:\s+i\s+(?:use|with))?|with|execute\s+with)"
+        r"\s*\$?\s*(?P<usd>[\d,]+(?:\.\d+)?)"
+        r"(?:\s+(?P<token>[A-Za-z]{2,10}))?"
+        r"(?:\s+(?:instead|now|then|please|again))*\s*[\?\.!]?\s*$",
         re.IGNORECASE,
     )
     _LP_CHAIN_SWITCH_RE = re.compile(
-        r"^\s*(?:try|switch\s+to|use|instead\s+on|and|on)\s+(?P<chain>arbitrum|ethereum|base|polygon|optimism|bsc|bnb|avalanche|solana)\b",
+        r"^\s*(?:try|switch\s+to|use|instead\s+on|and|on|how\s+about)\s+(?P<chain>arbitrum|ethereum|base|polygon|optimism|bsc|bnb|avalanche|solana)\b",
         re.IGNORECASE,
     )
     _LP_TOKEN_SWITCH_RE = re.compile(
         r"(?:actually\s+use|use\s+|switch\s+to|with)\s+(?P<token>[A-Za-z]{2,10})\s+(?:instead|not)\b",
+        re.IGNORECASE,
+    )
+    # "Add liquidity with $X to the top one" — prior turn was a search list;
+    # pick the first opportunity from the prior defi_opportunities card.
+    _LP_TOP_ONE_RE = re.compile(
+        r"(?:add\s+liquidity|deposit|put|supply|stake)\s+(?:with\s+)?\$?\s*(?P<usd>[\d,]+(?:\.\d+)?)\s+(?:to|into|in|on)\s+the\s+(?:top|first|best)(?:\s+one)?\b",
         re.IGNORECASE,
     )
 
@@ -4410,7 +4419,37 @@ async def run_ephemeral_turn(
             )
         except Exception:
             pass
-        if prev_lp:
+
+        # Prior-search → "top one" pick. When the prior turn was a search
+        # result (defi_opportunities), recognize "add liquidity with $X to the
+        # top one" / "execute with X" and pull the first opportunity item.
+        if prior_intent_override is None and history_cards:
+            top_match = _LP_TOP_ONE_RE.search(message.strip())
+            if top_match:
+                for hc in reversed(history_cards):
+                    if (hc.get("card_type") or "").lower() == "defi_opportunities":
+                        items = ((hc.get("payload") or {}).get("items") or [])
+                        if items:
+                            top = items[0]
+                            top_proto = (top.get("project") or top.get("protocol") or "").strip().lower()
+                            top_sym = (top.get("symbol") or "").strip()
+                            top_chain = (top.get("chain") or "").strip().lower()
+                            if top_proto and top_sym:
+                                try:
+                                    amt_val = float(top_match.group("usd").replace(",", ""))
+                                except (TypeError, ValueError):
+                                    amt_val = 50.0
+                                params = {
+                                    "pool": f"{top_proto} {top_sym}".strip(),
+                                    "amount": amt_val,
+                                    "asset_in": "USDC",
+                                }
+                                if top_chain:
+                                    params["chain"] = top_chain
+                                prior_intent_override = ("execute_pool_position", params)
+                                break
+
+        if prior_intent_override is None and prev_lp:
             payload = prev_lp.get("payload") or {}
             t = (prev_lp.get("card_type") or "").lower()
             # Pull prior protocol / pair / chain / amount / input token from

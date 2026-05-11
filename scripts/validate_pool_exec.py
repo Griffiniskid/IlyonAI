@@ -212,7 +212,11 @@ def run_turn_checks(turn: Turn, cards: list[dict], text: str, sim: WalletSimulat
 
 
 async def run_convo(session: aiohttp.ClientSession, convo: Convo, sim: WalletSimulator) -> ConvoResult:
-    sess_id = f"validate-pool-{convo.name}-{int(time.time())}"
+    # chat_id column is String(36) — keep session ID well under 36 chars or
+    # persistence silently fails and multi-turn refinement context is lost.
+    import hashlib
+    short_hash = hashlib.sha1(f"{convo.name}-{int(time.time())}".encode()).hexdigest()[:12]
+    sess_id = f"vp-{short_hash}"  # 15 chars, deterministic per run
     result = ConvoResult(name=convo.name, turn_results=[])
     print(f"\n========== {convo.name} ==========")
     for i, turn in enumerate(convo.turns, 1):
