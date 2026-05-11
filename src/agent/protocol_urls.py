@@ -464,7 +464,7 @@ def pool_protocol_url(
         return "https://stake.rocketpool.net/"
     if proj in {"ether.fi-stake", "ether-fi", "etherfi", "ether.fi-liquid"}:
         return "https://app.ether.fi/"
-    if proj in {"frax-ether", "frxeth"}:
+    if proj in {"frax-ether", "frxeth", "frax", "sfrxeth"}:
         return "https://frax.com/frax-ether"
     if proj in {"swell-network", "swell"}:
         return "https://app.swellnetwork.io/stake"
@@ -522,7 +522,7 @@ def pool_protocol_url(
         return "https://app.marinade.finance/"
     if proj in {"jito", "jito-liquid-staking"}:
         return "https://www.jito.network/staking/"
-    if proj in {"sanctum", "sanctum-infinity", "sanctum-liquid-staking"}:
+    if proj in {"sanctum", "sanctum-infinity", "sanctum-liquid-staking", "sanctum-inf"}:
         return "https://app.sanctum.so/"
     if proj in {"drift", "drift-perps", "drift-spot", "drift-staked-sol", "drift-trade"}:
         if sym:
@@ -552,13 +552,13 @@ LST_STAKE_PROTOCOLS = frozenset({
     "lido", "lido-stake",
     "rocket-pool", "rocketpool",
     "ether.fi-stake", "ether-fi", "etherfi", "ether.fi-liquid",
-    "frax-ether", "frxeth",
+    "frax", "frax-ether", "frxeth", "sfrxeth",
     "swell-network", "swell",
     "lista-dao",
     "stader",
     "marinade-finance", "marinade-native", "marinade", "marinade-liquid-staking",
     "jito", "jito-liquid-staking",
-    "sanctum", "sanctum-infinity", "sanctum-liquid-staking",
+    "sanctum", "sanctum-inf", "sanctum-infinity", "sanctum-liquid-staking",
 })
 
 
