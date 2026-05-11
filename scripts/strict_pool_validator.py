@@ -196,12 +196,54 @@ def build_corpus() -> list[Scenario]:
         prompt="Add liquidity to SushiSwap USDC-WETH on Ethereum with 50 USDC and 0.025 WETH",
         wallet="evm",
         require_card_types={"execution_plan_v3"},
+        expected_steps=["approve", "approve", "add_liquidity"],
     ))
     s.append(Scenario(
         name="v2-pancake-usdc-wbnb-bsc",
         prompt="Add liquidity to PancakeSwap V2 USDC-WBNB on BSC with 50 USDC and 0.1 WBNB",
         wallet="evm",
         require_card_types={"execution_plan_v3"},
+        expected_steps=["approve", "approve", "add_liquidity"],
+    ))
+    # Multi-turn refinement chains
+    # Cross-token zap: USDT user input into Curve DAI-USDC (different stable)
+    s.append(Scenario(
+        name="cross-token-curve-usdt",
+        prompt="Deposit 100 USDT into Curve DAI-USDC on Ethereum",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+        require_text=["curve"],
+    ))
+    # WETH supply for variety
+    s.append(Scenario(
+        name="aave-weth-supply",
+        prompt="Supply 0.1 WETH to Aave V3 on Ethereum",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+    ))
+    # 0.30% fee tier V3
+    s.append(Scenario(
+        name="v3-uniswap-030-fee",
+        prompt="Add liquidity to Uniswap V3 USDC/WETH 0.30% on Ethereum with $100",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+        require_range_block=True,
+    ))
+    # 1.00% fee tier V3
+    s.append(Scenario(
+        name="v3-uniswap-100-fee",
+        prompt="Add liquidity to Uniswap V3 USDC/WETH 1% on Ethereum with $100",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+        require_range_block=True,
+    ))
+    # USDT-USDC stable pool V3
+    s.append(Scenario(
+        name="v3-uniswap-usdt-usdc",
+        prompt="Add liquidity to Uniswap V3 USDC/USDT 0.01% on Ethereum with $100",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+        require_range_block=True,
     ))
 
     # ===== Solana =====
@@ -468,12 +510,21 @@ async def run_scenario(session: aiohttp.ClientSession, sc: Scenario) -> list[str
         if forbidden.lower() in text_lc:
             errs.append(f"text contains forbidden '{forbidden}'")
 
-    # 3) range card
+    # 3) range card — either standalone pool_deposit_v3 OR plan.range_block.
     if sc.require_range_block:
         range_cards = [c for c in cards if c.get("card_type") == "pool_deposit_v3"]
-        if not range_cards:
+        # Check execution_plan_v3 cards for embedded range_block payload.
+        plan_cards = [c for c in cards if c.get("card_type") == "execution_plan_v3"]
+        has_embedded_range = False
+        for pc in plan_cards:
+            payload = pc.get("payload") or pc
+            if payload.get("range_block"):
+                has_embedded_range = True
+                errs.extend(assert_range_card_payload(payload["range_block"]))
+                break
+        if not range_cards and not has_embedded_range:
             errs.append("range card (pool_deposit_v3) NOT emitted alongside execution_plan_v3")
-        else:
+        elif range_cards:
             for rc in range_cards:
                 payload = rc.get("payload") or rc
                 errs.extend(assert_range_card_payload(payload))

@@ -242,10 +242,84 @@ async def build_yield_execution_plan(
             },
         ))
 
+    plan_dict = plan.to_dict()
+
+    # V3 EVM: attach a range_block payload so the frontend can render the
+    # interactive range slider above the step list. Restores the slider lost
+    # when V3 NFT native execution replaced the pool_deposit_v3 redirect card.
+    _V3_EVM_PROTOS = {
+        "uniswap-v3", "uniswap-v4", "pancakeswap-v3", "pancake-v3",
+        "aerodrome-slipstream", "aerodrome-cl",
+    }
+    if protocol.lower() in _V3_EVM_PROTOS:
+        try:
+            from src.data.v3_pool_resolver import resolve_v3_pool
+            from src.data.asset_registry import resolve_any_evm_token
+            from src.data.v3_tick_math import price_from_tick
+
+            extra_dict = extra or {}
+            pair_sym = extra_dict.get("pool_symbol") or asset_in or ""
+            fee_bps = int(extra_dict.get("fee_bps") or 500)
+            sides = [p.strip().upper()
+                     for p in pair_sym.replace("/", "-").split("-") if p.strip()]
+            if len(sides) >= 2:
+                meta_a = await resolve_any_evm_token(chain, sides[0])
+                meta_b = await resolve_any_evm_token(chain, sides[1])
+                if meta_a and meta_b:
+                    pool_state = await resolve_v3_pool(
+                        chain=chain, protocol=protocol,
+                        token_a=meta_a[0], token_b=meta_b[0], fee_bps=fee_bps,
+                    )
+                    if pool_state is not None:
+                        human_price = float(price_from_tick(
+                            pool_state.tick, meta_a[1], meta_b[1]
+                        ))
+                        plan_dict["range_block"] = {
+                            "card_subtype": "v3_range",
+                            "chain": chain,
+                            "protocol": protocol,
+                            "pool_address": pool_state.pool_address,
+                            "pair": {
+                                "token0": {"symbol": sides[0],
+                                           "address": pool_state.token0,
+                                           "decimals": meta_a[1]},
+                                "token1": {"symbol": sides[1],
+                                           "address": pool_state.token1,
+                                           "decimals": meta_b[1]},
+                            },
+                            "current": {
+                                "current_price": human_price,
+                                "price_human": f"1 {sides[0]} ≈ {human_price:.6f} {sides[1]}",
+                                "tick": pool_state.tick,
+                                "tick_spacing": pool_state.tick_spacing,
+                                "fee_tier_bps": pool_state.fee_bps,
+                                "sqrt_price_x96": str(pool_state.sqrt_price_x96),
+                                "liquidity": str(pool_state.liquidity),
+                            },
+                            "market": {
+                                "base_apr_pct": 0.0,
+                                "reward_apr_pct": 0.0,
+                                "cdf_30d": [],
+                            },
+                            "initial_range": {
+                                "preset": "balanced",
+                                "lower_pct": -10.0,
+                                "upper_pct": 10.0,
+                            },
+                            "range_presets": [
+                                {"label": "Narrow", "lower_pct": -5.0, "upper_pct": 5.0},
+                                {"label": "Balanced", "lower_pct": -10.0, "upper_pct": 10.0},
+                                {"label": "Wide", "lower_pct": -25.0, "upper_pct": 25.0},
+                                {"label": "Full", "lower_pct": -100.0, "upper_pct": 10000.0},
+                            ],
+                        }
+        except Exception:
+            pass
+
     return ok_envelope(
-        data={"plan": plan.to_dict(), "adapter_id": capability.adapter_id},
+        data={"plan": plan_dict, "adapter_id": capability.adapter_id},
         card_type="execution_plan_v3",
-        card_payload=plan.to_dict(),
+        card_payload=plan_dict,
     )
 
 
