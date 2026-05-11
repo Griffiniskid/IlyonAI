@@ -331,6 +331,23 @@ async def execute_pool_position(
     chain = str(meta.get("chain", "")).lower()
     protocol = str(meta.get("project", "")).lower()
     pool_symbol = str(meta.get("symbol", ""))
+
+    # Dual-token V2 override: when the caller passed extra.dual_token=True the
+    # user has explicitly named a V2/V1 protocol form (uniswap-v2, sushiswap,
+    # pancakeswap-v2, etc.) and provided both legs. Trust the user — force
+    # `protocol` back to their explicit reference so the meta lookup can't
+    # drift to a V3 / CLMM / Slipstream variant of the same family, or to a
+    # totally unrelated catalog entry (e.g. Beefy when DefiLlama returns the
+    # first Beefy vault that happens to mirror the pair).
+    if extra and extra.get("dual_token"):
+        try:
+            user_proto_hint, _ = _split_protocol_pair(str(pool).strip())
+        except Exception:
+            user_proto_hint = ""
+        user_proto_l = (user_proto_hint or "").lower()
+        if user_proto_l:
+            protocol = user_proto_l
+
     final_asset_in = asset_in or _pick_asset_in(meta)
 
     # USD-denominated amount → native units conversion. When the user typed
