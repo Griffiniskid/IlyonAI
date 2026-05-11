@@ -1600,6 +1600,79 @@ def _detect_generic_supply(message: str) -> tuple[str, dict] | None:
     })
 
 
+# --- _detect_add_liquidity (link-only route on no-exec branch) ---
+_PROTOCOL_NAME_RE = (
+    r"(?P<protocol>(?:[A-Za-z]+[\s-]?){1,3}(?:V\d|v\d|amm|amm-v\d|clmm|slipstream|fusion)?)"
+)
+_PAIR_RE = r"(?P<pair>[A-Z][A-Z0-9.]{1,9}[/-][A-Z][A-Z0-9.]{1,9})"
+_AMOUNT_USD_OR_TOKEN_RE = (
+    r"(?:with\s+)?"
+    r"(?:\$\s*(?P<usd>[\d,]+(?:\.\d+)?)|"
+    r"(?P<native>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10}))"
+)
+_ADD_LIQUIDITY_RE = re.compile(
+    r"^\s*(?:add|provide|deposit)\s+(?:liquidity\s+)?"
+    r"(?:to|in|into|on)\s+"
+    rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}"
+    r"(?:\s+(?:DLMM|CLMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion|V\d|v\d|pool))?"
+    r"(?:\s+\d+(?:\.\d+)?\s*%)?"
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?"
+    rf"\s+{_AMOUNT_USD_OR_TOKEN_RE}\s*$",
+    re.IGNORECASE,
+)
+_ADD_LIQUIDITY_INV_RE = re.compile(
+    r"^\s*(?:deposit|add|put|invest)\s+"
+    r"(?:\$\s*(?P<usd>[\d,]+(?:\.\d+)?)|"
+    r"(?P<native>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10}))"
+    r"\s+(?:into|in|to|on)\s+"
+    rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}"
+    r"(?:\s+(?:DLMM|CLMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion|V\d|v\d|pool))?"
+    r"(?:\s+\d+(?:\.\d+)?\s*%)?"
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
+    """Catch 'Add liquidity to PROTO PAIR (on CHAIN)? $AMOUNT' and the
+    inverted 'Deposit $AMOUNT into PROTO PAIR on CHAIN'. Routes to
+    execute_pool_position so the pool_link gate emits the exact pool URL.
+    """
+    text = message.strip()
+    m = _ADD_LIQUIDITY_RE.search(text) or _ADD_LIQUIDITY_INV_RE.search(text)
+    if not m:
+        return None
+    proto_raw = (m.group("protocol") or "").strip().lower()
+    proto = re.sub(r"\s+", "-", proto_raw)
+    pair = (m.group("pair") or "").upper().replace("/", "-")
+    pool_ref = f"{proto} {pair}"
+    usd_str = m.group("usd")
+    native_str = m.group("native")
+    native_tok = (m.group("token") or "").upper()
+    if usd_str:
+        try:
+            amount = float(usd_str.replace(",", ""))
+        except (TypeError, ValueError):
+            return None
+        asset_in = "USDC"
+    elif native_str and native_tok:
+        try:
+            qty = float(native_str.replace(",", ""))
+        except (TypeError, ValueError):
+            return None
+        price = _TOKEN_USD_HINT.get(native_tok, 1.0)
+        amount = qty * price
+        asset_in = native_tok
+    else:
+        return None
+    if amount <= 0:
+        return None
+    return (
+        "execute_pool_position",
+        {"pool": pool_ref, "amount": amount, "asset_in": asset_in},
+    )
+
+
 def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
     """Match prompts like 'supply 100 USDC to Aave V3 on Ethereum' / 'execute Aave USDC supply 100'."""
     if not _AAVE_HINT.search(message):
@@ -2103,7 +2176,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
         return multi_step
-    for detector in (_detect_direct_pool_deposit, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_direct_pool_deposit, _detect_add_liquidity, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected

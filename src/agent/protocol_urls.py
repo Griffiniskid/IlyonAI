@@ -293,6 +293,20 @@ def pool_protocol_url(
 
     if proj in {"curve-dex", "curve", "curve-llamalend"}:
         c_ch = _CURVE_CHAIN.get(ch, "ethereum")
+        # Curated address → slug for top mainnet pools.
+        _CURVE_ADDR_TO_SLUG = {
+            "0xbebc44782c7db0a1a60cb6fe97d0b483032ff1c7": "3pool",
+            "0xdc24316b9ae028f1497c275eb9192a3ea0f67022": "steth",
+            "0xa5407eae9ba41422680e2e00537571bcc53efbfd": "susd",
+            "0xd51a44d3fae010294c616388b506acda1bfaae46": "tricrypto2",
+            "0xed279fdd11ca84beef15af5d39bb4d4bee23f0ca": "lusd",
+            "0x06325440d014e39736583c165c2963ba99faf14e": "steth",
+        }
+        slug = _CURVE_ADDR_TO_SLUG.get((pa or "").lower())
+        if slug:
+            return f"https://curve.fi/dex/#/{c_ch}/pools/{slug}/deposit"
+        if pa:
+            return f"https://curve.fi/dex/#/{c_ch}/pools/{pa}/deposit"
         if sym:
             return f"https://curve.fi/#/{c_ch}/pools?search={quote_plus(sym)}"
         return f"https://curve.fi/#/{c_ch}/pools"

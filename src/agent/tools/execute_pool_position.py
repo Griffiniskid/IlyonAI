@@ -340,10 +340,20 @@ async def execute_pool_position(
     # so they can finalise the deposit there. Direct execution stays enabled
     # for swaps, bridges, and single-asset LST staking (handled elsewhere).
     if is_pool_link_action(action=action, protocol=protocol):
+        pool_addr = meta.get("pool_address") or meta.get("poolAddress")
+        if not pool_addr:
+            # Resolve exact pool address (curated overrides + DexScreener).
+            from src.data.exact_pool_resolver import resolve_exact_pool_address
+            try:
+                pool_addr = await resolve_exact_pool_address(
+                    chain=chain, protocol=protocol, pair_symbol=pool_symbol
+                )
+            except Exception:
+                pool_addr = None
         url = pool_protocol_url(
             chain=chain,
             project=protocol,
-            pool_address=meta.get("pool_address") or meta.get("poolAddress"),
+            pool_address=pool_addr,
             underlying_tokens=meta.get("underlyingTokens") or meta.get("underlying_tokens"),
             pool_symbol=pool_symbol,
             project_url=meta.get("url"),

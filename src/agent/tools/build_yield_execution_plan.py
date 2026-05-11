@@ -54,12 +54,22 @@ async def build_yield_execution_plan(
     # bridges, and single-asset LST staking still flow through this builder.
     if is_pool_link_action(action=action, protocol=protocol):
         extra_dict = extra or {}
+        pool_addr = extra_dict.get("pool_address") or extra_dict.get("poolAddress")
+        pair_sym = extra_dict.get("pool_symbol") or extra_dict.get("poolSymbol")
+        if not pool_addr and pair_sym:
+            from src.data.exact_pool_resolver import resolve_exact_pool_address
+            try:
+                pool_addr = await resolve_exact_pool_address(
+                    chain=chain, protocol=protocol, pair_symbol=pair_sym
+                )
+            except Exception:
+                pool_addr = None
         url = pool_protocol_url(
             chain=chain,
             project=protocol,
-            pool_address=extra_dict.get("pool_address") or extra_dict.get("poolAddress"),
+            pool_address=pool_addr,
             underlying_tokens=extra_dict.get("underlying_tokens") or extra_dict.get("underlyingTokens"),
-            pool_symbol=extra_dict.get("pool_symbol") or extra_dict.get("poolSymbol"),
+            pool_symbol=pair_sym,
             project_url=extra_dict.get("project_url"),
         )
         card = {
