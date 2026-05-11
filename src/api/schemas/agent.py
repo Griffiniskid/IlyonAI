@@ -456,7 +456,7 @@ class AgentCard(_Strict):
 
 CardType = Literal[
     "allocation", "sentinel_matrix", "execution_plan",
-    "swap_quote", "pool", "token", "position", "plan",
+    "swap_quote", "pool", "pool_link", "token", "position", "plan",
     "execution_plan_v2", "execution_plan_v3", "balance", "bridge", "stake", "transfer",
     "market_overview", "pair_list", "lp", "preferences",
     "defi_opportunities",

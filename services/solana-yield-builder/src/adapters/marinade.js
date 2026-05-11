@@ -4,6 +4,7 @@
  * identical to Marinade's direct deposit (with deeper aggregated liquidity).
  */
 const { buildSwap, resolveMint, decimalsFor, SOL_MINT } = require("./jupiter");
+const { simulateBase64Tx } = require("./simulate");
 
 module.exports = {
   aliases: ["marinade-finance"],
@@ -15,7 +16,7 @@ module.exports = {
       fees: { protocol: "Jupiter routing", network: "0.000005 SOL" },
     };
   },
-  async build({ amount, user, slippageBps = 50 }) {
+  async build({ amount, user, slippageBps = 50 }, { connection } = {}) {
     const inputMint = SOL_MINT;
     const outputMint = resolveMint("MSOL");
     if (!outputMint) throw new Error("mSOL mint not registered.");
@@ -27,6 +28,12 @@ module.exports = {
       slippageBps,
       decimals: 9,
     });
+    const sim = connection ? await simulateBase64Tx({ b64: tx, connection }) : { ok: true };
+    if (!sim.ok) {
+      const e = new Error(`Marinade stake simulation failed: ${sim.errStr || "unknown"}`);
+      e.simulation = sim;
+      throw e;
+    }
     return {
       transactions: [
         {
@@ -37,6 +44,7 @@ module.exports = {
           feeUsd: 0.005,
           durationS: 25,
           warnings: ["mSOL accrues stake rewards over time; can be unstaked or swapped via Jupiter."],
+          simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
         },
       ],
     };

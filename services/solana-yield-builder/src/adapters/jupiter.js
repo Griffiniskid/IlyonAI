@@ -32,8 +32,36 @@ const KNOWN_MINTS = {
   KUSDC: "5e4z5q7Tav7p2BfL3PFPVoZpdKvNPPmGuBWrnNZ9KVKr", // placeholder; resolved per-protocol
 };
 
+/**
+ * Convert a human-readable decimal string to atomic units using BigInt math.
+ * Avoids the Math.floor(parseFloat * 10**decimals) precision loss that bites
+ * 18-decimal EVM-style tokens AND sub-lamport SOL fractions.
+ *   "0.1"     × 9  -> 100000000n
+ *   "1.234"   × 6  -> 1234000n
+ *   "0.0001"  × 18 -> 100000000000000n
+ *   "all" / empty -> 0n (caller must override)
+ */
+function humanToAtoms(amount, decimals) {
+  if (amount === null || amount === undefined) return 0n;
+  const s = String(amount).trim();
+  if (!s || s === "all") return 0n;
+  if (!/^[0-9]*\.?[0-9]*$/.test(s)) {
+    throw new Error(`invalid amount: ${amount}`);
+  }
+  const [whole = "0", frac = ""] = s.split(".");
+  const fracPadded = (frac + "0".repeat(decimals)).slice(0, decimals);
+  const combined = (whole + fracPadded).replace(/^0+/, "") || "0";
+  return BigInt(combined);
+}
+
 async function buildSwap({ inputMint, outputMint, amount, user, slippageBps = 50, decimals = 9 }) {
-  const atoms = BigInt(Math.floor(parseFloat(amount || "0") * 10 ** decimals));
+  // BigInt atom conversion — no float, no precision loss on 18-dec / dust.
+  let atoms;
+  try {
+    atoms = humanToAtoms(amount, decimals);
+  } catch (err) {
+    throw new Error(`buildSwap atom conv: ${err.message}`);
+  }
   if (atoms <= 0n) throw new Error("amount must be > 0");
   const quoteUrl = `${QUOTE_URL}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${atoms.toString()}&slippageBps=${slippageBps}`;
   const quoteResp = await fetch(quoteUrl);
@@ -72,4 +100,22 @@ function decimalsFor(symbol) {
   return 9;
 }
 
-module.exports = { buildSwap, resolveMint, decimalsFor, SOL_MINT, KNOWN_MINTS };
+/**
+ * Decimal-safe halving for prep-swap "swap half the input" flows.
+ * "1" -> "0.5"; "0.000001" -> "0.0000005"; rejects malformed input.
+ */
+function halfAmount(amount) {
+  const s = String(amount || "0").trim();
+  if (!/^[0-9]*\.?[0-9]*$/.test(s) || s === "" || s === ".") return "0";
+  // Use a fixed 9-dp ceiling on the decimal portion; matches Solana mint
+  // precision and is plenty for the prep-swap UX.
+  const atoms = humanToAtoms(s, 18);
+  const half = atoms / 2n;
+  if (half === 0n) return "0";
+  const str = half.toString().padStart(19, "0");
+  const whole = str.slice(0, -18).replace(/^0+/, "") || "0";
+  const frac = str.slice(-18).replace(/0+$/, "");
+  return frac ? `${whole}.${frac}` : whole;
+}
+
+module.exports = { buildSwap, resolveMint, decimalsFor, humanToAtoms, halfAmount, SOL_MINT, KNOWN_MINTS };

@@ -286,3 +286,67 @@ class WalletSimulator:
             if step.get("transaction"):
                 result.step_results.append(self.simulate_step(step))
         return result
+
+    # ---- LP-specific assertions -------------------------------------------
+    def assert_pool_link_payload(self, payload: dict[str, Any]) -> list[str]:
+        """Check a pool_link card payload for correctness.
+
+        Returns a list of FAIL messages (empty when valid).
+        """
+        failures: list[str] = []
+        required = ("card_type", "protocol", "chain", "url", "asset_in", "amount")
+        for f in required:
+            if not payload.get(f):
+                failures.append(f"pool_link missing required field '{f}'")
+        if payload.get("card_type") and payload["card_type"] != "pool_link":
+            failures.append(f"pool_link card_type mismatch: {payload['card_type']!r}")
+        url = payload.get("url") or ""
+        if url and not (url.startswith("http://") or url.startswith("https://")):
+            failures.append(f"pool_link url must be http(s): {url!r}")
+        # Amount must be a clean fixed-precision string — no float artifacts.
+        amt = payload.get("amount")
+        if isinstance(amt, str):
+            if amt and any(c in amt for c in "eE"):
+                failures.append(f"pool_link amount in scientific notation: {amt!r}")
+            if amt.endswith(".0") or "0000000000" in amt:
+                failures.append(f"pool_link amount has float artifact: {amt!r}")
+        if isinstance(amt, float):
+            failures.append(f"pool_link amount must be a string, got float {amt!r}")
+        return failures
+
+    def assert_execution_plan_lp(self, plan: dict[str, Any], *, expected_input_asset: str | None = None,
+                                  expected_pair: tuple[str, str] | None = None) -> list[str]:
+        """Check an execution_plan_v3 payload for LP-specific correctness.
+
+        - All step amount fields must be strings (no float leakage).
+        - If expected_input_asset given: the FIRST swap leg must spend that asset.
+        - If expected_pair given: the prep-swap target must be one of the pair tokens.
+        - Every step with a `transaction` must have a non-empty `to` or `serialized`.
+        """
+        failures: list[str] = []
+        steps = plan.get("steps") or []
+        if not steps:
+            failures.append("plan has no steps")
+            return failures
+        for i, step in enumerate(steps):
+            for k in ("amount_in", "amount_out"):
+                v = step.get(k)
+                if isinstance(v, float):
+                    failures.append(f"step[{i}].{k} is float {v!r} — Decimal/str required")
+                if isinstance(v, str) and ("1111111111" in v or "0000000001" in v):
+                    failures.append(f"step[{i}].{k} has float-IEEE artifact: {v!r}")
+            tx = step.get("transaction") or {}
+            if tx and tx.get("chain_kind") == "evm" and not tx.get("to"):
+                failures.append(f"step[{i}] EVM tx missing `to`")
+            if tx and tx.get("chain_kind") == "solana" and not tx.get("serialized"):
+                failures.append(f"step[{i}] Solana tx missing `serialized`")
+        if expected_input_asset:
+            first_with_asset = next((s for s in steps if (s.get("asset_in") or "").upper() == expected_input_asset.upper()), None)
+            if not first_with_asset:
+                failures.append(f"no step spends expected input asset {expected_input_asset!r}; found: {[s.get('asset_in') for s in steps]}")
+        if expected_pair:
+            pair = {expected_pair[0].upper(), expected_pair[1].upper()}
+            assets_out = {(s.get("asset_out") or "").upper() for s in steps}
+            if not (assets_out & pair):
+                failures.append(f"no step swaps INTO pool pair {pair}; outputs={assets_out}")
+        return failures

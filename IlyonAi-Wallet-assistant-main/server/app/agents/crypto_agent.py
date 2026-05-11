@@ -14,7 +14,7 @@ Agent type: ZERO_SHOT_REACT_DESCRIPTION with ConversationBufferMemory
 
 import base64
 import concurrent.futures
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from difflib import get_close_matches
 import json
 import logging
@@ -1511,6 +1511,83 @@ def _resolve_token_metadata(
     return val, None, chain_id  # Return as-is, Enso will reject if invalid
 
 
+# Public RPCs for pre-sign eth_call simulation. Same map across all simulate
+# call sites; keep in sync with the inline _chain_rpcs blocks above.
+_SIM_RPCS_BY_CHAIN: dict[int, list[str]] = {
+    1:     ["https://eth.llamarpc.com", "https://rpc.ankr.com/eth"],
+    10:    ["https://mainnet.optimism.io"],
+    56:    ["https://bsc-dataseed1.binance.org", "https://bsc-dataseed2.binance.org"],
+    137:   ["https://polygon-rpc.com"],
+    8453:  ["https://mainnet.base.org"],
+    42161: ["https://arb1.arbitrum.io/rpc"],
+    43114: ["https://api.avax.network/ext/bc/C/rpc"],
+}
+
+# Reverts that mean "structurally valid but our dev wallet lacks
+# balance/allowance" — surface as benign so we still offer the Sign button.
+_EVM_REVERT_BENIGN = (
+    "insufficient",
+    "transfer amount exceeds",
+    "balance",
+    "allowance",
+    "ds-math-sub-underflow",
+    "subtraction overflow",
+    "stf",  # uniswap-v3 safeTransferFrom failure when no balance
+)
+
+
+def _eth_call_simulate(*, chain_id: int, tx_to: str, tx_data: str, tx_value: str,
+                       tx_from: str | None = None) -> dict[str, Any]:
+    """Pre-sign EVM simulation via eth_call against a public RPC.
+
+    Returns a structured receipt: { checked, ok, benign, revert, rpc }.
+    - checked=False if no RPC for the chain (skip block, don't fail).
+    - ok=True if eth_call succeeds.
+    - ok=False + benign=True if the revert reason matches our benign list
+      (no balance / no allowance — happens for empty test wallets but the
+      calldata is correct).
+    - ok=False + benign=False is a hard fail; runtime can decline to sign.
+    """
+    rpcs = _SIM_RPCS_BY_CHAIN.get(int(chain_id), [])
+    if not rpcs:
+        return {"checked": False, "ok": False, "benign": False, "reason": "no_rpc"}
+    if not (isinstance(tx_to, str) and tx_to.startswith("0x") and len(tx_to) == 42):
+        return {"checked": False, "ok": False, "benign": False, "reason": "invalid_to"}
+    if not (isinstance(tx_data, str) and tx_data.startswith("0x")):
+        return {"checked": False, "ok": False, "benign": False, "reason": "invalid_data"}
+    try:
+        bytes.fromhex(tx_data[2:])
+    except Exception:
+        return {"checked": False, "ok": False, "benign": False, "reason": "data_not_hex"}
+
+    # Normalize value to hex.
+    value_hex = tx_value if isinstance(tx_value, str) and tx_value.lower().startswith("0x") else hex(int(tx_value or 0))
+    call_obj = {"to": tx_to, "data": tx_data, "value": value_hex}
+    if tx_from and isinstance(tx_from, str) and tx_from.startswith("0x"):
+        call_obj["from"] = tx_from
+
+    last_err: str | None = None
+    for rpc in rpcs:
+        try:
+            r = _requests.post(rpc, json={
+                "jsonrpc": "2.0", "method": "eth_call",
+                "params": [call_obj, "latest"], "id": 1,
+            }, timeout=6)
+            j = r.json() if r.content else {}
+            if "result" in j and j["result"] is not None:
+                return {"checked": True, "ok": True, "benign": False, "rpc": rpc, "revert": None}
+            err = (j.get("error") or {})
+            msg = str(err.get("message") or err)
+            last_err = msg
+            low = msg.lower()
+            benign = any(k in low for k in _EVM_REVERT_BENIGN)
+            return {"checked": True, "ok": False, "benign": benign, "revert": msg[:300], "rpc": rpc}
+        except Exception as exc:
+            last_err = str(exc)
+            continue
+    return {"checked": False, "ok": False, "benign": False, "reason": "rpc_unreachable", "error": (last_err or "")[:300]}
+
+
 def _build_enso_swap_tx(
     params: dict[str, Any],
     user_address: str,
@@ -1728,18 +1805,35 @@ def _build_enso_swap_tx(
     else:
         tx_value = raw_value or "0x0"
 
-    # Calculate display amounts
-    try:
-        amount_in_display = int(amount) / (10 ** in_decimals)
-    except (ValueError, TypeError):
-        amount_in_display = 0
+    # Calculate display amounts.
+    # CRITICAL: use Decimal end-to-end so JSON-serialized output is a clean
+    # fixed-precision string ("0.1" — not the IEEE-754 ghost "0.1111111111111111").
+    # The pre-fix float division surfaced binary artifacts in the LP cards.
+    def _human_amount(raw_units, decimals: int, max_dp: int = 8) -> str:
+        try:
+            d = Decimal(str(raw_units)) / (Decimal(10) ** int(decimals))
+        except (InvalidOperation, ValueError, TypeError):
+            return "0"
+        q = Decimal(10) ** -max_dp
+        d = d.quantize(q, rounding=ROUND_DOWN)
+        # Strip trailing zeros without producing scientific notation.
+        s = format(d, "f").rstrip("0").rstrip(".")
+        return s or "0"
 
+    amount_in_display_str = _human_amount(amount, in_decimals, 8)
     dst_amount_raw = raw_tx.get("amountOut", "0")
     out_decimals = _decimals_for(dst)
+    dst_amount_display_str = _human_amount(dst_amount_raw, out_decimals, 6)
+
+    # Internal float copies for price-impact math only — never serialized.
     try:
-        dst_amount_display = int(dst_amount_raw) / (10 ** out_decimals)
+        amount_in_display = float(amount_in_display_str)
     except (ValueError, TypeError):
-        dst_amount_display = 0
+        amount_in_display = 0.0
+    try:
+        dst_amount_display = float(dst_amount_display_str)
+    except (ValueError, TypeError):
+        dst_amount_display = 0.0
 
     # Calculate price impact (cap at 15% — anything higher is likely a data issue)
     price_impact = 0.0
@@ -1756,6 +1850,23 @@ def _build_enso_swap_tx(
 
     action = params.get("action", "swap")
 
+    # Pre-sign EVM simulation gate. `eth_call` the prepared calldata so we
+    # detect reverts BEFORE the user pays gas. Benign reverts (empty test
+    # wallet, ERC20 balance/allowance) are tagged as `benign` so the runtime
+    # can still surface a Sign button — non-benign reverts mark the tx so
+    # the agent can decline to offer signing.
+    tx_data_hex = tx_obj.get("data", "0x")
+    tx_to_addr = tx_obj.get("to", "")
+    sim_status: dict[str, Any] = {"checked": False}
+    if tx_to_addr and tx_data_hex and tx_data_hex.startswith("0x"):
+        sim_status = _eth_call_simulate(
+            chain_id=chain_id,
+            tx_to=tx_to_addr,
+            tx_data=tx_data_hex,
+            tx_value=tx_value,
+            tx_from=tx_obj.get("from") or from_addr,
+        )
+
     result: dict[str, Any] = {
         "status": "ok",
         "type": "evm_action_proposal",
@@ -1764,11 +1875,12 @@ def _build_enso_swap_tx(
         "action": action,
         "from_token_symbol": from_symbol,
         "to_token_symbol": to_symbol,
-        "amount_in_display": round(amount_in_display, 8),
-        "dst_amount_display": round(dst_amount_display, 6),
+        "amount_in_display": amount_in_display_str,
+        "dst_amount_display": dst_amount_display_str,
         "route_summary": "Enso Aggregator",
         "price_impact_pct": round(price_impact, 2),
         "platform_fee_bps": PLATFORM_FEE_BPS,
+        "simulation": sim_status,
         "tx": {
             "from": tx_obj.get("from", from_addr),
             "to": tx_obj.get("to", ""),
@@ -2619,11 +2731,117 @@ def _is_valid_solana_address(address: str) -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# LP deposit — chain/pool-type aware router
+# ---------------------------------------------------------------------------
+# Three execution modes:
+#   V3 / CLMM  -> pool_link card (redirect to protocol app)
+#     Concentrated-liquidity positions are NFTs that require tickLower/Upper +
+#     sqrtPriceX96 math; Enso silently routes to aUSDC for V3 inputs which is
+#     wrong. Until the V3 range UI lands, redirect honestly.
+#   V2 / AMM   -> zap-in: 2 swap legs (input -> token0 half, input -> token1
+#     half) + Router.addLiquidity. Requires pool's actual underlying tokens.
+#   Stable     -> single-sided native (Curve add_liquidity, Balancer joinPool)
+#
+# Wallet-assistant exposes a single-tx surface for now; multi-leg zaps are
+# composed by the Sentinel runtime (V2 phase 2). For V2 the wallet-assistant
+# returns a pool_link card with explicit pair token addresses so the user
+# can finalize in the protocol app while the runtime zap lands.
+
+_V3_PROTOCOL_HINTS = (
+    "uniswap-v3", "uniswap_v3", "uniswap v3",
+    "uniswap-v4", "uniswap_v4", "uniswap v4",
+    "pancake-v3", "pancakeswap-v3", "pancakeswap v3",
+    "aerodrome-slipstream", "aerodrome-cl", "aerodrome slipstream",
+    "kim", "thena-v3", "ramses-v2",
+    "trader-joe-v2", "joe-v2", "lb-pair",
+)
+_AUTO_VAULT_PROTOCOL_HINTS = (
+    "gamma", "arrakis", "steer", "beefy", "ichi", "defiedge",
+    "yearn", "morpho", "spark", "aave",
+)
+_STABLE_PROTOCOL_HINTS = (
+    "curve", "balancer", "saddle", "convex",
+)
+
+def _protocol_kind(protocol_name: str) -> str:
+    p = (protocol_name or "").lower()
+    if any(h in p for h in _V3_PROTOCOL_HINTS):
+        return "v3"
+    if any(h in p for h in _STABLE_PROTOCOL_HINTS):
+        return "stable"
+    if any(h in p for h in _AUTO_VAULT_PROTOCOL_HINTS):
+        return "vault"
+    return "v2"
+
+
+def _build_pool_link_response(*, chain_id: int, protocol_name: str, pool_url: str,
+                              token_in: str, pool_address: str, amount: str,
+                              kind: str, banner: str) -> str:
+    return json.dumps({
+        "status": "ok",
+        "type": "pool_link",
+        "chain_type": "evm",
+        "chain_id": chain_id,
+        "action": "pool_link",
+        "protocol": protocol_name,
+        "pool_kind": kind,
+        "pool_address": pool_address,
+        "token_in": token_in,
+        "amount_in_display": amount or "all",
+        "pool_url": pool_url,
+        "banner": banner,
+        "tx": None,
+    })
+
+
+def _resolve_pool_url(chain_id: int, protocol_name: str, pool_address: str) -> str:
+    """Deeplink to the exact pool in the protocol's UI when known; otherwise
+    a sensible chain-scanner fallback so the user can still verify the pool."""
+    p = (protocol_name or "").lower()
+    if "uniswap-v3" in p or "uniswap_v3" in p or "uniswap v3" in p:
+        # Uniswap interface accepts ?chain= + pool by ID; pool_address points
+        # at the v3 pool contract.
+        chain_slug = {1: "ethereum", 8453: "base", 10: "optimism", 42161: "arbitrum",
+                       137: "polygon", 56: "bnb", 43114: "avalanche"}.get(int(chain_id), "ethereum")
+        return f"https://app.uniswap.org/pools/{pool_address}?chain={chain_slug}"
+    if "uniswap-v4" in p or "uniswap_v4" in p:
+        return f"https://app.uniswap.org/pools/{pool_address}"
+    if "pancake" in p:
+        return f"https://pancakeswap.finance/info/v3/pools/{pool_address}"
+    if "aerodrome" in p:
+        return f"https://aerodrome.finance/pools?address={pool_address}"
+    if "curve" in p:
+        return f"https://curve.fi/#/{ {1:'ethereum',10:'optimism',42161:'arbitrum',137:'polygon',8453:'base',56:'bsc',43114:'avalanche'}.get(int(chain_id),'ethereum') }/pools"
+    if "balancer" in p:
+        return f"https://app.balancer.fi/#/ethereum/pool/{pool_address}"
+    if "gamma" in p:
+        return f"https://app.gamma.xyz/vault/{pool_address}"
+    # Generic fallback: explorer
+    explorer = {1: "etherscan.io", 8453: "basescan.org", 10: "optimistic.etherscan.io",
+                 42161: "arbiscan.io", 137: "polygonscan.com", 56: "bscscan.com",
+                 43114: "snowtrace.io"}.get(int(chain_id), "etherscan.io")
+    return f"https://{explorer}/address/{pool_address}"
+
+
 def _build_deposit_lp_tx(raw: str, user_address: str, default_chain_id: int) -> str:
-    """
-    Build a liquidity deposit transaction via Enso routing.
-    Enso routes tokenIn -> LP token address (handles splitting, approval, and deposit).
-    Input JSON keys: token_in (str), pool_address (str - LP token/pool contract), amount (str in wei or "all"), chain_id (int, optional).
+    """Build an LP deposit response routed by pool type.
+
+    Input JSON keys:
+      token_in       — symbol or 0x address of the source token
+      pool_address   — 0x address of the LP / pool contract (must be present)
+      amount         — string, human units (e.g. "100") or "all"
+      chain_id       — int EVM chain id
+      protocol       — protocol name (used to classify V3 vs V2 vs stable vs vault)
+      pool_token0    — optional, 0x address of pool's token0 (enables V2 zap)
+      pool_token1    — optional, 0x address of pool's token1 (enables V2 zap)
+
+    Output (status=ok) is one of:
+      type=pool_link        — V3/CLMM and stable/vault pools; user finalizes on
+                              the protocol app. amount_in_display is a string.
+      type=evm_action_proposal — V2 zap leg (single swap into the missing pool
+                              token); the agent composes the second leg +
+                              addLiquidity as separate cards.
     """
     try:
         params = _parse_tool_json(raw)
@@ -2632,37 +2850,71 @@ def _build_deposit_lp_tx(raw: str, user_address: str, default_chain_id: int) -> 
 
     token_in = params.get("token_in", "").strip()
     pool_address = params.get("pool_address", "").strip()
-    amount = str(params.get("amount", ""))
-    requested_amount_raw = amount
+    amount = str(params.get("amount", "")).strip()
     chain_id = int(params.get("chain_id", default_chain_id))
     protocol_name = params.get("protocol", "Liquidity Pool")
+    pool_token0 = (params.get("pool_token0") or "").strip()
+    pool_token1 = (params.get("pool_token1") or "").strip()
 
     if not token_in:
         return json.dumps({"status": "error", "message": "Missing 'token_in' field. Specify which token to deposit."})
     if not pool_address:
-        return json.dumps({"status": "error", "message": "Missing 'pool_address' field. Use find_liquidity_pool to get the pool address first."})
+        return json.dumps({"status": "error", "message": "Missing 'pool_address' field."})
     if not (pool_address.startswith("0x") and len(pool_address) == 42):
         return json.dumps({"status": "error", "message": f"Invalid pool address: '{pool_address}'. Must be a 0x-prefixed EVM address (42 chars)."})
 
-    # Route through Enso: tokenIn -> pool/LP token (Enso handles split + deposit)
-    swap_params = {
-        "token_in": token_in,
-        "token_out": pool_address,
-        "amount": amount if amount else "all",
-        "chain_id": chain_id,
-        "action": "deposit",
-    }
-    result_json = _build_enso_swap_tx(swap_params, user_address, chain_id)
+    kind = _protocol_kind(protocol_name)
+    pool_url = _resolve_pool_url(chain_id, protocol_name, pool_address)
 
-    # Update the response to show deposit context
-    try:
-        result = json.loads(result_json)
-        if result.get("status") == "ok":
-            result["action"] = "deposit"
-            result["route_summary"] = f"Deposit into {protocol_name} via Enso"
-        return json.dumps(result)
-    except json.JSONDecodeError:
-        return result_json
+    # V3 / CLMM: range NFT, no clean wallet-tx surface — redirect.
+    if kind == "v3":
+        banner = (
+            f"Concentrated-liquidity ({protocol_name}) positions require a range "
+            "selector + tick-aligned mint. Finalize on the protocol app — your "
+            "tokens stay in your wallet until you sign there."
+        )
+        return _build_pool_link_response(
+            chain_id=chain_id, protocol_name=protocol_name, pool_url=pool_url,
+            token_in=token_in, pool_address=pool_address, amount=amount,
+            kind="v3", banner=banner,
+        )
+
+    # Auto-vaults (Gamma, Yearn, Arrakis…) and stable pools (Curve, Balancer)
+    # support single-sided natively in the protocol UI. Route there honestly.
+    if kind in ("vault", "stable"):
+        banner = (
+            f"{protocol_name} accepts single-sided deposits natively. Tap below "
+            "to open the exact pool — sign the deposit in your wallet on the app."
+        )
+        return _build_pool_link_response(
+            chain_id=chain_id, protocol_name=protocol_name, pool_url=pool_url,
+            token_in=token_in, pool_address=pool_address, amount=amount,
+            kind=kind, banner=banner,
+        )
+
+    # V2 / AMM (Uniswap V2, Pancake V2, SushiSwap V2, Aerodrome v2…)
+    # Real zap needs two swap legs + Router.addLiquidity. The wallet-assistant
+    # surface today builds ONE swap tx at a time — so we emit a pool_link
+    # response carrying both pair-token addresses, and the Sentinel runtime
+    # composes the multi-leg plan in build_yield_execution_plan (Phase 2).
+    # Until Phase 2 lands, redirect rather than silently mis-route.
+    if pool_token0 and pool_token1:
+        banner = (
+            f"{protocol_name} {pool_token0[:6]}…/{pool_token1[:6]}… is a V2 AMM. "
+            "Zap-in (swap half input into the missing pair token + addLiquidity) "
+            "lands in Phase 2 — for now, finalize in the protocol app."
+        )
+    else:
+        banner = (
+            f"{protocol_name} pool {pool_address[:8]}… — finalize on the protocol "
+            "app. Single-token Enso routing was disabled because it silently "
+            "deposited the wrong asset for many pools."
+        )
+    return _build_pool_link_response(
+        chain_id=chain_id, protocol_name=protocol_name, pool_url=pool_url,
+        token_in=token_in, pool_address=pool_address, amount=amount,
+        kind="v2", banner=banner,
+    )
 
 
 # ---------------------------------------------------------------------------
