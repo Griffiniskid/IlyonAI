@@ -343,6 +343,121 @@ def build_corpus() -> list[Scenario]:
         wallet="solana",
     ))
 
+    # ===== Wide pair coverage on V3 =====
+    for pair, fee in [("WBTC-WETH", 3000), ("USDC-USDT", 100), ("DAI-USDC", 100),
+                       ("USDC-WBTC", 3000), ("WETH-USDT", 500)]:
+        s.append(Scenario(
+            name=f"v3-{pair.lower()}-eth-{fee}",
+            prompt=f"Add liquidity to Uniswap V3 {pair} {fee/10000:.2f}% on Ethereum with $100",
+            wallet="evm",
+            require_card_types={"execution_plan_v3"},
+            require_range_block=True,
+        ))
+
+    # ===== Native-token native amount =====
+    s.append(Scenario(
+        name="aave-native-amount-eth",
+        prompt="Supply 0.05 ETH to Aave V3 on Ethereum",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+    ))
+    s.append(Scenario(
+        name="aave-bnb-bsc",
+        prompt="Supply 0.5 BNB to Aave V3 on BSC",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+    ))
+    s.append(Scenario(
+        name="aave-matic-polygon",
+        prompt="Supply 100 MATIC to Aave V3 on Polygon",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+    ))
+
+    # ===== Cross-chain refinement (single-turn — chain in prompt) =====
+    for chain in ["ethereum", "base", "polygon", "arbitrum"]:
+        s.append(Scenario(
+            name=f"yearn-extra-{chain}-usdt",
+            prompt=f"Deposit 50 USDT into Yearn USDT vault on {chain.title()}",
+            wallet="evm",
+        ))
+
+    # ===== Pendle, Beefy, Stargate, Stader, GMX, Velodrome =====
+    s.append(Scenario(
+        name="pendle-eth",
+        prompt="Deposit 100 USDC into Pendle PT-USDe on Ethereum",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+    ))
+    s.append(Scenario(
+        name="beefy-base",
+        prompt="Deposit 100 USDC into Beefy USDC-WETH on Base",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+    ))
+    s.append(Scenario(
+        name="stargate-eth",
+        prompt="Deposit 100 USDC into Stargate on Ethereum",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+    ))
+    s.append(Scenario(
+        name="velodrome-op",
+        prompt="Add liquidity to Velodrome USDC-OP on Optimism $50",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+    ))
+
+    # ===== Aerodrome / GMX =====
+    s.append(Scenario(
+        name="gmx-arb",
+        prompt="Deposit 100 USDC into GMX on Arbitrum",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+    ))
+    s.append(Scenario(
+        name="aerodrome-base-amm",
+        prompt="Add liquidity to Aerodrome USDC-WETH on Base $50",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+    ))
+
+    # ===== Solana extra (Sanctum INF, Drift, Jupiter LST) =====
+    s.append(Scenario(
+        name="sol-sanctum-inf",
+        prompt="Stake 0.1 SOL into Sanctum INF",
+        wallet="solana",
+        forbid_text=["0.1111111"],
+    ))
+    s.append(Scenario(
+        name="sol-jupiter-lend",
+        prompt="Deposit 10 USDC into Jupiter lend",
+        wallet="solana",
+    ))
+
+    # ===== Edge cases =====
+    s.append(Scenario(
+        name="huge-amount-aave",
+        prompt="Supply 999999999 USDC to Aave V3 on Ethereum",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+    ))
+    s.append(Scenario(
+        name="zero-amount",
+        prompt="Supply 0 USDC to Aave V3 on Ethereum",
+        wallet="evm",
+    ))
+    s.append(Scenario(
+        name="bad-chain",
+        prompt="Supply 100 USDC to Aave V3 on Fantom",
+        wallet="evm",
+    ))
+    s.append(Scenario(
+        name="bad-token",
+        prompt="Supply 100 ABCXYZ to Aave V3 on Ethereum",
+        wallet="evm",
+    ))
+
     return s
 
 
