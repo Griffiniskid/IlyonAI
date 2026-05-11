@@ -293,26 +293,23 @@ def build_corpus() -> list[Convo]:
     # ==================================================================
     # GROUP B — EVM V3 LPs must redirect (pool_link)
     # ==================================================================
+    # V3 EVM intents now emit pool_deposit_v3 with interactive range selector.
     corpus.append(Convo("evm-uniswapv3-redirect", "evm", [
         Turn("Add liquidity to Uniswap V3 USDC/WETH 0.05% on Ethereum with $100",
-             expect_card_types={"pool_link"},
-             expect_no_card_types={"execution_plan_v3"},
-             expect_pool_link_kind="v3"),
+             expect_card_types={"pool_deposit_v3"},
+             expect_no_card_types={"execution_plan_v3"}),
     ]))
     corpus.append(Convo("evm-uniswapv3-base", "evm", [
         Turn("Add liquidity to Uniswap V3 USDC/WETH on Base with 50 USDC",
-             expect_card_types={"pool_link"},
-             expect_pool_link_kind="v3"),
+             expect_card_types={"pool_deposit_v3"}),
     ]))
     corpus.append(Convo("evm-pancakev3-redirect", "evm", [
         Turn("Deposit $50 into PancakeSwap V3 USDT-BNB on BSC",
-             expect_card_types={"pool_link"},
-             expect_pool_link_kind="v3"),
+             expect_card_types={"pool_deposit_v3"}),
     ]))
     corpus.append(Convo("evm-aerodrome-cl-redirect", "evm", [
         Turn("Add liquidity to Aerodrome Slipstream USDC-WETH on Base $50",
-             expect_card_types={"pool_link"},
-             expect_pool_link_kind="v3"),
+             expect_card_types={"pool_deposit_v3"}),
     ]))
 
     # ==================================================================
@@ -362,11 +359,9 @@ def build_corpus() -> list[Convo]:
         Turn("Show me Uniswap V3 USDC-WETH pools on Ethereum",
              expect_no_card_types={"execution_plan_v3"}),
         Turn("Add liquidity with $50 to the top one",
-             expect_card_types={"pool_link"},
-             expect_pool_link_kind="v3"),
+             expect_card_types={"pool_deposit_v3"}),
         Turn("What if I use $200 instead?",
-             expect_card_types={"pool_link"},
-             expect_pool_link_kind="v3"),
+             expect_card_types={"pool_deposit_v3"}),
     ]))
     corpus.append(Convo("multi-sol-raydium-refine", "solana", [
         Turn("Show me Raydium AMM SPACEX-WSOL pool"),
@@ -391,10 +386,9 @@ def build_corpus() -> list[Convo]:
     ]))
     corpus.append(Convo("multi-amount-refine", "evm", [
         Turn("Add liquidity to Uniswap V3 USDC-WETH on Ethereum $100",
-             expect_card_types={"pool_link"},
-             expect_pool_link_kind="v3"),
+             expect_card_types={"pool_deposit_v3"}),
         Turn("Make it $50",
-             expect_card_types={"pool_link"}),
+             expect_card_types={"pool_deposit_v3"}),
         Turn("Show me APR for different ranges first",
              forbid_text_substrings=["0.111111"]),
     ]))

@@ -4371,6 +4371,102 @@ async def run_ephemeral_turn(
     if is_allocation_continuation:
         prior_pools_for_dist = _extract_prior_pool_items(history_cards)
     prior_intent_override: tuple[str, dict] | None = None
+
+    # LP refinement override — when the prior turn produced a pool_link /
+    # pool_deposit_v3 / execution_plan_v3 (Aave-style supply) card AND the
+    # current turn is a short refinement phrase (amount/chain/token delta),
+    # rebuild the prior intent with the delta instead of routing to search
+    # or asking for clarification.
+    _LP_AMOUNT_DELTA_RE = re.compile(
+        r"(?:make\s+it|change(?:\s+to)?|set\s+(?:it\s+)?to|how\s+about|what\s+if(?:\s+i\s+(?:use|with))?|with)\s*\$?\s*(?P<usd>[\d,]+(?:\.\d+)?)\s*$",
+        re.IGNORECASE,
+    )
+    _LP_CHAIN_SWITCH_RE = re.compile(
+        r"^\s*(?:try|switch\s+to|use|instead\s+on|and|on)\s+(?P<chain>arbitrum|ethereum|base|polygon|optimism|bsc|bnb|avalanche|solana)\b",
+        re.IGNORECASE,
+    )
+    _LP_TOKEN_SWITCH_RE = re.compile(
+        r"(?:actually\s+use|use\s+|switch\s+to|with)\s+(?P<token>[A-Za-z]{2,10})\s+(?:instead|not)\b",
+        re.IGNORECASE,
+    )
+
+    def _last_lp_card(cards: list[dict] | None) -> dict | None:
+        if not cards:
+            return None
+        for hc in reversed(cards):
+            t = (hc.get("card_type") or "").lower()
+            if t in {"pool_link", "pool_deposit_v3", "execution_plan_v3"}:
+                return hc
+        return None
+
+    if prior_intent_override is None:
+        prev_lp = _last_lp_card(history_cards)
+        if prev_lp:
+            payload = prev_lp.get("payload") or {}
+            t = (prev_lp.get("card_type") or "").lower()
+            # Pull prior protocol / pair / chain / amount / input token from
+            # whichever LP card type was last shown.
+            prior_protocol = (payload.get("protocol") or "").lower()
+            prior_chain = (payload.get("chain") or "").lower()
+            prior_pool_symbol = (
+                payload.get("pool_symbol")
+                or (payload.get("pair") or {}).get("token0", {}).get("symbol", "") + "-" + (payload.get("pair") or {}).get("token1", {}).get("symbol", "")
+                or ""
+            ).strip("-")
+            prior_amount = float(
+                payload.get("amount")
+                or payload.get("input_amount_usd")
+                or (payload.get("steps", [{}])[0].get("amount_in") if t == "execution_plan_v3" else 0)
+                or 0
+            )
+            prior_asset_in = (
+                payload.get("asset_in")
+                or (payload.get("input_token") or {}).get("symbol")
+                or (payload.get("steps", [{}])[0].get("asset_in") if t == "execution_plan_v3" else None)
+                or "USDC"
+            )
+
+            m_amt = _LP_AMOUNT_DELTA_RE.search(message.strip())
+            m_chain = _LP_CHAIN_SWITCH_RE.search(message.strip())
+            m_tok = _LP_TOKEN_SWITCH_RE.search(message.strip())
+
+            if m_amt or m_chain or m_tok:
+                new_amount = prior_amount
+                new_chain = prior_chain
+                new_asset_in = prior_asset_in
+                if m_amt:
+                    try:
+                        new_amount = float(m_amt.group("usd").replace(",", ""))
+                    except (TypeError, ValueError):
+                        new_amount = prior_amount
+                if m_chain:
+                    raw = m_chain.group("chain").lower()
+                    new_chain = "bsc" if raw in {"bsc", "bnb"} else raw
+                if m_tok:
+                    new_asset_in = m_tok.group("token").upper()
+                # Aave/Compound supply path
+                if prior_protocol in {"aave-v3", "aave", "compound-v3", "compound"}:
+                    prior_intent_override = (
+                        "build_yield_execution_plan",
+                        {
+                            "chain": new_chain,
+                            "protocol": prior_protocol,
+                            "action": "supply",
+                            "asset_in": new_asset_in,
+                            "amount_in": new_amount,
+                        },
+                    )
+                elif prior_protocol and prior_pool_symbol:
+                    pool_ref = f"{prior_protocol} {prior_pool_symbol}".strip()
+                    prior_intent_override = (
+                        "execute_pool_position",
+                        {
+                            "pool": pool_ref,
+                            "amount": new_amount,
+                            "asset_in": new_asset_in,
+                        },
+                    )
+
     if prior_pools_for_dist:
         amount_hint_val = _parse_amount_from_text(message)
         # Single-pool pick: "stake 10 SOL into the top one" → reroute to a

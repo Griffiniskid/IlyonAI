@@ -26,6 +26,7 @@ import { ExecutionPlanCard as DemoExecutionPlanCard } from "./ExecutionPlanCard"
 import { DefiOpportunitiesCard } from "./DefiOpportunitiesCard";
 import { ExecutionPlanV3Card } from "./ExecutionPlanV3Card";
 import { PoolLinkCard, type PoolLinkPayload } from "./PoolLinkCard";
+import { PoolDepositV3Card, type PoolDepositV3Payload } from "./PoolDepositV3Card";
 import { SentinelBadge } from "./SentinelBadge";
 import { ShieldBadge } from "./ShieldBadge";
 import { SentinelBreakdownCard } from "./SentinelBreakdownCard";
@@ -624,6 +625,8 @@ export function CardRenderer({ card, onStartSigning, onRerunAllocation, onSignSt
       return <ExecutionPlanV3Card payload={payload as unknown as ExecutionPlanV3Payload} onSignStep={onSignStep} />;
     case "pool_link":
       return <PoolLinkCard payload={payload as unknown as PoolLinkPayload} />;
+    case "pool_deposit_v3":
+      return <PoolDepositV3Card payload={payload as unknown as PoolDepositV3Payload} />;
     case "token":
       return <TokenCard payload={payload as unknown as TokenPayload} />;
     case "swap_quote":

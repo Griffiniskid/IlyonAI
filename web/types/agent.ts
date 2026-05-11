@@ -344,7 +344,7 @@ export interface ExecutionPlanV3Payload {
 
 export type CardType =
   | "allocation" | "sentinel_matrix" | "execution_plan"
-  | "swap_quote" | "pool" | "pool_link" | "token" | "position"
+  | "swap_quote" | "pool" | "pool_link" | "pool_deposit_v3" | "token" | "position"
   | "plan" | "execution_plan_v2" | "execution_plan_v3" | "balance" | "bridge" | "stake" | "market_overview" | "pair_list"
   | "defi_opportunities"
   | "sentinel"

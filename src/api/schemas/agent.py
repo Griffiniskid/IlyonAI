@@ -429,13 +429,78 @@ class ExecutionPlanV3Card(_CardBase):
     payload: ExecutionPlanV3Payload
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# V3 / CLMM pool deposit card — interactive range selector with live APR math
+# ──────────────────────────────────────────────────────────────────────────────
+class PoolDepositV3TokenRef(_Strict):
+    address: Optional[str] = None
+    symbol: str
+    decimals: int
+
+
+class PoolDepositV3PoolState(_Strict):
+    # Human-readable current state, all strings to avoid float artifacts.
+    price_human: str               # "1 SOL = 152.34 USDC"
+    current_price: float           # token1 per token0 (frontend math)
+    sqrt_price_x96: Optional[str] = None
+    tick: Optional[int] = None
+    tvl_usd: Optional[float] = None
+    vol_24h_usd: Optional[float] = None
+    fee_tier_bps: Optional[int] = None
+    tick_spacing: Optional[int] = None
+
+
+class PoolDepositV3Market(_Strict):
+    # Backend ships these once; frontend recomputes APR @ range locally.
+    base_apr_pct: float            # fees-only, full range
+    reward_apr_pct: float = 0.0
+    # 30d historical price ratio CDF, 100 buckets in [0.5x, 2x] of current.
+    # Frontend interpolates in-range probability from this.
+    cdf_30d: list[float] = Field(default_factory=list)
+
+
+class PoolDepositV3InitialRange(_Strict):
+    preset: Literal["narrow", "balanced", "wide", "full", "custom"] = "balanced"
+    lower_pct: float = -10.0       # percent offset from current price
+    upper_pct: float = 10.0
+
+
+class PoolDepositV3Payload(_Strict):
+    card_id: str
+    chain: str
+    protocol: str                  # "uniswap-v3" | "pancake-v3" | "raydium-clmm" | "orca-whirlpools" ...
+    pool_address: str
+    pair: dict[str, PoolDepositV3TokenRef]  # {"token0": ..., "token1": ...}
+    current: PoolDepositV3PoolState
+    market: PoolDepositV3Market
+    input_token: PoolDepositV3TokenRef
+    input_amount_human: str        # fixed-precision string
+    input_amount_usd: float
+    initial_range: PoolDepositV3InitialRange
+    # Server's best-guess plan for the default range; replaced when user
+    # picks a final range via the rebuild endpoint.
+    initial_steps: list[ExecutionPlanV3Step] = Field(default_factory=list)
+    rebuild_endpoint: str = "/api/v1/pool/rebuild"
+    protocol_url: Optional[str] = None
+    notice: Optional[str] = None
+    # When True, the card renders the range UI for visualization only —
+    # the final mint is finalized on the protocol app. Flip to False
+    # when the Phase-4 V3 SDK builder lands.
+    finalize_externally: bool = True
+
+
+class PoolDepositV3Card(_CardBase):
+    card_type: Literal["pool_deposit_v3"]
+    payload: PoolDepositV3Payload
+
+
 _CardUnion = Annotated[
     Union[
         AllocationCard, SentinelMatrixCard, ExecutionPlanCard,
         SwapQuoteCard, PoolCard, TokenCard,
         PositionCard, PlanCard, ExecutionPlanV2Card, BalanceCard, BridgeCard,
         StakeCard, MarketOverviewCard, PairListCard,
-        DefiOpportunitiesCard, ExecutionPlanV3Card,
+        DefiOpportunitiesCard, ExecutionPlanV3Card, PoolDepositV3Card,
     ],
     Field(discriminator="card_type"),
 ]
@@ -456,7 +521,7 @@ class AgentCard(_Strict):
 
 CardType = Literal[
     "allocation", "sentinel_matrix", "execution_plan",
-    "swap_quote", "pool", "pool_link", "token", "position", "plan",
+    "swap_quote", "pool", "pool_link", "pool_deposit_v3", "token", "position", "plan",
     "execution_plan_v2", "execution_plan_v3", "balance", "bridge", "stake", "transfer",
     "market_overview", "pair_list", "lp", "preferences",
     "defi_opportunities",

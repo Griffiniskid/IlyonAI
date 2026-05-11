@@ -69,6 +69,64 @@ async def build_yield_execution_plan(
             pool_symbol=extra_dict.get("pool_symbol") or asset_in,
             pool_id=extra_dict.get("pool_id"),
         )
+
+        # V3 / CLMM pools get the interactive range card with live APR math.
+        # Other pool types (V2, stable, vault) keep the bare pool_link redirect.
+        if kind_hint == "v3":
+            pool_symbol = extra_dict.get("pool_symbol") or asset_in or ""
+            # Parse pair from pool_symbol when available, else default to USDC/<asset>.
+            sym_parts = [s for s in pool_symbol.replace("/", "-").split("-") if s]
+            t0 = sym_parts[0].upper() if len(sym_parts) >= 1 else (asset_in or "USDC").upper()
+            t1 = sym_parts[1].upper() if len(sym_parts) >= 2 else "WETH"
+            decimals_map = {"USDC": 6, "USDT": 6, "DAI": 18, "WETH": 18, "ETH": 18,
+                             "WSOL": 9, "SOL": 9, "WBTC": 8, "BTC": 8, "BNB": 18}
+            apy_pct = float(extra_dict.get("apy") or 0.0)
+            current_price_hint = float(extra_dict.get("current_price") or 1.0)
+            v3_card = {
+                "card_type": "pool_deposit_v3",
+                "card_id": f"v3-{protocol}-{(extra_dict.get('pool_id') or pool_symbol)[:24]}",
+                "chain": chain,
+                "protocol": protocol,
+                "pool_address": extra_dict.get("pool_address") or extra_dict.get("poolAddress") or "",
+                "pair": {
+                    "token0": {"symbol": t0, "decimals": decimals_map.get(t0, 18), "address": None},
+                    "token1": {"symbol": t1, "decimals": decimals_map.get(t1, 18), "address": None},
+                },
+                "current": {
+                    "price_human": f"1 {t0} ≈ {current_price_hint:.4f} {t1}",
+                    "current_price": current_price_hint,
+                    "sqrt_price_x96": extra_dict.get("sqrt_price_x96"),
+                    "tick": extra_dict.get("current_tick"),
+                    "tvl_usd": extra_dict.get("tvl_usd"),
+                    "vol_24h_usd": extra_dict.get("vol_24h_usd"),
+                    "fee_tier_bps": extra_dict.get("fee_tier_bps"),
+                    "tick_spacing": extra_dict.get("tick_spacing"),
+                },
+                "market": {
+                    "base_apr_pct": apy_pct,
+                    "reward_apr_pct": float(extra_dict.get("reward_apr") or 0.0),
+                    "cdf_30d": extra_dict.get("cdf_30d") or [],
+                },
+                "input_token": {
+                    "symbol": (asset_in or "USDC").upper(),
+                    "decimals": decimals_map.get((asset_in or "USDC").upper(), 18),
+                    "address": None,
+                },
+                "input_amount_human": str(amount),
+                "input_amount_usd": float(amount),
+                "initial_range": {"preset": "balanced", "lower_pct": -10.0, "upper_pct": 10.0},
+                "initial_steps": [],
+                "rebuild_endpoint": "/api/v1/pool/rebuild",
+                "protocol_url": url,
+                "finalize_externally": True,
+                "notice": (
+                    f"{protocol.title()} V3 concentrated liquidity — adjust the range to see "
+                    "live APR / capital efficiency / in-range probability. Range NFT mint "
+                    "currently finalizes on the protocol app (in-chat mint lands in Phase 4)."
+                ),
+            }
+            return ok_envelope(data=v3_card, card_type="pool_deposit_v3", card_payload=v3_card)
+
         card = {
             "card_type": "pool_link",
             "title": f"{protocol.title()} · {action.replace('_', ' ').title()}",
