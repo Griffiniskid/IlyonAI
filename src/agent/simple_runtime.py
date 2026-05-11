@@ -4776,14 +4776,54 @@ async def run_ephemeral_turn(
                     new_chain = "bsc" if raw in {"bsc", "bnb"} else raw
                 if m_tok:
                     new_asset_in = m_tok.group("token").upper()
-                # Aave/Compound supply path
-                if prior_protocol in {"aave-v3", "aave", "compound-v3", "compound"}:
+                # Enso protocol-switch refinement — "Actually use Yearn instead"
+                _proto_switch_re = re.compile(
+                    r"(?:actually\s+use|use|switch\s+to|with|try)\s+"
+                    r"(?P<proto>aave[ -]?v3|aave|compound[ -]?v3|compound|"
+                    r"yearn[ -]?finance|yearn|morpho[ -]?blue|metamorpho|morpho|"
+                    r"spark[ -]?protocol|spark[ -]?lending|spark|sky|"
+                    r"curve[ -]?dex|curve|balancer[ -]?v2|balancer[ -]?v3|balancer|"
+                    r"lido|rocket[ -]?pool|rocketpool|ether[\.\-]?fi|etherfi|"
+                    r"frax[ -]?ether|frax|stader|gmx|moonwell|stargate)"
+                    r"\s+(?:instead|not)\b",
+                    re.IGNORECASE,
+                )
+                m_proto_switch = _proto_switch_re.search(message.strip())
+                effective_protocol = prior_protocol
+                if m_proto_switch:
+                    effective_protocol = _enso_normalize_slug(m_proto_switch.group("proto"))
+
+                # All Enso EVM protocols + Aave/Compound route via build_yield_execution_plan.
+                _ENSO_ALL = (
+                    {"aave-v3", "aave", "aave-v2", "aave-v3-prime", "compound-v3",
+                     "compound", "compound-v2"}
+                    | {"yearn-finance", "yearn", "yearn-v3"}
+                    | {"morpho-blue", "morpho", "metamorpho"}
+                    | {"spark", "spark-protocol", "spark-lending"}
+                    | {"sky", "sky-lending", "makerdao"}
+                    | {"curve", "curve-dex", "curve-finance"}
+                    | {"balancer", "balancer-v2", "balancer-v3"}
+                    | {"lido", "rocket-pool", "rocketpool", "ether.fi", "etherfi",
+                       "frax", "frax-ether", "stader", "gmx", "moonwell", "stargate"}
+                    | {"fluid", "fluid-lending", "origin", "origin-ether",
+                       "ethena", "pendle"}
+                )
+                if effective_protocol in _ENSO_ALL:
+                    if effective_protocol in {"curve", "curve-dex", "curve-finance",
+                                              "balancer", "balancer-v2", "balancer-v3"}:
+                        new_action = "deposit_lp"
+                    elif effective_protocol in {"lido", "rocket-pool", "rocketpool",
+                                                "ether.fi", "etherfi", "frax",
+                                                "frax-ether", "stader"}:
+                        new_action = "stake"
+                    else:
+                        new_action = "supply"
                     prior_intent_override = (
                         "build_yield_execution_plan",
                         {
                             "chain": new_chain,
-                            "protocol": prior_protocol,
-                            "action": "supply",
+                            "protocol": effective_protocol,
+                            "action": new_action,
                             "asset_in": new_asset_in,
                             "amount_in": new_amount,
                         },
