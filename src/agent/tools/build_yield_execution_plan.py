@@ -4,7 +4,7 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from src.agent.protocol_urls import is_pool_link_action, pool_protocol_url
+from src.agent.protocol_urls import classify_pool_kind, is_pool_link_action, pool_protocol_url
 from src.agent.tools._base import err_envelope, ok_envelope
 from src.defi.execution.adapters.base import YieldBuildRequest
 from src.defi.execution.capabilities import build_default_registry
@@ -64,10 +64,10 @@ async def build_yield_execution_plan(
             pool_symbol=extra_dict.get("pool_symbol") or extra_dict.get("poolSymbol"),
             project_url=extra_dict.get("project_url"),
         )
-        kind_hint = "v3" if any(k in protocol.lower() for k in ("v3", "clmm", "slipstream")) else (
-            "stable" if any(k in protocol.lower() for k in ("curve", "balancer", "saddle")) else (
-                "vault" if any(k in protocol.lower() for k in ("yearn", "morpho", "spark", "beefy", "gamma", "arrakis")) else "v2"
-            )
+        kind_hint = classify_pool_kind(
+            protocol=protocol,
+            pool_symbol=extra_dict.get("pool_symbol") or asset_in,
+            pool_id=extra_dict.get("pool_id"),
         )
         card = {
             "card_type": "pool_link",

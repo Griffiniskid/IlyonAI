@@ -1729,6 +1729,84 @@ def _detect_direct_pool_deposit(message: str) -> tuple[str, dict] | None:
     )
 
 
+# "Add liquidity to PROTOCOL PAIR (FEE)? (on CHAIN)? (with)? $AMOUNT (TOKEN)?"
+# Catches the standard LP-deposit phrasing that doesn't include the bare
+# `pool` / `lp` / `vault` keyword that `_DIRECT_POOL_DEPOSIT_RE` requires.
+_PROTOCOL_NAME_RE = (
+    r"(?P<protocol>(?:[A-Za-z]+[\s-]?){1,3}(?:V\d|v\d|amm|amm-v\d|clmm|slipstream|fusion)?)"
+)
+_PAIR_RE = r"(?P<pair>[A-Z][A-Z0-9.]{1,9}[/-][A-Z][A-Z0-9.]{1,9})"
+_AMOUNT_USD_OR_TOKEN_RE = (
+    r"(?:with\s+)?"
+    r"(?:\$\s*(?P<usd>[\d,]+(?:\.\d+)?)|"
+    r"(?P<native>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10}))"
+)
+_ADD_LIQUIDITY_RE = re.compile(
+    r"^\s*(?:add|provide|deposit)\s+(?:liquidity\s+)?"
+    r"(?:to|in|into|on)\s+"
+    rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}"
+    r"(?:\s+\d+(?:\.\d+)?\s*%)?"
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?"
+    rf"\s+{_AMOUNT_USD_OR_TOKEN_RE}\s*$",
+    re.IGNORECASE,
+)
+
+# Inverted form: "Deposit $AMOUNT into PROTOCOL PAIR on CHAIN"
+_ADD_LIQUIDITY_INV_RE = re.compile(
+    r"^\s*(?:deposit|add|put|invest)\s+"
+    r"(?:\$\s*(?P<usd>[\d,]+(?:\.\d+)?)|"
+    r"(?P<native>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10}))"
+    r"\s+(?:into|in|to|on)\s+"
+    rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}"
+    r"(?:\s+\d+(?:\.\d+)?\s*%)?"
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
+    """Match 'Add liquidity to Uniswap V3 USDC/WETH on Ethereum with $100'
+    and the inverted 'Deposit $100 into PancakeSwap V3 USDT-BNB on BSC' form,
+    routing to execute_pool_position with a "protocol pair" pool ref so the
+    pool resolver + pool_link gate fire correctly.
+    """
+    text = message.strip()
+    m = _ADD_LIQUIDITY_RE.search(text) or _ADD_LIQUIDITY_INV_RE.search(text)
+    if not m:
+        return None
+    proto_raw = (m.group("protocol") or "").strip().lower()
+    # Normalize "uniswap v3" → "uniswap-v3" for the pool resolver / kind gate.
+    proto = re.sub(r"\s+", "-", proto_raw)
+    pair = (m.group("pair") or "").upper().replace("/", "-")
+    pool_ref = f"{proto} {pair}"
+
+    usd_str = m.group("usd")
+    native_str = m.group("native")
+    native_tok = (m.group("token") or "").upper()
+    if usd_str:
+        try:
+            amount = float(usd_str.replace(",", ""))
+        except (TypeError, ValueError):
+            return None
+        asset_in = "USDC"  # default USD-denominated leg until LLM refines
+    elif native_str and native_tok:
+        try:
+            qty = float(native_str.replace(",", ""))
+        except (TypeError, ValueError):
+            return None
+        price = _TOKEN_USD_HINT.get(native_tok, 1.0)
+        amount = qty * price
+        asset_in = native_tok
+    else:
+        return None
+    if amount <= 0:
+        return None
+    return (
+        "execute_pool_position",
+        {"pool": pool_ref, "amount": amount, "asset_in": asset_in},
+    )
+
+
 _STRATEGY_BUILD_VERBS_RE = re.compile(
     r"\b(build|design|create|craft|propose|recommend|outline|develop|research(?:\s+and\s+(?:build|design|create|craft|propose|recommend|outline|develop))?)"
     r"\s+(?:me\s+|us\s+)?(?:a|an|the)?\s*"
@@ -2103,7 +2181,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
         return multi_step
-    for detector in (_detect_direct_pool_deposit, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_direct_pool_deposit, _detect_add_liquidity, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected

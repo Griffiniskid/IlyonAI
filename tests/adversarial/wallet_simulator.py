@@ -43,6 +43,11 @@ EVM_REVERT_BENIGN = (
     "subtraction overflow",
     "ERC20: transfer amount exceeds",
     "stf",  # uniswap-v3 safeTransferFrom failure when no balance
+    # Public-RPC transient: "header not found" means the node lost the
+    # `latest` block during our call. Not our bug; tx itself is well-formed.
+    "header not found",
+    "header is not available",
+    "block not found",
 )
 SOLANA_REVERT_BENIGN = (
     "insufficient lamports",

@@ -479,6 +479,31 @@ V3_PROTOCOLS = frozenset({
 })
 
 
+_V3_HINTS = ("v3", "v4", "clmm", "slipstream", "concentrated", "kim", "thena-fusion", "fusion")
+_STABLE_HINTS = ("curve", "balancer", "saddle", "mim-swap", "convex")
+_VAULT_HINTS = ("yearn", "morpho", "spark", "beefy", "gamma", "arrakis", "steer-protocol", "ichi", "aave")
+
+
+def classify_pool_kind(*, protocol: str | None, pool_symbol: str | None = None, pool_id: str | None = None) -> str:
+    """Return 'v3' | 'stable' | 'vault' | 'v2' for use by the pool_link card.
+
+    Heuristic on protocol slug + pool symbol. Pancake-V3 sometimes arrives as
+    'pancakeswap-amm-v3' OR plain 'pancakeswap' depending on the DefiLlama
+    snapshot — check across multiple substrings.
+    """
+    p = (protocol or "").lower()
+    sym = (pool_symbol or "").lower()
+    pid = (pool_id or "").lower()
+    blob = f"{p} {sym} {pid}"
+    if any(h in blob for h in _V3_HINTS):
+        return "v3"
+    if any(h in blob for h in _STABLE_HINTS):
+        return "stable"
+    if any(h in blob for h in _VAULT_HINTS):
+        return "vault"
+    return "v2"
+
+
 def is_pool_link_action(*, action: str | None, protocol: str | None, chain: str | None = None) -> bool:
     """True when this (action, protocol, chain) tuple should be link-only.
 
