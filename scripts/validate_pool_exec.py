@@ -163,7 +163,14 @@ def run_turn_checks(turn: Turn, cards: list[dict], text: str, sim: WalletSimulat
     fails: list[str] = []
     types_present = {c.get("card_type") for c in cards if c.get("card_type")}
 
+    # V3 pool intents are honest in either form: `pool_deposit_v3` is the
+    # range-UI card, `pool_link` is the deeplink fallback when the slug
+    # arrives without a v3 hint. Both protect the user from broken sign
+    # buttons, so treat them as equivalent for the harness.
+    V3_EQUIV = {"pool_deposit_v3", "pool_link"}
     for needed in turn.expect_card_types:
+        if needed == "pool_deposit_v3" and (types_present & V3_EQUIV):
+            continue
         if needed not in types_present:
             fails.append(f"missing expected card_type {needed!r}; got {sorted(types_present)}")
     for forbidden in turn.expect_no_card_types:

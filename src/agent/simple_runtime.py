@@ -4395,7 +4395,10 @@ async def run_ephemeral_turn(
     # "Add liquidity with $X to the top one" — prior turn was a search list;
     # pick the first opportunity from the prior defi_opportunities card.
     _LP_TOP_ONE_RE = re.compile(
-        r"(?:add\s+liquidity|deposit|put|supply|stake)\s+(?:with\s+)?\$?\s*(?P<usd>[\d,]+(?:\.\d+)?)\s+(?:to|into|in|on)\s+the\s+(?:top|first|best)(?:\s+one)?\b",
+        r"(?:add\s+liquidity|deposit|put|supply|stake|execute)\s+"
+        r"(?:with\s+)?\$?\s*(?P<usd>[\d,]+(?:\.\d+)?)"
+        r"(?:\s+(?P<unit>[A-Za-z]{2,10}))?"
+        r"(?:\s+(?:to|into|in|on)\s+the\s+(?:top|first|best)(?:\s+one)?)?\b",
         re.IGNORECASE,
     )
 
