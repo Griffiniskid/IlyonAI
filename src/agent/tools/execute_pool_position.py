@@ -263,6 +263,12 @@ async def execute_pool_position(
     if isinstance(chain_from_caller, str) and chain_from_caller.strip():
         chain = chain_from_caller.strip().lower()
     pool_symbol = str(meta.get("symbol", ""))
+    # Parser-provided pair wins — meta.symbol can be the search result's pair
+    # (e.g. "LUSD-3CRV") when user asked for a specific pair ("DAI-USDC").
+    # Extract pair from `pool` arg shape "protocol PAIR".
+    requested_pair_match = re.search(r"\b([A-Z][A-Z0-9.]{1,9}[-/_][A-Z][A-Z0-9.]{1,9})\b", str(pool or "").upper())
+    if requested_pair_match:
+        pool_symbol = requested_pair_match.group(1).replace("/", "-").replace("_", "-")
     final_asset_in = asset_in or _pick_asset_in(meta)
 
     # USD-denominated amount → native units conversion. When the user typed
