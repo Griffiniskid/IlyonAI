@@ -82,10 +82,14 @@ ilyon-ai/
 │   ├── components/agent/cards/  # AllocationCard, ExecutionPlanCard, PoolLinkCard, SwapQuoteCard…
 │   ├── types/agent.ts           # TypeScript mirror of Pydantic CardType
 │   └── lib/                     # Hooks, providers (QueryClient, wallet, toast)
-├── IlyonAi-Wallet-assistant-main/server/   # Node sidecar — wallet assistant API
+├── IlyonAi-Wallet-assistant-main/server/   # Python sidecar — wallet assistant + Enso EVM build
+├── services/solana-yield-builder/          # Node sidecar — Solana LP/stake transaction builder
+│   ├── src/index.js                          # Express server (POST /quote /build /verify)
+│   └── src/adapters/                         # raydium, orca, meteora, kamino, marinade, jito, sanctum, jupiter, pairAware, simulate
 ├── docker-compose.yml         # web · api · assistant-api · solana-yield-builder · postgres · redis
 ├── deploy/                    # Caddyfile + prod/staging configs
-└── docs/ARCHITECTURE_LIVE.md  # Source-of-truth architecture doc
+├── docs/ARCHITECTURE_LIVE.md  # Source-of-truth architecture doc
+└── docs/POOL_EXECUTION_FIX_PLAN.md  # Pool-exec diagnosis + multi-phase roadmap
 ```
 
 ### Agent runtime data flow
@@ -113,9 +117,10 @@ cp .env.example .env
 # fill keys; required: OPENAI_API_KEY / OPENROUTER_API_KEY, POSTGRES_PASSWORD
 export POSTGRES_PASSWORD=change_me
 
-docker-compose up -d
-# web   → http://localhost:3000
-# api   → http://localhost:8000
+docker compose up -d --build
+# web              → http://localhost:3000
+# api              → http://localhost:8080
+# solana-yield-builder → http://localhost:8090 (internal)
 ```
 
 ### Local dev (no Docker)
@@ -145,7 +150,8 @@ cd IlyonAi-Wallet-assistant-main/server && npm install && npm run dev
 | `HELIUS_API_KEY` | recommended | Solana RPC + balance/transaction history |
 | `MORALIS_API_KEY` | recommended | EVM token balances + approvals |
 | `ENSO_API_KEY` | recommended | EVM yield exec routing |
-| `JUPITER_API_KEY` | optional | Pro-tier Solana swap |
+| `JUPITER_API_KEY` | ✅ | Solana swap routing (required as of 2026-01-31) |
+| `KAMINO_API_BASE` | optional | Override Kamino REST base (defaults to `https://api.kamino.finance`) |
 | `BOT_TOKEN` | optional | Telegram interface |
 | `ALLOWED_USERS` | recommended (TG) | Comma-separated Telegram IDs |
 | `LOG_REDACT_SENSITIVE` | recommended | Scrub secrets from logs |
@@ -172,11 +178,22 @@ Full schema in `src/api/schemas/`.
 
 ## Validation
 
-Live validation harness against `https://ilyonai.com`:
+Live 30+ multi-turn conversation harness against `https://ilyonai.com`:
 ```bash
-python scripts/validate_no_exec.py
+python scripts/validate_pool_exec.py
 ```
-Runs 5 real SSE requests: Aave V3 pool link, Raydium pool link, multi-chain allocation, Solana swap exec, yield discovery.
+Exercises every pool family (V2/V3/stable/vault × Solana/EVM), refines amounts and chains across turns, asserts on:
+- right `card_type` per pool type (`execution_plan_v3` for Aave/LST/AMM, `pool_link` for V3/V2/stable/vault EVM)
+- decimal-precision amounts (no IEEE-754 ghosts)
+- real `simulateTransaction` (Solana) / `eth_call` (EVM) pass for executable plans
+- pair-aware swap targets (swap into the pool's *missing* token)
+
+The harness uses deterministic dev wallets and never broadcasts a tx — `sigVerify: false` for Solana, `from`-override for `eth_call`. Empty-wallet reverts are treated as benign because the calldata itself is well-formed.
+
+Adversarial wallet simulator (deterministic Solana + EVM keypairs):
+```bash
+python -m tests.adversarial.run_harness    # 40+ pool-strategy scenarios
+```
 
 Unit + integration tests:
 ```bash
@@ -211,8 +228,8 @@ See `deploy/README.md` for SSH key setup, swap configuration (Next.js build need
 
 1. Fork
 2. `git checkout -b feature/your-thing`
-3. Open PR against `main` (with-exec) or the active `no-exec-pools-*` branch
-4. CI runs `pytest`, `npm run lint`, `npm run build`
+3. Open PR against `main`. Before pushing pool-touching changes, run `python scripts/validate_pool_exec.py` locally against the staging deployment (`ILYON_BASE=https://staging.ilyonai.com`).
+4. CI runs `pytest`, `npm run lint`, `npm run build`.
 
 ---
 
