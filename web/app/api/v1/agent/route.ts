@@ -30,7 +30,12 @@ export function _selectBackendTarget(body: string): BackendKind {
   if (/\b(sentinel|allocation|allocate|rebalance|methodology|risk[- ]?weighted|scor(?:e|ing))\b/.test(q)) {
     return "sentinel";
   }
-  const poolOrStrategy = /\b(pool|pools|farm|farms|vault|vaults|opportunit(?:y|ies)|add liquidity|liquidity deposit)\b|\b(?:put|deposit)\b.*\b(?:pool|farm|vault)\b/.test(q);
+  // Protocol-name hint: when the message mentions a DeFi protocol the
+  // sentinel backend owns the pool_link emission. Otherwise "Deposit $50
+  // into PancakeSwap V3 ..." would route to the wallet backend which
+  // doesn't speak our message/session shape and 422s.
+  const protocolHint = /\b(uniswap|sushiswap|pancakeswap|aerodrome|velodrome|curve|balancer|raydium|orca|meteora|kamino|yearn|morpho|aave|compound|spark|lido|rocket[- ]?pool|ether[- .]?fi|frax|stargate|stader|moonwell|gmx|drift|jupiter[- ]lend|sanctum|marinade|jito)\b/.test(q);
+  const poolOrStrategy = /\b(pool|pools|farm|farms|vault|vaults|opportunit(?:y|ies)|add liquidity|liquidity deposit)\b|\b(?:put|deposit)\b.*\b(?:pool|farm|vault)\b/.test(q) || protocolHint;
   const directWalletExecution = /\b(swap|bridge|cross[- ]?chain|transfer|send)\b/.test(q) || (/\b(stake|staking)\b/.test(q) && !poolOrStrategy);
   if (directWalletExecution) {
     return "wallet";
