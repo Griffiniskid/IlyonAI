@@ -260,14 +260,27 @@ def pool_protocol_url(
             ("ethereum", "USDT"): "0xdac17f958d2ee523a2206206994597c13d831ec7",
             ("ethereum", "DAI"): "0x6b175474e89094c44da98b954eedeac495271d0f",
             ("ethereum", "WETH"): "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+            ("ethereum", "WBTC"): "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
             ("base", "USDC"): "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
             ("base", "WETH"): "0x4200000000000000000000000000000000000006",
             ("arbitrum", "USDC"): "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+            ("arbitrum", "USDT"): "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
+            ("arbitrum", "DAI"): "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1",
+            ("arbitrum", "WETH"): "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
             ("polygon", "USDC"): "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359",
+            ("polygon", "USDT"): "0xc2132d05d31c914a87c6611c10748aeb04b58e8f",
+            ("polygon", "DAI"): "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063",
+            ("polygon", "WETH"): "0x7ceb23fd6bc0add59e62ac25578270cff1b9f619",
             ("optimism", "USDC"): "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+            ("optimism", "USDT"): "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58",
+            ("optimism", "WETH"): "0x4200000000000000000000000000000000000006",
             ("avalanche", "USDC"): "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e",
+            ("avalanche", "USDT"): "0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7",
         }
         sym_up = (sym or "").upper().strip()
+        # Strip Aave receipt prefix so "aUSDC" hits "USDC" entry.
+        if sym_up.startswith("A") and len(sym_up) > 1 and sym_up[1:] in {"USDC", "USDT", "DAI", "WETH", "WBTC"}:
+            sym_up = sym_up[1:]
         fallback_asset = _AAVE_FALLBACK_ASSET.get((ch, sym_up))
         target = first_under or fallback_asset
         if target:
@@ -386,7 +399,29 @@ def pool_protocol_url(
     if proj in {"pendle", "pendle-v2"}:
         if pa:
             return f"https://app.pendle.finance/trade/markets/{pa}"
+        # Direct market list per chain so user lands on the right
+        # network without scrolling through every chain.
+        _PENDLE_CHAIN_ID = {
+            "ethereum": "1", "arbitrum": "42161", "base": "8453",
+            "optimism": "10", "bsc": "56", "mantle": "5000",
+        }
+        if ch in _PENDLE_CHAIN_ID:
+            return f"https://app.pendle.finance/trade/markets?chainId={_PENDLE_CHAIN_ID[ch]}"
         return "https://app.pendle.finance/trade/markets"
+
+    if proj in {"stargate", "stargate-v2", "stargate-finance"}:
+        # Stargate has a per-chain pool list.
+        _STG_CHAIN = {
+            "ethereum": "ethereum", "polygon": "polygon", "arbitrum": "arbitrum",
+            "optimism": "optimism", "base": "base", "avalanche": "avalanche",
+            "bsc": "bnb",
+        }
+        c = _STG_CHAIN.get(ch, "ethereum")
+        if pa:
+            return f"https://stargate.finance/pool/{pa}"
+        if sym:
+            return f"https://stargate.finance/pool?chain={c}&search={quote_plus(sym)}"
+        return f"https://stargate.finance/pool?chain={c}"
 
     if proj.startswith("yearn"):
         chain_id = _YEARN_CHAIN_ID.get(ch, "1")
@@ -395,13 +430,20 @@ def pool_protocol_url(
         # overview when DefiLlama doesn't surface a pool_address.
         _YEARN_FALLBACK_VAULT: dict[tuple[str, str], str] = {
             ("ethereum", "USDC"): "0xbe53a109b494e5c9f97b9cd39fe969be68bf6204",
-            ("ethereum", "USDT"): "0x028ec7330ff87667b6dfb0d94b954c820195336c",
+            ("ethereum", "USDT"): "0x310B7Ea7475A0B449Cfd73bE81522F1B88eFAFaa",
             ("ethereum", "DAI"): "0x028ec7330ff87667b6dfb0d94b954c820195336c",
             ("ethereum", "WETH"): "0xc56413869c6cdf96496f2b1ef801fedbdfa7ddb0",
             ("base", "USDC"): "0xfe0a2bbcfa6e6e2c5b29f6f6ba43da3a4b5cb6b9",
             ("arbitrum", "USDC"): "0x6fafca7f49b4fd9dc38117469cd31a1e5aec91f5",
         }
         sym_up = (sym or "").upper().strip()
+        # Receipt-token / wrapper strip: "sDAI" / "yvUSDC" / "wrappedXYZ" → underlying.
+        _RECEIPT_PREFIXES = ("YV", "S", "A", "C", "W")
+        _UNDERLYING_SET = {"USDC", "USDT", "DAI", "WETH", "WBTC", "ETH", "USDE"}
+        for pfx in _RECEIPT_PREFIXES:
+            if sym_up.startswith(pfx) and sym_up[len(pfx):] in _UNDERLYING_SET:
+                sym_up = sym_up[len(pfx):]
+                break
         target = pa or _YEARN_FALLBACK_VAULT.get((ch, sym_up))
         if target:
             return f"https://yearn.fi/v3/{chain_id}/{target}"
@@ -530,15 +572,14 @@ POOL_LINK_ACTIONS = frozenset({
 def is_pool_link_action(*, action: str | None, protocol: str | None) -> bool:
     """True when this (action, protocol) pair should be link-only.
 
-    Rule:
-      - action ∈ POOL_LINK_ACTIONS → link-only.
-      - action == "stake" AND protocol NOT in LST_STAKE_PROTOCOLS → link-only.
-      - else → execute as before.
+    No-exec branch rule: any deposit / supply / stake action goes to a
+    pool_link card. Swap/bridge/transfer keep the wallet-assistant signable
+    path. This is stricter than the previous "stake LST allowed to sign"
+    rule because the user asked for ZERO sign buttons across pool flows.
     """
     a = (action or "").strip().lower()
-    p = (protocol or "").strip().lower()
     if a in POOL_LINK_ACTIONS:
         return True
-    if a == "stake" and p not in LST_STAKE_PROTOCOLS:
+    if a == "stake":
         return True
     return False
