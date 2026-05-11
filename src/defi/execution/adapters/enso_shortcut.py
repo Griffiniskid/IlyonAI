@@ -57,9 +57,12 @@ _SUPPORTED_PROTOCOLS = frozenset({
     "frax", "frax-ether", "frx-ether",
     "ethena", "pendle",
     "stargate", "moonwell",
-    "gmx", "velodrome", "aerodrome",
+    "gmx", "velodrome", "velodrome-v2", "aerodrome", "aerodrome-v1",
     "stader", "origin", "origin-ether",
     "fluid", "fluid-lending",
+    "beefy", "beefy-clm", "beefy-finance",
+    "ichi", "ichi-vaults", "steer", "steer-protocol", "gamma", "arrakis",
+    "tokemak", "tokemak-autoeth",
 })
 
 _SUPPORTED_CHAINS = frozenset({

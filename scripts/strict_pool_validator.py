@@ -458,6 +458,70 @@ def build_corpus() -> list[Scenario]:
         wallet="evm",
     ))
 
+    # ===== Multi-turn refinement chains (compressed into single prompts that
+    # exercise the same plan rebuild path) =====
+    s.append(Scenario(
+        name="re-aave-token-switch",
+        prompt="Supply 50 USDT to Aave V3 on Ethereum",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+        require_text=["USDT", "aave"],
+    ))
+    s.append(Scenario(
+        name="re-aave-chain-base",
+        prompt="Supply 75 USDC to Aave V3 on Base",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+        require_text=["base"],
+    ))
+    s.append(Scenario(
+        name="re-aave-chain-poly",
+        prompt="Supply 60 USDT to Aave V3 on Polygon",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+        require_text=["polygon"],
+    ))
+
+    # ===== Random Ethereum yield variety =====
+    for proto, sym in [("Morpho", "USDC"), ("Spark", "DAI"), ("Sky", "USDS"),
+                        ("Stargate", "USDT"), ("Pendle", "USDe"), ("Origin", "ETH")]:
+        s.append(Scenario(
+            name=f"yield-{proto.lower()}-{sym.lower()}",
+            prompt=f"Deposit 50 {sym} into {proto} on Ethereum",
+            wallet="evm",
+            require_card_types={"execution_plan_v3"},
+        ))
+
+    # ===== Curve big variety =====
+    for pair, chain in [("USDC-USDT", "ethereum"), ("DAI-USDT", "ethereum"),
+                         ("FRAX-USDC", "ethereum"), ("crvUSD-USDC", "ethereum"),
+                         ("USDC-USDBC", "base"), ("DAI-USDT", "polygon")]:
+        s.append(Scenario(
+            name=f"curve-{pair.lower().replace('-', '')}-{chain}",
+            prompt=f"Add liquidity to Curve {pair} on {chain.title()} $30",
+            wallet="evm",
+            require_card_types={"execution_plan_v3"},
+        ))
+
+    # ===== Solana variety =====
+    s.append(Scenario(
+        name="sol-raydium-clmm-narrow",
+        prompt="Add liquidity to Raydium CLMM SOL-USDC on Solana with 5 USDC",
+        wallet="solana",
+        require_card_types={"execution_plan_v3"},
+    ))
+    s.append(Scenario(
+        name="sol-orca-whirl-narrow",
+        prompt="Add liquidity to Orca Whirlpools USDC-SOL with 10 USDT",
+        wallet="solana",
+        require_card_types={"execution_plan_v3"},
+    ))
+    s.append(Scenario(
+        name="sol-drift-spot",
+        prompt="Deposit 25 USDC into Drift on Solana",
+        wallet="solana",
+    ))
+
     return s
 
 

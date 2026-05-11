@@ -491,7 +491,10 @@ EVM_ENSO_EXEC_PROTOCOLS = frozenset(
         "frax", "frax-ether", "frx-ether", "sfrxeth",
         "stader",
         "gmx",
-        "velodrome", "aerodrome",
+        "velodrome", "velodrome-v2", "aerodrome", "aerodrome-v1",
+        "beefy", "beefy-clm", "beefy-finance",
+        "ichi", "ichi-vaults", "steer", "steer-protocol",
+        "gamma", "arrakis", "tokemak", "tokemak-autoeth",
     }
 )
 
