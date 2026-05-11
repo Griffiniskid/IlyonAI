@@ -1667,10 +1667,13 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
         return None
     if amount <= 0:
         return None
-    return (
-        "execute_pool_position",
-        {"pool": pool_ref, "amount": amount, "asset_in": asset_in},
-    )
+    params: dict = {"pool": pool_ref, "amount": amount, "asset_in": asset_in}
+    chain_raw = (m.group("chain") or "").strip().lower() if "chain" in (m.groupdict() or {}) else ""
+    if chain_raw == "bnb":
+        chain_raw = "bsc"
+    if chain_raw in {"ethereum", "polygon", "arbitrum", "optimism", "base", "avalanche", "bsc", "solana"}:
+        params["chain"] = chain_raw
+    return ("execute_pool_position", params)
 
 
 def _detect_aave_supply(message: str) -> tuple[str, dict] | None:

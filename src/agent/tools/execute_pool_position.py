@@ -255,8 +255,13 @@ async def execute_pool_position(
             "live DefiLlama pool entry.",
         )
 
+    # Parser-provided chain wins over meta.chain — search may return a pool
+    # on a different chain than the user explicitly named.
+    chain_from_caller = chain  # original kwarg
     chain = str(meta.get("chain", "")).lower()
     protocol = str(meta.get("project", "")).lower()
+    if isinstance(chain_from_caller, str) and chain_from_caller.strip():
+        chain = chain_from_caller.strip().lower()
     pool_symbol = str(meta.get("symbol", ""))
     final_asset_in = asset_in or _pick_asset_in(meta)
 
@@ -340,16 +345,21 @@ async def execute_pool_position(
     # so they can finalise the deposit there. Direct execution stays enabled
     # for swaps, bridges, and single-asset LST staking (handled elsewhere).
     if is_pool_link_action(action=action, protocol=protocol):
-        pool_addr = meta.get("pool_address") or meta.get("poolAddress")
+        # Resolver-first: curated overrides are the authoritative match for
+        # well-known mainnet pools (Curve 3pool, Uniswap V3 USDC/WETH, etc.).
+        # DefiLlama yields sometimes returns the LP token of a related pool
+        # (e.g. LUSD-3Crv when the user asked for DAI-USDC) so we never let
+        # meta.pool_address win over a curated override.
+        from src.data.exact_pool_resolver import resolve_exact_pool_address
+        pool_addr = None
+        try:
+            pool_addr = await resolve_exact_pool_address(
+                chain=chain, protocol=protocol, pair_symbol=pool_symbol
+            )
+        except Exception:
+            pool_addr = None
         if not pool_addr:
-            # Resolve exact pool address (curated overrides + DexScreener).
-            from src.data.exact_pool_resolver import resolve_exact_pool_address
-            try:
-                pool_addr = await resolve_exact_pool_address(
-                    chain=chain, protocol=protocol, pair_symbol=pool_symbol
-                )
-            except Exception:
-                pool_addr = None
+            pool_addr = meta.get("pool_address") or meta.get("poolAddress")
         url = pool_protocol_url(
             chain=chain,
             project=protocol,
