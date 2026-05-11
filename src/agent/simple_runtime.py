@@ -4401,6 +4401,15 @@ async def run_ephemeral_turn(
 
     if prior_intent_override is None:
         prev_lp = _last_lp_card(history_cards)
+        _hc_types = [str((c.get("card_type") or "")).lower() for c in (history_cards or [])]
+        try:
+            import logging as _lg
+            _lg.getLogger("ilyon.lp_refine").info(
+                "lp_refine: msg=%r prev_lp=%s hc_types=%s",
+                message[:80], (prev_lp.get("card_type") if prev_lp else None), _hc_types[-5:],
+            )
+        except Exception:
+            pass
         if prev_lp:
             payload = prev_lp.get("payload") or {}
             t = (prev_lp.get("card_type") or "").lower()
