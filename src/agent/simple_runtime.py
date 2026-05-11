@@ -756,18 +756,16 @@ def _detect_stake_amount_plan(message: str) -> tuple[str, dict] | None:
     amount = float(direct.group("amount").replace(",", ""))
     if direct.group("sign") == "-" or amount <= 0 or amount > 1_000_000:
         return None  # let downstream flag absurd / invalid amounts
-    amount_usd = amount * 3000 if token == "ETH" else amount
+    # On no-exec branch, route protocol-qualified stake through
+    # execute_pool_position so the pool_link gate emits a link-only card
+    # pointing at the protocol's official stake page.
+    proto_norm = direct.group("protocol").strip().lower().replace(" ", "-")
     return (
-        "compose_plan",
+        "execute_pool_position",
         {
-            "title": f"Stake {token} on {direct.group('protocol').strip().title()}",
-            "steps": [
-                {
-                    "step_id": "stake",
-                    "action": "stake",
-                    "params": {"token": token, "amount": direct.group("amount"), "protocol": direct.group("protocol").strip().lower().replace(" ", "-"), "chain_id": 1, "amount_usd": amount_usd},
-                }
-            ],
+            "pool": f"{proto_norm} {token}",
+            "amount": amount,
+            "asset_in": token,
         },
     )
 
