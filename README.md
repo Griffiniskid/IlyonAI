@@ -36,7 +36,7 @@ The runtime classifies every pool intent and routes it to the safest builder it 
 | Pool family | Route | Card |
 |---|---|---|
 | EVM lending (Aave V3, Compound V3) | Direct `approve` + `supply` calldata, pre-sim'd via `eth_call` | `execution_plan_v3` |
-| EVM V3 / CLMM (Uniswap V3/V4, Pancake V3, Aerodrome Slipstream, Ramses, …) | Deeplink to the exact pool on the protocol app (range NFTs require a UI step) | `pool_link` |
+| EVM V3 / CLMM (Uniswap V3/V4, Pancake V3, Aerodrome Slipstream, Ramses, …) | **Interactive range selector card** (live capital-efficiency × in-range-prob × APR), then in-chat mint (Phase 4) or protocol-app finalization | `pool_deposit_v3` |
 | EVM V2 / stable / vault (Curve, Balancer, Uniswap V2, Yearn, Gamma, Arrakis, …) | Deeplink to the exact pool on the protocol app (V2 zap composer ships in Phase 2) | `pool_link` |
 | Solana LST (Marinade, Jito, Sanctum, …) | Direct Jupiter route into the LST mint, single signed tx | `execution_plan_v3` |
 | Solana AMM (Raydium AMM, Orca Whirlpools, Meteora) | Pair-aware prep swap into the pool's *missing* token via Jupiter + deeplink to finish on the protocol app | `execution_plan_v3` + protocol URL |
@@ -49,6 +49,8 @@ Same-chain swap, bridge, and LST stake execute end-to-end on every chain.
 - **Pair-aware Solana prep swap.** Adapters read the pool's actual underlying mints from DefiLlama and swap the input into the side the user does *not* hold. `WSOL-AURA` stages `WSOL → AURA`, not `WSOL → USDC`.
 - **Decimal-precision amounts.** All human-readable amounts on the wire are fixed-precision strings (`"0.1"`, not `"0.1111111111111111"`). No `float` leaks into card payloads.
 - **Real Kamino REST.** Tries `api.kamino.finance/v2/transactions/deposit` first, falls back to a Jupiter proxy with an explicit "not a Kamino vault deposit" banner if Kamino is unreachable.
+- **V3 range UI with live math.** `pool_deposit_v3` card renders draggable lower / upper handles plus quick presets (Narrow ±5% / Balanced ±10% / Wide ±25% / Full). Capital efficiency, in-range probability (interpolated from a precomputed 30d CDF the backend ships once), expected APR, and per-side position preview all recompute *on the frontend* without a backend round-trip per drag — feels instant to the user.
+- **Multi-turn LP refinement.** "Make it $50", "What if I use $200?", "Try Base instead", "Switch to USDT" — when the prior turn produced a `pool_link` / `pool_deposit_v3` / `execution_plan_v3` card, the runtime merges the delta into the prior intent instead of re-running search or asking for clarification.
 
 The full diagnosis + roadmap for the in-flight V3 range UI, V2 zap composer, native Curve adapter, and Meteora DLMM bin distribution lives at [`docs/POOL_EXECUTION_FIX_PLAN.md`](docs/POOL_EXECUTION_FIX_PLAN.md).
 
