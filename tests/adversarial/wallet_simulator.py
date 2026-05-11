@@ -308,15 +308,22 @@ class WalletSimulator:
         url = payload.get("url") or ""
         if url and not (url.startswith("http://") or url.startswith("https://")):
             failures.append(f"pool_link url must be http(s): {url!r}")
-        # Amount must be a clean fixed-precision string — no float artifacts.
+        # Amount must be a clean fixed-precision string — no FP artifacts.
+        # "100.0" is fine ($100). The real bug is IEEE-754 garbage:
+        #   - long trailing-zero/nine runs (≥8 chars) anywhere in fraction
+        #   - scientific notation
+        #   - repeating-1 / repeating-9 patterns past 6dp
         amt = payload.get("amount")
-        if isinstance(amt, str):
-            if amt and any(c in amt for c in "eE"):
-                failures.append(f"pool_link amount in scientific notation: {amt!r}")
-            if amt.endswith(".0") or "0000000000" in amt:
-                failures.append(f"pool_link amount has float artifact: {amt!r}")
         if isinstance(amt, float):
             failures.append(f"pool_link amount must be a string, got float {amt!r}")
+        if isinstance(amt, str):
+            if any(c in amt for c in "eE"):
+                failures.append(f"pool_link amount in scientific notation: {amt!r}")
+            # Match the IEEE-754 ghosts only — long runs in the FRACTION part.
+            if "." in amt:
+                frac = amt.split(".", 1)[1]
+                if any(seq in frac for seq in ("11111111", "99999999", "00000000")):
+                    failures.append(f"pool_link amount has float-IEEE artifact: {amt!r}")
         return failures
 
     def assert_execution_plan_lp(self, plan: dict[str, Any], *, expected_input_asset: str | None = None,
