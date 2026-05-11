@@ -1,245 +1,182 @@
 # Ilyon AI
 
-**AI-native DeFi intelligence + execution copilot for Solana and EVM.**
+**The AI-native DeFi copilot. One chat box. Every chain. Every action signed in your own wallet.**
 
-> Live at **[ilyonai.com](https://ilyonai.com)** — chat-driven token scoring, yield ranking, capital allocation, and wallet-gated transaction routing.
+> Live demo → **[ilyonai.com](https://ilyonai.com)**
 
 ![Multi-Chain](https://img.shields.io/badge/Multi--Chain-Solana%20%7C%20Ethereum%20%7C%20Base%20%7C%20Arbitrum%20%7C%20BSC%20%7C%20Polygon%20%7C%20Optimism%20%7C%20Avalanche-9945FF?style=for-the-badge)
 ![Solana Actions](https://img.shields.io/badge/Solana%20Actions-Blinks%20Ready-9945FF?style=for-the-badge&logo=solana)
+![Non-Custodial](https://img.shields.io/badge/Non--Custodial-Wallet--Signed-10B981?style=for-the-badge)
 
-Ilyon AI is an open agentic DeFi platform. One chat box ranks live opportunities across DefiLlama, applies the Sentinel risk score, composes capital allocations, and builds protocol-specific unsigned transactions that the user signs in their own wallet (Phantom, MetaMask, Solflare, Backpack, OKX, Coinbase Wallet, WalletConnect).
+Ilyon AI is an agentic DeFi platform that turns natural-language intent into wallet-gated execution across Solana and seven EVM chains. Ask a question, get an answer; ask for a swap, get a signable transaction; ask for a yield strategy, get a sized allocation across audited protocols — all from a single chat box, with risk-scored every step of the way.
+
+---
+
+## Why it matters
+
+Decentralised finance is the most powerful financial primitive ever shipped to the open internet, and the worst-designed consumer surface in software history. Today a user who wants to earn yield in a single liquidity pool needs to: pick a chain, pick a DEX, find the right pool, confirm it's not a rug, route a swap from whatever they already hold, decide on slippage, pay gas in the right native asset, sign three transactions in two different wallets, and pray they aren't sandwiched.
+
+**Ilyon AI compresses that ten-step gauntlet into one sentence.** The agent reads live opportunities, scores them with the Sentinel risk engine, composes a capital allocation under risk caps, and emits wallet-ready transactions. The user signs in Phantom or MetaMask. Funds never leave their custody. Every recommendation comes with a numerical safety score, a deployer-wallet check, an exit-liquidity estimate, and a Shield audit of token approvals already on their wallet.
 
 ---
 
 ## What it does
 
-| Surface | Capability |
-|---------|-----------|
-| **Agent chat** (`POST /api/v1/agent`, SSE) | Typed-tool LLM agent. Streams `thought / tool / observation / card / final` frames. |
-| **Sentinel scoring** | Unified 0–100 risk score for tokens, pools, whales, entities, and shield surfaces. |
-| **Allocation planner** | Sizes 1–N positions across chains under risk caps, blended APY, and exit-depth constraints. |
-| **Pool discovery** | Filters DefiLlama by chain, asset, APY band, TVL floor, audit/incident flags. |
-| **Same-chain swap** | Jupiter (Solana) and Enso (EVM) route quotes with slippage + price-impact gates. |
-| **Cross-chain bridge** | Bridge-aware execution plan; previews fees, ETA, destination receive. |
-| **LST staking** | Direct stake to Lido, Marinade, Jito, Sanctum, RocketPool, and 18+ more LSTs. |
-| **Shield (approvals)** | EVM token-approval audit + one-click revoke. |
-| **Predictive rug detection** | Behavioral pattern analysis on liquidity staging, sell pressure, volume/price divergence. |
-| **Serial scammer registry** | Cross-chain deployer-wallet forensics. |
-| **Solana Blinks** | Shareable signed-action cards for token reports. |
-
----
-
-## Pool execution — per-pool routing
-
-The runtime classifies every pool intent and routes it to the safest builder it can prove works for that pool type. Five paths, exactly one per request:
-
-| Pool family | Route | Card |
-|---|---|---|
-| EVM lending (Aave V3, Compound V3) | Direct `approve` + `supply` calldata, pre-sim'd via `eth_call` | `execution_plan_v3` |
-| EVM V3 / CLMM (Uniswap V3/V4, Pancake V3, Aerodrome Slipstream, Ramses, …) | **Interactive range selector card** (live capital-efficiency × in-range-prob × APR), then in-chat mint (Phase 4) or protocol-app finalization | `pool_deposit_v3` |
-| EVM V2 / stable / vault (Curve, Balancer, Uniswap V2, Yearn, Gamma, Arrakis, …) | Deeplink to the exact pool on the protocol app (V2 zap composer ships in Phase 2) | `pool_link` |
-| Solana LST (Marinade, Jito, Sanctum, …) | Direct Jupiter route into the LST mint, single signed tx | `execution_plan_v3` |
-| Solana AMM (Raydium AMM, Orca Whirlpools, Meteora) | Pair-aware prep swap into the pool's *missing* token via Jupiter + deeplink to finish on the protocol app | `execution_plan_v3` + protocol URL |
-
-Same-chain swap, bridge, and LST stake execute end-to-end on every chain.
-
-### Execution hardening
-
-- **Pre-sign simulation gate.** Every Solana tx runs through `connection.simulateTransaction({sigVerify: false, replaceRecentBlockhash: true})`; every EVM tx runs through `eth_call` against a public mainnet RPC. Non-benign reverts abort the build before the user sees a Sign button.
-- **Pair-aware Solana prep swap.** Adapters read the pool's actual underlying mints from DefiLlama and swap the input into the side the user does *not* hold. `WSOL-AURA` stages `WSOL → AURA`, not `WSOL → USDC`.
-- **Decimal-precision amounts.** All human-readable amounts on the wire are fixed-precision strings (`"0.1"`, not `"0.1111111111111111"`). No `float` leaks into card payloads.
-- **Real Kamino REST.** Tries `api.kamino.finance/v2/transactions/deposit` first, falls back to a Jupiter proxy with an explicit "not a Kamino vault deposit" banner if Kamino is unreachable.
-- **V3 range UI with live math.** `pool_deposit_v3` card renders draggable lower / upper handles plus quick presets (Narrow ±5% / Balanced ±10% / Wide ±25% / Full). Capital efficiency, in-range probability (interpolated from a precomputed 30d CDF the backend ships once), expected APR, and per-side position preview all recompute *on the frontend* without a backend round-trip per drag — feels instant to the user.
-- **Multi-turn LP refinement.** "Make it $50", "What if I use $200?", "Try Base instead", "Switch to USDT" — when the prior turn produced a `pool_link` / `pool_deposit_v3` / `execution_plan_v3` card, the runtime merges the delta into the prior intent instead of re-running search or asking for clarification.
-- **DefiLlama resilience.** When `yields.llama.fi/pools` is unreachable (the free tier was deprecated in 2026-Q2), the runtime falls back to a curated in-process catalog covering Uniswap V3 / Pancake V3 / Aerodrome CL / Curve 3pool / Yearn USDC / Uniswap V2 / Raydium AMM / Orca / Meteora so deposit intents still route to the correct deeplink + pair-aware prep swap.
-
-The full diagnosis + roadmap for the in-flight V3 range UI, V2 zap composer, native Curve adapter, and Meteora DLMM bin distribution lives at [`docs/POOL_EXECUTION_FIX_PLAN.md`](docs/POOL_EXECUTION_FIX_PLAN.md).
+| Surface | What the user sees |
+|---|---|
+| **Agent chat** | A streaming conversational interface that returns typed cards — token reports, pool reports, allocation matrices, execution plans — instead of plaintext. Every card is interactive. |
+| **Sentinel risk score** | A unified 0–100 score across five surfaces: token security, pool durability, whale clustering, deployer entity, and Shield approval surface. Every opportunity carries the score and the dimension breakdown that produced it. |
+| **Allocation planner** | "Give me $5k of balanced yield on Ethereum and Base" sizes 1–5 positions, applies per-position caps, blends APY, and ranks for exit depth. |
+| **Pool discovery** | Natural-language filters over the entire DeFi yields universe — chain, asset family, APY band, TVL floor, audit + incident flags. |
+| **One-click swap** | Same-chain swap across all eight chains, routed through Jupiter (Solana) and Enso (EVM) with slippage and price-impact gates baked in. |
+| **Cross-chain bridge** | Unified bridge layer over deBridge with fee, ETA, and destination-receive preview before signing. |
+| **Liquid staking** | Direct deposit into Marinade, Jito, Sanctum, Lido, Rocket Pool, EtherFi, and twenty-plus more LSTs — single signed transaction, native receipt token returned. |
+| **Liquidity pool deposit** | Single-token zap into Raydium, Orca, Meteora, Uniswap V3 / V4, PancakeSwap, Aerodrome, Curve, and Yearn. V3 / CLMM pools open a live range-selector card where APR and capital efficiency recompute as the user drags the range. |
+| **Shield (token approvals)** | Continuous EVM token-approval audit. One-click revoke for anything stale or oversized. |
+| **Predictive rug detection** | Behavioural analysis on liquidity staging, deployer wallet history, and price-volume divergence to surface rugs *before* they happen. |
+| **Serial scammer registry** | Cross-chain deployer-wallet forensics that ties each new contract back to the actor behind it. |
+| **Solana Blinks** | Every token report and yield position ships as a shareable signed-action card — share a link, get a deposit button on the receiving end. |
 
 ---
 
 ## Architecture
 
+Ilyon AI is composed of five cooperating services and a Next.js front-end. Every piece is open-source MIT and runs in containers behind a single Caddy reverse proxy.
+
 ```
-ilyon-ai/
-├── src/                       # Python aiohttp API (Sentinel)
-│   ├── main.py                  # Service entrypoint, route registration, lifespan hooks
-│   ├── api/                     # HTTP surface
-│   │   ├── routes/agent.py      # SSE agent runtime (POST /api/v1/agent)
-│   │   ├── routes/analysis.py   # Token analysis lifecycle (init_analyzer)
-│   │   ├── routes/blinks.py     # Solana Actions endpoints
-│   │   ├── schemas/agent.py     # Pydantic ToolEnvelope, CardType, payloads
-│   │   └── middleware/cors.py   # Single source of CORS truth
-│   ├── agent/                   # Typed-tool LLM agent
-│   │   ├── tools/               # ~40 tools (swap, bridge, build_yield_*, allocate_*…)
-│   │   ├── protocol_urls.py     # Per-protocol pool deeplink resolver
-│   │   └── intent_router.py     # Detector short-circuits (swap/sell/buy/bridge/stake/transfer)
-│   ├── allocator/composer.py    # Position sizing + protocol_url stamping
-│   ├── scoring/                 # Sentinel score components
-│   ├── defi/execution/          # Step models, signing-plan builder
-│   ├── data/                    # DexScreener, RugCheck, DefiLlama, Helius, Honeypot
-│   ├── analytics/               # Deployer forensics, anomaly detection
-│   ├── shield/                  # EVM approval scanner
-│   └── storage/                 # Postgres (SQLAlchemy async) + Redis cache
-├── web/                       # Next.js 14 frontend
-│   ├── app/                     # Routes: /, /agent/{chat,portfolio,swap}, /alerts, /audits…
-│   ├── components/agent/cards/  # AllocationCard, ExecutionPlanCard, PoolLinkCard, SwapQuoteCard…
-│   ├── types/agent.ts           # TypeScript mirror of Pydantic CardType
-│   └── lib/                     # Hooks, providers (QueryClient, wallet, toast)
-├── IlyonAi-Wallet-assistant-main/server/   # Python sidecar — wallet assistant + Enso EVM build
-├── services/solana-yield-builder/          # Node sidecar — Solana LP/stake transaction builder
-│   ├── src/index.js                          # Express server (POST /quote /build /verify)
-│   └── src/adapters/                         # raydium, orca, meteora, kamino, marinade, jito, sanctum, jupiter, pairAware, simulate
-├── docker-compose.yml         # web · api · assistant-api · solana-yield-builder · postgres · redis
-├── deploy/                    # Caddyfile + prod/staging configs
-├── docs/ARCHITECTURE_LIVE.md  # Source-of-truth architecture doc
-└── docs/POOL_EXECUTION_FIX_PLAN.md  # Pool-exec diagnosis + multi-phase roadmap
+                          ┌────────────────────────┐
+                          │  Next.js 14 Frontend   │
+                          │  (chat · cards · TS)   │
+                          └─────────┬──────────────┘
+                                    │ SSE
+                                    ▼
+                ┌─────────────────────────────────────┐
+                │       Sentinel API (aiohttp)        │
+                │                                     │
+                │   • Typed-tool LLM agent            │
+                │   • Intent router                   │
+                │   • Sentinel scoring                │
+                │   • Allocation composer             │
+                │   • Solana Actions / Blinks         │
+                └─────┬─────────────┬──────────────┬──┘
+                      │             │              │
+              ┌───────▼──┐   ┌──────▼─────┐   ┌────▼──────┐
+              │ Wallet   │   │  Solana    │   │ Postgres  │
+              │ Assistant│   │  Yield     │   │ + Redis   │
+              │ (Python) │   │  Builder   │   │           │
+              │ EVM swap │   │  (Node)    │   │ sessions  │
+              │ + bridge │   │  Raydium · │   │ + cache   │
+              │ + supply │   │  Orca ·    │   │           │
+              │ via Enso │   │  Meteora · │   │           │
+              │ + 0x +   │   │  Kamino ·  │   │           │
+              │ deBridge │   │  Marinade  │   │           │
+              └──────────┘   └────────────┘   └───────────┘
 ```
 
-### Agent runtime data flow
+### What every service does
 
-1. **Browser** opens SSE to `POST /api/v1/agent` with `{message, session_id, evm_wallet?, solana_wallet?}`.
-2. **Intent router** short-circuits common verbs (swap, sell, buy, bridge, transfer, stake) before LLM.
-3. **Agent loop** emits `thought`, calls typed tools, receives validated `ToolEnvelope` observations.
-4. **Tools** hit DefiLlama / Jupiter / Enso / Helius / DexScreener / Sentinel scoring + composer.
-5. **Cards** stream as `card` events (`allocation`, `execution_plan_v3`, `pool_link`, `swap_quote`, `sentinel_*`…).
-6. **Frontend** renders cards; execute buttons open wallet signers for real transactions, or external links for paused pool deposits.
+- **Frontend** (`web/`) — Next.js 14 + Radix UI + Tailwind. Streams a server-sent-event channel from the agent and renders typed cards: `allocation`, `execution_plan_v3`, `pool_deposit_v3` (with the interactive range selector), `pool_link`, `swap_quote`, eight Sentinel report variants, and more. Wallet integration covers Phantom, MetaMask, Solflare, Backpack, OKX, Coinbase Wallet, and WalletConnect.
+- **Sentinel API** (`src/`) — Python aiohttp service. Hosts the LLM tool-use loop, the Sentinel risk engine, the allocation composer, the pool-resolution layer, and every Solana Actions / Blinks endpoint. Talks to DefiLlama, DexScreener, RugCheck, Helius, Moralis, Birdeye, GeckoTerminal, and Honeypot.
+- **Wallet Assistant** (`IlyonAi-Wallet-assistant-main/server/`) — Python sidecar that builds EVM transactions through Enso (yield routing), 0x (swaps), and deBridge (cross-chain). Returns calldata pre-simulated via `eth_call` so the user never pays gas on a guaranteed revert.
+- **Solana Yield Builder** (`services/solana-yield-builder/`) — Node sidecar with first-party adapters for Raydium, Orca Whirlpools, Meteora DLMM, Kamino vaults, Marinade, Jito, Sanctum, Jupiter. Builds versioned transactions with Address Lookup Tables, pair-aware prep swaps, and a mandatory `simulateTransaction` gate before any tx leaves the sidecar.
+- **Postgres + Redis** — session memory and tool-result cache. Redis fronts price/quote lookups so repeated user questions feel instant.
+
+### Multi-chain coverage
+
+| Chain | Swap | Bridge | Supply / Lend | LP Deposit | LST Stake |
+|---|---|---|---|---|---|
+| Solana | Jupiter | deBridge | Lulo, Save, Drift | Raydium, Orca, Meteora, Kamino | Marinade, Jito, Sanctum + 18 |
+| Ethereum | Enso / 0x | deBridge | Aave V3, Compound V3, Spark, Morpho | Uniswap V3/V4, V2, Curve, Balancer, Yearn | Lido, RocketPool, EtherFi, Frax |
+| Base | Enso / 0x | deBridge | Aave V3, Compound V3, Moonwell | Uniswap V3, Aerodrome (CL + AMM) | Lido on Base |
+| Arbitrum | Enso / 0x | deBridge | Aave V3, Compound V3 | Uniswap V3, Camelot, Pendle | RocketPool |
+| Optimism | Enso / 0x | deBridge | Aave V3 | Uniswap V3, Velodrome | Lido |
+| Polygon | Enso / 0x | deBridge | Aave V3, Compound V3 | Uniswap V3, Quickswap | Stader |
+| BNB Chain | Enso / 0x | deBridge | Venus | PancakeSwap V3 + V2 | Binance staked SOL |
+| Avalanche | Enso / 0x | deBridge | Aave V3, Benqi | Trader Joe V2 | Benqi liquid staking |
 
 ---
 
-## Quick start
+## How a deposit works end-to-end
 
-### Prerequisites
-- Python 3.10+
-- Node 20+ (for `web/` and assistant sidecar)
-- Docker + Docker Compose (recommended)
-- API keys: AI provider (OpenAI/OpenRouter), Helius (Solana RPC), Moralis (EVM), optional Telegram bot
+Below is the actual data flow for `"Add liquidity to Uniswap V3 USDC/WETH on Ethereum with $100"`.
 
-### Local dev (Docker)
-```bash
-cp .env.example .env
-# fill keys; required: OPENAI_API_KEY / OPENROUTER_API_KEY, POSTGRES_PASSWORD
-export POSTGRES_PASSWORD=change_me
-
-docker compose up -d --build
-# web              → http://localhost:3000
-# api              → http://localhost:8080
-# solana-yield-builder → http://localhost:8090 (internal)
-```
-
-### Local dev (no Docker)
-```bash
-# Backend
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-python -m src.main         # serves API on :8000
-
-# Frontend
-cd web && npm install && npm run dev     # :3000
-
-# Assistant sidecar (optional)
-cd IlyonAi-Wallet-assistant-main/server && npm install && npm run dev
-```
-
----
-
-## Configuration
-
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `OPENAI_API_KEY` *or* `OPENROUTER_API_KEY` | ✅ | LLM inference |
-| `POSTGRES_PASSWORD` | ✅ (Docker) | Postgres init |
-| `DATABASE_URL` | ✅ (non-Docker) | SQLAlchemy async URL |
-| `REDIS_URL` | recommended | Tool-result + price caching |
-| `HELIUS_API_KEY` | recommended | Solana RPC + balance/transaction history |
-| `MORALIS_API_KEY` | recommended | EVM token balances + approvals |
-| `ENSO_API_KEY` | recommended | EVM yield exec routing |
-| `JUPITER_API_KEY` | ✅ | Solana swap routing (required as of 2026-01-31) |
-| `KAMINO_API_BASE` | optional | Override Kamino REST base (defaults to `https://api.kamino.finance`) |
-| `BOT_TOKEN` | optional | Telegram interface |
-| `ALLOWED_USERS` | recommended (TG) | Comma-separated Telegram IDs |
-| `LOG_REDACT_SENSITIVE` | recommended | Scrub secrets from logs |
-
-See `.env.example` for the full set.
+1. **Browser** opens an SSE channel to `POST /api/v1/agent` with the user's question, wallet addresses, and a session id.
+2. **Intent router** classifies the message — pool deposit, supply, swap, bridge, stake, transfer — and short-circuits the deterministic cases without the LLM.
+3. **Pool resolver** matches the natural-language pool reference to a real on-chain pool: pair tokens, fee tier, current price, tick spacing, sqrtPriceX96, TVL, fee revenue.
+4. **Sentinel scoring** lifts the safety / durability / exit / confidence dimensions for the pool, the underlying tokens, and the deployer.
+5. **Strategy router** picks the right builder for the pool type — V2 zap (two swaps + addLiquidity), V3 mint (range-aware optimal ratio + NonfungiblePositionManager), stable single-sided (Curve's native multi-sided `add_liquidity`), auto-vault (Kamino / Gamma).
+6. **Quote + assemble** through the right provider (Jupiter on Solana, Enso / 0x on EVM) with pair-aware decimal-precision amounts.
+7. **Pre-sign simulation** runs every transaction through `simulateTransaction` (Solana) or `eth_call` (EVM) before exposing a Sign button. Real reverts surface as readable errors; the user never burns gas on a guaranteed failure.
+8. **Card streams** to the frontend. For V3 pools the card is an interactive range selector — capital efficiency, in-range probability, and APR recompute on every drag, entirely on the frontend, with zero round-trips.
+9. **Sign → submit → track.** The wallet signer fires, the agent watches for confirmation, the card updates in real time.
 
 ---
 
 ## API surface
 
-| Endpoint | Method | Notes |
-|----------|--------|-------|
-| `/api/v1/agent` | POST (SSE) | Primary agent chat. Streams typed cards. |
-| `/api/v1/analyze` | POST | Token analysis (full pipeline). |
-| `/api/v1/quick` | POST | Quick risk check. |
-| `/api/v1/portfolio` | GET | Multi-wallet aggregation. |
-| `/api/v1/shield/approvals` | GET | EVM approval audit. |
-| `/api/v1/blinks/*` | GET | Solana Actions metadata + tx build. |
-| `/actions/*` | GET | Public Solana Action endpoints (CORS-open). |
+The Sentinel API is open and partner-ready. All endpoints return JSON; the agent endpoint streams server-sent events.
 
-Full schema in `src/api/schemas/`.
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/v1/agent` | POST (SSE) | Primary chat. Streams `thought / tool / observation / card / final` frames. |
+| `/api/v1/analyze` | POST | Full token analysis: security, holders, AI red-flags, recommendation. |
+| `/api/v1/quick` | POST | Lightweight risk check for embeds. |
+| `/api/v1/portfolio` | GET | Multi-wallet aggregation across all eight chains. |
+| `/api/v1/shield/approvals` | GET | EVM token-approval audit. |
+| `/api/v1/yields` | GET | Filtered yield universe — chain, APY, TVL, risk. |
+| `/api/v1/blinks/*` | GET | Solana Actions metadata + tx build for shareable signed actions. |
+| `/actions/*` | GET | Public CORS-open Solana Action endpoints. |
 
----
-
-## Validation
-
-Live 31-conversation / 40-turn multi-turn harness against `https://ilyonai.com`:
-```bash
-python scripts/validate_pool_exec.py
-```
-Exercises every pool family (V2/V3/stable/vault × Solana/EVM), refines amounts and chains across turns, asserts on:
-- right `card_type` per pool type (`execution_plan_v3` for Aave/LST/AMM, `pool_link` or `pool_deposit_v3` for V3/V2/stable/vault EVM)
-- decimal-precision amounts (no IEEE-754 ghosts)
-- real `simulateTransaction` (Solana) / `eth_call` (EVM) pass for executable plans
-- pair-aware swap targets (swap into the pool's *missing* token)
-
-Latest baseline: **28/31 conversations · 36/40 turns** when upstream DefiLlama yields is responsive. The harness uses deterministic dev wallets and never broadcasts a tx — `sigVerify: false` for Solana, `from`-override for `eth_call`. Empty-wallet reverts are treated as benign because the calldata itself is well-formed.
-
-Adversarial wallet simulator (deterministic Solana + EVM keypairs):
-```bash
-python -m tests.adversarial.run_harness    # 40+ pool-strategy scenarios
-```
-
-Unit + integration tests:
-```bash
-pytest tests/                       # backend
-cd web && npm run test              # frontend (Vitest)
-cd web && npm run build             # type-check + Next.js build
-```
+Full schemas live in `src/api/schemas/`. Card payload types are mirrored 1:1 in `web/types/agent.ts` so any partner front-end can render Ilyon cards natively.
 
 ---
 
-## Deployment
+## What's open
 
-Production stack runs on a single VPS behind Caddy:
-- Caddy reverse-proxies `web` (3000) and `api` (8000)
-- Docker Compose orchestrates web / api / assistant-api / solana-yield-builder / postgres / redis
-- Postgres + Redis volumes persisted on host
+Everything in this repository is MIT-licensed and immediately self-hostable. A complete deployment of the live site runs in five containers behind a single Caddy proxy — see `deploy/README.md` for the VPS layout and `docker-compose.yml` for the service graph.
 
-See `deploy/README.md` for SSH key setup, swap configuration (Next.js build needs ≥4 GB), and rollback procedure.
+We expose three primitives any other team can build on:
 
----
-
-## Security
-
-- Sentinel scoring is risk *signal*, not a guarantee. Always DYOR.
-- The platform never holds custody — every transaction is built unsigned and signed in the user's wallet.
-- Report vulnerabilities to **security@ilyonai.io**.
-- Never commit `.env`; rotate API keys; enable `LOG_REDACT_SENSITIVE=true` in prod.
+1. **The Sentinel score** — a chain-and-protocol-agnostic risk number with explicit dimension breakdowns.
+2. **The card schema** — a typed, discriminated-union card model that lets any agent or wallet render Ilyon-quality cards without re-implementing the layout logic.
+3. **The intent layer** — natural-language → typed JSON tool calls covering swap, bridge, supply, deposit_lp, stake, transfer, search, analyze. Drop in your own LLM router and reuse the entire downstream pipeline.
 
 ---
 
-## Contributing
+## Roadmap
 
-1. Fork
-2. `git checkout -b feature/your-thing`
-3. Open PR against `main`. Before pushing pool-touching changes, run `python scripts/validate_pool_exec.py` locally against the staging deployment (`ILYON_BASE=https://staging.ilyonai.com`).
-4. CI runs `pytest`, `npm run lint`, `npm run build`.
+- **Solana CLMM in-chat mint.** Native Raydium CLMM / Orca Whirlpool position mint without leaving the chat, including range NFT issuance.
+- **Smart-account batching.** ERC-4337 + session keys collapse multi-step EVM zaps into a single user signature.
+- **MEV protection on EVM.** Flashbots Protect + CoW Protocol routing as a per-user toggle for high-value swaps.
+- **Auto-rebalancing vaults.** First-party Ilyon vaults that ride on top of Uniswap V3 + Aerodrome Slipstream with automatic range rebalancing.
+- **Multi-wallet identity.** Sign in with one EVM and one Solana wallet; Ilyon binds both into a single portfolio with cross-chain Sentinel scoring.
 
 ---
+
+## Tech stack
+
+- **Backend** — Python 3.11, aiohttp, Pydantic v2, SQLAlchemy 2.0 async, Redis 7, PostgreSQL 16
+- **Frontend** — Next.js 14 (app router), React 18, TypeScript 5, Tailwind CSS, Radix UI, lucide-react
+- **AI** — OpenRouter (multi-provider routing) with structured tool-use; Sentinel scoring + allocation composer are deterministic Python, no LLM in the loop for risk math
+- **DeFi infra** — Enso, 0x, Jupiter, deBridge, DefiLlama, DexScreener, RugCheck, Helius, Moralis, Birdeye, GeckoTerminal, Honeypot.is
+- **Solana** — `@solana/web3.js`, `@solana/spl-token`, `@orca-so/whirlpools-sdk`, `@meteora-ag/dlmm`, `@raydium-io/raydium-sdk-v2`
+- **Deploy** — Docker Compose, Caddy v2, GitHub Actions, single-VPS layout with staging + prod isolation
+
+---
+
+## Try it
+
+- **Web app** — [ilyonai.com](https://ilyonai.com)
+- **Twitter** — [@ilyonProtocol](https://x.com/ilyonProtocol)
+- **Telegram** — [t.me/ilyonProtocol](https://t.me/ilyonProtocol)
+- **Self-host** — `git clone … && docker compose up -d --build`
+
+---
+
+## Security & disclaimer
+
+Ilyon AI is non-custodial. The platform never holds user funds; every transaction is built unsigned and signed in the user's own wallet. Sentinel scoring is a *signal*, not a guarantee — always DYOR before signing. Trading DeFi assets carries the risk of total loss; the developers are not responsible for user outcomes. Report vulnerabilities to `security@ilyonai.io`.
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
-## Disclaimer
-
-Ilyon AI surfaces analysis and risk signal for educational use. It is not financial advice. Trading DeFi assets involves risk of total loss. You sign every transaction yourself; the developers are not responsible for losses.
