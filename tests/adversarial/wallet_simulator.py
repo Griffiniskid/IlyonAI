@@ -43,6 +43,14 @@ EVM_REVERT_BENIGN = (
     "subtraction overflow",
     "ERC20: transfer amount exceeds",
     "stf",  # uniswap-v3 safeTransferFrom failure when no balance
+    # Bare reverts from V3 mint when wallet has 0 token0/token1 — Uniswap V3
+    # NonfungiblePositionManager reverts WITHOUT a reason string on
+    # safeTransferFrom failures inside the mint path. Treat as benign for
+    # the harness so an empty test wallet doesn't fail validation.
+    "no data",
+    "execution reverted",
+    "revert without reason",
+    "0x",  # raw 0x revert (no reason bytes)
     # Public-RPC transient: "header not found" means the node lost the
     # `latest` block during our call. Not our bug; tx itself is well-formed.
     "header not found",

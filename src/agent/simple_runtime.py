@@ -4842,6 +4842,10 @@ async def run_ephemeral_turn(
                     | {"fluid", "fluid-lending", "origin", "origin-ether",
                        "ethena", "pendle"}
                 )
+                _V3_EVM_REFINE = {
+                    "uniswap-v3", "uniswap", "pancakeswap-v3", "pancake-v3",
+                    "aerodrome-slipstream", "aerodrome-cl",
+                }
                 if effective_protocol in _ENSO_ALL:
                     if effective_protocol in {"curve", "curve-dex", "curve-finance",
                                               "balancer", "balancer-v2", "balancer-v3"}:
@@ -4860,6 +4864,19 @@ async def run_ephemeral_turn(
                             "action": new_action,
                             "asset_in": new_asset_in,
                             "amount_in": new_amount,
+                        },
+                    )
+                    prior_pools_for_dist = []
+                elif effective_protocol in _V3_EVM_REFINE and prior_pool_symbol:
+                    prior_intent_override = (
+                        "build_yield_execution_plan",
+                        {
+                            "chain": new_chain,
+                            "protocol": effective_protocol,
+                            "action": "deposit_lp",
+                            "asset_in": new_asset_in,
+                            "amount_in": new_amount,
+                            "extra": {"pool_symbol": prior_pool_symbol, "fee_bps": 500},
                         },
                     )
                     prior_pools_for_dist = []
