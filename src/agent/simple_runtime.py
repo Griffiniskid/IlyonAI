@@ -4382,7 +4382,8 @@ async def run_ephemeral_turn(
     # rebuild the prior intent with the delta instead of routing to search
     # or asking for clarification.
     _LP_AMOUNT_DELTA_RE = re.compile(
-        r"(?:make\s+it|change(?:\s+to)?|set\s+(?:it\s+)?to|how\s+about|what\s+if(?:\s+i\s+(?:use|with))?|with|execute\s+with)"
+        r"(?:make\s+it|change(?:\s+to)?|set\s+(?:it\s+)?to|how\s+about|what\s+if(?:\s+i\s+(?:use|with))?"
+        r"|with|execute\s+with|actually(?:\s+(?:use|with|make\s+it))?|try)"
         r"\s*\$?\s*(?P<usd>[\d,]+(?:\.\d+)?)"
         r"(?:\s+(?P<token>[A-Za-z]{2,10}))?"
         r"(?:\s+(?:instead|now|then|please|again))*\s*[\?\.!]?\s*$",

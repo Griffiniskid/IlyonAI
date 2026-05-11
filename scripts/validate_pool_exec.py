@@ -468,6 +468,119 @@ def build_corpus() -> list[Convo]:
              expect_no_card_types={"pool_link"}),
     ]))
 
+    # ==================================================================
+    # GROUP J — Matrix expansion (multi-chain V3 redirect coverage)
+    # ==================================================================
+    corpus.append(Convo("evm-uniswapv3-arbitrum", "evm", [
+        Turn("Add liquidity to Uniswap V3 USDC-WETH on Arbitrum $40",
+             expect_card_types={"pool_deposit_v3"}),
+    ]))
+    corpus.append(Convo("evm-uniswapv3-polygon", "evm", [
+        Turn("Add liquidity to Uniswap V3 USDC-WETH on Polygon $35",
+             expect_card_types={"pool_deposit_v3"}),
+    ]))
+    corpus.append(Convo("evm-uniswapv3-optimism", "evm", [
+        Turn("Add liquidity to Uniswap V3 USDC-WETH on Optimism $30",
+             expect_card_types={"pool_deposit_v3"}),
+    ]))
+    corpus.append(Convo("evm-uniswapv3-avalanche", "evm", [
+        Turn("Add liquidity to Uniswap V3 USDC-WAVAX on Avalanche $25",
+             expect_card_types={"pool_deposit_v3"}),
+    ]))
+    corpus.append(Convo("evm-sushiswapv3", "evm", [
+        Turn("Add liquidity to SushiSwap V3 USDC-WETH on Ethereum $50",
+             expect_card_types={"pool_deposit_v3"}),
+    ]))
+
+    # ==================================================================
+    # GROUP K — Matrix expansion (multi-chain stable + Curve)
+    # ==================================================================
+    corpus.append(Convo("evm-curve-optimism", "evm", [
+        Turn("Add liquidity to Curve DAI-USDC on Optimism $20",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("evm-curve-polygon", "evm", [
+        Turn("Add liquidity to Curve DAI-USDC on Polygon $30",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("evm-curve-base", "evm", [
+        Turn("Add liquidity to Curve USDC-USDBC on Base $40",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+
+    # ==================================================================
+    # GROUP L — Matrix expansion (more Aave / Compound chains)
+    # ==================================================================
+    corpus.append(Convo("evm-aave-arbitrum", "evm", [
+        Turn("Supply 50 USDC to Aave V3 on Arbitrum",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("evm-aave-optimism", "evm", [
+        Turn("Supply 50 USDC to Aave V3 on Optimism",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("evm-aave-avalanche", "evm", [
+        Turn("Supply 50 USDC to Aave V3 on Avalanche",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+
+    # ==================================================================
+    # GROUP M — More Solana adapters covered
+    # ==================================================================
+    corpus.append(Convo("sol-orca-clmm-narrow", "solana", [
+        Turn("Add liquidity to orca-whirlpools USDC-SOL on Solana with 10 USDC",
+             expect_card_types={"execution_plan_v3"},
+             forbid_text_substrings=["0.111111111"]),
+    ]))
+    corpus.append(Convo("sol-meteora-amm", "solana", [
+        Turn("Add liquidity to Meteora SOL-USDC on Solana with 10 USDC",
+             expect_card_types={"execution_plan_v3"},
+             forbid_text_substrings=["0.111111111"]),
+    ]))
+    corpus.append(Convo("sol-kamino-vault", "solana", [
+        Turn("Deposit 25 USDC into Kamino USDC-SOL on Solana",
+             expect_card_types={"execution_plan_v3"},
+             forbid_text_substrings=["0.111111111"]),
+    ]))
+
+    # ==================================================================
+    # GROUP N — Extra multi-turn (refinement coverage)
+    # ==================================================================
+    corpus.append(Convo("multi-curve-refine", "evm", [
+        Turn("Add liquidity to Curve DAI-USDC on Ethereum $100",
+             expect_card_types={"execution_plan_v3"}),
+        Turn("Make it $50",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("multi-sol-orca-amount", "solana", [
+        Turn("Execute orca-dex USDC-SOL with 10 USDC",
+             expect_card_types={"execution_plan_v3"}),
+        Turn("Execute with 20 USDC",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("multi-aave-amount-refine", "evm", [
+        Turn("Supply 100 USDC to Aave V3 on Ethereum",
+             expect_card_types={"execution_plan_v3"}),
+        Turn("Make it $250",
+             expect_card_types={"execution_plan_v3"}),
+        Turn("Actually $500",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+
+    # ==================================================================
+    # GROUP O — Float-precision regression on common tokens
+    # ==================================================================
+    corpus.append(Convo("float-bsc-usdc-supply", "evm", [
+        Turn("Supply 1.111 USDC to Aave V3 on Ethereum",
+             expect_card_types={"execution_plan_v3"},
+             forbid_text_substrings=["1.1111111111"]),
+    ]))
+    corpus.append(Convo("float-eth-deposit", "evm", [
+        Turn("Add liquidity to Curve DAI-USDC on Ethereum $3.14",
+             expect_card_types={"execution_plan_v3"},
+             forbid_text_substrings=["3.14159265"]),
+    ]))
+
     return corpus
 
 
