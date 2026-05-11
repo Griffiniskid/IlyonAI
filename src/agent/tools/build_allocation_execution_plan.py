@@ -193,6 +193,45 @@ async def build_allocation_execution_plan(
             ))
             continue
 
+        # No-exec gating: pool deposit / supply / add_liquidity rows convert
+        # to link-only steps instead of building real signable transactions.
+        from src.agent.protocol_urls import is_pool_link_action, pool_protocol_url
+        if is_pool_link_action(action=action, protocol=protocol):
+            pool_addr = row.get("pool_address") or row.get("poolAddress")
+            pair_sym = row.get("symbol") or row.get("pool_symbol")
+            if not pool_addr and pair_sym:
+                from src.data.exact_pool_resolver import resolve_exact_pool_address
+                try:
+                    pool_addr = await resolve_exact_pool_address(
+                        chain=chain, protocol=protocol, pair_symbol=pair_sym
+                    )
+                except Exception:
+                    pool_addr = None
+            url = pool_protocol_url(
+                chain=chain, project=protocol, pool_address=pool_addr,
+                underlying_tokens=row.get("underlying_tokens") or row.get("underlyingTokens"),
+                pool_symbol=pair_sym,
+            )
+            from src.defi.execution.models import make_step
+            link_step = make_step(
+                index=idx,
+                action=action,
+                title=f"Finalise {protocol} {pair_sym or asset_in} on protocol app",
+                description="Pool execution is link-only — open the exact pool page to deposit.",
+                chain=chain,
+                wallet="MetaMask" if chain != "solana" else "Phantom",
+                protocol=protocol,
+                asset_in=asset_in,
+                amount_in=str(amount),
+                slippage_bps=slippage_bps,
+                gas_estimate_usd=0.0,
+                duration_estimate_s=0,
+                protocol_url=url,
+                exec_status="link_only",
+            )
+            plan.add_step(link_step)
+            continue
+
         capability = registry.find(chain=chain, protocol=protocol, action=action)
         if not capability.supported:
             plan.add_blocker(ExecutionBlocker(
