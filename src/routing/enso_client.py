@@ -15,7 +15,7 @@ import httpx
 from src.config import settings
 
 _BASE = "https://api.enso.finance/api/v1"
-_MIN_INTERVAL_S = 1.35
+_MIN_INTERVAL_S = 1.6
 
 _pace_lock = asyncio.Lock()
 _last_call_at = 0.0

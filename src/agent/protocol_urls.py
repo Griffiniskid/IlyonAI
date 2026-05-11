@@ -441,8 +441,8 @@ def pool_protocol_url(
 LST_STAKE_PROTOCOLS = frozenset({
     "lido", "lido-stake",
     "rocket-pool", "rocketpool",
-    "ether.fi-stake", "ether-fi", "etherfi", "ether.fi-liquid",
-    "frax-ether", "frxeth",
+    "ether.fi", "ether.fi-stake", "ether-fi", "etherfi", "ether.fi-liquid",
+    "frax", "frax-ether", "frx-ether", "frxeth", "sfrxeth",
     "swell-network", "swell",
     "lista-dao",
     "stader",
