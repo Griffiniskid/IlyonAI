@@ -55,7 +55,14 @@ async def build_yield_execution_plan(
     if is_pool_link_action(action=action, protocol=protocol):
         extra_dict = extra or {}
         pool_addr = extra_dict.get("pool_address") or extra_dict.get("poolAddress")
-        pair_sym = extra_dict.get("pool_symbol") or extra_dict.get("poolSymbol")
+        # Fall back to asset_in when extra doesn't carry an explicit pool pair;
+        # this lets the Aave / Compound reserve URL builders find the
+        # underlying-asset deep link via the `sym` keyword in pool_protocol_url.
+        pair_sym = (
+            extra_dict.get("pool_symbol")
+            or extra_dict.get("poolSymbol")
+            or asset_in
+        )
         if not pool_addr and pair_sym:
             from src.data.exact_pool_resolver import resolve_exact_pool_address
             try:

@@ -385,8 +385,21 @@ def pool_protocol_url(
 
     if proj.startswith("yearn"):
         chain_id = _YEARN_CHAIN_ID.get(ch, "1")
-        if pa:
-            return f"https://yearn.fi/v3/{chain_id}/{pa}"
+        # Curated vault-address fallback so "Deposit USDC into Yearn vault on
+        # Ethereum" deep-links to the actual vault page instead of the chain
+        # overview when DefiLlama doesn't surface a pool_address.
+        _YEARN_FALLBACK_VAULT: dict[tuple[str, str], str] = {
+            ("ethereum", "USDC"): "0xbe53a109b494e5c9f97b9cd39fe969be68bf6204",
+            ("ethereum", "USDT"): "0x028ec7330ff87667b6dfb0d94b954c820195336c",
+            ("ethereum", "DAI"): "0x028ec7330ff87667b6dfb0d94b954c820195336c",
+            ("ethereum", "WETH"): "0xc56413869c6cdf96496f2b1ef801fedbdfa7ddb0",
+            ("base", "USDC"): "0xfe0a2bbcfa6e6e2c5b29f6f6ba43da3a4b5cb6b9",
+            ("arbitrum", "USDC"): "0x6fafca7f49b4fd9dc38117469cd31a1e5aec91f5",
+        }
+        sym_up = (sym or "").upper().strip()
+        target = pa or _YEARN_FALLBACK_VAULT.get((ch, sym_up))
+        if target:
+            return f"https://yearn.fi/v3/{chain_id}/{target}"
         return f"https://yearn.fi/v3?chains={chain_id}"
 
     if proj.startswith("convex"):
