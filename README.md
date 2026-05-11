@@ -51,6 +51,7 @@ Same-chain swap, bridge, and LST stake execute end-to-end on every chain.
 - **Real Kamino REST.** Tries `api.kamino.finance/v2/transactions/deposit` first, falls back to a Jupiter proxy with an explicit "not a Kamino vault deposit" banner if Kamino is unreachable.
 - **V3 range UI with live math.** `pool_deposit_v3` card renders draggable lower / upper handles plus quick presets (Narrow ±5% / Balanced ±10% / Wide ±25% / Full). Capital efficiency, in-range probability (interpolated from a precomputed 30d CDF the backend ships once), expected APR, and per-side position preview all recompute *on the frontend* without a backend round-trip per drag — feels instant to the user.
 - **Multi-turn LP refinement.** "Make it $50", "What if I use $200?", "Try Base instead", "Switch to USDT" — when the prior turn produced a `pool_link` / `pool_deposit_v3` / `execution_plan_v3` card, the runtime merges the delta into the prior intent instead of re-running search or asking for clarification.
+- **DefiLlama resilience.** When `yields.llama.fi/pools` is unreachable (the free tier was deprecated in 2026-Q2), the runtime falls back to a curated in-process catalog covering Uniswap V3 / Pancake V3 / Aerodrome CL / Curve 3pool / Yearn USDC / Uniswap V2 / Raydium AMM / Orca / Meteora so deposit intents still route to the correct deeplink + pair-aware prep swap.
 
 The full diagnosis + roadmap for the in-flight V3 range UI, V2 zap composer, native Curve adapter, and Meteora DLMM bin distribution lives at [`docs/POOL_EXECUTION_FIX_PLAN.md`](docs/POOL_EXECUTION_FIX_PLAN.md).
 
@@ -180,17 +181,17 @@ Full schema in `src/api/schemas/`.
 
 ## Validation
 
-Live 30+ multi-turn conversation harness against `https://ilyonai.com`:
+Live 31-conversation / 40-turn multi-turn harness against `https://ilyonai.com`:
 ```bash
 python scripts/validate_pool_exec.py
 ```
 Exercises every pool family (V2/V3/stable/vault × Solana/EVM), refines amounts and chains across turns, asserts on:
-- right `card_type` per pool type (`execution_plan_v3` for Aave/LST/AMM, `pool_link` for V3/V2/stable/vault EVM)
+- right `card_type` per pool type (`execution_plan_v3` for Aave/LST/AMM, `pool_link` or `pool_deposit_v3` for V3/V2/stable/vault EVM)
 - decimal-precision amounts (no IEEE-754 ghosts)
 - real `simulateTransaction` (Solana) / `eth_call` (EVM) pass for executable plans
 - pair-aware swap targets (swap into the pool's *missing* token)
 
-The harness uses deterministic dev wallets and never broadcasts a tx — `sigVerify: false` for Solana, `from`-override for `eth_call`. Empty-wallet reverts are treated as benign because the calldata itself is well-formed.
+Latest baseline: **28/31 conversations · 36/40 turns** when upstream DefiLlama yields is responsive. The harness uses deterministic dev wallets and never broadcasts a tx — `sigVerify: false` for Solana, `from`-override for `eth_call`. Empty-wallet reverts are treated as benign because the calldata itself is well-formed.
 
 Adversarial wallet simulator (deterministic Solana + EVM keypairs):
 ```bash
