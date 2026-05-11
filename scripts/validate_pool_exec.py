@@ -343,7 +343,7 @@ def build_corpus() -> list[Convo]:
     ]))
     corpus.append(Convo("evm-yearn-vault", "evm", [
         Turn("Deposit 100 USDC into Yearn USDC vault on Ethereum",
-             expect_card_types={"pool_link"}),
+             expect_card_types={"execution_plan_v3"}),  # Enso routes via Phase A
     ]))
     # Single-amount V2 → still pool_link (dual-token adapter needs both legs).
     corpus.append(Convo("evm-univ2-single-amount", "evm", [
@@ -593,6 +593,77 @@ def build_corpus() -> list[Convo]:
         Turn("Add liquidity to Curve DAI-USDC on Ethereum $3.14",
              expect_card_types={"execution_plan_v3"},
              forbid_text_substrings=["3.14159265"]),
+    ]))
+
+    # ==================================================================
+    # GROUP P — Plan v3 Enso matrix (Aave/Compound/Curve/Balancer/Yearn/
+    # Morpho/Spark/Lido/RocketPool/EtherFi/Frax/Stargate across chains)
+    # ==================================================================
+    corpus.append(Convo("enso-aave-v3-eth-usdt", "evm", [
+        Turn("Supply 100 USDT to Aave V3 on Ethereum",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("enso-aave-v3-eth-dai", "evm", [
+        Turn("Supply 50 DAI to Aave V3 on Ethereum",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("enso-compound-v3-base", "evm", [
+        Turn("Supply 75 USDC to Compound V3 on Base",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("enso-compound-v3-arbitrum", "evm", [
+        Turn("Supply 60 USDC to Compound V3 on Arbitrum",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("enso-curve-arbitrum", "evm", [
+        Turn("Add liquidity to Curve USDC-USDT on Arbitrum $30",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("enso-balancer-eth", "evm", [
+        Turn("Add liquidity to Balancer USDC-DAI on Ethereum $100",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("enso-balancer-arbitrum", "evm", [
+        Turn("Deposit 50 USDC into Balancer on Arbitrum",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("enso-yearn-base", "evm", [
+        Turn("Deposit 25 USDC into Yearn USDC vault on Base",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("enso-morpho-base", "evm", [
+        Turn("Deposit 100 USDC into Morpho on Base",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("enso-spark-eth", "evm", [
+        Turn("Deposit 50 DAI into Spark on Ethereum",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("enso-lido-stake", "evm", [
+        Turn("Stake 0.05 ETH with Lido on Ethereum",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("enso-rocketpool-stake", "evm", [
+        Turn("Stake 0.05 ETH with Rocket Pool on Ethereum",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("enso-etherfi-stake", "evm", [
+        Turn("Stake 0.05 ETH with EtherFi on Ethereum",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("enso-multi-aave-yearn-switch", "evm", [
+        Turn("Supply 100 USDC to Aave V3 on Ethereum",
+             expect_card_types={"execution_plan_v3"}),
+        Turn("Actually use Yearn instead",
+             expect_card_types={"execution_plan_v3"}),
+    ]))
+    corpus.append(Convo("enso-multi-chain-curve", "evm", [
+        Turn("Add liquidity to Curve DAI-USDC on Ethereum $50",
+             expect_card_types={"execution_plan_v3"}),
+        Turn("Try Polygon instead",
+             expect_card_types={"execution_plan_v3"}),
+        Turn("And Arbitrum?",
+             expect_card_types={"execution_plan_v3"}),
     ]))
 
     return corpus

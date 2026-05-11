@@ -49,28 +49,19 @@ class AdapterRegistry:
 def build_default_registry() -> AdapterRegistry:
     """Wire the adapter set used by Sentinel runtime.
 
-    Order matters: more specific adapters first, then generic ERC-4626,
-    Enso shortcut as the EVM catch-all, Solana sidecar for Solana,
-    wallet-assistant for swaps/bridges/stake.
+    Per plan v3: Enso is the EVM catch-all (Aave V3, Compound V3, Curve,
+    Balancer, Yearn, Morpho, Spark, Lido, RocketPool, EtherFi, Frax, Pendle,
+    Stargate, Stader, Moonwell, GMX, Velodrome, Aerodrome, Sky, etc.).
+    Solana yield builder handles Raydium/Orca/Meteora/Kamino. Wallet-assistant
+    handles swap/bridge/stake fallbacks. The V3 NFT-position adapter handles
+    Uniswap V3 / PancakeSwap V3 / Aerodrome Slipstream (concentrated liquidity).
     """
-    from src.defi.execution.adapters.aave_v3 import AaveV3SupplyAdapter
-    from src.defi.execution.adapters.balancer import BalancerSingleAssetAdapter
-    from src.defi.execution.adapters.compound_v3 import CompoundV3SupplyAdapter
-    from src.defi.execution.adapters.curve import CurveSingleSidedAdapter
-    from src.defi.execution.adapters.erc4626 import ERC4626VaultAdapter
     from src.defi.execution.adapters.enso_shortcut import EnsoShortcutAdapter
     from src.defi.execution.adapters.solana_yield_builder import SolanaYieldBuilderAdapter
-    from src.defi.execution.adapters.uniswap_v2 import UniswapV2DualTokenAdapter
     from src.defi.execution.adapters.wallet_assistant import WalletAssistantAdapter
 
     return AdapterRegistry(
         adapters=[
-            AaveV3SupplyAdapter(),
-            CompoundV3SupplyAdapter(),
-            CurveSingleSidedAdapter(),
-            BalancerSingleAssetAdapter(),
-            UniswapV2DualTokenAdapter(),
-            ERC4626VaultAdapter(),
             EnsoShortcutAdapter(),
             SolanaYieldBuilderAdapter(),
             WalletAssistantAdapter(),

@@ -458,12 +458,42 @@ POOL_LINK_ACTIONS = frozenset({
     "supply", "deposit", "deposit_lp", "lend", "provide_liquidity", "add_liquidity",
 })
 
-# Protocols whose EVM supply path is known-good (Aave V3 / Compound V3
-# adapters build real approve+supply calldata, no V3 LP confusion).
+# Protocols whose EVM supply / lend / deposit_lp path is known-good.
+# After plan v3 (Phase A), Enso routes the calldata for every entry below:
+# Aave V3, Compound V3, Curve, Balancer, Yearn, Morpho, Spark, Sky, Lido,
+# RocketPool, EtherFi, Frax, Pendle, Stargate, Stader, Moonwell, GMX,
+# Velodrome, Aerodrome (non-CL).
 SUPPLY_EXEC_PROTOCOLS = frozenset({
-    "aave-v3", "aave-v2", "aave",
-    "compound-v3", "compound-v2", "compound",
+    "aave-v3", "aave-v2", "aave", "aave-v3-prime", "aavev3",
+    "compound-v3", "compound-v2", "compound", "compoundv3",
+    "yearn", "yearn-finance", "yearn-v3",
+    "morpho", "morpho-blue", "metamorpho",
+    "spark", "spark-protocol", "spark-lending",
+    "sky", "sky-lending", "makerdao",
+    "fluid", "fluid-lending",
+    "moonwell",
+    "stargate",
+    "origin", "origin-ether",
+    "ethena", "pendle",
 })
+
+# Enso-backed protocols where deposit_lp / supply / lend all route through
+# the Enso shortcut adapter. These bypass the pool_link fallback because the
+# adapter returns real calldata (verified live for Aave V3, Compound V3,
+# Curve, Balancer, Yearn, Morpho, Spark on Eth/Base/Arb/Polygon/Optimism).
+EVM_ENSO_EXEC_PROTOCOLS = frozenset(
+    SUPPLY_EXEC_PROTOCOLS
+    | {
+        "curve", "curve-dex", "curve-finance", "curve-stable", "curve-lending",
+        "balancer", "balancer-v2", "balancer-v3",
+        "lido", "rocket-pool", "rocketpool",
+        "ether.fi", "ether-fi", "etherfi", "weeth",
+        "frax", "frax-ether", "frx-ether", "sfrxeth",
+        "stader",
+        "gmx",
+        "velodrome", "aerodrome",
+    }
+)
 
 # EVM stable LP protocols where single-sided add_liquidity executes natively
 # (Curve / Balancer single-asset join). Bypasses the link-only fallback for
@@ -552,12 +582,15 @@ def is_pool_link_action(*, action: str | None, protocol: str | None, chain: str 
     if c in ("solana", "sol"):
         return False
 
-    # V3 always redirects on EVM.
+    # V3 always redirects on EVM until the V3 NFT-position adapter ships.
     if a in {"deposit_lp", "provide_liquidity", "add_liquidity"} and p in V3_PROTOCOLS:
         return True
 
-    # Curve / Balancer stable single-sided executes natively (Phase 6 adapter).
-    if a in {"deposit_lp", "provide_liquidity", "add_liquidity"} and p in STABLE_LP_EXEC_PROTOCOLS:
+    # Enso-backed EVM protocols (covers Curve / Balancer / Yearn / Morpho /
+    # Spark / Lido / RocketPool / EtherFi / Stargate / Stader / GMX /
+    # Velodrome / Aerodrome and the SUPPLY_EXEC_PROTOCOLS set).
+    if a in {"deposit_lp", "provide_liquidity", "add_liquidity", "supply", "deposit", "lend"} \
+            and p in EVM_ENSO_EXEC_PROTOCOLS:
         return False
 
     # V2 dual-token addLiquidity executes natively (Phase 7 baseline). Note: the
@@ -568,7 +601,7 @@ def is_pool_link_action(*, action: str | None, protocol: str | None, chain: str 
     if a in {"deposit_lp", "provide_liquidity", "add_liquidity"} and p in V2_LP_EXEC_PROTOCOLS:
         return False
 
-    # Generic deposit_lp / add_liquidity on EVM — redirect until Phase 2 V2 zap.
+    # Generic deposit_lp / add_liquidity on EVM — redirect until V3 NFT lands.
     if a in {"deposit_lp", "provide_liquidity", "add_liquidity"}:
         return True
 
