@@ -58,10 +58,12 @@ def build_default_registry() -> AdapterRegistry:
     """
     from src.defi.execution.adapters.enso_shortcut import EnsoShortcutAdapter
     from src.defi.execution.adapters.solana_yield_builder import SolanaYieldBuilderAdapter
+    from src.defi.execution.adapters.uniswap_v3_nft import UniswapV3NFTAdapter
     from src.defi.execution.adapters.wallet_assistant import WalletAssistantAdapter
 
     return AdapterRegistry(
         adapters=[
+            UniswapV3NFTAdapter(),
             EnsoShortcutAdapter(),
             SolanaYieldBuilderAdapter(),
             WalletAssistantAdapter(),

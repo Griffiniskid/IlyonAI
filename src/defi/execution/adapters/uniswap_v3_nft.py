@@ -1,0 +1,466 @@
+"""Uniswap V3 / PancakeSwap V3 / Aerodrome Slipstream native NFT adapter.
+
+Builds an execution_plan_v3 with up to 4 steps for a single-sided V3 zap:
+  1. Optional swap input → token0 via Enso /shortcuts/route
+  2. Optional swap input → token1 via Enso /shortcuts/route
+  3. approve token0 to NonfungiblePositionManager
+  4. approve token1 to NonfungiblePositionManager (+ mint via Multicall on NFP)
+
+Range defaults to ±10% from current price (the Russian agent's recommended
+sweet spot ~75% in-range probability). Caller can override via
+request.extra['range_lower_pct'] / range_upper_pct.
+"""
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass
+from decimal import Decimal
+from typing import Any
+
+from src.config import settings
+from src.data.asset_registry import NATIVE_PLACEHOLDER, resolve_any_evm_token
+from src.data.v3_pool_resolver import V3PoolState, resolve_v3_pool
+from src.data.v3_tick_math import (
+    optimal_ratio_for_range,
+    sqrt_price_x96_from_tick,
+    tick_range_from_pct,
+)
+from src.defi.execution.adapters.base import (
+    CapabilityResult,
+    VerifyResult,
+    YieldBuildRequest,
+    YieldQuote,
+    YieldQuoteRequest,
+    YieldVerifyRequest,
+)
+from src.defi.execution.models import ExecutionStepV3, UnsignedStepTransaction, make_step
+
+# Function selectors
+_APPROVE_SEL = "0x095ea7b3"  # ERC20.approve(spender, amount)
+_MINT_SEL = "0x88316456"  # NFP.mint((MintParams))
+_MULTICALL_SEL = "0xac9650d8"  # NFP.multicall(bytes[])
+_REFUND_ETH_SEL = "0x12210e8a"  # NFP.refundETH()
+_UNWRAP_WETH9_SEL = "0x49404b7c"  # NFP.unwrapWETH9(amountMin, recipient)
+
+_CHAIN_IDS: dict[str, int] = {
+    "ethereum": 1,
+    "polygon": 137,
+    "arbitrum": 42161,
+    "optimism": 10,
+    "base": 8453,
+    "avalanche": 43114,
+    "bsc": 56,
+}
+
+
+def _pad32(hex_str: str) -> str:
+    s = hex_str.lower().removeprefix("0x")
+    return s.rjust(64, "0")
+
+
+def _enc_addr(addr: str) -> str:
+    return _pad32(addr)
+
+
+def _enc_uint(v: int) -> str:
+    if v < 0:
+        # two's complement at 256-bit
+        v = v & ((1 << 256) - 1)
+    return format(v, "064x")
+
+
+def _enc_int(v: int) -> str:
+    return _enc_uint(v)
+
+
+def _to_units(amount: Decimal, decimals: int) -> int:
+    return int(amount * (Decimal(10) ** decimals))
+
+
+def _encode_mint_params(
+    *,
+    token0: str,
+    token1: str,
+    fee: int,
+    tick_lower: int,
+    tick_upper: int,
+    amount0_desired: int,
+    amount1_desired: int,
+    amount0_min: int,
+    amount1_min: int,
+    recipient: str,
+    deadline: int,
+) -> str:
+    return (
+        _enc_addr(token0)
+        + _enc_addr(token1)
+        + _enc_uint(fee)
+        + _enc_int(tick_lower)
+        + _enc_int(tick_upper)
+        + _enc_uint(amount0_desired)
+        + _enc_uint(amount1_desired)
+        + _enc_uint(amount0_min)
+        + _enc_uint(amount1_min)
+        + _enc_addr(recipient)
+        + _enc_uint(deadline)
+    )
+
+
+def _encode_approve(spender: str, amount: int) -> str:
+    return _APPROVE_SEL + _enc_addr(spender) + _enc_uint(amount)
+
+
+def _encode_mint_call(params_hex: str) -> str:
+    return _MINT_SEL + params_hex
+
+
+_SUPPORTED_PROTOCOLS = frozenset({
+    "uniswap-v3", "uniswap",
+    "pancakeswap-v3", "pancake-v3",
+    "aerodrome-slipstream", "aerodrome-cl",
+})
+
+_SUPPORTED_CHAINS = frozenset(_CHAIN_IDS.keys())
+
+
+@dataclass
+class UniswapV3NFTAdapter:
+    adapter_id: str = "uniswap-v3-nft"
+    chains: frozenset[str] = _SUPPORTED_CHAINS
+    protocols: frozenset[str] = _SUPPORTED_PROTOCOLS
+    actions: frozenset[str] = frozenset({"deposit_lp", "provide_liquidity", "add_liquidity"})
+
+    def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
+        chain_norm = chain.lower()
+        protocol_norm = protocol.lower()
+        action_norm = action.lower()
+        if chain_norm not in self.chains:
+            return CapabilityResult(supported=False, reason=f"V3 NFT adapter does not cover {chain}.")
+        if protocol_norm not in self.protocols:
+            return CapabilityResult(supported=False, reason=f"V3 NFT adapter does not target {protocol}.")
+        if action_norm not in self.actions:
+            return CapabilityResult(supported=False, reason=f"V3 NFT adapter does not support {action}.")
+        if not settings.enso_api_key:
+            return CapabilityResult(supported=False, reason="ENSO_API_KEY missing (needed for prep-swap leg).")
+        return CapabilityResult(supported=True, adapter_id=self.adapter_id)
+
+    async def quote(self, request: YieldQuoteRequest) -> YieldQuote:
+        return YieldQuote(
+            adapter_id=self.adapter_id,
+            expected_apy=None,
+            expected_amount_out=None,
+            fees={"router": "Direct V3 NFT mint"},
+            metadata={"protocol": request.protocol, "chain": request.chain, "router": "uniswap-v3-nft"},
+        )
+
+    async def build(self, request: YieldBuildRequest) -> list[ExecutionStepV3]:
+        chain_norm = request.chain.lower()
+        proto_norm = request.protocol.lower()
+        chain_id = _CHAIN_IDS.get(chain_norm)
+        if chain_id is None:
+            raise ValueError(f"V3 NFT: unsupported chain {request.chain}.")
+
+        extra = request.extra or {}
+
+        # 1) Parse the pair the user picked.
+        pair_str: str | None = extra.get("pool_symbol") or extra.get("pair")
+        if not pair_str:
+            raise ValueError("V3 NFT: missing pool_symbol; pass extra={'pool_symbol': 'USDC-WETH'}.")
+        parts = [p.strip().upper() for p in pair_str.replace("/", "-").split("-") if p.strip()]
+        if len(parts) < 2:
+            raise ValueError(f"V3 NFT: cannot parse pair from '{pair_str}'.")
+        sym_a, sym_b = parts[0], parts[1]
+        meta_a = await resolve_any_evm_token(chain_norm, sym_a)
+        meta_b = await resolve_any_evm_token(chain_norm, sym_b)
+        if not meta_a or not meta_b:
+            raise ValueError(f"V3 NFT: cannot resolve {sym_a} or {sym_b} on {chain_norm}.")
+        addr_a, dec_a = meta_a
+        addr_b, dec_b = meta_b
+        # V3 needs WETH for pair; convert native placeholder to WETH if needed
+        weth_meta = await resolve_any_evm_token(chain_norm, "WETH")
+        if addr_a == NATIVE_PLACEHOLDER and weth_meta:
+            addr_a, dec_a = weth_meta
+        if addr_b == NATIVE_PLACEHOLDER and weth_meta:
+            addr_b, dec_b = weth_meta
+
+        fee_bps = int(extra.get("fee_bps") or extra.get("fee") or 500)
+
+        pool = await resolve_v3_pool(
+            chain=chain_norm,
+            protocol=proto_norm if proto_norm in {"uniswap-v3", "pancakeswap-v3", "aerodrome-slipstream"} else "uniswap-v3",
+            token_a=addr_a,
+            token_b=addr_b,
+            fee_bps=fee_bps,
+        )
+        if pool is None:
+            raise ValueError(
+                f"V3 NFT: no {request.protocol} pool for {sym_a}/{sym_b} fee {fee_bps}bps on {request.chain}."
+            )
+
+        # decimals map per resolved token0 / token1
+        token0_meta = await resolve_any_evm_token(chain_norm, pool.token0)
+        token1_meta = await resolve_any_evm_token(chain_norm, pool.token1)
+        decimals0 = (token0_meta or (pool.token0, 18))[1]
+        decimals1 = (token1_meta or (pool.token1, 18))[1]
+
+        # 2) Build tick range from preset or extra.
+        lower_pct = float(extra.get("range_lower_pct") or -10.0)
+        upper_pct = float(extra.get("range_upper_pct") or 10.0)
+        tick_lower, tick_upper = tick_range_from_pct(
+            pool.tick, lower_pct, upper_pct, pool.tick_spacing
+        )
+
+        # 3) USD price hints (default to 1.0 for stables, fetched price for blue chips).
+        price0 = float(extra.get("price_token0_usd") or 1.0)
+        price1 = float(extra.get("price_token1_usd") or 1.0)
+
+        # 4) Optimal ratio for selected range.
+        ratio0, ratio1 = optimal_ratio_for_range(
+            sqrt_price_x96_current=pool.sqrt_price_x96,
+            tick_lower=tick_lower,
+            tick_upper=tick_upper,
+            decimals0=decimals0,
+            decimals1=decimals1,
+            price_token0_usd=price0,
+            price_token1_usd=price1,
+        )
+
+        # 5) Input token metadata.
+        in_meta = await resolve_any_evm_token(chain_norm, request.asset_in)
+        if not in_meta:
+            raise ValueError(f"V3 NFT: cannot resolve input token {request.asset_in}.")
+        input_addr, input_dec = in_meta
+        input_units_total = _to_units(request.amount_in, input_dec)
+
+        # 6) Build steps.
+        steps: list[ExecutionStepV3] = []
+        deadline = int(time.time()) + 1200  # 20-min deadline
+
+        # If input matches token0 — only swap into token1, and vice versa.
+        # Otherwise swap input into both (two swap steps).
+        input_addr_lc = input_addr.lower()
+        is_input_token0 = input_addr_lc == pool.token0.lower()
+        is_input_token1 = input_addr_lc == pool.token1.lower()
+
+        if is_input_token0:
+            need_swap_to_token0 = False
+            need_swap_to_token1 = ratio1 > Decimal("0.001")
+            swap0_units = 0
+            swap1_units = int(Decimal(input_units_total) * ratio1)
+        elif is_input_token1:
+            need_swap_to_token0 = ratio0 > Decimal("0.001")
+            need_swap_to_token1 = False
+            swap0_units = int(Decimal(input_units_total) * ratio0)
+            swap1_units = 0
+        else:
+            need_swap_to_token0 = ratio0 > Decimal("0.001")
+            need_swap_to_token1 = ratio1 > Decimal("0.001")
+            swap0_units = int(Decimal(input_units_total) * ratio0)
+            swap1_units = int(Decimal(input_units_total) * ratio1)
+
+        from src.routing.enso_client import EnsoClient
+        enso = EnsoClient()
+
+        step_idx = 1
+        # --- Swap 1: input → token0 ---
+        if need_swap_to_token0 and swap0_units > 0:
+            try:
+                rs = await enso.build(
+                    chain_id=chain_id,
+                    token_in=input_addr,
+                    token_out=pool.token0,
+                    amount_in=str(swap0_units),
+                    from_addr=request.user_address,
+                    slippage_bps=request.slippage_bps,
+                )
+                ut = rs.get("unsigned_tx") or {}
+                steps.append(make_step(
+                    index=step_idx,
+                    action="swap",
+                    title=f"Swap {request.asset_in} → {pool.token0[:8]}…",
+                    description=f"Prep leg 1/2 — swap {Decimal(swap0_units) / Decimal(10**input_dec)} {request.asset_in} into pool token0.",
+                    chain=request.chain,
+                    wallet="MetaMask",
+                    protocol=request.protocol,
+                    asset_in=request.asset_in,
+                    amount_in=str(Decimal(swap0_units) / Decimal(10**input_dec)),
+                    asset_out=f"token0:{pool.token0[:10]}",
+                    slippage_bps=request.slippage_bps,
+                    gas_estimate_usd=3.0,
+                    duration_estimate_s=30,
+                    transaction=UnsignedStepTransaction(
+                        chain_kind="evm",
+                        chain_id=chain_id,
+                        to=ut.get("to"),
+                        data=ut.get("data"),
+                        value=str(ut.get("value", "0x0")),
+                        spender=ut.get("to"),
+                    ),
+                    risk_warnings=["Enso router auto-handles input token approval via Permit2."],
+                ))
+                step_idx += 1
+            except Exception as exc:
+                raise ValueError(f"V3 NFT: Enso swap input→token0 failed: {exc}") from exc
+
+        # --- Swap 2: input → token1 ---
+        if need_swap_to_token1 and swap1_units > 0:
+            try:
+                rs = await enso.build(
+                    chain_id=chain_id,
+                    token_in=input_addr,
+                    token_out=pool.token1,
+                    amount_in=str(swap1_units),
+                    from_addr=request.user_address,
+                    slippage_bps=request.slippage_bps,
+                )
+                ut = rs.get("unsigned_tx") or {}
+                steps.append(make_step(
+                    index=step_idx,
+                    action="swap",
+                    title=f"Swap {request.asset_in} → {pool.token1[:8]}…",
+                    description=f"Prep leg 2/2 — swap {Decimal(swap1_units) / Decimal(10**input_dec)} {request.asset_in} into pool token1.",
+                    chain=request.chain,
+                    wallet="MetaMask",
+                    protocol=request.protocol,
+                    asset_in=request.asset_in,
+                    amount_in=str(Decimal(swap1_units) / Decimal(10**input_dec)),
+                    asset_out=f"token1:{pool.token1[:10]}",
+                    slippage_bps=request.slippage_bps,
+                    gas_estimate_usd=3.0,
+                    duration_estimate_s=30,
+                    transaction=UnsignedStepTransaction(
+                        chain_kind="evm",
+                        chain_id=chain_id,
+                        to=ut.get("to"),
+                        data=ut.get("data"),
+                        value=str(ut.get("value", "0x0")),
+                        spender=ut.get("to"),
+                    ),
+                    risk_warnings=["Enso router auto-handles input token approval via Permit2."],
+                ))
+                step_idx += 1
+            except Exception as exc:
+                raise ValueError(f"V3 NFT: Enso swap input→token1 failed: {exc}") from exc
+
+        # --- Approve token0 to NFP manager ---
+        # MAX uint256 approve so future deposits skip this step.
+        max_uint = (1 << 256) - 1
+        # Estimated amounts the mint will pull (using ratio split * input USD).
+        # In reality the actual amount after swap may be more or less; we pad
+        # by 1% so mint doesn't revert.
+        amount0_desired = max(swap0_units, int(input_units_total * float(ratio0))) if not is_input_token1 else 0
+        amount1_desired = max(swap1_units, int(input_units_total * float(ratio1))) if not is_input_token0 else 0
+        # When input IS one of the pool tokens, that side of the desired is
+        # the remainder after subtracting the swapped amount.
+        if is_input_token0:
+            amount0_desired = input_units_total - swap1_units
+        if is_input_token1:
+            amount1_desired = input_units_total - swap0_units
+
+        # Approve token0 → NFP manager
+        steps.append(make_step(
+            index=step_idx,
+            action="approve",
+            title=f"Approve token0 ({pool.token0[:10]}…) to position manager",
+            description=f"One-time max approve so {pool.nfp_manager[:10]}… can pull pool token0 during mint.",
+            chain=request.chain,
+            wallet="MetaMask",
+            protocol=request.protocol,
+            asset_in=pool.token0,
+            amount_in="max",
+            slippage_bps=0,
+            gas_estimate_usd=1.5,
+            duration_estimate_s=15,
+            transaction=UnsignedStepTransaction(
+                chain_kind="evm",
+                chain_id=chain_id,
+                to=pool.token0,
+                data=_encode_approve(pool.nfp_manager, max_uint),
+                value="0x0",
+                spender=pool.nfp_manager,
+            ),
+        ))
+        step_idx += 1
+
+        # Approve token1 → NFP manager
+        steps.append(make_step(
+            index=step_idx,
+            action="approve",
+            title=f"Approve token1 ({pool.token1[:10]}…) to position manager",
+            description=f"One-time max approve so {pool.nfp_manager[:10]}… can pull pool token1 during mint.",
+            chain=request.chain,
+            wallet="MetaMask",
+            protocol=request.protocol,
+            asset_in=pool.token1,
+            amount_in="max",
+            slippage_bps=0,
+            gas_estimate_usd=1.5,
+            duration_estimate_s=15,
+            transaction=UnsignedStepTransaction(
+                chain_kind="evm",
+                chain_id=chain_id,
+                to=pool.token1,
+                data=_encode_approve(pool.nfp_manager, max_uint),
+                value="0x0",
+                spender=pool.nfp_manager,
+            ),
+        ))
+        step_idx += 1
+
+        # Mint position
+        slippage_factor = (10_000 - max(request.slippage_bps, 50)) / 10_000.0
+        amount0_min = int(amount0_desired * slippage_factor)
+        amount1_min = int(amount1_desired * slippage_factor)
+        mint_params = _encode_mint_params(
+            token0=pool.token0,
+            token1=pool.token1,
+            fee=pool.fee_bps,
+            tick_lower=tick_lower,
+            tick_upper=tick_upper,
+            amount0_desired=amount0_desired,
+            amount1_desired=amount1_desired,
+            amount0_min=amount0_min,
+            amount1_min=amount1_min,
+            recipient=request.user_address,
+            deadline=deadline,
+        )
+        mint_call = _encode_mint_call(mint_params)
+
+        steps.append(make_step(
+            index=step_idx,
+            action="deposit_lp",
+            title=f"Open V3 position [{lower_pct:+.0f}% / {upper_pct:+.0f}%]",
+            description=(
+                f"Mint NFT position in {request.protocol} {pool.token0[:6]}…/{pool.token1[:6]}… "
+                f"{fee_bps/100:.2f}% fee tier. Range ticks {tick_lower} → {tick_upper} (spacing {pool.tick_spacing}). "
+                f"Desired: amount0={amount0_desired}, amount1={amount1_desired}. "
+                f"Min: amount0={amount0_min}, amount1={amount1_min}. "
+                f"Recipient: {request.user_address}, deadline={deadline}."
+            ),
+            chain=request.chain,
+            wallet="MetaMask",
+            protocol=request.protocol,
+            asset_in=f"{pool.token0[:8]}+{pool.token1[:8]}",
+            amount_in=str(request.amount_in),
+            asset_out=f"{request.protocol}-position-nft",
+            slippage_bps=request.slippage_bps,
+            gas_estimate_usd=6.0,
+            duration_estimate_s=30,
+            transaction=UnsignedStepTransaction(
+                chain_kind="evm",
+                chain_id=chain_id,
+                to=pool.nfp_manager,
+                data="0x" + mint_call,
+                value="0x0",
+                spender=pool.nfp_manager,
+            ),
+            risk_warnings=[
+                f"Position NFT minted to {request.user_address}. Save the returned tokenId from the tx receipt.",
+                f"Range covers ticks {tick_lower}…{tick_upper}; goes out-of-range if {pool.token0[:6]}/{pool.token1[:6]} price exits this band.",
+            ],
+        ))
+
+        return steps
+
+    async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
+        return VerifyResult(confirmed=False, detail="V3 NFT receipt verify: read NonfungiblePositionManager.Transfer log for tokenId.")

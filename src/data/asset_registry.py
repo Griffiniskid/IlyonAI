@@ -126,6 +126,54 @@ _RPC_BY_CHAIN: dict[str, str] = {
     "bsc": "https://bsc-dataseed.binance.org",
 }
 
+# Backup RPC pool — tried in order when the primary returns rate-limit /
+# 5xx / empty. Each entry is a public, no-auth endpoint that supports
+# eth_call. Order matters: the most stable ones first.
+RPC_FALLBACKS: dict[str, list[str]] = {
+    "ethereum": [
+        "https://eth.llamarpc.com",
+        "https://ethereum-rpc.publicnode.com",
+        "https://cloudflare-eth.com",
+        "https://rpc.ankr.com/eth",
+        "https://1rpc.io/eth",
+    ],
+    "base": [
+        "https://mainnet.base.org",
+        "https://base.publicnode.com",
+        "https://1rpc.io/base",
+        "https://base-rpc.publicnode.com",
+    ],
+    "arbitrum": [
+        "https://arb1.arbitrum.io/rpc",
+        "https://arbitrum.llamarpc.com",
+        "https://arbitrum-one-rpc.publicnode.com",
+        "https://1rpc.io/arb",
+    ],
+    "optimism": [
+        "https://mainnet.optimism.io",
+        "https://optimism-rpc.publicnode.com",
+        "https://1rpc.io/op",
+        "https://op-pokt.nodies.app",
+    ],
+    "polygon": [
+        "https://polygon-rpc.com",
+        "https://polygon-bor-rpc.publicnode.com",
+        "https://1rpc.io/matic",
+        "https://rpc.ankr.com/polygon",
+    ],
+    "bsc": [
+        "https://bsc-dataseed.binance.org",
+        "https://bsc-rpc.publicnode.com",
+        "https://1rpc.io/bnb",
+        "https://bsc-dataseed1.defibit.io",
+    ],
+    "avalanche": [
+        "https://api.avax.network/ext/bc/C/rpc",
+        "https://avalanche-c-chain-rpc.publicnode.com",
+        "https://1rpc.io/avax/c",
+    ],
+}
+
 # selector for decimals() = 0x313ce567, symbol() = 0x95d89b41
 _DECIMALS_SELECTOR = "0x313ce567"
 _SYMBOL_SELECTOR = "0x95d89b41"

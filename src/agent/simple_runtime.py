@@ -1967,6 +1967,40 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
             # the two legs from extra.
             asset_in = tok_a
 
+    # V3 EVM short-circuit: route Uniswap V3 / PancakeSwap V3 / Aerodrome
+    # Slipstream straight to build_yield_execution_plan so the new
+    # UniswapV3NFTAdapter builds a real swap+approve+mint plan instead of the
+    # legacy pool_deposit_v3 redirect card.
+    _V3_EVM_PROTOS = {
+        "uniswap-v3", "pancakeswap-v3", "pancake-v3",
+        "aerodrome-slipstream", "aerodrome-cl",
+    }
+    _EVM_CHAINS_SET = {
+        "ethereum", "polygon", "arbitrum", "optimism", "base", "avalanche", "bsc", "bnb",
+    }
+    chain_raw = (m.group("chain") or "").lower() if "chain" in (m.groupdict() or {}) else ""
+    if chain_raw == "bnb":
+        chain_raw = "bsc"
+    if proto in _V3_EVM_PROTOS and chain_raw in _EVM_CHAINS_SET:
+        fee_match = re.search(r"(\d+(?:\.\d+)?)\s*%", text)
+        if fee_match:
+            fee_pct = float(fee_match.group(1))
+            fee_bps = int(round(fee_pct * 10_000))
+        else:
+            fee_bps = 500  # default to 0.05% tier
+        extra_v3 = {"pool_symbol": pair, "fee_bps": fee_bps}
+        return (
+            "build_yield_execution_plan",
+            {
+                "chain": chain_raw,
+                "protocol": proto,
+                "action": "deposit_lp",
+                "asset_in": asset_in,
+                "amount_in": amount,
+                "extra": extra_v3,
+            },
+        )
+
     params: dict = {"pool": pool_ref, "amount": amount, "asset_in": asset_in}
     if extra:
         params["extra"] = extra
