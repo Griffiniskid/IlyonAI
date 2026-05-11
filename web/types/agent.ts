@@ -356,7 +356,7 @@ export interface ExecutionPlanV3Payload {
 
 export type CardType =
   | "allocation" | "sentinel_matrix" | "execution_plan"
-  | "swap_quote" | "pool" | "token" | "position"
+  | "swap_quote" | "pool" | "pool_link" | "token" | "position"
   | "plan" | "execution_plan_v2" | "execution_plan_v3" | "balance" | "bridge" | "stake" | "market_overview" | "pair_list"
   | "defi_opportunities"
   | "sentinel"
@@ -495,9 +495,10 @@ export interface SentinelWhaleFeedCard { card_id: string; card_type: "sentinel_w
 export interface SentinelSmartMoneyHubCard { card_id: string; card_type: "sentinel_smart_money_hub"; payload: SentinelSmartMoneyHubPayload; }
 export interface SentinelShieldReportCard { card_id: string; card_type: "sentinel_shield_report"; payload: SentinelShieldReportPayload; }
 export interface SentinelEntityCard { card_id: string; card_type: "sentinel_entity_card"; payload: SentinelEntityCardPayload; }
+export interface PoolLinkCardFrame { card_id: string; card_type: "pool_link"; payload: Record<string, unknown>; }
 
 export type AgentCard =
-  | AllocationCard | SentinelMatrixCard | ExecutionPlanCard | SwapQuoteCard | PoolCard | TokenCard | PositionCard
+  | AllocationCard | SentinelMatrixCard | ExecutionPlanCard | SwapQuoteCard | PoolCard | PoolLinkCardFrame | TokenCard | PositionCard
   | PlanCard | ExecutionPlanV2Card | BalanceCard | BridgeCard | StakeCard | MarketOverviewCard | PairListCard
   | DefiOpportunitiesCard | ExecutionPlanV3Card
   | SentinelBreakdownCardFrame
