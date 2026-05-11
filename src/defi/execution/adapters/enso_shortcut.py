@@ -169,8 +169,11 @@ class EnsoShortcutAdapter:
                 slippage_bps=request.slippage_bps,
             )
         except Exception as exc:
+            from src.defi.execution.error_decoder import decode_evm_revert
+            decoded = decode_evm_revert(str(exc))
+            hint = f" Hint: {decoded}" if decoded else ""
             raise ValueError(
-                f"Enso /shortcuts/route failed for {request.protocol} {request.asset_in} on {request.chain}: {exc}"
+                f"Enso /shortcuts/route failed for {request.protocol} {request.asset_in} on {request.chain}: {exc}.{hint}"
             ) from exc
 
         unsigned = response.get("unsigned_tx") or {}
