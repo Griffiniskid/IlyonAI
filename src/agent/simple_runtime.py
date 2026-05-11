@@ -1749,7 +1749,10 @@ _ADD_LIQUIDITY_RE = re.compile(
     r"(?:\s+(?:DLMM|CLMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion|V\d|v\d|pool))?"
     r"(?:\s+\d+(?:\.\d+)?\s*%)?"
     r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?"
-    rf"\s+{_AMOUNT_USD_OR_TOKEN_RE}\s*$",
+    rf"\s+{_AMOUNT_USD_OR_TOKEN_RE}"
+    # Optional second leg for V2 dual-token form: "and Y TOKEN_B".
+    r"(?:\s+and\s+(?:\$\s*[\d,]+(?:\.\d+)?|[\d,]+(?:\.\d+)?\s+[A-Za-z]{2,10}))?"
+    r"\s*$",
     re.IGNORECASE,
 )
 
@@ -1758,6 +1761,8 @@ _ADD_LIQUIDITY_INV_RE = re.compile(
     r"^\s*(?:deposit|add|put|invest)\s+"
     r"(?:\$\s*(?P<usd>[\d,]+(?:\.\d+)?)|"
     r"(?P<native>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10}))"
+    # Optional second leg before the "into PROTOCOL" tail: "and Y TOKEN_B".
+    r"(?:\s+and\s+(?:\$\s*[\d,]+(?:\.\d+)?|[\d,]+(?:\.\d+)?\s+[A-Za-z]{2,10}))?"
     r"\s+(?:into|in|to|on)\s+"
     rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}"
     # Optional trailing pool-variant suffix ("DLMM", "CLMM", "AMM", "V3").
