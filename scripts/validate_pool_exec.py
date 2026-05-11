@@ -307,11 +307,13 @@ def build_corpus() -> list[Convo]:
     # V3 EVM intents now emit pool_deposit_v3 with interactive range selector.
     corpus.append(Convo("evm-uniswapv3-native", "evm", [
         Turn("Add liquidity to Uniswap V3 USDC/WETH 0.05% on Ethereum with $100",
-             expect_card_types={"execution_plan_v3"}),
+             expect_card_types={"execution_plan_v3"},
+             expect_evm_sim_ok=True),
     ]))
     corpus.append(Convo("evm-uniswapv3-base", "evm", [
         Turn("Add liquidity to Uniswap V3 USDC/WETH on Base with 50 USDC",
-             expect_card_types={"execution_plan_v3"}),
+             expect_card_types={"execution_plan_v3"},
+             expect_evm_sim_ok=True),
     ]))
     corpus.append(Convo("evm-pancakev3-redirect", "evm", [
         Turn("Deposit $50 into PancakeSwap V3 USDT-BNB on BSC",
@@ -600,15 +602,18 @@ def build_corpus() -> list[Convo]:
     # ==================================================================
     corpus.append(Convo("enso-aave-v3-eth-usdt", "evm", [
         Turn("Supply 100 USDT to Aave V3 on Ethereum",
-             expect_card_types={"execution_plan_v3"}),
+             expect_card_types={"execution_plan_v3"},
+             expect_evm_sim_ok=True),
     ]))
     corpus.append(Convo("enso-aave-v3-eth-dai", "evm", [
         Turn("Supply 50 DAI to Aave V3 on Ethereum",
-             expect_card_types={"execution_plan_v3"}),
+             expect_card_types={"execution_plan_v3"},
+             expect_evm_sim_ok=True),
     ]))
     corpus.append(Convo("enso-compound-v3-base", "evm", [
         Turn("Supply 75 USDC to Compound V3 on Base",
-             expect_card_types={"execution_plan_v3"}),
+             expect_card_types={"execution_plan_v3"},
+             expect_evm_sim_ok=True),
     ]))
     corpus.append(Convo("enso-compound-v3-arbitrum", "evm", [
         Turn("Supply 60 USDC to Compound V3 on Arbitrum",
@@ -616,7 +621,8 @@ def build_corpus() -> list[Convo]:
     ]))
     corpus.append(Convo("enso-curve-arbitrum", "evm", [
         Turn("Add liquidity to Curve USDC-USDT on Arbitrum $30",
-             expect_card_types={"execution_plan_v3"}),
+             expect_card_types={"execution_plan_v3"},
+             expect_evm_sim_ok=True),
     ]))
     corpus.append(Convo("enso-balancer-eth", "evm", [
         Turn("Add liquidity to Balancer USDC-DAI on Ethereum $100",
