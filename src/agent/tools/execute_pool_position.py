@@ -272,9 +272,43 @@ async def execute_pool_position(
     requested_proto_match = re.match(r"\s*([a-z][a-z0-9.\-]{2,30})\s+[A-Z]", pool_arg_str)
     if requested_proto_match:
         protocol = requested_proto_match.group(1).lower()
+    # Strip noise suffixes the LLM tool-use sometimes adds when packing the
+    # pool ref ("yearn-usdc-vault" → "yearn-finance"; "aave-v3-supply" →
+    # "aave-v3"). Map common slugs to their canonical form.
+    _PROTO_NORMALIZE = {
+        "yearn": "yearn-finance",
+        "yearn-vault": "yearn-finance",
+        "morpho-blue-vault": "morpho-blue",
+    }
+    for noise in ("-vault", "-vaults", "-finance-vault", "-supply", "-lend",
+                  "-lending", "-protocol"):
+        if protocol.endswith(noise):
+            protocol = protocol[: -len(noise)]
+    # Trim a trailing asset symbol the LLM may glue on
+    # ("yearn-usdc" → "yearn", "aave-v3-usdc" → "aave-v3"). Drop the last
+    # hyphen segment if it parses as a known asset ticker.
+    _COMMON_ASSETS = {"usdc", "usdt", "dai", "weth", "eth", "btc", "wbtc",
+                     "sol", "wsol", "bnb", "wbnb", "matic", "avax"}
+    _proto_parts = protocol.split("-")
+    if len(_proto_parts) >= 2 and _proto_parts[-1] in _COMMON_ASSETS:
+        protocol = "-".join(_proto_parts[:-1])
+    protocol = _PROTO_NORMALIZE.get(protocol, protocol)
     requested_pair_match = re.search(r"\b([A-Z][A-Z0-9.]{1,9}[-/_][A-Z][A-Z0-9.]{1,9})\b", pool_arg_str.upper())
     if requested_pair_match:
-        pool_symbol = requested_pair_match.group(1).replace("/", "-").replace("_", "-")
+        pair_candidate = requested_pair_match.group(1).replace("/", "-").replace("_", "-")
+        # Reject capture if either side is a protocol-name fragment (avoids
+        # "YEARN-USDC" capture). Both sides must be plausible asset tickers.
+        sides = pair_candidate.split("-")
+        if (len(sides) == 2
+            and sides[0].lower() in _COMMON_ASSETS | {"crv", "cvx", "ldo", "comp",
+                                                       "aave", "uni", "frax", "lusd", "usds",
+                                                       "ezeth", "weeth", "reth", "steth",
+                                                       "cbeth", "rseth"}
+            and sides[1].lower() in _COMMON_ASSETS | {"crv", "cvx", "ldo", "comp",
+                                                       "aave", "uni", "frax", "lusd", "usds",
+                                                       "ezeth", "weeth", "reth", "steth",
+                                                       "cbeth", "rseth"}):
+            pool_symbol = pair_candidate
     final_asset_in = asset_in or _pick_asset_in(meta)
 
     # USD-denominated amount → native units conversion. When the user typed
