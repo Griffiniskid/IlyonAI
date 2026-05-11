@@ -4566,6 +4566,32 @@ async def run_ephemeral_turn(
                 if _ma and prior_asset_in in {"USDC", "", None}:
                     prior_asset_in = _ma.group(1).upper()
 
+            # When prior_pool_symbol is empty (execution_plan_v3 for Solana LP
+            # paths doesn't carry pair in the payload), recover it from earlier
+            # user messages in the session — same hint extraction we use for
+            # the search-top-pick branch.
+            if not prior_pool_symbol and history:
+                _HINT_RE_FB = re.compile(
+                    r"\b(?P<proto>raydium-amm|raydium-clmm|raydium|orca-whirlpools|orca-clmm|orca|"
+                    r"meteora-dlmm|meteora|kamino-lend|kamino-liquidity|kamino|"
+                    r"aerodrome-slipstream|aerodrome|velodrome|"
+                    r"uniswap[ -]v[34]|uniswap|pancakeswap[ -]v[23]|pancakeswap|"
+                    r"sushiswap[ -]v[23]?|sushiswap|"
+                    r"curve(?:-dex)?|balancer(?:-v[23])?)"
+                    r"(?:[ -](?:v[234]|amm|clmm|dex|slipstream|whirlpools))?\s+"
+                    r"(?P<pair>[A-Za-z][A-Za-z0-9.]{0,9}[-/_][A-Za-z][A-Za-z0-9.]{0,9})",
+                    re.IGNORECASE,
+                )
+                for prior in reversed(history):
+                    if (prior.get("role") or "").lower() != "user":
+                        continue
+                    hm = _HINT_RE_FB.search(str(prior.get("content") or ""))
+                    if hm:
+                        if not prior_protocol:
+                            prior_protocol = re.sub(r"\s+", "-", hm.group("proto").lower())
+                        prior_pool_symbol = hm.group("pair").upper().replace("/", "-")
+                        break
+
             m_amt = _LP_AMOUNT_DELTA_RE.search(message.strip())
             m_chain = _LP_CHAIN_SWITCH_RE.search(message.strip())
             m_tok = _LP_TOKEN_SWITCH_RE.search(message.strip())
