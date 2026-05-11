@@ -470,6 +470,7 @@ SUPPLY_EXEC_PROTOCOLS = frozenset({
 # action=add_liquidity / deposit_lp / provide_liquidity.
 STABLE_LP_EXEC_PROTOCOLS = frozenset({
     "curve", "curve-dex", "curve-finance", "curve-stable",
+    "balancer", "balancer-v2", "balancer-v3",
 })
 
 # V2 LP protocols where dual-token addLiquidity executes natively. Requires
@@ -506,12 +507,17 @@ _VAULT_HINTS = ("yearn", "morpho", "spark", "beefy", "gamma", "arrakis", "steer-
 
 
 def classify_pool_kind(*, protocol: str | None, pool_symbol: str | None = None, pool_id: str | None = None) -> str:
-    """Return 'v3' | 'stable' | 'vault' | 'v2' for use by the pool_link card.
-
-    Heuristic on protocol slug + pool symbol. Pancake-V3 sometimes arrives as
-    'pancakeswap-amm-v3' OR plain 'pancakeswap' depending on the DefiLlama
-    snapshot — check across multiple substrings.
+    """Return 'v3' | 'stable' | 'vault' | 'v2' for the pool_link / pool_deposit_v3
+    cards. Routes through the explicit `pool_types.lookup_pool_type` registry
+    so new protocols land in the right bucket without ad-hoc substrings.
     """
+    from src.agent.pool_types import kind_for_card
+    primary = kind_for_card(protocol)
+    if primary != "v2":
+        return primary
+    # When the protocol slug is generic ("uniswap" without a version), fall
+    # back to the legacy substring heuristic over (protocol, symbol, pool_id)
+    # blob so we don't lose V3 / stable / vault detection for ambiguous slugs.
     p = (protocol or "").lower()
     sym = (pool_symbol or "").lower()
     pid = (pool_id or "").lower()

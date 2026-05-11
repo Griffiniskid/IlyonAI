@@ -54,6 +54,7 @@ def build_default_registry() -> AdapterRegistry:
     wallet-assistant for swaps/bridges/stake.
     """
     from src.defi.execution.adapters.aave_v3 import AaveV3SupplyAdapter
+    from src.defi.execution.adapters.balancer import BalancerSingleAssetAdapter
     from src.defi.execution.adapters.compound_v3 import CompoundV3SupplyAdapter
     from src.defi.execution.adapters.curve import CurveSingleSidedAdapter
     from src.defi.execution.adapters.erc4626 import ERC4626VaultAdapter
@@ -67,6 +68,7 @@ def build_default_registry() -> AdapterRegistry:
             AaveV3SupplyAdapter(),
             CompoundV3SupplyAdapter(),
             CurveSingleSidedAdapter(),
+            BalancerSingleAssetAdapter(),
             UniswapV2DualTokenAdapter(),
             ERC4626VaultAdapter(),
             EnsoShortcutAdapter(),
