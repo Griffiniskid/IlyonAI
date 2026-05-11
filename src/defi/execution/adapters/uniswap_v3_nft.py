@@ -107,10 +107,12 @@ def _encode_mint_params(
 
 
 def _encode_approve(spender: str, amount: int) -> str:
+    """Returns full calldata with 0x prefix."""
     return _APPROVE_SEL + _enc_addr(spender) + _enc_uint(amount)
 
 
 def _encode_mint_call(params_hex: str) -> str:
+    """Returns full calldata with 0x prefix (selector already has 0x)."""
     return _MINT_SEL + params_hex
 
 
@@ -450,7 +452,7 @@ class UniswapV3NFTAdapter:
                 chain_kind="evm",
                 chain_id=chain_id,
                 to=pool.nfp_manager,
-                data="0x" + mint_call,
+                data=mint_call,
                 value="0x0",
                 spender=pool.nfp_manager,
             ),
