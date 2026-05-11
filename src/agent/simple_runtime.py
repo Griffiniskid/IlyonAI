@@ -1600,6 +1600,125 @@ def _detect_generic_supply(message: str) -> tuple[str, dict] | None:
     })
 
 
+# Vault / lending protocols that route through the Enso shortcut adapter.
+# Order: longest slug first so "yearn-finance" beats bare "yearn".
+_ENSO_PROTOS_RE = re.compile(
+    r"\b(?i:("
+    r"aave[ -]?v3|aave[ -]?v2|aave|"
+    r"compound[ -]?v3|compound[ -]?v2|compound|"
+    r"yearn[ -]?finance|yearn[ -]?v3|yearn|"
+    r"morpho[ -]?blue|metamorpho|morpho|"
+    r"spark[ -]?protocol|spark[ -]?lending|spark|"
+    r"sky[ -]?lending|sky|makerdao|"
+    r"fluid[ -]?lending|fluid|"
+    r"moonwell|stargate|"
+    r"origin[ -]?ether|origin|"
+    r"ethena|pendle|"
+    r"lido|rocket[ -]?pool|rocketpool|"
+    r"ether[\.\-]?fi|etherfi|weeth|"
+    r"frax[ -]?ether|frx[ -]?ether|frax|sfrxeth|"
+    r"stader|gmx|"
+    r"curve[ -]?dex|curve[ -]?finance|curve[ -]?stable|curve|"
+    r"balancer[ -]?v2|balancer[ -]?v3|balancer|"
+    r"velodrome|aerodrome"
+    r"))\b"
+)
+
+_ENSO_CHAINS_RE = re.compile(
+    r"\b(?i:(ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|bnb|"
+    r"linea|zksync|scroll|gnosis|sonic|soneium|plasma|ink))\b"
+)
+
+_ENSO_PROTO_TO_SLUG = {
+    "aave": "aave-v3", "aave v3": "aave-v3", "aave-v3": "aave-v3", "aavev3": "aave-v3",
+    "aave v2": "aave-v2", "aave-v2": "aave-v2",
+    "compound": "compound-v3", "compound v3": "compound-v3", "compound-v3": "compound-v3", "compoundv3": "compound-v3",
+    "compound v2": "compound-v2", "compound-v2": "compound-v2",
+    "yearn": "yearn-finance", "yearn finance": "yearn-finance", "yearn-finance": "yearn-finance",
+    "yearn v3": "yearn-v3", "yearn-v3": "yearn-v3",
+    "morpho": "morpho-blue", "morpho blue": "morpho-blue", "morpho-blue": "morpho-blue",
+    "metamorpho": "morpho-blue",
+    "spark": "spark", "spark protocol": "spark", "spark-protocol": "spark",
+    "spark lending": "spark-lending", "spark-lending": "spark-lending",
+    "sky": "sky-lending", "sky lending": "sky-lending", "sky-lending": "sky-lending",
+    "makerdao": "makerdao",
+    "fluid": "fluid", "fluid lending": "fluid-lending", "fluid-lending": "fluid-lending",
+    "moonwell": "moonwell", "stargate": "stargate",
+    "origin": "origin", "origin ether": "origin-ether", "origin-ether": "origin-ether",
+    "ethena": "ethena", "pendle": "pendle",
+    "lido": "lido",
+    "rocket pool": "rocket-pool", "rocket-pool": "rocket-pool", "rocketpool": "rocket-pool",
+    "ether.fi": "ether.fi", "ether-fi": "ether.fi", "etherfi": "ether.fi", "weeth": "ether.fi",
+    "frax": "frax", "frax ether": "frax-ether", "frax-ether": "frax-ether", "frx-ether": "frax-ether", "sfrxeth": "frax-ether",
+    "stader": "stader", "gmx": "gmx",
+    "curve": "curve", "curve dex": "curve", "curve-dex": "curve", "curve finance": "curve",
+    "curve stable": "curve", "curve-stable": "curve", "curve-finance": "curve",
+    "balancer": "balancer-v2", "balancer v2": "balancer-v2", "balancer-v2": "balancer-v2",
+    "balancer v3": "balancer-v3", "balancer-v3": "balancer-v3",
+    "velodrome": "velodrome", "aerodrome": "aerodrome",
+}
+
+_ENSO_STAKE_PROTOS = frozenset({
+    "lido", "rocket-pool", "ether.fi", "frax-ether", "stader",
+})
+
+
+def _enso_normalize_slug(raw: str) -> str:
+    s = raw.strip().lower()
+    s = re.sub(r"\s+", " ", s)
+    return _ENSO_PROTO_TO_SLUG.get(s, s.replace(" ", "-"))
+
+
+_ENSO_VAULT_DEPOSIT_RE = re.compile(
+    r"^\s*(?:put|add|deposit|provide|supply|stake|lend|allocate)\s+"
+    r"(?P<amount>[\d,]+(?:\.\d+)?)\s+"
+    r"(?P<asset>[A-Za-z]{2,10})\s+"
+    r"(?:in|to|into|on|via|onto|with)\s+"
+    r"(?P<rest>.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_enso_vault_deposit(message: str) -> tuple[str, dict] | None:
+    """Match 'Deposit 100 USDC into Yearn USDC vault on Ethereum',
+    'Stake 0.05 ETH with Lido on Ethereum', 'Deposit 50 DAI into Spark on Ethereum',
+    'Supply 100 USDC to Aave V3 on Ethereum', etc.
+
+    Routes to build_yield_execution_plan with action=supply/stake/deposit_lp
+    so the Enso shortcut adapter handles the calldata.
+    """
+    m = _ENSO_VAULT_DEPOSIT_RE.search(message)
+    if not m:
+        return None
+    asset = m.group("asset").upper()
+    if asset in _NOT_A_SYMBOL or asset in _NOISE_ASSET_TOKENS:
+        return None
+    rest = m.group("rest")
+    proto_match = _ENSO_PROTOS_RE.search(rest)
+    if not proto_match:
+        return None
+    slug = _enso_normalize_slug(proto_match.group(1))
+    chain_match = _ENSO_CHAINS_RE.search(rest)
+    chain = (chain_match.group(1).lower() if chain_match else "ethereum")
+    if chain == "bnb":
+        chain = "bsc"
+    amount = m.group("amount").replace(",", "")
+    verb = m.group(0).split()[0].lower()
+    if slug in _ENSO_STAKE_PROTOS or verb == "stake":
+        action = "stake"
+    elif slug.startswith(("curve", "balancer")):
+        action = "deposit_lp"
+    else:
+        action = "supply"
+    return "build_yield_execution_plan", {
+        "chain": chain,
+        "protocol": slug,
+        "action": action,
+        "asset_in": asset,
+        "amount_in": amount,
+    }
+
+
 def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
     """Match prompts like 'supply 100 USDC to Aave V3 on Ethereum' / 'execute Aave USDC supply 100'."""
     if not _AAVE_HINT.search(message):
@@ -2231,7 +2350,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
         return multi_step
-    for detector in (_detect_direct_pool_deposit, _detect_add_liquidity, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_direct_pool_deposit, _detect_add_liquidity, _detect_enso_vault_deposit, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
