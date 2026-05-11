@@ -25,8 +25,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn, isValidEvmAddress, isValidSolanaAddress } from "@/lib/utils";
-import { useSearchCatalog } from "@/lib/hooks";
+import { useSearchCatalog, useTrendingTokens } from "@/lib/hooks";
 import { searchTokens } from "@/lib/api";
+import { formatPercentage, formatUSD } from "@/lib/utils";
 import type { SearchResultResponse } from "@/types";
 
 const CHAINS = [
@@ -49,14 +50,6 @@ function detectChainType(address: string): "evm" | "sol" | null {
   if (isValidSolanaAddress(address)) return "sol";
   return null;
 }
-
-// Mock data for trending and recent
-const TRENDING_TOKENS = [
-  { symbol: "SOL", name: "Solana", price: "$86.52", change: "+5.2%", chain: "solana", score: 92 },
-  { symbol: "ETH", name: "Ethereum", price: "$2,346", change: "+1.4%", chain: "ethereum", score: 95 },
-  { symbol: "BNB", name: "BNB", price: "$632.64", change: "-0.25%", chain: "bsc", score: 88 },
-  { symbol: "ARB", name: "Arbitrum", price: "$0.1306", change: "+0.68%", chain: "arbitrum", score: 78 },
-];
 
 const RECENT_SEARCHES = [
   "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
@@ -118,6 +111,8 @@ export default function AnalyzePage() {
     debouncedQuery,
     selectedChain === "all" ? undefined : selectedChain
   );
+  const { data: trendingData, isLoading: trendingLoading } = useTrendingTokens("trending", "solana");
+  const trendingTokens = (trendingData?.tokens ?? []).slice(0, 4);
 
   const detectedType = detectChainType(query);
   const searchResults = searchData?.results ?? [];
@@ -384,14 +379,14 @@ export default function AnalyzePage() {
           </div>
         </div>
 
-        {/* Trending Section */}
+        {/* Trending Section — real Solana trending */}
         <div className="mb-16">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
               <Flame className="w-5 h-5 text-orange-400" />
-              <h2 className="text-xl font-semibold">Trending Tokens</h2>
+              <h2 className="text-xl font-semibold">Trending on Solana</h2>
             </div>
-            <Link href="/trending">
+            <Link href="/trending?chain=solana">
               <Button variant="ghost" size="sm" className="text-emerald-400 hover:text-emerald-300">
                 View All
                 <ChevronRight className="ml-1 w-4 h-4" />
@@ -399,64 +394,94 @@ export default function AnalyzePage() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {TRENDING_TOKENS.map((token, i) => (
-              <motion.div
-                key={token.symbol}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 }}
-                className="glass-card-hover p-5 cursor-pointer group"
-                onClick={() => router.push(`/token/${token.symbol.toLowerCase()}?chain=${token.chain}`)}
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold"
-                      style={{
-                        background: `${getChainColor(token.chain)}20`,
-                        border: `1px solid ${getChainColor(token.chain)}40`,
-                        color: getChainColor(token.chain),
-                      }}
-                    >
-                      {token.symbol.charAt(0)}
-                    </div>
-                    <div>
-                      <div className="font-semibold">{token.symbol}</div>
-                      <div className="text-xs text-muted-foreground">{token.name}</div>
-                    </div>
-                  </div>
-                  
-                  <div className="text-right">
-                    <div className="font-mono font-semibold">{token.price}</div>
-                    <div className={cn(
-                      "text-xs",
-                      token.change.startsWith("+") ? "text-emerald-400" : "text-red-400"
-                    )}>
-                      {token.change}
-                    </div>
-                  </div>
-                </div>
+          {trendingLoading && trendingTokens.length === 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="glass-card p-5 animate-pulse h-32" />
+              ))}
+            </div>
+          ) : trendingTokens.length === 0 ? (
+            <div className="glass-card p-6 text-sm text-muted-foreground">
+              Live trending feed unavailable right now. Try refreshing or visit the
+              {" "}<Link href="/trending?chain=solana" className="text-emerald-400 hover:underline">trending dashboard</Link>.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {trendingTokens.map((token, i) => {
+                const positive = (token.price_change_24h ?? 0) >= 0;
+                const tokenHref = `/token/${token.address}?chain=solana`;
+                return (
+                  <motion.div
+                    key={token.address || `${token.symbol}-${i}`}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                    className="glass-card-hover p-5 cursor-pointer group"
+                    onClick={() => router.push(tokenHref)}
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {token.logo_url ? (
+                          <img
+                            src={token.logo_url}
+                            alt={token.symbol}
+                            className="w-10 h-10 rounded-xl object-cover bg-white/5"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        ) : (
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold"
+                            style={{
+                              background: `${getChainColor("solana")}20`,
+                              border: `1px solid ${getChainColor("solana")}40`,
+                              color: getChainColor("solana"),
+                            }}
+                          >
+                            {token.symbol?.charAt(0) || "?"}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="font-semibold truncate">{token.symbol || "—"}</div>
+                          <div className="text-xs text-muted-foreground truncate">{token.name || token.symbol}</div>
+                        </div>
+                      </div>
 
-                <div className="flex items-center justify-between pt-3 border-t border-white/5">
-                  <div className="flex items-center gap-1.5">
-                    <Shield className="w-3 h-3 text-emerald-400" />
-                    <span className="text-xs text-muted-foreground">Score: {token.score}/100</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-1">
-                    <span
-                      className="w-2 h-2 rounded-full"
-                      style={{ background: getChainColor(token.chain) }}
-                    />
-                    <span className="text-[10px] uppercase text-muted-foreground">
-                      {token.chain}
-                    </span>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
+                      <div className="text-right shrink-0">
+                        <div className="font-mono font-semibold">
+                          {token.price_usd ? formatUSD(token.price_usd) : "—"}
+                        </div>
+                        <div className={cn(
+                          "text-xs",
+                          positive ? "text-emerald-400" : "text-red-400"
+                        )}>
+                          {token.price_change_24h != null ? formatPercentage(token.price_change_24h) : "—"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 border-t border-white/5">
+                      <div className="flex items-center gap-1.5">
+                        <Activity className="w-3 h-3 text-emerald-400" />
+                        <span className="text-xs text-muted-foreground">
+                          Vol {token.volume_24h ? formatUSD(token.volume_24h) : "—"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{ background: getChainColor("solana") }}
+                        />
+                        <span className="text-[10px] uppercase text-muted-foreground">
+                          solana
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Features Grid */}
@@ -515,26 +540,6 @@ export default function AnalyzePage() {
           </div>
         </div>
 
-        {/* Stats Banner */}
-        <div className="glass-card p-8 text-center">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            {[
-              { value: "50K+", label: "Tokens Analyzed", icon: Scan },
-              { value: "12K+", label: "Pools Scanned", icon: Activity },
-              { value: "99.2%", label: "Accuracy Rate", icon: CheckCircle2 },
-              { value: "8", label: "Chains Supported", icon: Globe },
-            ].map((stat, i) => {
-              const Icon = stat.icon;
-              return (
-                <div key={i} className="text-center">
-                  <Icon className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
-                  <div className="text-2xl md:text-3xl font-bold text-emerald-400 mb-1">{stat.value}</div>
-                  <div className="text-xs text-muted-foreground">{stat.label}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
       </div>
     </div>
   );
