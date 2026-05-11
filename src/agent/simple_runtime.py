@@ -759,15 +759,30 @@ def _detect_stake_amount_plan(message: str) -> tuple[str, dict] | None:
     # On no-exec branch, route protocol-qualified stake through
     # execute_pool_position so the pool_link gate emits a link-only card
     # pointing at the protocol's official stake page.
-    proto_norm = direct.group("protocol").strip().lower().replace(" ", "-")
-    return (
-        "execute_pool_position",
-        {
-            "pool": f"{proto_norm} {token}",
-            "amount": amount,
-            "asset_in": token,
-        },
+    proto_raw = direct.group("protocol").strip().lower()
+    # Strip trailing "on CHAIN" so "lido on ethereum" → "lido".
+    proto_raw = re.sub(
+        r"\s+on\s+(?:ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|solana)\b.*$",
+        "",
+        proto_raw,
     )
+    proto_norm = proto_raw.strip().replace(" ", "-")
+    chain_hint = None
+    chain_m = re.search(
+        r"\bon\s+(?P<c>ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|solana)\b",
+        message,
+        re.IGNORECASE,
+    )
+    if chain_m:
+        chain_hint = chain_m.group("c").lower()
+    params: dict = {
+        "pool": f"{proto_norm} {token}",
+        "amount": amount,
+        "asset_in": token,
+    }
+    if chain_hint:
+        params["chain"] = chain_hint
+    return ("execute_pool_position", params)
 
 
 def _detect_malicious_swap_plan(message: str) -> tuple[str, dict] | None:
