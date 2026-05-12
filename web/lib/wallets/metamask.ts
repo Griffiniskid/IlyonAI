@@ -10,18 +10,20 @@ interface EthereumProvider {
 declare global {
   interface Window {
     ethereum?: EthereumProvider;
-    phantom?: {
-      ethereum?: EthereumProvider;
-      solana?: unknown;
-    };
   }
 }
 
 /** Pick the first EVM provider available: MetaMask (window.ethereum) then
- *  Phantom EVM (window.phantom.ethereum). Returns null when neither exists. */
+ *  Phantom EVM (window.phantom.ethereum). Returns null when neither exists.
+ *  Reads window.phantom via `unknown` cast so we don't conflict with the
+ *  Solana-shape declared in lib/wallets/phantom.ts. */
 function getEvmProvider(): EthereumProvider | null {
   if (typeof window === "undefined") return null;
-  return window.ethereum || window.phantom?.ethereum || null;
+  if (window.ethereum) return window.ethereum;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const phantom = (window as any).phantom;
+  if (phantom && phantom.ethereum) return phantom.ethereum as EthereumProvider;
+  return null;
 }
 
 export async function connect(): Promise<string> {
