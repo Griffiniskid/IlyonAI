@@ -756,16 +756,42 @@ def _detect_stake_amount_plan(message: str) -> tuple[str, dict] | None:
     amount = float(direct.group("amount").replace(",", ""))
     if direct.group("sign") == "-" or amount <= 0 or amount > 1_000_000:
         return None  # let downstream flag absurd / invalid amounts
+    proto_raw = direct.group("protocol").strip()
+    proto_l = proto_raw.lower()
+
+    # "Stake N TOKEN with Marinade on Solana" — protocol_raw will swallow
+    # "Marinade on Solana" because the trailing capture is greedy. Split off
+    # the chain so the proper Solana adapter (sidecar) handles the request
+    # instead of the legacy chain_id=1 compose_plan path.
+    chain_hint: str | None = None
+    chain_match = re.search(r"\bon\s+(?P<chain>solana|ethereum|polygon|bsc|arbitrum|optimism|base|avalanche)\b", proto_l, re.IGNORECASE)
+    if chain_match:
+        chain_hint = chain_match.group("chain").lower()
+        proto_l = re.sub(r"\bon\s+\S+.*$", "", proto_l, flags=re.IGNORECASE).strip()
+    proto_slug = proto_l.replace(" ", "-")
+
+    SOLANA_LST_HEADS = {"marinade", "jito", "sanctum", "blazestake", "blaze", "drift-staking"}
+    if (chain_hint == "solana") or (proto_slug.split("-")[0] in SOLANA_LST_HEADS):
+        return (
+            "execute_pool_position",
+            {
+                "pool": f"{proto_slug} {token}-SOL" if token.upper() != "SOL" else f"{proto_slug} SOL",
+                "amount": amount,
+                "asset_in": token,
+                "chain": "solana",
+            },
+        )
+
     amount_usd = amount * 3000 if token == "ETH" else amount
     return (
         "compose_plan",
         {
-            "title": f"Stake {token} on {direct.group('protocol').strip().title()}",
+            "title": f"Stake {token} on {proto_raw.title()}",
             "steps": [
                 {
                     "step_id": "stake",
                     "action": "stake",
-                    "params": {"token": token, "amount": direct.group("amount"), "protocol": direct.group("protocol").strip().lower().replace(" ", "-"), "chain_id": 1, "amount_usd": amount_usd},
+                    "params": {"token": token, "amount": direct.group("amount"), "protocol": proto_slug, "chain_id": 1, "amount_usd": amount_usd},
                 }
             ],
         },
@@ -1887,7 +1913,30 @@ _ADD_LIQUIDITY_INV_RE = re.compile(
     # Optional trailing pool-variant suffix ("DLMM", "CLMM", "AMM", "V3").
     r"(?:\s+(?:DLMM|CLMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion|V\d|v\d|pool))?"
     r"(?:\s+\d+(?:\.\d+)?\s*%)?"
-    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?\s*$",
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?"
+    # Tolerate trailing range/preset hints like "with balanced range", "with narrow range",
+    # "balanced range", "narrow", "wide", "full range". Doesn't capture — the
+    # range builder picks defaults if the request omits explicit lower/upper pct.
+    r"(?:\s+(?:with\s+)?(?:narrow|balanced|wide|full)(?:\s+range)?)?"
+    r"\s*$",
+    re.IGNORECASE,
+)
+
+# Inverse-of-inverse: "Open a PROTOCOL [DLMM|CLMM|Whirlpool] PAIR position on
+# CHAIN with N TOKEN". Catches user phrasing like
+# "Open a Meteora DLMM SOL-USDC position on Solana with 5 USDT" that the
+# `add/deposit/provide liquidity` detectors don't match because the verb is
+# "Open" and the amount sits at the trailing edge of the sentence.
+_OPEN_POSITION_RE = re.compile(
+    r"^\s*open\s+(?:a\s+|an\s+)?"
+    rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}"
+    r"(?:\s+(?:DLMM|CLMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion|V\d|v\d))?"
+    r"(?:\s+\d+(?:\.\d+)?\s*%)?"
+    r"\s+(?:position|lp|liquidity)"
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?"
+    rf"\s+(?:with\s+)?{_AMOUNT_USD_OR_TOKEN_RE}"
+    r"(?:\s+(?:with\s+)?(?:narrow|balanced|wide|full)(?:\s+range)?)?"
+    r"\s*$",
     re.IGNORECASE,
 )
 
@@ -1904,7 +1953,7 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     plan instead of falling through to pool_link.
     """
     text = message.strip()
-    m = _ADD_LIQUIDITY_RE.search(text) or _ADD_LIQUIDITY_INV_RE.search(text)
+    m = _ADD_LIQUIDITY_RE.search(text) or _ADD_LIQUIDITY_INV_RE.search(text) or _OPEN_POSITION_RE.search(text)
     if not m:
         return None
     proto_raw = (m.group("protocol") or "").strip().lower()

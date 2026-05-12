@@ -73,11 +73,74 @@ async def build_yield_execution_plan(
         wallet = getattr(ctx, "wallet", None)
         if wallet:
             user_address = str(wallet)
+    # Wallet/chain compatibility preflight. Phantom in dual-mode exposes both
+    # an EVM hex address and a Solana base58 pubkey; if the primary `wallet`
+    # is wrong for the target chain but the per-chain ctx field has the
+    # right one, swap it in here so we don't leak Enso 422 errors when the
+    # user is asking from the wrong wallet (e.g. Phantom on Solana for an
+    # Ethereum supply).
+    import re as _re_addr
+    def _is_evm_addr(s: Any) -> bool:
+        return isinstance(s, str) and s.lower().startswith("0x") and len(s) == 42
+    def _is_sol_addr(s: Any) -> bool:
+        return isinstance(s, str) and bool(_re_addr.match(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$", s))
+    chain_norm = (chain or "").lower()
+    is_evm_chain = chain_norm in {"ethereum", "polygon", "arbitrum", "base", "optimism", "bsc", "avalanche", "linea", "scroll", "zksync"}
+    is_solana_chain = chain_norm in {"solana", "sol"}
+    if is_evm_chain and not _is_evm_addr(user_address):
+        evm_alt = getattr(ctx, "evm_wallet", None)
+        if _is_evm_addr(evm_alt):
+            user_address = evm_alt  # type: ignore[assignment]
+    if is_solana_chain and not _is_sol_addr(user_address):
+        sol_alt = getattr(ctx, "solana_wallet", None)
+        if _is_sol_addr(sol_alt):
+            user_address = sol_alt  # type: ignore[assignment]
     if not user_address:
         return err_envelope(
             "missing_wallet",
             "Connect a wallet before requesting an execution plan; the plan needs a destination address.",
         )
+    # If the user's wallet still doesn't match the target chain, emit a
+    # structured blocker instead of running the adapter (which would raise
+    # an Enso 422 with a leaky URL in the detail).
+    if is_evm_chain and not _is_evm_addr(user_address):
+        from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
+        plan = ExecutionPlanV3.new(
+            title=f"{protocol} {action}",
+            summary=f"EVM pool {protocol} {asset_in} on {chain} requires an EVM wallet.",
+        )
+        plan.add_blocker(ExecutionBlocker(
+            code="wallet_chain_mismatch",
+            severity="blocker",
+            title="Wrong wallet for this chain",
+            detail=(
+                f"This action runs on {chain} ({protocol} {asset_in}). Your connected wallet "
+                f"`{str(user_address)[:12]}…` looks Solana (or otherwise non-EVM). "
+                "Switch to an EVM wallet (MetaMask) and retry."
+            ),
+            affected_step_ids=[],
+            cta="Connect an EVM wallet (MetaMask) to sign this action.",
+        ))
+        return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
+    if is_solana_chain and not _is_sol_addr(user_address):
+        from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
+        plan = ExecutionPlanV3.new(
+            title=f"{protocol} {action}",
+            summary=f"Solana pool {protocol} {asset_in} requires a Solana wallet.",
+        )
+        plan.add_blocker(ExecutionBlocker(
+            code="wallet_chain_mismatch",
+            severity="blocker",
+            title="Wrong wallet for this chain",
+            detail=(
+                f"This action runs on Solana ({protocol} {asset_in}). Your connected wallet "
+                f"`{str(user_address)[:12]}…` looks EVM (or otherwise non-Solana). "
+                "Switch to a Solana wallet (Phantom in Solana mode) and retry."
+            ),
+            affected_step_ids=[],
+            cta="Connect a Solana wallet (Phantom) to sign this action.",
+        ))
+        return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
 
     amount = _coerce_amount(amount_in)
     if amount <= 0:
