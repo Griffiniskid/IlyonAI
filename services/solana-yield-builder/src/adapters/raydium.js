@@ -27,7 +27,7 @@ function buildRaydiumUrl(extra, fallback) {
   const poolSymbol = (extra.pool_symbol || extra.poolSymbol || "").toUpperCase();
   const poolAddr = extra.pool_address || extra.poolAddress || extra.amm_id || extra.ammId;
   const tokens = extra.underlying_tokens || extra.underlyingTokens || [];
-  if (poolAddr) return `https://raydium.io/liquidity/?ammId=${poolAddr}`;
+  if (poolAddr) return `https://raydium.io/liquidity/increase/?pool_id=${poolAddr}&mode=add`;
   if (tokens.length >= 2) return `https://raydium.io/liquidity-pools/?token0=${tokens[0]}&token1=${tokens[1]}`;
   if (poolSymbol) return `https://raydium.io/liquidity-pools/?search=${encodeURIComponent(poolSymbol)}`;
   return fallback || "https://raydium.io/liquidity-pools/";
@@ -118,8 +118,8 @@ module.exports = {
       transactions: [
         {
           b64: tx,
-          summary: `Raydium prep: convert half of ${sourceSym} → ${targetSym} for LP entry into ${pairLabel}`,
-          description: `Stages capital for the Raydium ${pairLabel} pool. After this prep tx confirms, finalize the LP add on Raydium: ${raydiumUrl}`,
+          summary: `Step 1/2 prep-swap: ${sourceSym} → ${targetSym} for ${pairLabel} entry`,
+          description: `Swap half of your ${sourceSym} into ${targetSym} via Jupiter so both ${pairLabel} pool tokens sit in your wallet. After this prep tx confirms, click 'Open on Raydium' below to add liquidity — Raydium's addLiquidity SDK isn't wired for in-chat signing yet.`,
           receiptToken: targetSym,
           feeUsd: 0.01,
           durationS: 25,

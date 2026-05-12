@@ -374,14 +374,14 @@ def pool_protocol_url(
     # --- Solana ---
     if proj in {"raydium-amm", "raydium-amm-v3", "raydium-cp"}:
         if pa:
-            return f"https://raydium.io/liquidity/?ammId={pa}"
+            return f"https://raydium.io/liquidity/increase/?pool_id={pa}&mode=add"
         if sym:
             return f"https://raydium.io/liquidity-pools/?search={quote_plus(sym)}"
         return "https://raydium.io/liquidity-pools/"
 
     if proj in {"raydium-clmm"}:
         if pa:
-            return f"https://raydium.io/clmm/?pool_id={pa}"
+            return f"https://raydium.io/liquidity/increase/?pool_id={pa}&mode=add"
         if sym:
             return f"https://raydium.io/clmm-pools/?search={quote_plus(sym)}"
         return "https://raydium.io/clmm-pools/"

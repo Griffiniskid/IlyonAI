@@ -96,8 +96,8 @@ module.exports = {
       transactions: [
         {
           b64: tx,
-          summary: `Meteora prep: convert half of ${sourceSym} → ${targetSym} for DLMM ${pairLabel}`,
-          description: `Stages capital for the Meteora DLMM ${pairLabel} pool by routing half of ${sourceSym} → ${targetSym}. Open the DLMM position on Meteora once this swap confirms: ${meteoraUrl}`,
+          summary: `Step 1/2 prep-swap: ${sourceSym} → ${targetSym} for Meteora DLMM ${pairLabel}`,
+          description: `Swap half of your ${sourceSym} into ${targetSym} via Jupiter so both ${pairLabel} pool tokens sit in your wallet. After this prep tx confirms, click 'Open on Meteora' below to open a DLMM bin position — Meteora's bin-deposit SDK isn't wired for in-chat signing yet.`,
           receiptToken: targetSym,
           feeUsd: 0.01,
           durationS: 25,
