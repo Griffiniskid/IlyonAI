@@ -275,7 +275,7 @@ class UniswapV2DualTokenAdapter:
             action="approve",
             title=f"Approve {symbol_a} for {proto_label} router",
             description=(
-                f"Approve {amount_a_dec} {symbol_a} so the {proto_label} V2 router "
+                f"Approve {amount_a_dec} {symbol_a} so the {proto_label} router"
                 f"can pull funds for the addLiquidity call."
             ),
             chain=request.chain,
@@ -303,7 +303,7 @@ class UniswapV2DualTokenAdapter:
             action="approve",
             title=f"Approve {symbol_b} for {proto_label} router",
             description=(
-                f"Approve {amount_b_dec} {symbol_b} so the {proto_label} V2 router "
+                f"Approve {amount_b_dec} {symbol_b} so the {proto_label} router"
                 f"can pull funds for the addLiquidity call."
             ),
             chain=request.chain,
@@ -333,7 +333,7 @@ class UniswapV2DualTokenAdapter:
             title=f"Add liquidity to {proto_label} {symbol_a}/{symbol_b}",
             description=(
                 f"Deposit {amount_a_dec} {symbol_a} + {amount_b_dec} {symbol_b} into "
-                f"the {proto_label} V2 pool. Slippage cap {slippage_bps / 100:.2f}%. "
+                f"the {proto_label} pool. Slippage cap {slippage_bps / 100:.2f}%. "
                 f"You receive an LP token in your wallet."
             ),
             chain=request.chain,
