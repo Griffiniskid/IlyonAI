@@ -31,9 +31,32 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
 
     body = await request.json()
     session_id = body.get("session_id", "")
-    wallet = request.get("user_wallet") or body.get("wallet") or body.get("user_address") or body.get("evm_address")
-    solana_wallet = body.get("solana_wallet") or body.get("solana_address")
-    evm_wallet = body.get("evm_wallet") or body.get("evm_address")
+
+    def _addr_from(v):
+        """Accept either a raw address string or a {kind, address} dict."""
+        if isinstance(v, dict):
+            return v.get("address") or v.get("public_key") or v.get("pubkey")
+        return v
+
+    wallet = _addr_from(
+        request.get("user_wallet")
+        or body.get("wallet")
+        or body.get("user_address")
+        or body.get("evm_address")
+    )
+    solana_wallet = _addr_from(body.get("solana_wallet") or body.get("solana_address"))
+    evm_wallet = _addr_from(body.get("evm_wallet") or body.get("evm_address"))
+    # If the caller sent a {kind, address} dict, also auto-fill the per-chain
+    # field based on the declared kind so downstream wallet/chain mismatch
+    # checks see the address under the right key.
+    raw_wallet = body.get("wallet")
+    if isinstance(raw_wallet, dict):
+        kind = (raw_wallet.get("kind") or "").lower()
+        addr = raw_wallet.get("address")
+        if addr and kind == "evm" and not evm_wallet:
+            evm_wallet = addr
+        if addr and kind in {"solana", "sol"} and not solana_wallet:
+            solana_wallet = addr
     # Auto-derive: if `wallet` is base58 Solana, surface as solana_wallet
     # too. If hex 0x.., surface as evm_wallet.
     if wallet and not solana_wallet:

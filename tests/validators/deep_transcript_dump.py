@@ -106,10 +106,17 @@ async def run_one(
 ) -> tuple[str, list[str]]:
     """Returns (out_path, url_probe_lines) for index entry."""
     convo_id = f"deep-{idx}-{sc.name[:20]}"
+    wallet_addr = ("0x" + ("a" * 40)) if sc.wallet == "evm" else "11111111111111111111111111111111"
     payload = {
         "message": sc.prompt,
         "conversation_id": convo_id,
-        "wallet": {"kind": sc.wallet, "address": "0x" + ("a" * 40) if sc.wallet == "evm" else "11111111111111111111111111111111"},
+        # Match the real frontend shape — `wallet` is a plain address string,
+        # not a {kind, address} dict. Sending a dict here used to cause the
+        # backend's body.get("wallet") to flow as a Python dict into the
+        # Enso fromAddress URL parameter (urlencoded repr of the dict),
+        # producing 400s on every EVM Enso route.
+        "wallet": wallet_addr,
+        ("evm_wallet" if sc.wallet == "evm" else "solana_wallet"): wallet_addr,
     }
     try:
         frames = await stream(session, payload)
