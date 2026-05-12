@@ -534,6 +534,7 @@ CardType = Literal[
 class ToolError(_Strict):
     code: str
     message: str
+    tb_tail: Optional[str] = None
 
 
 class ExtraCard(_Strict):

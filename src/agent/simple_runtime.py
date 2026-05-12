@@ -5152,13 +5152,20 @@ async def run_ephemeral_turn(
                             error=None,
                         ))
                     except Exception as e:
+                        import traceback as _tb
+                        tb_str = _tb.format_exc()
+                        try:
+                            print(f"[tool_exception] {tool_name} input={tool_input!r}\n{tb_str}", flush=True)
+                        except Exception:
+                            pass
+                        tb_tail = "\n".join(tb_str.splitlines()[-12:])
                         collector._queue.append(ObservationFrame(
                             step_index=collector._step,
                             name=tool_name,
                             ok=False,
-                            error={"code": type(e).__name__, "message": str(e)},
+                            error={"code": type(e).__name__, "message": str(e), "tb_tail": tb_tail},
                         ))
-                        tool_result = {"ok": False, "error": {"message": str(e)}}
+                        tool_result = {"ok": False, "error": {"message": str(e), "tb_tail": tb_tail}}
                     for frame in collector.drain():
                         yield encode_sse(frame_event_name(frame), frame.model_dump())
                     break

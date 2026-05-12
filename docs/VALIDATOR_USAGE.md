@@ -1,93 +1,123 @@
-# Validator Index — Canonical Locations for All Agents
+# Validation Protocol — Self-Analysis Only
 
-Every agent and human dev working on this repo should run these BEFORE
-claiming any pool / swap / stake / LP feature works on staging or prod.
+> **HARD RULE.** Mechanical pass/fail validation is **forbidden** from this
+> point forward. The agent (Claude / human reviewer) **must read every
+> conversation transcript end-to-end** and detect logical, copy, UX,
+> calldata, URL, and post-sign behavior issues by inspection — never by
+> assert-only scripts that emit a single PASS/FAIL.
+>
+> The validator scripts in this repo are **transcript-producers**, not
+> verdict-producers. They send the real requests, dump the full SSE
+> output per scenario, and let a thinking reviewer read every transcript
+> and form a judgment.
 
-## Files
+## Why
 
-| Path | What it catches |
+Every prior incident — Raydium AMM 1-step prep-swap, `?ammId=` redirect
+to `/swap`, post-sign `search_defi_opportunities` fire, `unhashable
+type: 'slice'` exception, finalize-on-protocol copy that misled the
+tester — was missed by mechanical assertions but obvious in a 15-second
+human read of the transcript. The gap is judgment, not coverage. Adding
+more assertions has diminishing returns; adding a reviewer who reads
+every transcript has none.
+
+## Required workflow
+
+1. **Run the dump harness** against the target environment:
+
+   ```bash
+   ILYON_BASE=https://staging.ilyonai.com \
+       python3 -uB tests/validators/deep_transcript_dump.py
+   ```
+
+   Output: `/tmp/v2-deep/<idx>_<scenario>.md` per scenario, plus
+   `_index.md`. Each file contains the **prompt, every SSE frame
+   summary, every card payload, the final assistant text, and a URL
+   liveness probe**. No verdict line.
+
+2. **Read every transcript.** Not a sample. Not a regex pre-scan. The
+   reviewer opens each file and asks:
+
+   - Does the final text contain a leaked exception, a redirect phrase,
+     a wrong protocol name, a placeholder, or `undefined` / `NaN`?
+   - Does the card payload have non-null `tx.data` / `tx.serialized` if
+     it claims to be ready to sign?
+   - Do the amounts in the summary match what the user asked for?
+   - Does the URL in the card actually open the right pool when
+     clicked (the dump probes liveness — read the probe result)?
+   - Is the step count appropriate for the protocol (Raydium AMM zap =
+     ≥3 steps, Aave supply = 2 steps, etc.)?
+   - Is the post-sign behavior sane (no `search_defi_opportunities`
+     re-fire, no `confirm the receipt` user-message injection)?
+   - Does the wallet/chain match (Solana request on EVM wallet must
+     emit `wallet_chain_mismatch` blocker)?
+   - Is the copy honest about what the chat can sign vs what the user
+     must finalize on the protocol app?
+
+3. **Catalog findings.** Each bug → an entry in
+   `/tmp/v2-deep/_findings.md` with: scenario file, problem in 1–2
+   sentences, severity, owning module.
+
+4. **Fix every finding.** Push to `main`. If staging branch lags,
+   `git push origin main:staging` to ship.
+
+5. **Re-deploy + re-run the dump.** Repeat the read-every-transcript
+   loop. Stop only when the reviewer reads all transcripts and finds
+   nothing actionable.
+
+6. **Update this doc** when new bug classes surface in production that
+   the dump didn't already expose. Add an item under "Patterns the
+   reviewer should specifically look for" below.
+
+## Patterns the reviewer should specifically look for
+
+| Pattern | What it looks like in the transcript |
 |---|---|
-| `tests/validators/strict_validator_v2.py` | **Primary**. 30+ assertion classes: card composition, calldata sanity, redirect-phrase detection, URL liveness, float-drift, dev-string leaks, zap completeness, post-sign-fire safety, range block payload, wallet/chain match, deadline freshness, zero-addresses, chain_id presence, Solana tx size, amount consistency, protocol-text match. |
-| `scripts/strict_pool_validator.py` | v1 — 121 scenarios. Legacy. v2 replaces it. |
-| `scripts/anvil_fork_sim.py` | L3 funded fork. Spawns anvil, sets balance/storage, broadcasts plan, captures receipts + event logs. Catches calldata that's structurally valid but reverts on real state. |
-| `scripts/playwright_browser_smoke.py` | L4 browser smoke. Headless Chromium, mocks Phantom+MetaMask EIP-1193, navigates chat, asserts DOM hydrates + wallet detection. |
-| `tests/calldata_decoder.py` | EVM selector decoder + sanity asserts (mint amount > 0 in-range, deadline future, approve amount > 0, recipient == user). |
+| Leaked exception | "I wasn't able to fetch that data right now. \<python error\>" in final text |
+| Redirect-phrase copy | "finalise the LP add inside the …", "currently finalizes on …", "currently unavailable" |
+| Old Raydium URL | `raydium.io/liquidity/?ammId=` (must be `/liquidity/increase/?pool_id=`) |
+| Zap underfilled | Raydium AMM / Orca Whirlpool with `steps` count == 1 (should be ≥3 for a real zap) |
+| Empty cards | `Cards emitted (0)` block — tool failed silently |
+| Missing `range_block` | V3 EVM card with no `range_block` payload — slider can't render |
+| Wrong protocol | Card title says `uniswap-v3` when the user asked for `pancakeswap-v3` |
+| Float drift | `0.111111` / `0.0999999` / `1.23e-08` in any user-visible string |
+| Atomic-unit leak | `100000000000000000` instead of `0.1 ETH` |
+| Post-sign fire | SSE stream contains `confirm the receipt` injected as a `user` message after step_signed |
+| Wallet/chain mismatch | Solana prompt + EVM wallet → no `wallet_chain_mismatch` blocker visible |
+| Stale deadline | `tx.deadline` ≤ current time or > 24h ahead |
+| Zero address `tx.to` | `tx.to: "0x0000…0000"` on any EVM step |
+| Solana tx oversize | `tx.serialized` decodes to >1232 bytes without ALT hint |
 
-## Run order
+## Transcript producer scripts
 
-```bash
-# L2 strict API validation (~22 min, 30+ scenarios)
-ILYON_BASE=https://staging.ilyonai.com python3 -B tests/validators/strict_validator_v2.py
+| Path | What it produces |
+|---|---|
+| `tests/validators/deep_transcript_dump.py` | Per-scenario Markdown transcript files at `/tmp/v2-deep/`. **Primary.** |
+| `scripts/anvil_fork_sim.py` | Funded Anvil fork — broadcasts a V3 mint plan + dumps receipts. Use to verify a calldata path actually lands on chain. |
+| `scripts/playwright_browser_smoke.py` | Headless Chromium navigates the chat, dumps DOM + console errors per scenario. Use to verify the wallet popup actually shows when the card asserts "ready". |
+| `tests/calldata_decoder.py` | Library helper — decode EVM calldata to human selector + args for inspection. |
 
-# L3 Anvil funded fork sim (broadcasts a real V3 mint plan)
-python3 -B scripts/anvil_fork_sim.py
+These scripts **emit data, not verdicts**. The reviewer reads the
+output. No script in this repo may print "PASS" or "FAIL" as its
+primary signal again.
 
-# L4 Playwright headless smoke (~30s)
-python3 -B scripts/playwright_browser_smoke.py
-```
+## Updating after each browser bug
 
-## Bug classes the validator now catches
+When the human tester finds a bug in the browser that the dump didn't
+expose:
 
-1. Card composition (required + forbidden card_types per scenario)
-2. Calldata semantic sanity (mint, approve, curve add_liquidity, Aave supply)
-3. Range card payload invariants (current_price, fee_tier, cdf_30d, presets)
-4. **Redirect-phrase detection** ("finalise the LP add inside ...", "currently unavailable")
-5. **URL liveness** (HEAD with redirect follow; must not land on /swap when expecting /liquidity)
-6. **Float-drift** (`0.111111`, `0.099999`, `0.000000123`, scientific notation, 15+ digit raw atomic units)
-7. **Dev-string leaks** (`undefined`, `[object Object]`, `NaN`, `TODO`, `FIXME`)
-8. **Amount consistency** (summary text amount must match scenario's expected_amount within 1%)
-9. **Protocol text match** (card title/description must mention expected protocol)
-10. **Signable card has real tx** (execution_plan_v3 ready status implies every ready step has `tx.data` or `tx.serialized`)
-11. **Zap completeness** (Raydium AMM must have ≥3 steps swap+swap+deposit, not 1 prep-swap)
-12. **Wallet/chain mismatch blocker** (Solana request on EVM wallet emits wallet_chain_mismatch)
-13. **Mint deadline freshness** (deadline > now AND < now + 24h)
-14. **No zero-address tx.to**
-15. **EVM tx has chain_id**
-16. **Solana tx serialized size < 1232 bytes** (or has ALT hint)
-17. **Post-sign no search-trigger fire** (runtime must not inject `confirm the receipt` user message)
-18. **Float-precision regression** (per-token forbid_text)
-19. **Pool URL not DefiLlama fallback** (pool_link card must have protocol-native URL)
-20. **PancakeSwap V3 URL ≠ Uniswap branch**
-21. **Curve slug map ≠ wrong pool**
-22. **Yearn vault address fallback when symbol-only**
-23. **Aave reserve fallback per chain**
-24. **Receipt-token strip** (sDAI/yvUSDC/aUSDC → underlying)
-25. **Stale extra.pool_address override** (parser pair wins over meta.symbol)
-26. **Chain inference** (parser chain wins over meta.chain)
-27. **Protocol inference** (parser proto wins over meta.project)
-28. **Velodrome-V3 hallucination → V2_AMM** (explicit registry trust over substring scan)
-29. **Sanctum INF / Frax / Beefy / Ichi / Steer slug coverage**
-30. **Range refinement chain depth** (5+ delta turns)
+1. Reproduce the bug by running the dump on the same scenario.
+2. If the transcript already shows the bug → the reviewer missed it.
+   Add the failure pattern to the **Patterns** table above so the next
+   reviewer scans for it.
+3. If the transcript does **not** show the bug → the dump is missing a
+   signal. Extend `deep_transcript_dump.py` to capture whatever frame /
+   payload field the bug lives in (e.g. a post-sign re-fire that's
+   only visible if the dump replays the SSE stream after a signed
+   step).
+4. Re-run, re-read, fix the underlying bug, commit dump-improvement +
+   fix in the same PR.
 
-## CI / CD wiring (recommended)
-
-Add to `.github/workflows/validate.yml`:
-
-```yaml
-- name: Strict validator v2
-  run: |
-    ILYON_BASE=https://staging.ilyonai.com python3 tests/validators/strict_validator_v2.py
-- name: Anvil fork sim
-  run: |
-    curl -L https://foundry.paradigm.xyz | bash
-    ~/.foundry/bin/foundryup
-    python3 scripts/anvil_fork_sim.py
-- name: Playwright smoke
-  run: |
-    pip install playwright && playwright install chromium
-    python3 scripts/playwright_browser_smoke.py
-```
-
-## Adding new assertions
-
-When a browser bug surfaces that the validator missed:
-
-1. Add a new `check_*` function at the top of `tests/validators/strict_validator_v2.py`.
-2. Wire it into `run_scenario` per-card or per-text loop.
-3. Add a new `Scenario` that intentionally triggers the bug pattern.
-4. Run validator → must FAIL on the new scenario before you ship the fix.
-5. Fix the bug → re-run → must PASS.
-6. Commit both the scenario and the fix in the same PR.
-
-This is the "tester reality bridge" (L5) — every browser-found bug
-becomes a permanent harness assertion.
+This is the "tester reality bridge". Every browser-found bug becomes a
+permanent capture in the dump and a permanent line in the Patterns
+table — never a one-off mechanical assert.
