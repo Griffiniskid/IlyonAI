@@ -7,7 +7,7 @@ const { buildSwap, resolveMint, decimalsFor, SOL_MINT } = require("./jupiter");
 const { simulateBase64Tx } = require("./simulate");
 
 module.exports = {
-  aliases: ["marinade-finance"],
+  aliases: ["marinade-finance", "marinade-liquid-staking", "marinade-native-staking"],
   async quote({ amount }) {
     return {
       expectedAmountOut: amount,
@@ -16,8 +16,13 @@ module.exports = {
       fees: { protocol: "Jupiter routing", network: "0.000005 SOL" },
     };
   },
-  async build({ amount, user, slippageBps = 50 }, { connection } = {}) {
-    const inputMint = SOL_MINT;
+  async build({ asset, amount, user, slippageBps = 50 }, { connection } = {}) {
+    // Jupiter can route ANY SPL → mSOL in a single tx, so a USDT/USDC user
+    // doesn't need a separate prep-swap step. Use the supplied input asset
+    // (defaults to SOL) and resolve its mint + decimals on the fly.
+    const inputSym = (asset || "SOL").toUpperCase();
+    const inputMint = resolveMint(inputSym) || SOL_MINT;
+    const inputDecimals = decimalsFor(inputSym) || 9;
     const outputMint = resolveMint("MSOL");
     if (!outputMint) throw new Error("mSOL mint not registered.");
     const { tx } = await buildSwap({
@@ -26,7 +31,7 @@ module.exports = {
       amount,
       user,
       slippageBps,
-      decimals: 9,
+      decimals: inputDecimals,
     });
     const sim = connection ? await simulateBase64Tx({ b64: tx, connection }) : { ok: true };
     if (!sim.ok) {
@@ -38,8 +43,8 @@ module.exports = {
       transactions: [
         {
           b64: tx,
-          summary: `Marinade liquid-stake ${amount} SOL → mSOL (via Jupiter)`,
-          description: `Routes ${amount} SOL into mSOL through Jupiter aggregated liquidity. mSOL accrues stake rewards.`,
+          summary: `Marinade liquid-stake ${amount} ${inputSym} → mSOL (via Jupiter)`,
+          description: `Routes ${amount} ${inputSym} into mSOL through Jupiter aggregated liquidity. mSOL accrues stake rewards.`,
           receiptToken: "mSOL",
           feeUsd: 0.005,
           durationS: 25,

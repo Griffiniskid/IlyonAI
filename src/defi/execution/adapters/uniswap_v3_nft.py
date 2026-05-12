@@ -178,12 +178,21 @@ class UniswapV3NFTAdapter:
             raise ValueError(f"V3 NFT: cannot resolve {sym_a} or {sym_b} on {chain_norm}.")
         addr_a, dec_a = meta_a
         addr_b, dec_b = meta_b
-        # V3 needs WETH for pair; convert native placeholder to WETH if needed
-        weth_meta = await resolve_any_evm_token(chain_norm, "WETH")
-        if addr_a == NATIVE_PLACEHOLDER and weth_meta:
-            addr_a, dec_a = weth_meta
-        if addr_b == NATIVE_PLACEHOLDER and weth_meta:
-            addr_b, dec_b = weth_meta
+        # V3 pools always trade wrapped natives — never the 0xEee... native
+        # placeholder. Resolve the right wrapper symbol per chain: WETH on
+        # mainnet / L2s, WBNB on BSC, WAVAX on Avalanche, WMATIC on Polygon.
+        _NATIVE_WRAPPER_BY_CHAIN = {
+            "ethereum": "WETH", "base": "WETH", "arbitrum": "WETH",
+            "optimism": "WETH", "linea": "WETH", "scroll": "WETH",
+            "zksync": "WETH", "bsc": "WBNB", "avalanche": "WAVAX",
+            "polygon": "WMATIC",
+        }
+        wrapper_sym = _NATIVE_WRAPPER_BY_CHAIN.get(chain_norm, "WETH")
+        wrapper_meta = await resolve_any_evm_token(chain_norm, wrapper_sym)
+        if addr_a == NATIVE_PLACEHOLDER and wrapper_meta:
+            addr_a, dec_a = wrapper_meta
+        if addr_b == NATIVE_PLACEHOLDER and wrapper_meta:
+            addr_b, dec_b = wrapper_meta
 
         fee_bps = int(extra.get("fee_bps") or extra.get("fee") or 500)
         proto_for_resolver = (

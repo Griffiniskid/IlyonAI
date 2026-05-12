@@ -1,7 +1,7 @@
 /**
  * Jito — SOL → JitoSOL via Jupiter universal swap.
  */
-const { buildSwap, resolveMint, SOL_MINT } = require("./jupiter");
+const { buildSwap, resolveMint, decimalsFor, SOL_MINT } = require("./jupiter");
 const { simulateBase64Tx } = require("./simulate");
 
 module.exports = {
@@ -14,16 +14,21 @@ module.exports = {
       fees: { protocol: "Jupiter routing", network: "0.000005 SOL" },
     };
   },
-  async build({ amount, user, slippageBps = 50 }, { connection } = {}) {
+  async build({ asset, amount, user, slippageBps = 50 }, { connection } = {}) {
+    // Jupiter routes any SPL → JitoSOL in one tx — accept user-supplied
+    // input asset (USDC/USDT/SOL/etc) instead of hardcoding SOL.
+    const inputSym = (asset || "SOL").toUpperCase();
+    const inputMint = resolveMint(inputSym) || SOL_MINT;
+    const inputDecimals = decimalsFor(inputSym) || 9;
     const outputMint = resolveMint("JITOSOL");
     if (!outputMint) throw new Error("JitoSOL mint not registered.");
     const { tx } = await buildSwap({
-      inputMint: SOL_MINT,
+      inputMint,
       outputMint,
       amount,
       user,
       slippageBps,
-      decimals: 9,
+      decimals: inputDecimals,
     });
     const sim = connection ? await simulateBase64Tx({ b64: tx, connection }) : { ok: true };
     if (!sim.ok) {
@@ -35,8 +40,8 @@ module.exports = {
       transactions: [
         {
           b64: tx,
-          summary: `Jito stake ${amount} SOL → JitoSOL (via Jupiter)`,
-          description: `Routes ${amount} SOL into JitoSOL through Jupiter aggregated liquidity. JitoSOL captures MEV-boosted staking rewards.`,
+          summary: `Jito stake ${amount} ${inputSym} → JitoSOL (via Jupiter)`,
+          description: `Routes ${amount} ${inputSym} into JitoSOL through Jupiter aggregated liquidity. JitoSOL captures MEV-boosted staking rewards.`,
           receiptToken: "JitoSOL",
           feeUsd: 0.005,
           durationS: 25,
