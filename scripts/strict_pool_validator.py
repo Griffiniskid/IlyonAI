@@ -405,7 +405,9 @@ def build_corpus() -> list[Scenario]:
         name="velodrome-op",
         prompt="Add liquidity to Velodrome USDC-OP on Optimism $50",
         wallet="evm",
-        require_card_types={"execution_plan_v3"},
+        # Either Enso route OR pool_link is acceptable — V2 AMM with no
+        # Enso coverage falls through to the protocol's web app.
+        forbid_card_types={"pool_deposit_v3"},
     ))
 
     # ===== Aerodrome / GMX =====
@@ -521,6 +523,85 @@ def build_corpus() -> list[Scenario]:
         prompt="Deposit 25 USDC into Drift on Solana",
         wallet="solana",
     ))
+
+    # ===== Adversarial / fuzz =====
+    s.append(Scenario(
+        name="adv-malformed-amount",
+        prompt="Supply abc USDC to Aave V3 on Ethereum",
+        wallet="evm",
+    ))
+    s.append(Scenario(
+        name="adv-negative-amount",
+        prompt="Supply -50 USDC to Aave V3 on Ethereum",
+        wallet="evm",
+    ))
+    s.append(Scenario(
+        name="adv-scientific-amount",
+        prompt="Supply 1e10 USDC to Aave V3 on Ethereum",
+        wallet="evm",
+    ))
+    s.append(Scenario(
+        name="adv-typo-aave",
+        prompt="Supply 100 USDC to Aave V99 on Ethereum",
+        wallet="evm",
+    ))
+    s.append(Scenario(
+        name="adv-typo-chain",
+        prompt="Supply 100 USDC to Aave V3 on Ethereeum",
+        wallet="evm",
+    ))
+    s.append(Scenario(
+        name="adv-mixed-case",
+        prompt="supply 100 usdc to aave v3 on ETHEREUM",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+    ))
+    s.append(Scenario(
+        name="adv-no-protocol",
+        prompt="Add liquidity USDC-USDT on Ethereum $50",
+        wallet="evm",
+    ))
+    s.append(Scenario(
+        name="adv-bare-amount",
+        prompt="Deposit USDC into Aave on Ethereum",
+        wallet="evm",
+    ))
+    # Long-tail protocol coverage
+    for proto in ["Convex", "Origin Ether", "Sky", "Fluid", "Moonwell", "GMX"]:
+        s.append(Scenario(
+            name=f"longtail-{proto.lower().replace(' ', '-')}",
+            prompt=f"Deposit 100 USDC into {proto} on Ethereum",
+            wallet="evm",
+        ))
+
+    # Native amount cases
+    s.append(Scenario(
+        name="native-eth-aave",
+        prompt="Supply 0.5 ETH to Aave V3 on Ethereum",
+        wallet="evm",
+        require_card_types={"execution_plan_v3"},
+    ))
+    s.append(Scenario(
+        name="native-avax-aave",
+        prompt="Supply 5 AVAX to Aave V3 on Avalanche",
+        wallet="evm",
+    ))
+
+    # ===== Solana long-tail =====
+    for proto in ["Lulo", "Save", "Lifinity", "MarginFi", "Lulo Finance"]:
+        s.append(Scenario(
+            name=f"sol-{proto.lower().replace(' ', '-')}",
+            prompt=f"Deposit 25 USDC into {proto} on Solana",
+            wallet="solana",
+        ))
+
+    # ===== Yearn USDT cross-chain =====
+    for chain in ["base", "polygon", "arbitrum", "optimism"]:
+        s.append(Scenario(
+            name=f"yearn-usdt-{chain}",
+            prompt=f"Deposit 100 USDT into Yearn USDT vault on {chain.title()}",
+            wallet="evm",
+        ))
 
     return s
 
