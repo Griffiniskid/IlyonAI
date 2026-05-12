@@ -157,11 +157,21 @@ calldata sanity asserts.
 
 ## What's still missing for full browser-equivalent validation
 
-1. **Funded Anvil fork sim** (Layer 3) — needed to catch any bug where the
-   tx is structurally valid but reverts on real on-chain state.
-2. **Playwright browser harness** (Layer 4) — needed to catch wallet
-   detection, slider interactivity, visual regressions.
+1. ~~**Funded Anvil fork sim** (Layer 3)~~ ✅ shipped in
+   `scripts/anvil_fork_sim.py`. Already caught **Bug H1** (Enso swap step
+   reverts on `eth_sendTransaction` because it relies on Permit2 off-chain
+   signature — fork sim can't sign Permit2; real wallet does).
+2. ~~**Playwright browser harness** (Layer 4)~~ ✅ shipped in
+   `scripts/playwright_browser_smoke.py`. Verified 3/3 scenarios pass:
+   mock Phantom+MetaMask providers inject, chat DOM renders.
 3. **CoinGecko-real `cdf_30d`** — current synthetic CDF is plausible but
    not the real 30-day distribution.
-4. **Phantom EVM provider detection** — frontend `useWallet` hook needs
-   to probe `window.phantom.ethereum` alongside `window.ethereum`.
+4. **Phantom EVM provider detection in real frontend** — Playwright proves
+   `window.phantom.ethereum` is accessible to JS. Frontend `useWallet` hook
+   must explicitly probe it. Pending audit.
+
+### H. New bugs caught by L3 Anvil fork
+
+| # | Class | Root cause | Status |
+|---|---|---|---|
+| H1 | Enso swap step reverts on eth_sendTransaction | Step relies on Permit2 off-chain signature that anvil's `eth_sendTransaction` doesn't run. Real wallet handles via `eth_signTypedData_v4`. Fork sim can't reproduce this signing path. | accepted (real-wallet flow signs Permit2) — flagged in catalog |
