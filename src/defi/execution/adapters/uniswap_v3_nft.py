@@ -290,6 +290,37 @@ class UniswapV3NFTAdapter:
             price_token0_usd=price0,
             price_token1_usd=price1,
         )
+        # Defensive guard against price-hint dropouts. When the current
+        # tick is INSIDE [tick_lower, tick_upper] both legs are expected
+        # to need non-trivial capital — a ratio that collapses to 0/1
+        # (or 1/0) means symbol→USD hint lookup failed for one side and
+        # the math fell back to 1.0/1.0 defaults, which made the math
+        # ignore actual decimal scale. Detect that and re-derive both
+        # prices from on-chain tick + a stable anchor so the swap step
+        # never drains all input into one side.
+        in_range = tick_lower < pool.tick < tick_upper
+        if in_range and (ratio0 < Decimal("0.005") or ratio1 < Decimal("0.005")):
+            anchor_sym = None
+            if (sym0 or "").upper() in {"USDC", "USDT", "DAI", "FRAX", "USDS", "LUSD", "USDE", "USDC.E", "USDBC"}:
+                anchor_sym = "token0"
+            elif (sym1 or "").upper() in {"USDC", "USDT", "DAI", "FRAX", "USDS", "LUSD", "USDE", "USDC.E", "USDBC"}:
+                anchor_sym = "token1"
+            if anchor_sym and tick_price > 0:
+                if anchor_sym == "token0":
+                    price0 = 1.0
+                    price1 = 1.0 / tick_price
+                else:
+                    price1 = 1.0
+                    price0 = tick_price
+                ratio0, ratio1 = optimal_ratio_for_range(
+                    sqrt_price_x96_current=pool.sqrt_price_x96,
+                    tick_lower=tick_lower,
+                    tick_upper=tick_upper,
+                    decimals0=decimals0,
+                    decimals1=decimals1,
+                    price_token0_usd=price0,
+                    price_token1_usd=price1,
+                )
 
         # 5) Input token metadata.
         in_meta = await resolve_any_evm_token(chain_norm, request.asset_in)
