@@ -45,37 +45,47 @@ module.exports = {
   },
   async build({ asset, amount, user, extra = {}, slippageBps = 50 }, { connection } = {}) {
     // Mode 1: fungible LP / share mint provided — single Jupiter route.
+    // Raydium AMM v4 LP tokens are NOT on Jupiter's swap graph (Jupiter only
+    // routes against tradable markets), so Mode 1 only succeeds for share
+    // tokens that double as LSTs (some Raydium-CLMM variants, third-party
+    // tokenized LP wrappers). On any Jupiter error fall through to Mode 2
+    // pair-aware prep-swap instead of leaking a 502 to the user.
     if (extra.lpMint) {
       const inputSym = (asset || "USDC").toUpperCase();
       const inputMint = resolveMint(inputSym) || resolveMint("USDC");
-      const { tx } = await buildSwap({
-        inputMint,
-        outputMint: extra.lpMint,
-        amount,
-        user,
-        slippageBps,
-        decimals: decimalsFor(inputSym),
-      });
-      const sim = connection ? await simulateBase64Tx({ b64: tx, connection }) : { ok: true };
-      if (!sim.ok) {
-        const e = new Error(`Raydium LP-mint route simulation failed: ${sim.errStr || "unknown"}`);
-        e.simulation = sim;
-        throw e;
+      try {
+        const { tx } = await buildSwap({
+          inputMint,
+          outputMint: extra.lpMint,
+          amount,
+          user,
+          slippageBps,
+          decimals: decimalsFor(inputSym),
+        });
+        const sim = connection ? await simulateBase64Tx({ b64: tx, connection }) : { ok: true };
+        if (!sim.ok) {
+          throw new Error(`Raydium LP-mint route simulation failed: ${sim.errStr || "unknown"}`);
+        }
+        return {
+          transactions: [
+            {
+              b64: tx,
+              summary: `Raydium AMM v4 LP entry: ${inputSym} → LP ${extra.lpMint.slice(0, 8)}…`,
+              description: "Direct Jupiter-routed entry into the Raydium AMM LP token.",
+              receiptToken: "raydium-lp",
+              feeUsd: 0.01,
+              durationS: 25,
+              warnings: [],
+              simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
+            },
+          ],
+        };
+      } catch (mode1Err) {
+        // Common failure: Jupiter returns MARKET_NOT_FOUND because Raydium-AMM
+        // LP shares aren't quotable. Fall through silently to Mode 2.
+        // Anything else (network, signature, real revert) still gets surfaced
+        // by Mode 2's own try/catch below if both modes fail.
       }
-      return {
-        transactions: [
-          {
-            b64: tx,
-            summary: `Raydium AMM v4 LP entry: ${inputSym} → LP ${extra.lpMint.slice(0, 8)}…`,
-            description: "Direct Jupiter-routed entry into the Raydium AMM LP token.",
-            receiptToken: "raydium-lp",
-            feeUsd: 0.01,
-            durationS: 25,
-            warnings: [],
-            simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
-          },
-        ],
-      };
     }
 
     // Mode 2: pair-aware prep swap.
