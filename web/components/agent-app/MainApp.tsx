@@ -5223,10 +5223,18 @@ export default function MainApp() {
           console.warn("[handleSignStep] post-sign chat fire failed", chatErr);
         }
       } else if (tx.chain_kind === "evm" && tx.to && tx.data) {
+        // Probe both providers: MetaMask injects window.ethereum, Phantom EVM
+        // mode injects window.phantom.ethereum. Pick whichever is present.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const eth: any = (window as any).ethereum;
-        console.log("[handleSignStep] evm provider", { hasEth: !!eth });
-        if (!eth) throw new Error("EVM wallet (MetaMask/Phantom-EVM) not found.");
+        const w: any = window as any;
+        const eth: any = w.ethereum || (w.phantom && w.phantom.ethereum);
+        console.log("[handleSignStep] evm provider", {
+          hasMetaMask: !!w.ethereum,
+          hasPhantomEvm: !!(w.phantom && w.phantom.ethereum),
+        });
+        if (!eth) throw new Error(
+          "EVM wallet (MetaMask/Phantom-EVM) not found. Install MetaMask or enable Ethereum support in Phantom."
+        );
         const accounts = await eth.request({ method: "eth_accounts" });
         let from = accounts?.[0];
         if (!from) {

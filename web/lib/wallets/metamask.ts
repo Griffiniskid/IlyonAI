@@ -3,36 +3,53 @@ interface EthereumProvider {
   on: (event: string, callback: (...args: unknown[]) => void) => void;
   removeListener: (event: string, callback: (...args: unknown[]) => void) => void;
   isMetaMask?: boolean;
+  isPhantom?: boolean;
   selectedAddress?: string;
 }
 
 declare global {
   interface Window {
     ethereum?: EthereumProvider;
+    phantom?: {
+      ethereum?: EthereumProvider;
+      solana?: unknown;
+    };
   }
 }
 
+/** Pick the first EVM provider available: MetaMask (window.ethereum) then
+ *  Phantom EVM (window.phantom.ethereum). Returns null when neither exists. */
+function getEvmProvider(): EthereumProvider | null {
+  if (typeof window === "undefined") return null;
+  return window.ethereum || window.phantom?.ethereum || null;
+}
+
 export async function connect(): Promise<string> {
-  if (!window.ethereum?.isMetaMask) throw new Error("MetaMask not detected");
-  const accounts = await window.ethereum.request({ method: "eth_requestAccounts" }) as string[];
+  const eth = getEvmProvider();
+  if (!eth) throw new Error("MetaMask / Phantom-EVM not detected");
+  const accounts = await eth.request({ method: "eth_requestAccounts" }) as string[];
   return accounts[0];
 }
 
 export async function signMessage(message: string): Promise<string> {
-  if (!window.ethereum) throw new Error("No provider");
-  const accounts = await window.ethereum.request({ method: "eth_requestAccounts" }) as string[];
-  const sig = await window.ethereum.request({ method: "personal_sign", params: [message, accounts[0]] }) as string;
+  const eth = getEvmProvider();
+  if (!eth) throw new Error("No EVM provider");
+  const accounts = await eth.request({ method: "eth_requestAccounts" }) as string[];
+  const sig = await eth.request({ method: "personal_sign", params: [message, accounts[0]] }) as string;
   return sig;
 }
 
 export async function sendTransaction(tx: { to: string; value?: string; data?: string }): Promise<string> {
-  if (!window.ethereum) throw new Error("No provider");
-  const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: [tx] }) as string;
+  const eth = getEvmProvider();
+  if (!eth) throw new Error("No EVM provider");
+  const hash = await eth.request({ method: "eth_sendTransaction", params: [tx] }) as string;
   return hash;
 }
 
 export function onAccountChanged(callback: (address: string | null) => void): () => void {
+  const eth = getEvmProvider();
+  if (!eth) return () => {};
   const handler = (...args: unknown[]) => callback((args[0] as string[] | undefined)?.[0] ?? null);
-  window.ethereum?.on("accountsChanged", handler);
-  return () => window.ethereum?.removeListener("accountsChanged", handler);
+  eth.on("accountsChanged", handler);
+  return () => eth.removeListener("accountsChanged", handler);
 }
