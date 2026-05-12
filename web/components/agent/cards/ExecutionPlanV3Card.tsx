@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ExecutionPlanV3Payload, ExecutionPlanV3Step, ExecutionPlanV3Blocker } from "@/types/agent";
 import { AlertTriangle, ArrowRight, CheckCircle2, Clock, LockKeyhole, Play, Power, Route, ShieldAlert, Wallet, Zap } from "lucide-react";
+import { V3RangeBlock } from "./V3RangeBlock";
 
 interface Props {
   payload: ExecutionPlanV3Payload;
@@ -194,6 +195,12 @@ export function ExecutionPlanV3Card({ payload, onSignStep }: Props) {
           <div className="text-[11px] text-rose-100/60">
             No signing button is shown until every blocker is resolved.
           </div>
+        </div>
+      )}
+
+      {payload.range_block && (
+        <div className="relative border-b border-white/10 p-5">
+          <V3RangeBlock block={payload.range_block} />
         </div>
       )}
 

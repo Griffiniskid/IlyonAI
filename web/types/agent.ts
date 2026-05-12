@@ -328,6 +328,45 @@ export interface ExecutionPlanV3Totals {
   assets_required: Record<string, string>;
 }
 
+export interface V3RangeBlockPair {
+  token0: { symbol?: string | null; address?: string | null; decimals?: number | null };
+  token1: { symbol?: string | null; address?: string | null; decimals?: number | null };
+}
+
+export interface V3RangeBlockCurrent {
+  current_price?: number | null;
+  price_human?: string | null;
+  tick?: number | null;
+  tick_spacing?: number | null;
+  fee_tier_bps?: number | null;
+  sqrt_price_x96?: string | null;
+  liquidity?: string | null;
+}
+
+export interface V3RangeBlockMarket {
+  base_apr_pct?: number | null;
+  reward_apr_pct?: number | null;
+  cdf_30d?: Array<{ ratio: number; cdf: number } | number> | null;
+}
+
+export interface V3RangeBlockPreset {
+  label: string;
+  lower_pct: number;
+  upper_pct: number;
+}
+
+export interface V3RangeBlock {
+  card_subtype: "v3_range";
+  chain: string;
+  protocol: string;
+  pool_address?: string | null;
+  pair: V3RangeBlockPair;
+  current: V3RangeBlockCurrent;
+  market: V3RangeBlockMarket;
+  initial_range: { preset: string; lower_pct: number; upper_pct: number };
+  range_presets: V3RangeBlockPreset[];
+}
+
 export interface ExecutionPlanV3Payload {
   plan_id: string;
   title: string;
@@ -340,6 +379,7 @@ export interface ExecutionPlanV3Payload {
   totals: ExecutionPlanV3Totals;
   research_thesis?: string | null;
   strategy_id?: string | null;
+  range_block?: V3RangeBlock | null;
 }
 
 export type CardType =
