@@ -360,6 +360,26 @@ async def build_yield_execution_plan(
             if len(sides) >= 2:
                 meta_a = await resolve_any_evm_token(chain, sides[0])
                 meta_b = await resolve_any_evm_token(chain, sides[1])
+                # V3 pools always trade wrapped natives, never the 0xEee...
+                # placeholder. Resolve the right wrapper per chain so the
+                # range_block matches what the V3 NFT adapter actually mints
+                # (WETH on EVM L1/L2, WBNB on BSC, WAVAX on Avalanche, WMATIC
+                # on Polygon).
+                from src.data.asset_registry import NATIVE_PLACEHOLDER
+                _WRAP_BY_CHAIN = {
+                    "ethereum": "WETH", "base": "WETH", "arbitrum": "WETH",
+                    "optimism": "WETH", "linea": "WETH", "scroll": "WETH",
+                    "zksync": "WETH", "bsc": "WBNB", "avalanche": "WAVAX",
+                    "polygon": "WMATIC",
+                }
+                _wrap_sym = _WRAP_BY_CHAIN.get(chain.lower(), "WETH")
+                _wrap_meta = await resolve_any_evm_token(chain, _wrap_sym)
+                if meta_a and meta_a[0] == NATIVE_PLACEHOLDER and _wrap_meta:
+                    meta_a = _wrap_meta
+                    sides[0] = _wrap_sym
+                if meta_b and meta_b[0] == NATIVE_PLACEHOLDER and _wrap_meta:
+                    meta_b = _wrap_meta
+                    sides[1] = _wrap_sym
                 if meta_a and meta_b:
                     pool_state = await resolve_v3_pool(
                         chain=chain, protocol=protocol,
