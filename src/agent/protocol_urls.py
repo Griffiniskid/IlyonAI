@@ -544,9 +544,16 @@ def classify_pool_kind(*, protocol: str | None, pool_symbol: str | None = None, 
     cards. Routes through the explicit `pool_types.lookup_pool_type` registry
     so new protocols land in the right bucket without ad-hoc substrings.
     """
-    from src.agent.pool_types import kind_for_card
+    from src.agent.pool_types import POOL_TYPE_REGISTRY, kind_for_card
     primary = kind_for_card(protocol)
     if primary != "v2":
+        return primary
+    # If the slug is explicitly registered as V2 (e.g. "velodrome-v3" mapped
+    # to V2_AMM because real Velodrome has no V3), trust the registry and
+    # short-circuit. Without this guard, the substring scan below sees "v3"
+    # in the slug and incorrectly flips back to V3.
+    norm = (protocol or "").lower().strip()
+    if norm in POOL_TYPE_REGISTRY:
         return primary
     # When the protocol slug is generic ("uniswap" without a version), fall
     # back to the legacy substring heuristic over (protocol, symbol, pool_id)
