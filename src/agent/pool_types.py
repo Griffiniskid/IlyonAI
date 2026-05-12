@@ -74,6 +74,11 @@ POOL_TYPE_REGISTRY: dict[str, PoolType] = {
     "velodrome": PoolType.V2_AMM,
     "velodrome-v1": PoolType.V2_AMM,
     "velodrome-v2": PoolType.V2_AMM,
+    # LLM sometimes hallucinates "velodrome-v3" — real Velodrome has Slipstream
+    # for concentrated liquidity, no actual V3. Coerce to V2 so the pool_link
+    # card emits the Velodrome app URL instead of the V3 redirect.
+    "velodrome-v3": PoolType.V2_AMM,
+    "velodrome-finance": PoolType.V2_AMM,
     "velodrome-slipstream": PoolType.V3_CLMM,
     "camelot": PoolType.V2_AMM,
     "camelot-v3": PoolType.V3_CLMM,
