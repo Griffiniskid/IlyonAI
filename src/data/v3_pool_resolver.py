@@ -289,9 +289,15 @@ async def list_fee_tiers_with_pools(
     *, chain: str, protocol: str, token_a: str, token_b: str
 ) -> list[V3PoolState]:
     """For range-card discovery: probe every standard fee tier and return
-    states for the tiers that exist."""
+    states for the tiers that exist. PancakeSwap V3 uses its own tier set
+    (100 / 500 / 2500 / 10000 bps) — Uniswap V3 / Aerodrome Slipstream use
+    100 / 500 / 3000 / 10000."""
+    if protocol.lower() == "pancakeswap-v3":
+        tiers = (100, 500, 2500, 10000)
+    else:
+        tiers = (100, 500, 3000, 10000)
     results = []
-    for fee in (100, 500, 3000, 10000):
+    for fee in tiers:
         st = await resolve_v3_pool(
             chain=chain, protocol=protocol, token_a=token_a, token_b=token_b, fee_bps=fee
         )

@@ -772,10 +772,14 @@ def _detect_stake_amount_plan(message: str) -> tuple[str, dict] | None:
 
     SOLANA_LST_HEADS = {"marinade", "jito", "sanctum", "blazestake", "blaze", "drift-staking"}
     if (chain_hint == "solana") or (proto_slug.split("-")[0] in SOLANA_LST_HEADS):
+        # Solana LSTs (Marinade mSOL, Jito jitoSOL, Sanctum LSTs) only stake
+        # SOL — there is no USDT-SOL "pool" for these. Always pass pool as
+        # bare `<proto> SOL` and let the sidecar handle the prep-swap from
+        # whatever token the user supplied (asset_in) into SOL.
         return (
             "execute_pool_position",
             {
-                "pool": f"{proto_slug} {token}-SOL" if token.upper() != "SOL" else f"{proto_slug} SOL",
+                "pool": f"{proto_slug} SOL",
                 "amount": amount,
                 "asset_in": token,
                 "chain": "solana",

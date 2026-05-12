@@ -186,18 +186,57 @@ class UniswapV3NFTAdapter:
             addr_b, dec_b = weth_meta
 
         fee_bps = int(extra.get("fee_bps") or extra.get("fee") or 500)
+        proto_for_resolver = (
+            proto_norm if proto_norm in {"uniswap-v3", "pancakeswap-v3", "aerodrome-slipstream"} else "uniswap-v3"
+        )
 
         pool = await resolve_v3_pool(
             chain=chain_norm,
-            protocol=proto_norm if proto_norm in {"uniswap-v3", "pancakeswap-v3", "aerodrome-slipstream"} else "uniswap-v3",
+            protocol=proto_for_resolver,
             token_a=addr_a,
             token_b=addr_b,
             fee_bps=fee_bps,
         )
         if pool is None:
-            raise ValueError(
-                f"V3 NFT: no {request.protocol} pool for {sym_a}/{sym_b} fee {fee_bps}bps on {request.chain}."
-            )
+            # Fee-tier auto-discovery. PancakeSwap V3 / Uniswap V3 / Aerodrome
+            # each support several tiers per pair (100 / 500 / 2500 / 10000
+            # bps on PancakeSwap; 100 / 500 / 3000 / 10000 on Uniswap). When
+            # the user-named tier has no pool, try the remaining tiers and
+            # pick the highest-liquidity one so we never block on a default
+            # fee mismatch (PancakeSwap BSC USDT-BNB has no 500bps pool but
+            # a deep 2500bps pool exists).
+            from src.data.v3_pool_resolver import list_fee_tiers_with_pools
+            try:
+                tiers = await list_fee_tiers_with_pools(
+                    chain=chain_norm,
+                    protocol=proto_for_resolver,
+                    token_a=addr_a,
+                    token_b=addr_b,
+                )
+            except Exception:
+                tiers = []
+            best: tuple[int, int] | None = None  # (fee_bps, liquidity)
+            for t in tiers:
+                cand_fee = int(getattr(t, "fee_bps", 0))
+                cand_liq = int(getattr(t, "liquidity", 0) or 0)
+                if cand_fee == fee_bps:
+                    continue
+                if best is None or cand_liq > best[1]:
+                    best = (cand_fee, cand_liq)
+            if best is not None:
+                pool = await resolve_v3_pool(
+                    chain=chain_norm,
+                    protocol=proto_for_resolver,
+                    token_a=addr_a,
+                    token_b=addr_b,
+                    fee_bps=best[0],
+                )
+                fee_bps = best[0]
+            if pool is None:
+                raise ValueError(
+                    f"V3 NFT: no {request.protocol} pool for {sym_a}/{sym_b} on {request.chain} "
+                    f"(tried fee {fee_bps}bps and any alternate tier with liquidity)."
+                )
 
         # decimals map per resolved token0 / token1
         token0_meta = await resolve_any_evm_token(chain_norm, pool.token0)
