@@ -304,19 +304,39 @@ async def execute_pool_position(
         # Infer chain from a Solana protocol head when not given so the
         # final retry stays on Solana even after we drop the proto filter.
         SOLANA_PROTOS = {"raydium", "orca", "meteora", "kamino", "marinade", "jito", "sanctum", "drift", "lulo", "save", "lifinity", "solend"}
+        # Known protocol family heads. When the user explicitly types a
+        # protocol name and it isn't a known family, we MUST refuse rather
+        # than fall through to a pair-only search — that fallback used to
+        # silently substitute "FakeBank USDC" → "Maple V2 USDC" because
+        # Maple was the highest-TVL USDC pool on Ethereum.
+        KNOWN_PROTO_HEADS = SOLANA_PROTOS | {
+            "aave", "compound", "yearn", "lido", "rocket-pool", "rocketpool",
+            "ether.fi", "etherfi", "morpho", "spark", "curve", "convex",
+            "pendle", "stargate", "frax", "uniswap", "pancakeswap",
+            "sushiswap", "balancer", "velodrome", "aerodrome", "camelot",
+            "trader-joe", "traderjoe", "ramses", "thena", "moonwell",
+            "benqi", "mendi", "venus", "radiant", "silo", "fluid",
+            "iearn", "beefy", "yearn-v3", "yearn-v2", "yearn-v1",
+            "stader", "ankr", "swell", "kelp", "puffer", "renzo",
+            "eigenlayer", "fraxlend", "fraxswap", "gmx", "hyperliquid",
+            "ethena", "usual", "resolv", "anzen", "maple",
+        }
         inferred_chain = chain
-        if not inferred_chain and protocol_hint:
-            head = protocol_hint.split("-")[0].lower()
-            if head in SOLANA_PROTOS:
-                inferred_chain = "solana"
+        proto_head = protocol_hint.split("-")[0].lower() if protocol_hint else ""
+        if not inferred_chain and proto_head in SOLANA_PROTOS:
+            inferred_chain = "solana"
         meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=inferred_chain)
         if not meta and inferred_chain:
             meta = await _resolve_protocol_pair(protocol_hint, pair_hint, chain=None)
-        # When the protocol-anchored scan still misses, drop the protocol
-        # filter but keep the inferred chain so we don't drift to Sui/etc.
-        if not meta and pair_hint:
+        # Only drop the protocol filter when (a) the user didn't name a
+        # protocol, or (b) the named protocol is a known family that
+        # might just be missing this exact suffix (raydium-clmm → raydium).
+        # Refuse to silently substitute when the user names something the
+        # catalog never heard of (e.g. "FakeBank", "WashBank").
+        protocol_known = (not protocol_hint) or proto_head in KNOWN_PROTO_HEADS
+        if not meta and pair_hint and protocol_known:
             meta = await _resolve_protocol_pair("", pair_hint, chain=inferred_chain)
-        if not meta and protocol_hint and not pair_hint:
+        if not meta and protocol_hint and not pair_hint and protocol_known:
             meta = await _resolve_protocol_pair("", protocol_hint, chain=inferred_chain)
 
     if not meta:
