@@ -19,11 +19,14 @@ services:
       WEB_API_PORT: ${API_CONTAINER_PORT:-8080}
       ACTIONS_API_PORT: ${API_CONTAINER_PORT:-8080}
       PYTHONPATH: /app:/app/IlyonAi-Wallet-assistant-main/server
+      SOLANA_YIELD_BUILDER_URL: http://solana-yield-builder:8090
     depends_on:
       redis:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      solana-yield-builder:
+        condition: service_started
     volumes:
       - ${LOGS_DIR:-./logs/prod}:/app/logs
       - ./IlyonAi-Wallet-assistant-main/server:/app/IlyonAi-Wallet-assistant-main/server:ro
@@ -34,6 +37,24 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SOLANA YIELD BUILDER (sidecar)
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Builds pair-aware Jupiter prep-swap + Raydium/Orca/Meteora/Kamino LP
+  # transactions. The Python API reaches it at http://solana-yield-builder:8090
+  # via the api service's SOLANA_YIELD_BUILDER_URL.
+  solana-yield-builder:
+    build:
+      context: ./services/solana-yield-builder
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 8090
+      NODE_ENV: production
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
+    expose:
+      - "8090"
 
   # ═══════════════════════════════════════════════════════════════════════════
   # AI WALLET ASSISTANT API
