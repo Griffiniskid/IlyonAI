@@ -104,7 +104,6 @@ async def build_yield_execution_plan(
     # structured blocker instead of running the adapter (which would raise
     # an Enso 422 with a leaky URL in the detail).
     if is_evm_chain and not _is_evm_addr(user_address):
-        from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
         plan = ExecutionPlanV3.new(
             title=f"{protocol} {action}",
             summary=f"EVM pool {protocol} {asset_in} on {chain} requires an EVM wallet.",
@@ -123,7 +122,6 @@ async def build_yield_execution_plan(
         ))
         return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
     if is_solana_chain and not _is_sol_addr(user_address):
-        from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
         plan = ExecutionPlanV3.new(
             title=f"{protocol} {action}",
             summary=f"Solana pool {protocol} {asset_in} requires a Solana wallet.",
