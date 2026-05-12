@@ -365,6 +365,22 @@ async def build_yield_execution_plan(
                         chain=chain, protocol=protocol,
                         token_a=meta_a[0], token_b=meta_b[0], fee_bps=fee_bps,
                     )
+                    if pool_state is None:
+                        # Match the V3 NFT adapter's fee-tier auto-discovery:
+                        # the user-given tier might not exist; pick the deepest
+                        # tier that does, so the slider always renders.
+                        from src.data.v3_pool_resolver import list_fee_tiers_with_pools
+                        try:
+                            tiers = await list_fee_tiers_with_pools(
+                                chain=chain, protocol=protocol,
+                                token_a=meta_a[0], token_b=meta_b[0],
+                            )
+                        except Exception:
+                            tiers = []
+                        if tiers:
+                            best_state = max(tiers, key=lambda t: int(getattr(t, "liquidity", 0) or 0))
+                            pool_state = best_state
+                            fee_bps = best_state.fee_bps
                     if pool_state is not None:
                         human_price = float(price_from_tick(
                             pool_state.tick, meta_a[1], meta_b[1]

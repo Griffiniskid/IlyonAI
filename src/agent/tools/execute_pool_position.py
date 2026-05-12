@@ -340,13 +340,30 @@ async def execute_pool_position(
             meta = await _resolve_protocol_pair("", protocol_hint, chain=inferred_chain)
 
     if not meta:
-        return err_envelope(
-            "pool_not_found",
-            f"Could not resolve `{pool_arg}` to a DefiLlama pool. "
-            "Try a tighter reference: paste the DefiLlama pool UUID, or use 'protocol pair' "
-            "(e.g. 'raydium-amm SPACEX-WSOL'). For Solana memes, the pair must exist as a "
-            "live DefiLlama pool entry.",
+        # Emit a structured blocker card so the chat shows an actionable
+        # "pool not found" panel instead of a silent error. The frontend
+        # already knows how to render execution_plan_v3 blockers (rose
+        # banner + CTA), so we re-use it here for unknown-protocol /
+        # unknown-pair requests like "Supply 5 USDT to FakeBank on Solana".
+        from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
+        plan = ExecutionPlanV3.new(
+            title="Pool not found",
+            summary=f"Couldn't match `{pool_arg}` to a DefiLlama pool.",
         )
+        plan.add_blocker(ExecutionBlocker(
+            code="pool_not_found",
+            severity="blocker",
+            title="No matching pool",
+            detail=(
+                f"`{pool_arg}` did not match any pool in the live DefiLlama catalog. "
+                "Try a tighter reference: paste the DefiLlama pool UUID, or use 'protocol pair' "
+                "(e.g. 'raydium-amm SOL-USDC', 'aave-v3 USDC')."
+            ),
+            affected_step_ids=[],
+            recoverable=True,
+            cta="Re-send with a recognized protocol + pair.",
+        ))
+        return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
 
     chain = str(meta.get("chain", "")).lower()
     protocol = str(meta.get("project", "")).lower()
