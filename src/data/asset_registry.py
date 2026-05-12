@@ -102,7 +102,15 @@ _REGISTRY: dict[tuple[str, str], tuple[str, int]] = {
     ("avalanche", "USDC"): ("0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e", 6),
     ("avalanche", "USDT"): ("0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7", 6),
     ("avalanche", "DAI.E"): ("0xd586e7f844cea2f87f50152665bcbc2c279d8d70", 18),
+    ("avalanche", "DAI"): ("0xd586e7f844cea2f87f50152665bcbc2c279d8d70", 18),
     ("avalanche", "WETH.E"): ("0x49d5c2bdffac6ce2bfdb6640f4f80f226bc10bab", 18),
+    # On Avalanche the canonical "ETH" surface is Avalanche-Bridge wrapped
+    # ETH (WETH.e). Alias WETH→WETH.e so user-typed "Aave V3 WETH on
+    # Avalanche" maps to the only real Avalanche ETH market.
+    ("avalanche", "WETH"): ("0x49d5c2bdffac6ce2bfdb6640f4f80f226bc10bab", 18),
+    ("avalanche", "WBTC.E"): ("0x50b7545627a5162f82a992c33b87adc75187b218", 8),
+    ("avalanche", "WBTC"): ("0x50b7545627a5162f82a992c33b87adc75187b218", 8),
+    ("avalanche", "BTC.B"): ("0x152b9d0fdc40c096757f570a51e494bd4b943e50", 8),
     ("avalanche", "SAVAX"): ("0x2b2c81e08f1af8835a78bb2a90ae924ace0ea4be", 18),
     # --- BSC ---
     ("bsc", "BNB"): (NATIVE_PLACEHOLDER, 18),

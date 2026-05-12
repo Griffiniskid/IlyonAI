@@ -79,6 +79,24 @@ _protocol_alias = {
     "frax": "frax-sfrxeth",
     "frax-ether": "frax-sfrxeth",
     "ethena": "ethena-susde",
+    # Liquid staking + restaking that DefiLlama users frequently name in
+    # natural language. Enso indexes each under its own slug — add the
+    # bare protocol-name aliases so "Stake X with Stader" / "with Kelp"
+    # / "with Swell" resolves without an explicit position_token.
+    "stader": "stader-ethx",
+    "stader-labs": "stader-ethx",
+    "stader-ethx": "stader-ethx",
+    "kelp": "kelp-rseth",
+    "kelp-dao": "kelp-rseth",
+    "swell": "swell-rsweth",
+    "swelleth": "swell-rsweth",
+    "swell-network": "swell-rsweth",
+    "renzo": "renzo-ezeth",
+    "renzo-protocol": "renzo-ezeth",
+    "puffer": "puffer-pufeth",
+    "puffer-finance": "puffer-pufeth",
+    "mantle-staked-eth": "mantle-staked-eth",
+    "mantle": "mantle-staked-eth",
     "pendle": "pendle-pt",
     "stargate": "stargate",
     "moonwell": "moonwell",
