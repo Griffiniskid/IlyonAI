@@ -414,8 +414,12 @@ async def build_swap_tx(
                 "Try a larger amount or a more liquid pair."
             ),
         )
-    if amount_in_display and dst_amount_display:
-        rate = str(round(dst_amount_display / amount_in_display, 8))
+    # Enso/Jupiter both return amount_in_display / dst_amount_display as
+    # human-readable strings ("0.1") to keep float drift out of the JSON, so
+    # `dst_amount_display / amount_in_display` would be `str / str` here.
+    # Use the float copies (in_num/out_num) which were validated > 0 above.
+    if in_num > 0:
+        rate = str(round(out_num / in_num, 8))
     else:
         rate = "0"
 
