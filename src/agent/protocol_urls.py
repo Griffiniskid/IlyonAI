@@ -473,15 +473,18 @@ def pool_protocol_url(
 
     # --- Solana ---
     if proj in {"raydium-amm", "raydium-amm-v3", "raydium-cp"}:
+        # Raydium retired the `/liquidity/?ammId=X` route — UI redirects to
+        # /swap. Use the v2 deep-link to the add-liquidity dialog instead.
         if pa:
-            return f"https://raydium.io/liquidity/?ammId={pa}"
+            return f"https://raydium.io/liquidity/increase/?pool_id={pa}&mode=add"
         if sym:
             return f"https://raydium.io/liquidity-pools/?search={quote_plus(sym)}"
         return "https://raydium.io/liquidity-pools/"
 
     if proj in {"raydium-clmm"}:
         if pa:
-            return f"https://raydium.io/clmm/?pool_id={pa}"
+            # Raydium CLMM add-liquidity dialog deep link.
+            return f"https://raydium.io/liquidity/increase/?pool_id={pa}&mode=add"
         if sym:
             return f"https://raydium.io/clmm-pools/?search={quote_plus(sym)}"
         return "https://raydium.io/clmm-pools/"
