@@ -508,12 +508,18 @@ class UniswapV3NFTAdapter:
         )
         mint_call = _encode_mint_call(mint_params)
 
+        # Prefer human symbols (USDC, WETH) in the asset_in field and step
+        # description so the chat row doesn't surface raw addresses like
+        # "0xa0b869+0xc02aaa" to the tester. Fall back to truncated addresses
+        # only when symbol lookup misses for an exotic pool.
+        sym0_label = (sym0 or pool.token0[:6] + "…").upper()
+        sym1_label = (sym1 or pool.token1[:6] + "…").upper()
         steps.append(make_step(
             index=step_idx,
             action="deposit_lp",
             title=f"Open V3 position [{lower_pct:+.0f}% / {upper_pct:+.0f}%]",
             description=(
-                f"Mint NFT position in {request.protocol} {pool.token0[:6]}…/{pool.token1[:6]}… "
+                f"Mint NFT position in {request.protocol} {sym0_label}/{sym1_label} "
                 f"{fee_bps/100:.2f}% fee tier. Range ticks {tick_lower} → {tick_upper} (spacing {pool.tick_spacing}). "
                 f"Desired: amount0={amount0_desired}, amount1={amount1_desired}. "
                 f"Min: amount0={amount0_min}, amount1={amount1_min}. "
@@ -522,7 +528,7 @@ class UniswapV3NFTAdapter:
             chain=request.chain,
             wallet="MetaMask",
             protocol=request.protocol,
-            asset_in=f"{pool.token0[:8]}+{pool.token1[:8]}",
+            asset_in=f"{sym0_label}+{sym1_label}",
             amount_in=str(request.amount_in),
             asset_out=f"{request.protocol}-position-nft",
             slippage_bps=request.slippage_bps,
@@ -538,7 +544,7 @@ class UniswapV3NFTAdapter:
             ),
             risk_warnings=[
                 f"Position NFT minted to {request.user_address}. Save the returned tokenId from the tx receipt.",
-                f"Range covers ticks {tick_lower}…{tick_upper}; goes out-of-range if {pool.token0[:6]}/{pool.token1[:6]} price exits this band.",
+                f"Range covers ticks {tick_lower}…{tick_upper}; goes out-of-range if {sym0_label}/{sym1_label} price exits this band.",
             ],
         ))
 
