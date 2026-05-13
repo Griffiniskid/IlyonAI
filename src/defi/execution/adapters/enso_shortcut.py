@@ -155,7 +155,31 @@ class EnsoShortcutAdapter:
                 )
                 if position is not None:
                     break
-            if position is None and token_in_addr == NATIVE_PLACEHOLDER:
+            # Last-resort hardcoded receipt-token addresses for LST hubs that
+            # Enso doesn't index under any slug we know. These are canonical
+            # mainnet contracts; the Enso /shortcuts/route still builds the
+            # swap path because the receipt tokens are tradable on Curve /
+            # Uniswap. Empty per chain when no override.
+            override_used = False
+            if position is None:
+                _RECEIPT_BY_HUB: dict[int, dict[str, str]] = {
+                    1: {  # ethereum
+                        "frax-sfrxeth": "0xac3e018457b222d93114458476f3e3416abbe38f",
+                        "kelp-rseth": "0xa1290d69c65a6fe4df752f95823fae25cb99e5a7",
+                        "swell-rsweth": "0xfae103dc9cf190ed75350761e95403b7b8afa6c0",
+                        "renzo-ezeth": "0xbf5495efe5db9ce00f80364c8b423567e58d2110",
+                        "puffer-pufeth": "0xd9a442856c234a39a81a089c06451ebaa4306a72",
+                        "mantle-staked-eth": "0xd5f7838f5c461feff7fe49ea5ebaf7728bb0adfa",
+                    },
+                }
+                hub_map = _RECEIPT_BY_HUB.get(chain_id, {})
+                override = hub_map.get(protocol_slug)
+                if override:
+                    token_out_addr = override
+                    apy_hint = extra.get("apy")
+                    tvl_hint = extra.get("tvl")
+                    override_used = True
+            if position is None and not override_used and token_in_addr == NATIVE_PLACEHOLDER:
                 # Native ETH path — protocol may index WETH as underlying.
                 wrapped_meta = await resolve_any_evm_token(chain_norm, "WETH")
                 if wrapped_meta:
@@ -167,14 +191,15 @@ class EnsoShortcutAdapter:
                         )
                         if position is not None:
                             break
-            if position is None:
+            if position is None and not override_used:
                 raise ValueError(
                     f"Enso: no position token indexed for {request.protocol} {request.asset_in} on "
                     f"{request.chain}. Try a different asset or pass extra={{'position_token': '0x...'}}."
                 )
-            token_out_addr = position.position_address
-            apy_hint = position.apy
-            tvl_hint = position.tvl
+            if position is not None:
+                token_out_addr = position.position_address
+                apy_hint = position.apy
+                tvl_hint = position.tvl
 
         amount_units = _to_unit(request.amount_in, decimals)
         if amount_units <= 0:
