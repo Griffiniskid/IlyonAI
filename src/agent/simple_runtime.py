@@ -1598,7 +1598,7 @@ _AAVE_HINT = re.compile(r"\baave\b", re.IGNORECASE)
 
 _GENERIC_SUPPLY_RE = re.compile(
     r"^\s*(?:supply|deposit|lend|stake)\s+"
-    r"(?P<amount>[\d,]+(?:\.\d+)?)\s+"
+    r"(?P<amount>[\d,]+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s+"
     r"(?P<asset>[A-Za-z]{2,10})\s+"
     r"(?:on|to|via|into)\s+"
     r"(?P<protocol>[A-Za-z][A-Za-z0-9 \-_.]{1,30}?)\s+"
@@ -1901,10 +1901,14 @@ _PROTOCOL_NAME_RE = (
 # 3 because beyond that it's almost certainly garbage and we'd rather let
 # the LLM fallback handle exotic multi-asset pools.
 _PAIR_RE = r"(?P<pair>[A-Z][A-Z0-9.]{1,9}(?:[/-][A-Z][A-Z0-9.]{1,9}){1,2})"
+# Accept scientific notation (1e10, 2.5e3, 1.5E-2) in addition to plain
+# digits + commas. Negative amounts are intentionally NOT matched so the
+# generic refusal path can surface a clean "amount must be positive" hint
+# instead of letting the user sign a malformed plan.
 _AMOUNT_USD_OR_TOKEN_RE = (
     r"(?:with\s+)?"
-    r"(?:\$\s*(?P<usd>[\d,]+(?:\.\d+)?)|"
-    r"(?P<native>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10}))"
+    r"(?:\$\s*(?P<usd>[\d,]+(?:\.\d+)?(?:[eE][-+]?\d+)?)|"
+    r"(?P<native>[\d,]+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s+(?P<token>[A-Za-z]{2,10}))"
 )
 _ADD_LIQUIDITY_RE = re.compile(
     r"^\s*(?:add|provide|deposit)\s+(?:liquidity\s+)?"
