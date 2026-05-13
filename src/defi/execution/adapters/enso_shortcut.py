@@ -218,10 +218,28 @@ class EnsoShortcutAdapter:
             )
         except Exception as exc:
             from src.defi.execution.error_decoder import decode_evm_revert
-            decoded = decode_evm_revert(str(exc))
+            import re as _re
+            raw_msg = str(exc)
+            decoded = decode_evm_revert(raw_msg)
             hint = f" Hint: {decoded}" if decoded else ""
+            # Scrub Enso URLs from the surfaced error — they contain our wallet
+            # address, the user's input amount, and the API base. Quoting them
+            # back to the user in the chat is noisy and confusing.
+            scrubbed = _re.sub(r"https?://api\.enso\.finance/[^\s'\"]+", "<enso api>", raw_msg)
+            scrubbed = _re.sub(r"For more information check[^.]*\.\s*", "", scrubbed)
+            # Common 422 = invalid amount / insufficient liquidity. Map to
+            # something a tester can act on.
+            user_hint = ""
+            if "422" in scrubbed:
+                user_hint = (
+                    " (Enso returned 422 Unprocessable Entity — usually means the "
+                    "amount is outside the route's liquidity, or the input token "
+                    "isn't supported on this chain. Try a smaller amount or a "
+                    "different protocol.)"
+                )
             raise ValueError(
-                f"Enso /shortcuts/route failed for {request.protocol} {request.asset_in} on {request.chain}: {exc}.{hint}"
+                f"Enso /shortcuts/route failed for {request.protocol} {request.asset_in} on {request.chain}: "
+                f"{scrubbed.strip()}{user_hint}.{hint}"
             ) from exc
 
         unsigned = response.get("unsigned_tx") or {}
