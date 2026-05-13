@@ -771,15 +771,28 @@ def _detect_stake_amount_plan(message: str) -> tuple[str, dict] | None:
     proto_slug = proto_l.replace(" ", "-")
 
     SOLANA_LST_HEADS = {"marinade", "jito", "sanctum", "blazestake", "blaze", "drift-staking"}
+    # DefiLlama project receipt-token symbols. Marinade=mSOL, Jito=jitoSOL,
+    # Sanctum-Infinity=INF. The pair filter uses substring containment, so
+    # "sanctum SOL" never matches the "INF" symbol on the catalog. Map each
+    # LST hub to the asset symbol DefiLlama actually uses for its pool entry.
+    LST_HUB_RECEIPT = {
+        "marinade": "MSOL",
+        "jito": "JITOSOL",
+        "sanctum": "INF",
+        "blazestake": "BSOL",
+        "blaze": "BSOL",
+    }
     if (chain_hint == "solana") or (proto_slug.split("-")[0] in SOLANA_LST_HEADS):
-        # Solana LSTs (Marinade mSOL, Jito jitoSOL, Sanctum LSTs) only stake
+        # Solana LSTs (Marinade mSOL, Jito jitoSOL, Sanctum INF) only stake
         # SOL — there is no USDT-SOL "pool" for these. Always pass pool as
-        # bare `<proto> SOL` and let the sidecar handle the prep-swap from
-        # whatever token the user supplied (asset_in) into SOL.
+        # bare `<proto> <receipt>` and let the sidecar handle the prep-swap
+        # from whatever token the user supplied (asset_in) into the LST.
+        head = proto_slug.split("-")[0]
+        receipt = LST_HUB_RECEIPT.get(head, "SOL")
         return (
             "execute_pool_position",
             {
-                "pool": f"{proto_slug} SOL",
+                "pool": f"{proto_slug} {receipt}",
                 "amount": amount,
                 "asset_in": token,
                 "chain": "solana",
