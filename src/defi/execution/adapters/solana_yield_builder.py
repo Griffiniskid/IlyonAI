@@ -134,17 +134,30 @@ class SolanaYieldBuilderAdapter:
             if not serialized:
                 raise ValueError(f"Solana yield builder tx {index} missing serialized payload.")
             summary = raw.get("summary") or f"{request.protocol} {request.action if hasattr(request,'action') else 'deposit'} step {index}"
+            # Sidecar-emitted leg amounts/symbols (e.g. Raydium Mode 2 prep-swap
+            # only swaps half) win over the request-level totals so the UI
+            # doesn't lie about what each signature actually moves.
+            leg_asset_in = raw.get("inputSymbol") or request.asset_in
+            leg_amount_in = raw.get("inputAmount")
+            if leg_amount_in is None:
+                leg_amount_in = str(request.amount_in)
+            else:
+                leg_amount_in = str(leg_amount_in)
+            leg_asset_out = raw.get("outputSymbol") or raw.get("receiptToken")
+            step_action = raw.get("action") or (
+                "deposit_lp" if request.protocol.lower() in {"orca", "orca-dex", "orca-whirlpools", "meteora", "meteora-dlmm", "raydium", "raydium-amm", "raydium-clmm"} else "supply"
+            )
             step = make_step(
                 index=index,
-                action="deposit_lp" if request.protocol.lower() in {"orca", "orca-dex", "orca-whirlpools", "meteora", "meteora-dlmm", "raydium", "raydium-amm", "raydium-clmm"} else "supply",
+                action=step_action,
                 title=summary,
                 description=raw.get("description") or summary,
                 chain="solana",
                 wallet="Phantom",
                 protocol=request.protocol,
-                asset_in=request.asset_in,
-                amount_in=str(request.amount_in),
-                asset_out=raw.get("receiptToken"),
+                asset_in=leg_asset_in,
+                amount_in=leg_amount_in,
+                asset_out=leg_asset_out,
                 slippage_bps=request.slippage_bps,
                 gas_estimate_usd=raw.get("feeUsd", 0.01),
                 duration_estimate_s=raw.get("durationS", 25),

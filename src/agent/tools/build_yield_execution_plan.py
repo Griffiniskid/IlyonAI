@@ -54,6 +54,33 @@ def _coerce_amount(value: Any) -> Decimal:
         return Decimal(0)
 
 
+# DeFi acronyms that should stay uppercase after .title() — otherwise "raydium-amm"
+# → "Raydium-Amm" and "deposit_lp" → "Deposit Lp" leak into user-facing copy.
+_ACRONYMS = {"AMM", "CLMM", "DLMM", "LP", "DEX", "CL", "CP", "NFT",
+             "V2", "V3", "V4", "USDC", "USDT", "DAI", "ETH", "SOL", "BNB", "BTC"}
+
+
+def _humanize_token(tok: str) -> str:
+    up = tok.upper()
+    if up in _ACRONYMS:
+        return up
+    return tok.capitalize()
+
+
+def humanize_protocol(name: str) -> str:
+    """`raydium-amm` -> `Raydium AMM`, `uniswap-v3` -> `Uniswap V3`."""
+    if not name:
+        return ""
+    return " ".join(_humanize_token(p) for p in name.replace("_", "-").split("-") if p)
+
+
+def humanize_action(name: str) -> str:
+    """`deposit_lp` -> `Deposit LP`, `prep_swap` -> `Prep Swap`."""
+    if not name:
+        return ""
+    return " ".join(_humanize_token(p) for p in name.replace("-", "_").split("_") if p)
+
+
 async def build_yield_execution_plan(
     ctx,
     *,
@@ -304,9 +331,12 @@ async def build_yield_execution_plan(
             card_payload=plan.to_dict(),
         )
 
+    proto_human = humanize_protocol(protocol)
+    action_human = humanize_action(action)
+    chain_human = (chain[:1].upper() + chain[1:]) if chain else chain
     plan = ExecutionPlanV3.new(
-        title=f"{protocol.title()} {action.replace('_', ' ').title()}",
-        summary=f"{action.replace('_', ' ').title()} {amount} {asset_in} via {protocol} on {chain}.",
+        title=f"{proto_human} {action_human}",
+        summary=f"{action_human} {amount} {asset_in} via {proto_human} on {chain_human}.",
         research_thesis=research_thesis,
     )
     for step in steps:

@@ -128,8 +128,12 @@ module.exports = {
       transactions: [
         {
           b64: tx,
-          summary: `Step 1/2 prep-swap: ${sourceSym} → ${targetSym} for ${pairLabel} entry`,
-          description: `Swap half of your ${sourceSym} into ${targetSym} via Jupiter so both ${pairLabel} pool tokens sit in your wallet. After this prep tx confirms, click 'Open on Raydium' below to add liquidity — Raydium's addLiquidity SDK isn't wired for in-chat signing yet.`,
+          action: "prep_swap",
+          summary: `Prep swap: ${half} ${sourceSym} → ${targetSym} (Raydium ${pairLabel} handoff)`,
+          description: `Swap ${half} ${sourceSym} into ${targetSym} via Jupiter so you hold one side of the ${pairLabel} pool. After this swap confirms, click the Raydium link to finish the LP add — Raydium AMM v4 direct-sign isn't wired yet for this in-chat flow.`,
+          inputSymbol: sourceSym,
+          inputAmount: half,
+          outputSymbol: targetSym,
           receiptToken: targetSym,
           feeUsd: 0.01,
           durationS: 25,

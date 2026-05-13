@@ -158,6 +158,7 @@ class ExecutionPlanV3:
         duration = 0
         chains: list[str] = []
         sigs = 0
+        assets_req: dict[str, float] = {}
         for step in self.steps:
             if step.gas_estimate_usd:
                 gas += float(step.gas_estimate_usd)
@@ -167,12 +168,34 @@ class ExecutionPlanV3:
                 chains.append(step.chain)
             if step.action != "wait_receipt" and step.action != "verify_balance":
                 sigs += 1
+            # Approve steps don't move tokens; skip them in the wallet-holdings
+            # roll-up. Same for receipt waits.
+            if step.action in {"approve", "wait_receipt", "verify_balance"}:
+                continue
+            sym = (step.asset_in or "").strip().upper()
+            if not sym or sym.startswith("0X"):  # hide hex addresses that leaked through
+                continue
+            try:
+                amt = float(step.amount_in) if step.amount_in is not None else 0.0
+            except (TypeError, ValueError):
+                amt = 0.0
+            if amt <= 0:
+                continue
+            assets_req[sym] = assets_req.get(sym, 0.0) + amt
+        # Preserve any caller-injected entries (e.g. dual-token V2) but our
+        # step-derived numbers win when the same symbol shows up.
+        merged: dict[str, str] = dict(self.totals.assets_required or {})
+        for sym, amt in assets_req.items():
+            # Keep precision sane: trim trailing zeros, fall back to a string
+            # the wallet UI can format with locale awareness.
+            text = f"{amt:.8f}".rstrip("0").rstrip(".") or "0"
+            merged[sym] = text
         self.totals = ExecutionPlanV3Totals(
             estimated_gas_usd=round(gas, 2),
             estimated_duration_s=duration,
             signatures_required=sigs,
             chains_touched=chains,
-            assets_required=self.totals.assets_required,
+            assets_required=merged,
         )
 
     def _recompute_step_statuses(self) -> None:
