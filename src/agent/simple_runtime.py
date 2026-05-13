@@ -1897,7 +1897,10 @@ def _detect_direct_pool_deposit(message: str) -> tuple[str, dict] | None:
 _PROTOCOL_NAME_RE = (
     r"(?P<protocol>(?:[A-Za-z]+[\s-]?){1,3}(?:V\d|v\d|amm|amm-v\d|clmm|slipstream|fusion)?)"
 )
-_PAIR_RE = r"(?P<pair>[A-Z][A-Z0-9.]{1,9}[/-][A-Z][A-Z0-9.]{1,9})"
+# 2-token (USDC-WETH) OR 3-token (DAI-USDC-USDT for Curve 3pool). Capping at
+# 3 because beyond that it's almost certainly garbage and we'd rather let
+# the LLM fallback handle exotic multi-asset pools.
+_PAIR_RE = r"(?P<pair>[A-Z][A-Z0-9.]{1,9}(?:[/-][A-Z][A-Z0-9.]{1,9}){1,2})"
 _AMOUNT_USD_OR_TOKEN_RE = (
     r"(?:with\s+)?"
     r"(?:\$\s*(?P<usd>[\d,]+(?:\.\d+)?)|"
