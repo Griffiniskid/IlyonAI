@@ -131,27 +131,47 @@ class EnsoShortcutAdapter:
             apy_hint = extra.get("apy")
             tvl_hint = extra.get("tvl")
         else:
-            position = await resolve_position(
-                chain_id=chain_id,
-                protocol_slug=protocol_slug,
-                underlying_addr=token_in_addr,
-            )
-            if position is None:
-                # Try with the native placeholder if user asked for ETH and
-                # the protocol indexes the wrapped variant instead.
-                if token_in_addr == NATIVE_PLACEHOLDER:
-                    wrapped_meta = await resolve_any_evm_token(chain_norm, "WETH")
-                    if wrapped_meta:
+            # Aliases here cover protocol-slug variants Enso uses internally
+            # — when a hub's main alias misses (e.g. frax → frax-sfrxeth),
+            # walk a fallback list before declaring unsupported. Without this
+            # Frax/Stader/Kelp/Renzo style LST hubs surface adapter_build_failed
+            # even though Enso indexes them under a sibling name.
+            _SLUG_FALLBACKS: dict[str, list[str]] = {
+                "frax-sfrxeth": ["frax-finance", "frax-ether", "frax", "staked-frax-ether"],
+                "stader-ethx": ["stader-labs", "stader", "staked-eth"],
+                "kelp-rseth": ["kelp-dao", "kelp"],
+                "swell-rsweth": ["swell-network", "swell", "swelleth"],
+                "renzo-ezeth": ["renzo-protocol", "renzo"],
+                "puffer-pufeth": ["puffer-finance", "puffer"],
+                "mantle-staked-eth": ["mantle-lsp", "mantle"],
+            }
+            tried = [protocol_slug] + _SLUG_FALLBACKS.get(protocol_slug, [])
+            position = None
+            for try_slug in tried:
+                position = await resolve_position(
+                    chain_id=chain_id,
+                    protocol_slug=try_slug,
+                    underlying_addr=token_in_addr,
+                )
+                if position is not None:
+                    break
+            if position is None and token_in_addr == NATIVE_PLACEHOLDER:
+                # Native ETH path — protocol may index WETH as underlying.
+                wrapped_meta = await resolve_any_evm_token(chain_norm, "WETH")
+                if wrapped_meta:
+                    for try_slug in tried:
                         position = await resolve_position(
                             chain_id=chain_id,
-                            protocol_slug=protocol_slug,
+                            protocol_slug=try_slug,
                             underlying_addr=wrapped_meta[0],
                         )
-                if position is None:
-                    raise ValueError(
-                        f"Enso: no position token indexed for {request.protocol} {request.asset_in} on "
-                        f"{request.chain}. Try a different asset or pass extra={{'position_token': '0x...'}}."
-                    )
+                        if position is not None:
+                            break
+            if position is None:
+                raise ValueError(
+                    f"Enso: no position token indexed for {request.protocol} {request.asset_in} on "
+                    f"{request.chain}. Try a different asset or pass extra={{'position_token': '0x...'}}."
+                )
             token_out_addr = position.position_address
             apy_hint = position.apy
             tvl_hint = position.tvl
