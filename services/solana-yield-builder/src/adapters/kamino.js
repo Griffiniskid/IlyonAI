@@ -42,16 +42,27 @@ module.exports = {
     ];
     for (const url of tryRestEndpoints) {
       try {
-        const resp = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            asset, amount, user,
-            market: extra.market || extra.market_address || extra.poolAddress,
-            reserve: extra.reserve || extra.reserve_address,
-            strategy: extra.strategy || extra.strategy_address,
-          }),
-        });
+        // 4s timeout per endpoint attempt — without it a stalled Kamino REST
+        // host can blow past the sidecar's 12s ceiling, which surfaces a
+        // bare TimeoutError to the agent instead of the Jupiter fallback.
+        const ctl = new AbortController();
+        const tmo = setTimeout(() => ctl.abort(), 4000);
+        let resp;
+        try {
+          resp = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: ctl.signal,
+            body: JSON.stringify({
+              asset, amount, user,
+              market: extra.market || extra.market_address || extra.poolAddress,
+              reserve: extra.reserve || extra.reserve_address,
+              strategy: extra.strategy || extra.strategy_address,
+            }),
+          });
+        } finally {
+          clearTimeout(tmo);
+        }
         if (!resp.ok) continue;
         const data = await resp.json();
         const tx = data?.transaction || data?.tx;

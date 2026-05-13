@@ -10,6 +10,7 @@ http://solana-yield-builder:8090 inside docker-compose).
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from dataclasses import dataclass
 from decimal import Decimal
@@ -118,12 +119,23 @@ class SolanaYieldBuilderAdapter:
             "slippageBps": request.slippage_bps,
             "extra": request.extra or {},
         }
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=_TIMEOUT_S)) as session:
-            async with session.post(f"{self.base_url}/build", json=payload) as resp:
-                if resp.status >= 400:
-                    detail = await resp.text()
-                    raise ValueError(f"Solana yield builder returned {resp.status}: {detail[:200]}")
-                body = await resp.json()
+        # Convert raw network/timeout errors into the ValueError shape that
+        # build_yield_execution_plan catches, so the user sees a typed
+        # adapter_build_failed blocker card instead of a bare TimeoutError.
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=_TIMEOUT_S)) as session:
+                async with session.post(f"{self.base_url}/build", json=payload) as resp:
+                    if resp.status >= 400:
+                        detail = await resp.text()
+                        raise ValueError(f"Solana yield builder returned {resp.status}: {detail[:200]}")
+                    body = await resp.json()
+        except aiohttp.ClientError as exc:
+            raise ValueError(f"Solana yield builder unreachable: {exc}") from exc
+        except (asyncio.TimeoutError, TimeoutError) as exc:
+            raise ValueError(
+                f"Solana yield builder timed out after {_TIMEOUT_S}s — protocol={request.protocol}; "
+                "upstream Jupiter/Kamino REST likely slow. Retry, or use a different protocol."
+            ) from exc
         transactions = body.get("transactions") or []
         if not transactions:
             raise ValueError("Solana yield builder returned no transactions.")
