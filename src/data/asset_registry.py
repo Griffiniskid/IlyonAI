@@ -236,7 +236,7 @@ _ONCHAIN_TTL_S = 86400.0
 async def resolve_any_evm_token(chain: str, addr_or_symbol: str) -> tuple[str, int] | None:
     """Resolve symbol or address to (address_lower, decimals).
 
-    Order: registry → on-chain decimals() if address-like.
+    Order: registry (symbol or address) → on-chain decimals() if address-like.
     """
     s = addr_or_symbol.strip()
     chain_norm = chain.lower()
@@ -244,6 +244,13 @@ async def resolve_any_evm_token(chain: str, addr_or_symbol: str) -> tuple[str, i
         return _REGISTRY[(chain_norm, s.upper())]
     if s.lower().startswith("0x") and len(s) == 42:
         addr = s.lower()
+        # Address shortcut: registry already maps every blue-chip to its
+        # exact decimal count. Skip RPC for addresses we know — otherwise
+        # an unreachable RPC + 18-decimal fallback corrupts USDC/USDT/WBTC
+        # mint amounts in V3 LP plans (USDC mint inflates by 1e12).
+        for (c, _sym), (a, d) in _REGISTRY.items():
+            if c == chain_norm and a == addr:
+                return (a, d)
         key = (chain_norm, addr)
         now = time.monotonic()
         async with _onchain_lock:

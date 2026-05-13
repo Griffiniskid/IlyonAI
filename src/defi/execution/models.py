@@ -173,7 +173,8 @@ class ExecutionPlanV3:
             if step.action in {"approve", "wait_receipt", "verify_balance"}:
                 continue
             sym = (step.asset_in or "").strip().upper()
-            if not sym or sym.startswith("0X"):  # hide hex addresses that leaked through
+            if not sym or sym.startswith("0X") or "+" in sym:
+                # Hide hex addresses + compound "USDC+WETH" placeholders.
                 continue
             try:
                 amt = float(step.amount_in) if step.amount_in is not None else 0.0
@@ -181,7 +182,12 @@ class ExecutionPlanV3:
                 amt = 0.0
             if amt <= 0:
                 continue
-            assets_req[sym] = assets_req.get(sym, 0.0) + amt
+            # MAX across steps, not SUM: a multi-step plan that pre-swaps
+            # then mints from the same input shouldn't double-count the
+            # wallet requirement (swap leg of 52 USDC + mint of 100 USDC is
+            # really still 100 USDC out of the wallet).
+            if amt > assets_req.get(sym, 0.0):
+                assets_req[sym] = amt
         # Preserve any caller-injected entries (e.g. dual-token V2) but our
         # step-derived numbers win when the same symbol shows up.
         merged: dict[str, str] = dict(self.totals.assets_required or {})

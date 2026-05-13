@@ -247,11 +247,21 @@ class UniswapV3NFTAdapter:
                     f"(tried fee {fee_bps}bps and any alternate tier with liquidity)."
                 )
 
-        # decimals map per resolved token0 / token1
+        # decimals map per resolved token0 / token1.
+        # Hard requirement: both sides must resolve. The previous 18-decimal
+        # fallback silently inflated USDC/USDT/WBTC mint amounts by 1e12 when
+        # the RPC was unreachable — the resulting mint call always reverted
+        # on-chain. Refuse to emit a step we know will fail.
         token0_meta = await resolve_any_evm_token(chain_norm, pool.token0)
         token1_meta = await resolve_any_evm_token(chain_norm, pool.token1)
-        decimals0 = (token0_meta or (pool.token0, 18))[1]
-        decimals1 = (token1_meta or (pool.token1, 18))[1]
+        if not token0_meta or not token1_meta:
+            raise ValueError(
+                f"V3 NFT: could not resolve decimals for {pool.token0}/{pool.token1} on "
+                f"{chain_norm}. Pool meta needed before emitting mint params; refusing to "
+                "build a step that would revert."
+            )
+        decimals0 = token0_meta[1]
+        decimals1 = token1_meta[1]
 
         # 2) Build tick range from preset or extra.
         lower_pct = float(extra.get("range_lower_pct") or -10.0)
@@ -407,6 +417,16 @@ class UniswapV3NFTAdapter:
         enso = EnsoClient()
 
         step_idx = 1
+        total_swap_legs = int(need_swap_to_token0 and swap0_units > 0) + int(
+            need_swap_to_token1 and swap1_units > 0
+        )
+        swap_leg_emitted = 0
+        sym0_label_swap = (sym0 or pool.token0[:6] + "…").upper()
+        sym1_label_swap = (sym1 or pool.token1[:6] + "…").upper()
+
+        def _leg_label() -> str:
+            return f"leg {swap_leg_emitted}/{total_swap_legs}" if total_swap_legs > 1 else "swap"
+
         # --- Swap 1: input → token0 ---
         if need_swap_to_token0 and swap0_units > 0:
             try:
@@ -419,17 +439,22 @@ class UniswapV3NFTAdapter:
                     slippage_bps=request.slippage_bps,
                 )
                 ut = rs.get("unsigned_tx") or {}
+                swap_leg_emitted += 1
+                leg_amount = Decimal(swap0_units) / Decimal(10 ** input_dec)
                 steps.append(make_step(
                     index=step_idx,
                     action="swap",
-                    title=f"Swap {request.asset_in} → {pool.token0[:8]}…",
-                    description=f"Prep leg 1/2 — swap {Decimal(swap0_units) / Decimal(10**input_dec)} {request.asset_in} into pool token0.",
+                    title=f"Swap {request.asset_in} → {sym0_label_swap}",
+                    description=(
+                        f"Prep {_leg_label()} — swap {leg_amount} {request.asset_in} into "
+                        f"{sym0_label_swap}."
+                    ),
                     chain=request.chain,
                     wallet="MetaMask",
                     protocol=request.protocol,
                     asset_in=request.asset_in,
-                    amount_in=str(Decimal(swap0_units) / Decimal(10**input_dec)),
-                    asset_out=f"token0:{pool.token0[:10]}",
+                    amount_in=str(leg_amount),
+                    asset_out=sym0_label_swap,
                     slippage_bps=request.slippage_bps,
                     gas_estimate_usd=3.0,
                     duration_estimate_s=30,
@@ -459,17 +484,22 @@ class UniswapV3NFTAdapter:
                     slippage_bps=request.slippage_bps,
                 )
                 ut = rs.get("unsigned_tx") or {}
+                swap_leg_emitted += 1
+                leg_amount = Decimal(swap1_units) / Decimal(10 ** input_dec)
                 steps.append(make_step(
                     index=step_idx,
                     action="swap",
-                    title=f"Swap {request.asset_in} → {pool.token1[:8]}…",
-                    description=f"Prep leg 2/2 — swap {Decimal(swap1_units) / Decimal(10**input_dec)} {request.asset_in} into pool token1.",
+                    title=f"Swap {request.asset_in} → {sym1_label_swap}",
+                    description=(
+                        f"Prep {_leg_label()} — swap {leg_amount} {request.asset_in} into "
+                        f"{sym1_label_swap}."
+                    ),
                     chain=request.chain,
                     wallet="MetaMask",
                     protocol=request.protocol,
                     asset_in=request.asset_in,
-                    amount_in=str(Decimal(swap1_units) / Decimal(10**input_dec)),
-                    asset_out=f"token1:{pool.token1[:10]}",
+                    amount_in=str(leg_amount),
+                    asset_out=sym1_label_swap,
                     slippage_bps=request.slippage_bps,
                     gas_estimate_usd=3.0,
                     duration_estimate_s=30,
@@ -518,16 +548,19 @@ class UniswapV3NFTAdapter:
         if is_input_token1:
             amount1_desired = max(input_units_total - swap0_units, amount1_desired)
 
+        sym0_lbl = (sym0 or pool.token0[:6] + "…").upper()
+        sym1_lbl = (sym1 or pool.token1[:6] + "…").upper()
+
         # Approve token0 → NFP manager
         steps.append(make_step(
             index=step_idx,
             action="approve",
-            title=f"Approve token0 ({pool.token0[:10]}…) to position manager",
-            description=f"One-time max approve so {pool.nfp_manager[:10]}… can pull pool token0 during mint.",
+            title=f"Approve {sym0_lbl} to position manager",
+            description=f"One-time max approve so the {request.protocol} position manager can pull {sym0_lbl} during mint.",
             chain=request.chain,
             wallet="MetaMask",
             protocol=request.protocol,
-            asset_in=pool.token0,
+            asset_in=sym0_lbl,
             amount_in="max",
             slippage_bps=0,
             gas_estimate_usd=1.5,
@@ -547,12 +580,12 @@ class UniswapV3NFTAdapter:
         steps.append(make_step(
             index=step_idx,
             action="approve",
-            title=f"Approve token1 ({pool.token1[:10]}…) to position manager",
-            description=f"One-time max approve so {pool.nfp_manager[:10]}… can pull pool token1 during mint.",
+            title=f"Approve {sym1_lbl} to position manager",
+            description=f"One-time max approve so the {request.protocol} position manager can pull {sym1_lbl} during mint.",
             chain=request.chain,
             wallet="MetaMask",
             protocol=request.protocol,
-            asset_in=pool.token1,
+            asset_in=sym1_lbl,
             amount_in="max",
             slippage_bps=0,
             gas_estimate_usd=1.5,
@@ -599,7 +632,7 @@ class UniswapV3NFTAdapter:
             title=f"Open V3 position [{lower_pct:+.0f}% / {upper_pct:+.0f}%]",
             description=(
                 f"Mint NFT position in {request.protocol} {sym0_label}/{sym1_label} "
-                f"{fee_bps/100:.2f}% fee tier. Range ticks {tick_lower} → {tick_upper} (spacing {pool.tick_spacing}). "
+                f"{fee_bps/10000:.2f}% fee tier. Range ticks {tick_lower} → {tick_upper} (spacing {pool.tick_spacing}). "
                 f"Desired: amount0={amount0_desired}, amount1={amount1_desired}. "
                 f"Min: amount0={amount0_min}, amount1={amount1_min}. "
                 f"Recipient: {request.user_address}, deadline={deadline}."
@@ -607,7 +640,11 @@ class UniswapV3NFTAdapter:
             chain=request.chain,
             wallet="MetaMask",
             protocol=request.protocol,
-            asset_in=f"{sym0_label}+{sym1_label}",
+            # Surface the user's original input symbol (singular) — the
+            # mint internally pulls token0+token1 but the WALLET needs to
+            # start with `request.amount_in` of `request.asset_in`. A
+            # compound "USDC+WETH" asset_in confuses the totals roll-up.
+            asset_in=request.asset_in,
             amount_in=str(request.amount_in),
             asset_out=f"{request.protocol}-position-nft",
             slippage_bps=request.slippage_bps,

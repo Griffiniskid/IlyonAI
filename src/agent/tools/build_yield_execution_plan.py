@@ -467,11 +467,13 @@ async def build_yield_execution_plan(
                                 "lower_pct": -10.0,
                                 "upper_pct": 10.0,
                             },
+                            # Frontend slider bounds: lower in [-50, 0], upper in [0, 100].
+                            # Anything wider would clip silently and confuse the user.
                             "range_presets": [
                                 {"label": "Narrow", "lower_pct": -5.0, "upper_pct": 5.0},
                                 {"label": "Balanced", "lower_pct": -10.0, "upper_pct": 10.0},
                                 {"label": "Wide", "lower_pct": -25.0, "upper_pct": 25.0},
-                                {"label": "Full", "lower_pct": -100.0, "upper_pct": 10000.0},
+                                {"label": "Full", "lower_pct": -50.0, "upper_pct": 100.0},
                             ],
                         }
         except Exception:
