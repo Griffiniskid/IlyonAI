@@ -338,6 +338,15 @@ async def execute_pool_position(
             meta = await _resolve_protocol_pair("", pair_hint, chain=inferred_chain)
         if not meta and protocol_hint and not pair_hint and protocol_known:
             meta = await _resolve_protocol_pair("", protocol_hint, chain=inferred_chain)
+        # Final guard: if the user explicitly named a protocol, the matched
+        # pool must belong to the same family head. Catches the case where
+        # broadening the search silently substitutes "raydium-clmm SOL-USDC"
+        # → "orca-dex SOL-USDC" because they share the pair.
+        if meta and protocol_hint and proto_head:
+            matched_project = str(meta.get("project", "")).lower()
+            matched_head = matched_project.split("-")[0]
+            if matched_head and matched_head != proto_head:
+                meta = None
 
     if not meta:
         # Emit a structured blocker card so the chat shows an actionable

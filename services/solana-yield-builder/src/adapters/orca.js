@@ -96,8 +96,12 @@ module.exports = {
       transactions: [
         {
           b64: tx,
-          summary: `Step 1/2 prep-swap: ${sourceSym} → ${targetSym} for ${pairLabel} Whirlpool entry`,
-          description: `Swap half of your ${sourceSym} into ${targetSym} via Jupiter so both ${pairLabel} pool tokens sit in your wallet. After this prep tx confirms, click 'Open on Orca' below to open a concentrated-liquidity position — Orca's Whirlpool deposit SDK isn't wired for in-chat signing yet.`,
+          action: "prep_swap",
+          summary: `Prep swap: ${half} ${sourceSym} → ${targetSym} (Orca ${pairLabel} Whirlpool handoff)`,
+          description: `Swap ${half} ${sourceSym} into ${targetSym} via Jupiter so you hold one side of the ${pairLabel} Whirlpool. After this swap confirms, click the Orca link to pick a tick range and open the concentrated-liquidity position — Whirlpool deposit SDK isn't wired for in-chat signing yet.`,
+          inputSymbol: sourceSym,
+          inputAmount: half,
+          outputSymbol: targetSym,
           receiptToken: targetSym,
           feeUsd: 0.01,
           durationS: 25,
