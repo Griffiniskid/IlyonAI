@@ -431,9 +431,10 @@ async def execute_pool_position(
     user_is_evm = isinstance(user_address, str) and user_address.lower().startswith("0x") and len(user_address) == 42
     if is_solana_pool and not user_is_solana:
         from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
+        from src.agent.tools.build_yield_execution_plan import humanize_protocol
         plan = ExecutionPlanV3.new(
-            title=f"{protocol} deposit",
-            summary=f"Solana pool {protocol} {pool_symbol} requires a Solana wallet.",
+            title=f"{humanize_protocol(protocol)} Deposit",
+            summary=f"{humanize_protocol(protocol)} {pool_symbol} requires a Solana wallet.",
         )
         plan.add_blocker(ExecutionBlocker(
             code="wallet_chain_mismatch",
@@ -450,9 +451,10 @@ async def execute_pool_position(
         return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
     if is_evm_pool and not user_is_evm:
         from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
+        from src.agent.tools.build_yield_execution_plan import humanize_protocol
         plan = ExecutionPlanV3.new(
-            title=f"{protocol} deposit",
-            summary=f"EVM pool {protocol} {pool_symbol} on {chain} requires an EVM wallet.",
+            title=f"{humanize_protocol(protocol)} Deposit",
+            summary=f"{humanize_protocol(protocol)} {pool_symbol} on {chain[:1].upper()+chain[1:]} requires an EVM wallet.",
         )
         plan.add_blocker(ExecutionBlocker(
             code="wallet_chain_mismatch",

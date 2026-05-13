@@ -132,8 +132,8 @@ async def build_yield_execution_plan(
     # an Enso 422 with a leaky URL in the detail).
     if is_evm_chain and not _is_evm_addr(user_address):
         plan = ExecutionPlanV3.new(
-            title=f"{protocol} {action}",
-            summary=f"EVM pool {protocol} {asset_in} on {chain} requires an EVM wallet.",
+            title=f"{humanize_protocol(protocol)} {humanize_action(action)}",
+            summary=f"{humanize_protocol(protocol)} {asset_in} on {chain[:1].upper()+chain[1:]} requires an EVM wallet.",
         )
         plan.add_blocker(ExecutionBlocker(
             code="wallet_chain_mismatch",
@@ -150,8 +150,8 @@ async def build_yield_execution_plan(
         return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
     if is_solana_chain and not _is_sol_addr(user_address):
         plan = ExecutionPlanV3.new(
-            title=f"{protocol} {action}",
-            summary=f"Solana pool {protocol} {asset_in} requires a Solana wallet.",
+            title=f"{humanize_protocol(protocol)} {humanize_action(action)}",
+            summary=f"{humanize_protocol(protocol)} {asset_in} on Solana requires a Solana wallet.",
         )
         plan.add_blocker(ExecutionBlocker(
             code="wallet_chain_mismatch",
@@ -281,8 +281,8 @@ async def build_yield_execution_plan(
     capability = registry.find(chain=chain, protocol=protocol, action=action)
     if not capability.supported:
         plan = ExecutionPlanV3.new(
-            title=f"{protocol} {action}",
-            summary=f"Direct execution for {protocol} {action} on {chain} is not yet supported.",
+            title=f"{humanize_protocol(protocol)} {humanize_action(action)}",
+            summary=f"Direct execution for {humanize_protocol(protocol)} {humanize_action(action)} on {chain[:1].upper()+chain[1:]} is not yet supported.",
         )
         plan.add_blocker(ExecutionBlocker(
             code="unsupported_adapter",
@@ -314,8 +314,8 @@ async def build_yield_execution_plan(
         ))
     except ValueError as exc:
         plan = ExecutionPlanV3.new(
-            title=f"{protocol} {action}",
-            summary=f"Could not build execution plan for {protocol} {action} on {chain}.",
+            title=f"{humanize_protocol(protocol)} {humanize_action(action)}",
+            summary=f"Could not build execution plan for {humanize_protocol(protocol)} {humanize_action(action)} on {chain[:1].upper()+chain[1:]}.",
         )
         plan.add_blocker(ExecutionBlocker(
             code="adapter_build_failed",
