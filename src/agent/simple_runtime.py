@@ -1900,17 +1900,21 @@ def _detect_solana_receipt_deposit(message: str) -> tuple[str, dict] | None:
     amount_value = _expand_numeric_amount(m.group("amount"), m.group("suffix"))
     if amount_value is None or amount_value <= 0:
         return None
-    price = _TOKEN_USD_HINT.get(token)
-    usd_amount = float(amount_value) * price if price else float(amount_value)
-    if usd_amount <= 0:
-        return None
+    native_amount = float(amount_value)
+    # USD-denominated input (USDC / USDT / DAI / etc.) is already in stable
+    # human units that the sidecar accepts directly. For native asset inputs
+    # (SOL on Sanctum INF, ETH on Lido, etc.) pass the native amount and let
+    # the sidecar's adapter handle units. Never pre-multiply by USD price —
+    # that turns 'Stake 10 SOL' into 900 SOL.
+    is_stable_in = token in {"USDC", "USDT", "DAI", "FRAX", "USDE", "USDS", "GHO", "PYUSD", "TUSD", "BUSD", "FDUSD", "MIM", "MKUSD", "CRVUSD"}
     return (
         "execute_pool_position",
         {
             "pool": f"{proto} {receipt_sym}",
-            "amount": usd_amount,
+            "amount": native_amount,
             "asset_in": token,
             "chain": "solana",
+            "amount_is_usd": is_stable_in,
         },
     )
 
