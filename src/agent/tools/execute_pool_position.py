@@ -470,6 +470,61 @@ async def execute_pool_position(
         ))
         return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
 
+    # Solana non-LP / non-Jupiter-tradable protocols. We have NO native sign
+    # path for these and the sidecar's Jupiter pre-swap always 400s because
+    # the receipt mint isn't in Jupiter's swap graph. Emit a clean
+    # `pool_kind_unsupported` blocker with a deeplink to the protocol UI so
+    # the user can complete the deposit there instead of staring at a raw
+    # "Jupiter quote returned 400" leak.
+    _SOLANA_NON_LP_PROTOS = {
+        "gmtrade",  # synthetic perps — LP mints absent from Jupiter
+        "phoenix", "phoenix-v1",  # CLOB, no AMM LP
+        "openbook", "openbook-v2",  # CLOB
+        "drift", "drift-perp-vaults", "drift-vaults",  # perps vaults
+        "lulo",  # deposit market, no fungible receipt
+        "save", "save-finance",  # lending market
+        "marginfi", "mfi",  # lending market
+        "mango", "mango-markets",  # CLOB perps
+        "perena",  # synthetic stablecoin
+        "fluxbeam",  # long-tail
+        "cropper", "cropper-finance",  # long-tail AMM
+        "aldrin", "crema", "crema-finance",  # long-tail AMM
+        "ondo-finance",  # treasury fund
+        "exponent",
+        "huma", "loopscale", "sentre-protocol",
+        "swissborg",
+    }
+    if chain.lower() in {"solana", "sol"} and protocol.lower() in _SOLANA_NON_LP_PROTOS:
+        from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
+        from src.agent.tools.build_yield_execution_plan import humanize_protocol
+        # Pull the protocol's app URL if known; fall back to DefiLlama.
+        try:
+            from src.agent.protocol_urls import protocol_app_url
+            link = protocol_app_url(protocol) or f"https://defillama.com/protocol/{protocol}"
+        except Exception:
+            link = f"https://defillama.com/protocol/{protocol}"
+        plan = ExecutionPlanV3.new(
+            title=f"{humanize_protocol(protocol)} {pool_symbol}",
+            summary=(
+                f"{humanize_protocol(protocol)} {pool_symbol} is not yet wired for one-click "
+                "execution from IlyonAI."
+            ),
+        )
+        plan.add_blocker(ExecutionBlocker(
+            code="pool_kind_unsupported",
+            severity="blocker",
+            title="Pool not supported for one-click deposit",
+            detail=(
+                f"{humanize_protocol(protocol)} deposits on Solana require a protocol-specific "
+                "transaction that isn't routable through Jupiter (the receipt mint isn't on the "
+                "swap graph). Use the protocol UI directly for now — your funds stay safe."
+            ),
+            affected_step_ids=[],
+            recoverable=True,
+            cta=f"Open {humanize_protocol(protocol)} to deposit there: {link}",
+        ))
+        return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
+
     is_lp = "-" in pool_symbol or "/" in pool_symbol
     action = "deposit_lp" if is_lp else "supply"
 

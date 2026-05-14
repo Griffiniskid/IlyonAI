@@ -81,6 +81,70 @@ class DefiIntent:
     stablecoin_only: bool = False
     reinvestment_cadence: str | None = None
     limit: int | None = None
+    protocol_filter: str | None = None
+
+
+_KNOWN_PROTOCOL_HEADS: tuple[str, ...] = (
+    "uniswap", "uniswap-v2", "uniswap-v3", "uniswap-v4",
+    "pancakeswap", "pancake", "pancakeswap-v2", "pancakeswap-v3",
+    "sushiswap", "sushi",
+    "curve", "curve-dex", "balancer",
+    "aerodrome", "aerodrome-slipstream", "velodrome",
+    "raydium", "raydium-amm", "raydium-clmm", "raydium-cp",
+    "orca", "orca-whirlpools", "orca-clmm",
+    "meteora", "meteora-dlmm", "meteora-amm",
+    "kamino", "kamino-lend", "kamino-liquidity",
+    "marinade", "jito", "sanctum", "stader",
+    "aave", "aave-v2", "aave-v3",
+    "compound", "compound-v2", "compound-v3",
+    "morpho", "morpho-blue", "spark", "fluid",
+    "yearn", "yearn-v2", "yearn-v3", "beefy", "convex",
+    "lido", "rocket-pool", "rocketpool", "ether.fi", "etherfi", "frax",
+    "renzo", "kelp", "swell", "puffer", "eigenlayer",
+    "pendle", "stargate", "gmx", "moonwell", "venus",
+    "ethena", "usual", "resolv", "maple",
+)
+
+
+def _parse_protocol_filter(text: str) -> str | None:
+    """Detect a protocol head named by the user.
+
+    Recognises:
+        * "on uniswap" / "on aave v3"  (preposition form)
+        * "from curve" / "via balancer" / "in raydium"
+        * "uniswap pool" / "curve stable" (head followed by product term)
+        * "only uniswap" / "just aave" / "filter to curve"
+
+    Returns the lower-kebab head ("uniswap-v3", "aave", "raydium-clmm") so
+    `search_defi_opportunities.protocol_filter` can substring-match against
+    DefiLlama's project slug.
+    """
+    if not text:
+        return None
+    # Sort longest-first so "uniswap-v3" beats "uniswap" when both match.
+    heads_sorted = sorted(_KNOWN_PROTOCOL_HEADS, key=len, reverse=True)
+    alt = "|".join(re.escape(h) for h in heads_sorted)
+    patterns = [
+        rf"\b(?:on|via|from|in|using|across)\s+(?P<p>{alt})(?:\s+v?\d)?\b",
+        rf"\b(?:only|just|filter\s+to|restricted\s+to|limit\s+to)\s+(?P<p>{alt})(?:\s+v?\d)?\b",
+        rf"\b(?P<p>{alt})(?:\s+v?\d)?\s+(?:pool|pools|farm|farms|vault|vaults|lp|liquidity|stablecoin|stable|opportunit(?:y|ies)|yield|yields)\b",
+    ]
+    # Skip the head=chain ambiguity. "on solana" must NOT be treated as a
+    # protocol — chain parsing already handles that elsewhere.
+    chain_words = {"solana", "ethereum", "polygon", "arbitrum", "base", "optimism", "bsc", "bnb", "avalanche"}
+    for pat in patterns:
+        m = re.search(pat, text, re.IGNORECASE)
+        if not m:
+            continue
+        head = m.group("p").lower()
+        if head in chain_words:
+            continue
+        # Tail v-tag promotion: "uniswap v3" → "uniswap-v3".
+        tail_m = re.search(rf"\b{re.escape(head)}\s+v(\d)\b", text, re.IGNORECASE)
+        if tail_m and "-" not in head:
+            head = f"{head}-v{tail_m.group(1)}"
+        return head
+    return None
 
 
 _LIMIT_WORD_RE = re.compile(
@@ -332,6 +396,8 @@ def parse_defi_intent(message: str) -> DefiIntent:
         intent = "explain_or_compare"
         ranking_objective = "highest_sentinel_score"
 
+    protocol_filter = _parse_protocol_filter(text)
+
     return DefiIntent(
         intent=intent,
         product_types=product_types,
@@ -350,4 +416,5 @@ def parse_defi_intent(message: str) -> DefiIntent:
         stablecoin_only=stablecoin_only,
         reinvestment_cadence=cadence,
         limit=limit,
+        protocol_filter=protocol_filter,
     )

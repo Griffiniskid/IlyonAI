@@ -34,6 +34,49 @@ _DEFAULT_URL = os.environ.get("SOLANA_YIELD_BUILDER_URL", "http://solana-yield-b
 _TIMEOUT_S = float(os.environ.get("SOLANA_YIELD_BUILDER_TIMEOUT", "12"))
 
 
+def _humanize_sidecar_error(status: int, raw_detail: str, protocol: str) -> str:
+    """Translate a sidecar 4xx/5xx error body into something user-readable.
+
+    The sidecar surfaces raw upstream JSON (Jupiter `{"error":"..."}`,
+    Kamino REST exceptions) which used to leak straight into the blocker
+    detail. Strip the wrapping and explain the cause in one sentence so
+    the user has actionable context instead of HTTP-shaped noise.
+    """
+    import json
+    import re as _re
+
+    inner: str | None = None
+    detail = (raw_detail or "").strip()
+    try:
+        body = json.loads(detail)
+        if isinstance(body, dict):
+            inner = str(body.get("error") or body.get("message") or body.get("detail") or "").strip() or None
+    except (ValueError, TypeError):
+        inner = None
+    inner = inner or detail
+    inner = _re.sub(r"https?://\S+", "[upstream-url]", inner)
+    inner = _re.sub(r"\b(?:[A-Za-z0-9_-]{40,})\b", "[token]", inner)
+
+    if "jupiter quote" in inner.lower() or "jupiter swap" in inner.lower() or "no route" in inner.lower():
+        return (
+            f"{protocol} on Solana requires a swap that Jupiter can't route right now "
+            "(the receipt mint isn't in Jupiter's swap graph, or no liquidity exists for "
+            "this leg). Try a different protocol or use the protocol's UI directly."
+        )
+    if "kamino" in inner.lower() and ("timeout" in inner.lower() or "504" in inner.lower()):
+        return (
+            f"Kamino REST is slow or unreachable. Retry in a few seconds, or use a "
+            "different yield protocol."
+        )
+    if "insufficient" in inner.lower() and "balance" in inner.lower():
+        return (
+            f"Wallet balance too low for this {protocol} deposit. Top up the source asset "
+            "and retry."
+        )
+    short = inner[:160]
+    return f"{protocol} deposit could not be built ({short})."
+
+
 @dataclass
 class SolanaYieldBuilderAdapter:
     adapter_id: str = "solana-yield-builder"
@@ -127,7 +170,7 @@ class SolanaYieldBuilderAdapter:
                 async with session.post(f"{self.base_url}/build", json=payload) as resp:
                     if resp.status >= 400:
                         detail = await resp.text()
-                        raise ValueError(f"Solana yield builder returned {resp.status}: {detail[:200]}")
+                        raise ValueError(_humanize_sidecar_error(resp.status, detail, request.protocol))
                     body = await resp.json()
         except aiohttp.ClientError as exc:
             raise ValueError(f"Solana yield builder unreachable: {exc}") from exc

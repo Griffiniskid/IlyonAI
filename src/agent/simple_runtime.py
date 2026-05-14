@@ -1850,13 +1850,21 @@ def _detect_direct_pool_deposit(message: str) -> tuple[str, dict] | None:
         return None
     rest = m.group("rest").strip().lstrip("·").strip()
     pool_ref = None
-    proto_pair = _POOL_PROTO_PAIR_RE.search(rest)
-    if proto_pair:
-        pool_ref = f"{proto_pair.group(1)} {proto_pair.group(2)}"
-    else:
-        pair_only = re.search(r"\b([A-Z][A-Z0-9.]{0,9}[-/_·][A-Z][A-Z0-9.]{0,9})\b", rest)
-        if pair_only:
-            pool_ref = pair_only.group(1)
+    # UUID inside the rest ("put 20 usdc into this pool 399d9968-...-2a9852e0a9a6")
+    # must route straight to the pool resolver — protocol/pair detection below
+    # never succeeds against a UUID and the deposit silently degrades to a
+    # search card.
+    uuid_in_rest = _POOL_UUID_RE.search(rest)
+    if uuid_in_rest:
+        pool_ref = uuid_in_rest.group(0)
+    if not pool_ref:
+        proto_pair = _POOL_PROTO_PAIR_RE.search(rest)
+        if proto_pair:
+            pool_ref = f"{proto_pair.group(1)} {proto_pair.group(2)}"
+        else:
+            pair_only = re.search(r"\b([A-Z][A-Z0-9.]{0,9}[-/_·][A-Z][A-Z0-9.]{0,9})\b", rest)
+            if pair_only:
+                pool_ref = pair_only.group(1)
     if not pool_ref:
         # Bare protocol fallback: "put 100 usdc into pool aave-v3" → use
         # token as the asset hint for single-asset supply.
@@ -2293,6 +2301,8 @@ def _defi_intent_to_tool(intent: DefiIntent) -> tuple[str, dict] | None:
     # stables-only.
     if getattr(intent, "stablecoin_only", False):
         params["stablecoin_only"] = True
+    if getattr(intent, "protocol_filter", None):
+        params["protocol_filter"] = intent.protocol_filter
     return "search_defi_opportunities", params
 
 
