@@ -4766,11 +4766,22 @@ async def run_ephemeral_turn(
     )
     # "Add liquidity with $X to the top one" — prior turn was a search list;
     # pick the first opportunity from the prior defi_opportunities card.
+    # Also accept the verb-then-reference-then-amount form ("execute the first
+    # one with $100" / "deposit into the top pool with 50 USDC") which puts
+    # the picker phrase between verb and amount.
     _LP_TOP_ONE_RE = re.compile(
-        r"(?:add\s+liquidity|deposit|put|supply|stake|execute)\s+"
+        r"(?:add\s+liquidity|deposit|put|supply|stake|execute|do|run|sign|"
+        r"choose|pick|use)\s+"
+        # Optional connector + reference phrase BEFORE the amount: 'the first
+        # one', 'the top pool', '#1', 'first option', 'option 1', '1st'.
+        r"(?:(?:into\s+|on\s+|in\s+|with\s+|to\s+)?"
+        r"(?:the\s+|that\s+|this\s+)?"
+        r"(?:top|first|best|#?\s*1|1st)\s+"
+        r"(?:one|pool|option|result|pick|item)?\s*)?"
         r"(?:with\s+)?\$?\s*(?P<usd>[\d,]+(?:\.\d+)?)"
         r"(?:\s+(?P<unit>[A-Za-z]{2,10}))?"
-        r"(?:\s+(?:to|into|in|on)\s+the\s+(?:top|first|best)(?:\s+one)?)?\b",
+        # Optional trailing 'to the top one' too — keep prior behaviour.
+        r"(?:\s+(?:to|into|in|on)\s+the\s+(?:top|first|best)(?:\s+one|\s+pool|\s+option)?)?\b",
         re.IGNORECASE,
     )
 
