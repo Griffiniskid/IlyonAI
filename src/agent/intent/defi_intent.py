@@ -131,7 +131,9 @@ def _parse_protocol_filter(text: str) -> str | None:
     patterns = [
         rf"\b(?:on|via|from|in|using|across)\s+(?P<p>{alt})(?:\s+v?\d)?\b",
         rf"\b(?:only|just|filter\s+to|restricted\s+to|limit\s+to)\s+(?P<p>{alt})(?:\s+v?\d)?\b",
-        rf"\b(?P<p>{alt})(?:\s+v?\d)?\s+(?:pool|pools|farm|farms|vault|vaults|lp|liquidity|stablecoin|stable|opportunit(?:y|ies)|yield|yields)\b",
+        rf"\b(?P<p>{alt})(?:\s+v?\d)?\s+(?:pool|pools|farm|farms|vault|vaults|lp|liquidity|stablecoin|stable|opportunit(?:y|ies)|yield|yields|deposit|deposits|supply|supplies|supplying|lend|lends|lending|loan|loans|stake|staking|position|positions|strategy)\b",
+        # Bare "best/top/highest/cheapest <head>" without product noun after head.
+        rf"\b(?:best|top|highest|cheapest|safest|lowest|good|great)\s+(?P<p>{alt})\b",
     ]
     # Skip the head=chain ambiguity. "on solana" must NOT be treated as a
     # protocol — chain parsing already handles that elsewhere.

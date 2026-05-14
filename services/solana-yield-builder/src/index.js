@@ -246,35 +246,47 @@ async function _raydiumClmmState(mintA, mintB) {
 }
 
 async function _orcaWhirlpoolState(mintA, mintB) {
-  // Orca public API.
-  const url = `https://api.mainnet.orca.so/v1/whirlpool/list?tokenMintA=${mintA}&tokenMintB=${mintB}`;
+  // Orca's official list endpoint ignores mint filter params (returns the
+  // full 17MB pool dump). Use Dexscreener instead — it indexes Orca
+  // whirlpools by token mint and returns the price, TVL, fees, and pair
+  // address per pool. Filter to dexId='orca' and require both mints match.
+  const url = `https://api.dexscreener.com/latest/dex/tokens/${mintA},${mintB}`;
   const body = await _fetchJsonWithTimeout(url, {}, 6000);
-  const items = body?.whirlpools || body?.data || [];
-  if (!items.length) {
-    // Retry reverse pair — Orca encodes a canonical ordering.
-    const url2 = `https://api.mainnet.orca.so/v1/whirlpool/list?tokenMintA=${mintB}&tokenMintB=${mintA}`;
-    const body2 = await _fetchJsonWithTimeout(url2, {}, 6000);
-    const items2 = body2?.whirlpools || body2?.data || [];
-    if (!items2.length) return null;
-    items.push(...items2);
-  }
-  const sorted = items.slice().sort((a, b) => (Number(b.tvl ?? 0) - Number(a.tvl ?? 0)));
+  const pairs = body?.pairs || [];
+  const matches = pairs.filter((p) => {
+    const dex = String(p?.dexId || "").toLowerCase();
+    const baseAddr = String(p?.baseToken?.address || "").toLowerCase();
+    const quoteAddr = String(p?.quoteToken?.address || "").toLowerCase();
+    const a = mintA.toLowerCase();
+    const b = mintB.toLowerCase();
+    const pairMatches = (baseAddr === a && quoteAddr === b) || (baseAddr === b && quoteAddr === a);
+    return dex.includes("orca") && pairMatches && (p?.chainId || "") === "solana";
+  });
+  if (!matches.length) return null;
+  const sorted = matches.slice().sort((a, b) =>
+    Number(b?.liquidity?.usd ?? 0) - Number(a?.liquidity?.usd ?? 0));
   const top = sorted[0];
+  // Dexscreener doesn't surface tick or tickSpacing; fall back to defaults
+  // common across Orca whirlpools (tickSpacing 64 for 0.30% fee tier).
+  const feePct = Number(top?.feePercent ?? top?.fees?.lpFee ?? 0.3);
+  const feeBps = Math.round(feePct * 100);
   return {
-    poolAddress: top.address,
+    poolAddress: top.pairAddress,
     programId: "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
     kind: "whirlpool",
-    tokenA: { mint: top.tokenA?.mint, symbol: top.tokenA?.symbol, decimals: top.tokenA?.decimals },
-    tokenB: { mint: top.tokenB?.mint, symbol: top.tokenB?.symbol, decimals: top.tokenB?.decimals },
-    currentPrice: Number(top?.price ?? 0),
-    tick: top?.tickCurrentIndex ?? null,
-    tickSpacing: top?.tickSpacing ?? null,
-    feeBps: top?.lpFeeRate != null ? Math.round(Number(top.lpFeeRate) * 1_000_000) : null,
-    sqrtPriceX64: top?.sqrtPrice ?? null,
-    baseAprPct: Number(top?.feeApr?.day ?? 0),
-    rewardAprPct: Number(top?.rewardApr?.day ?? 0),
-    tvlUsd: Number(top?.tvl ?? 0),
-    vol24hUsd: Number(top?.volume?.day ?? 0),
+    tokenA: { mint: top?.baseToken?.address, symbol: top?.baseToken?.symbol, decimals: 9 },
+    tokenB: { mint: top?.quoteToken?.address, symbol: top?.quoteToken?.symbol, decimals: 6 },
+    currentPrice: Number(top?.priceNative ?? top?.priceUsd ?? 0),
+    tick: null,
+    tickSpacing: feeBps >= 100 ? 64 : (feeBps >= 30 ? 32 : (feeBps >= 5 ? 8 : 2)),
+    feeBps,
+    sqrtPriceX64: null,
+    baseAprPct: Number(top?.fdv && top?.liquidity?.usd
+      ? ((Number(top.volume?.h24 || 0) * 365 * (feePct / 100)) / Number(top.liquidity.usd) * 100)
+      : 0),
+    rewardAprPct: 0,
+    tvlUsd: Number(top?.liquidity?.usd ?? 0),
+    vol24hUsd: Number(top?.volume?.h24 ?? 0),
   };
 }
 

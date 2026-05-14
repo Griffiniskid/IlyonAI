@@ -430,9 +430,11 @@ async def execute_pool_position(
     # Preserve the user's sub-variant when they explicitly named it. DefiLlama
     # collapses every Raydium variant into 'raydium-amm'; if the user asked
     # for 'raydium-clmm' the downstream range_block emitter needs to know,
-    # and the title should reflect the user's named protocol.
+    # and the title should reflect the user's named protocol. Use the
+    # alias-rewritten pool_arg so 'Whirlpool USDC-SOL' → 'orca-whirlpools'
+    # also gets preserved when DefiLlama only knows 'orca-dex'.
     try:
-        _user_proto_hint, _ = _split_protocol_pair(str(pool).strip())
+        _user_proto_hint, _ = _split_protocol_pair(pool_arg)
     except Exception:
         _user_proto_hint = ""
     _user_proto_l = (_user_proto_hint or "").lower()
