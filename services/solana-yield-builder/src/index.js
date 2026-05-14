@@ -281,9 +281,14 @@ async function _orcaWhirlpoolState(mintA, mintB) {
     tickSpacing: feeBps >= 100 ? 64 : (feeBps >= 30 ? 32 : (feeBps >= 5 ? 8 : 2)),
     feeBps,
     sqrtPriceX64: null,
-    baseAprPct: Number(top?.fdv && top?.liquidity?.usd
-      ? ((Number(top.volume?.h24 || 0) * 365 * (feePct / 100)) / Number(top.liquidity.usd) * 100)
-      : 0),
+    // APR estimate from fee revenue: vol24h × feePct × 365 / TVL × 100.
+    // feePct is already in human percent (0.3 for 0.30% tier) — divide once.
+    baseAprPct: (() => {
+      const tvl = Number(top?.liquidity?.usd ?? 0);
+      const vol = Number(top?.volume?.h24 ?? 0);
+      if (tvl <= 0 || vol <= 0) return 0;
+      return (vol * (feePct / 100) * 365 / tvl) * 100;
+    })(),
     rewardAprPct: 0,
     tvlUsd: Number(top?.liquidity?.usd ?? 0),
     vol24hUsd: Number(top?.volume?.h24 ?? 0),

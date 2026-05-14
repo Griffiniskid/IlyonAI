@@ -530,9 +530,31 @@ async def build_yield_execution_plan(
                             pool_state = best_state
                             fee_bps = best_state.fee_bps
                     if pool_state is not None:
-                        human_price = float(price_from_tick(
-                            pool_state.tick, meta_a[1], meta_b[1]
-                        ))
+                        # price_from_tick expects POOL token0/token1 decimals
+                        # AND returns token1-per-token0. The user's sides[0] /
+                        # sides[1] may be in the opposite order from the pool's
+                        # on-chain token0/token1 (addresses sort the pool, the
+                        # user types whichever side first). Resolve both
+                        # decimals + direction by comparing addresses.
+                        pool_t0_addr = (pool_state.token0 or "").lower()
+                        user_a_addr = (meta_a[0] or "").lower()
+                        user_b_addr = (meta_b[0] or "").lower()
+                        if pool_t0_addr == user_a_addr:
+                            dec0, dec1 = meta_a[1], meta_b[1]
+                            invert = False
+                        elif pool_t0_addr == user_b_addr:
+                            dec0, dec1 = meta_b[1], meta_a[1]
+                            invert = True
+                        else:
+                            # Unknown ordering — fall back to user order and
+                            # accept that the display might be flipped (rare).
+                            dec0, dec1 = meta_a[1], meta_b[1]
+                            invert = False
+                        raw = price_from_tick(pool_state.tick, dec0, dec1)
+                        if invert:
+                            from decimal import Decimal as _D
+                            raw = _D(1) / raw if raw != 0 else raw
+                        human_price = float(raw)
                         plan_dict["range_block"] = {
                             "card_subtype": "v3_range",
                             "chain": chain,
