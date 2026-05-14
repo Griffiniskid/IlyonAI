@@ -1841,8 +1841,11 @@ _SOL_RECEIPT_DEPOSIT_RE = re.compile(
     r"(?:to|into|in|on)\s+"
     r"(?:the\s+|a\s+)?"
     r"(?P<receipt>JLP|JitoSOL|mSOL|MSOL|bSOL|BSOL|INF|jupSOL|jSOL|sSOL|"
-    r"jupiter-?perps?|jupiter[ -]?(?:lp|perps)|marinade|jito[ -]?(?:staked-sol|sol|liquid-staking)?|"
-    r"sanctum(?:-infinity)?|stader[ -]?sol)\b"
+    r"jupiter-?perps?|jupiter[ -]?(?:lp|perps|lend|staked[ -]?sol)|"
+    r"marinade(?:\s+(?:mSOL|MSOL|staked[ -]?sol|finance))?|"
+    r"jito(?:[ -]?(?:staked-sol|sol|liquid-staking))?|"
+    r"sanctum(?:[ -]?(?:infinity|INF))?|"
+    r"stader[ -]?sol|blazestake|jpool|solayer)\b"
     r"(?:\s+on\s+(?:solana|sol))?\s*$",
     re.IGNORECASE,
 )
@@ -1860,27 +1863,38 @@ def _detect_solana_receipt_deposit(message: str) -> tuple[str, dict] | None:
     token = m.group("token").upper()
     if token in _NOT_A_SYMBOL:
         return None
-    rec = m.group("receipt").upper().replace("-", "").replace(" ", "")
+    rec_raw = m.group("receipt")
+    rec = re.sub(r"[\s\-]", "", rec_raw).upper()
     # Receipt → canonical protocol slug + canonical receipt symbol.
     receipt_map = {
         "JLP": ("jupiter-perps", "JLP"),
         "JUPITERPERPS": ("jupiter-perps", "JLP"),
         "JUPITERPERP": ("jupiter-perps", "JLP"),
         "JUPITERLP": ("jupiter-perps", "JLP"),
+        "JUPITERLEND": ("jupiter-lend", "USDC"),
         "JITOSOL": ("jito", "JitoSOL"),
         "JITO": ("jito", "JitoSOL"),
         "JITOSTAKEDSOL": ("jito", "JitoSOL"),
         "JITOLIQUIDSTAKING": ("jito", "JitoSOL"),
         "MSOL": ("marinade", "mSOL"),
         "MARINADE": ("marinade", "mSOL"),
+        "MARINADEMSOL": ("marinade", "mSOL"),
+        "MARINADEFINANCE": ("marinade", "mSOL"),
+        "MARINADESTAKEDSOL": ("marinade", "mSOL"),
         "BSOL": ("blazestake", "bSOL"),
+        "BLAZESTAKE": ("blazestake", "bSOL"),
         "INF": ("sanctum-infinity", "INF"),
         "SANCTUM": ("sanctum-infinity", "INF"),
         "SANCTUMINFINITY": ("sanctum-infinity", "INF"),
+        "SANCTUMINF": ("sanctum-infinity", "INF"),
         "JUPSOL": ("jupiter-staked-sol", "jupSOL"),
+        "JUPITERSTAKEDSOL": ("jupiter-staked-sol", "jupSOL"),
         "JSOL": ("jpool", "jSOL"),
+        "JPOOL": ("jpool", "jSOL"),
         "SSOL": ("solayer", "sSOL"),
+        "SOLAYER": ("solayer", "sSOL"),
         "STADERSOL": ("stader", "BNSOL"),
+        "STADER": ("stader", "BNSOL"),
     }
     proto, receipt_sym = receipt_map.get(rec, (rec.lower(), rec))
     amount_value = _expand_numeric_amount(m.group("amount"), m.group("suffix"))

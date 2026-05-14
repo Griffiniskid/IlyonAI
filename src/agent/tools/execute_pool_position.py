@@ -207,7 +207,18 @@ async def _resolve_protocol_pair(
                     continue
             tvl = float(entry.get("tvlUsd") or 0)
             bias = SUPPORTED_CHAIN_BIAS.get(ec, 0.7)
-            score = tvl * bias
+            # Exact-slug match (or substring containment) wins over head-only
+            # fallback by 100×, so 'jupiter-perps' matches 'jupiter-perps'
+            # before settling for 'jupiter-lend' just because both heads are
+            # 'jupiter'. Without this weighting the head fallback silently
+            # substitutes one Jupiter product for another.
+            proto_score_mult = 1.0
+            if proto_filter_active:
+                if proto_norm and proto_norm in project:
+                    proto_score_mult = 100.0
+                elif project and project in proto_norm:
+                    proto_score_mult = 100.0
+            score = tvl * bias * proto_score_mult
             if score > best_score:
                 best = entry
                 best_score = score
