@@ -17,11 +17,15 @@ _CHAIN_ALIASES = {
 
 _DEFI_TERMS = re.compile(
     r"\b(pool|pools|farm|farms|farming|vault|vaults|yield|yields|yielding|apy|apr|"
-    r"staking|stake|stakes|lending|lend|lends|strategy|strategies|"
-    r"opportunit(?:y|ies)|liquidit(?:y|ies)|defi|positions?)\b",
+    r"staking|stake|stakes|lending|lend|lends|loan|loans|deposit|deposits|"
+    r"supply|supplies|supplying|earn|earns|earnings?|strategy|strategies|"
+    r"opportunit(?:y|ies)|liquidit(?:y|ies)|defi|positions?|"
+    r"aave|compound|morpho|spark|curve|uniswap|pancakeswap|sushiswap|balancer|"
+    r"raydium|orca|meteora|kamino|marinade|jito|sanctum|pendle|yearn|gmx|"
+    r"convex|fluid|moonwell|venus|stargate)\b",
     re.IGNORECASE,
 )
-_SEARCH_TERMS = re.compile(r"\b(show|find|search|research|list|what|which)\b", re.IGNORECASE)
+_SEARCH_TERMS = re.compile(r"\b(show|find|search|research|list|what|which|best|top|highest|cheapest|safest)\b", re.IGNORECASE)
 _ALLOCATION_TERMS = re.compile(
     r"\b(allocate|allocation|distribute|diversify|deploy|invest|put|"
     r"build\s+(?:me\s+)?(?:a\s+|an\s+|the\s+)?(?:[\w%/$.,-]+\s+){0,8}(?:strategy|portfolio|allocation\s+plan|yield\s+plan)|"

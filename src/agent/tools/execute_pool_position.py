@@ -326,6 +326,26 @@ async def execute_pool_position(
     pool_arg = str(pool).strip()
     meta: Optional[dict[str, Any]] = None
 
+    # Common-name → canonical-slug aliases. Lets users say "Whirlpool" /
+    # "Slipstream" / "DLMM" without knowing the DefiLlama slug.
+    _POOL_NAME_ALIASES = {
+        "whirlpool": "orca-whirlpools",
+        "whirlpools": "orca-whirlpools",
+        "orca-whirlpool": "orca-whirlpools",
+        "dlmm": "meteora-dlmm",
+        "slipstream": "aerodrome-slipstream",
+        "uni-v3": "uniswap-v3",
+        "uni-v4": "uniswap-v4",
+        "pancake": "pancakeswap",
+        "v3": "uniswap-v3",
+    }
+    # Apply alias rewrite if the first token of pool_arg matches.
+    _pool_parts = pool_arg.split(maxsplit=1)
+    if _pool_parts:
+        _head = _pool_parts[0].lower()
+        if _head in _POOL_NAME_ALIASES:
+            pool_arg = " ".join([_POOL_NAME_ALIASES[_head], *_pool_parts[1:]])
+
     if _looks_like_pool_id(pool_arg):
         meta = await _fetch_pool_meta(pool_arg)
     else:
