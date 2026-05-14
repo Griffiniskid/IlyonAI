@@ -581,6 +581,11 @@ async def build_yield_execution_plan(
                                 "base_apr_pct": 0.0,
                                 "reward_apr_pct": 0.0,
                                 "cdf_30d": _synth_cdf_30d(sides[0], sides[1]),
+                                "kind": "v3" if "v3" in protocol.lower() else (
+                                    "v4" if "v4" in protocol.lower() else (
+                                        "slipstream" if "slipstream" in protocol.lower() else "v3"
+                                    )
+                                ),
                             },
                             "initial_range": {
                                 "preset": "balanced",
