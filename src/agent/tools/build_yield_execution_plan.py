@@ -369,13 +369,89 @@ async def build_yield_execution_plan(
 
     plan_dict = plan.to_dict()
 
-    # V3 EVM: attach a range_block payload so the frontend can render the
-    # interactive range slider above the step list. Restores the slider lost
-    # when V3 NFT native execution replaced the pool_deposit_v3 redirect card.
+    # CLMM-like protos: V3 EVM + Solana concentrated/dynamic. Attach a
+    # range_block payload so the frontend can render the interactive range
+    # slider above the step list (spec §6b).
     _V3_EVM_PROTOS = {
         "uniswap-v3", "uniswap-v4", "pancakeswap-v3", "pancake-v3",
         "aerodrome-slipstream", "aerodrome-cl",
     }
+    _SOLANA_CLMM_LIKE_PROTOS = {
+        "raydium-clmm", "raydium-amm-v3",
+        "orca", "orca-whirlpools", "orca-clmm", "orca-dex",
+        "meteora-dlmm", "meteora",
+    }
+    # Try Solana CLMM/DLMM first; emit range_block via sidecar pool_state probe.
+    if chain.lower() in {"solana", "sol"} and protocol.lower() in _SOLANA_CLMM_LIKE_PROTOS:
+        try:
+            import os
+            import aiohttp as _aiohttp
+            sidecar_url = os.environ.get("SOLANA_YIELD_BUILDER_URL", "http://solana-yield-builder:8090")
+            pair_sym = (extra or {}).get("pool_symbol") or asset_in or ""
+            sides_sol = [p.strip().upper()
+                         for p in pair_sym.replace("/", "-").split("-") if p.strip()]
+            if len(sides_sol) >= 2:
+                async with _aiohttp.ClientSession(timeout=_aiohttp.ClientTimeout(total=8)) as _sess:
+                    async with _sess.post(
+                        f"{sidecar_url}/pool_state",
+                        json={"protocol": protocol, "pair": "-".join(sides_sol[:2])},
+                    ) as _resp:
+                        if _resp.status == 200:
+                            sp = (await _resp.json()).get("pool") or {}
+                            cur_price = float(sp.get("currentPrice") or 0.0)
+                            kind = sp.get("kind") or "clmm"
+                            tok_a = sp.get("tokenA") or {}
+                            tok_b = sp.get("tokenB") or {}
+                            plan_dict["range_block"] = {
+                                "card_subtype": "v3_range",
+                                "chain": chain,
+                                "protocol": protocol,
+                                "pool_address": sp.get("poolAddress"),
+                                "pair": {
+                                    "token0": {
+                                        "symbol": tok_a.get("symbol") or sides_sol[0],
+                                        "address": tok_a.get("mint") or "",
+                                        "decimals": int(tok_a.get("decimals") or 9),
+                                    },
+                                    "token1": {
+                                        "symbol": tok_b.get("symbol") or sides_sol[1],
+                                        "address": tok_b.get("mint") or "",
+                                        "decimals": int(tok_b.get("decimals") or 6),
+                                    },
+                                },
+                                "current": {
+                                    "current_price": cur_price,
+                                    "price_human": (
+                                        f"1 {tok_a.get('symbol') or sides_sol[0]} ≈ "
+                                        f"{cur_price:.6f} {tok_b.get('symbol') or sides_sol[1]}"
+                                    ),
+                                    "tick": sp.get("tick"),
+                                    "tick_spacing": sp.get("tickSpacing"),
+                                    "bin_step": sp.get("binStep"),
+                                    "fee_tier_bps": sp.get("feeBps"),
+                                    "sqrt_price_x96": str(sp.get("sqrtPriceX64") or ""),
+                                    "liquidity": str(sp.get("tvlUsd") or 0),
+                                },
+                                "market": {
+                                    "base_apr_pct": float(sp.get("baseAprPct") or 0.0),
+                                    "reward_apr_pct": float(sp.get("rewardAprPct") or 0.0),
+                                    "cdf_30d": _synth_cdf_30d(sides_sol[0], sides_sol[1]),
+                                    "kind": kind,
+                                },
+                                "initial_range": {
+                                    "preset": "balanced",
+                                    "lower_pct": -10.0,
+                                    "upper_pct": 10.0,
+                                },
+                                "range_presets": [
+                                    {"label": "Narrow", "lower_pct": -5.0, "upper_pct": 5.0},
+                                    {"label": "Balanced", "lower_pct": -10.0, "upper_pct": 10.0},
+                                    {"label": "Wide", "lower_pct": -25.0, "upper_pct": 25.0},
+                                    {"label": "Full", "lower_pct": -50.0, "upper_pct": 100.0},
+                                ],
+                            }
+        except Exception:
+            pass
     if protocol.lower() in _V3_EVM_PROTOS:
         try:
             from src.data.v3_pool_resolver import resolve_v3_pool

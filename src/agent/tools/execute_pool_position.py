@@ -407,6 +407,26 @@ async def execute_pool_position(
     protocol = str(meta.get("project", "")).lower()
     pool_symbol = str(meta.get("symbol", ""))
 
+    # Preserve the user's sub-variant when they explicitly named it. DefiLlama
+    # collapses every Raydium variant into 'raydium-amm'; if the user asked
+    # for 'raydium-clmm' the downstream range_block emitter needs to know,
+    # and the title should reflect the user's named protocol.
+    try:
+        _user_proto_hint, _ = _split_protocol_pair(str(pool).strip())
+    except Exception:
+        _user_proto_hint = ""
+    _user_proto_l = (_user_proto_hint or "").lower()
+    _CLMM_SUB_VARIANTS = {
+        "raydium-clmm", "raydium-amm-v3",
+        "orca-clmm", "orca-whirlpools",
+        "meteora-dlmm",
+    }
+    if _user_proto_l in _CLMM_SUB_VARIANTS:
+        _user_head = _user_proto_l.split("-")[0]
+        _matched_head = protocol.split("-")[0]
+        if _user_head == _matched_head:
+            protocol = _user_proto_l
+
     # Dual-token V2 override: when the caller passed extra.dual_token=True the
     # user has explicitly named a V2/V1 protocol form (uniswap-v2, sushiswap,
     # pancakeswap-v2, etc.) and provided both legs. Trust the user — force

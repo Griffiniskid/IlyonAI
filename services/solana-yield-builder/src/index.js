@@ -160,6 +160,195 @@ app.post("/build", async (req, res) => {
   }
 });
 
+// Solana CLMM/DLMM pool-state probe. Powers the in-chat range slider for
+// Raydium CLMM / Orca Whirlpool / Meteora DLMM positions per spec §6b.
+//
+// Request:
+//   POST /pool_state { protocol, mint0, mint1 }
+//   Either mint pubkeys (preferred) OR { protocol, pair: 'SOL-USDC' }.
+//
+// Response:
+//   { ok, pool: {
+//       poolAddress, programId, kind: 'clmm'|'whirlpool'|'dlmm'|'amm',
+//       tokenA: { mint, symbol, decimals },
+//       tokenB: { mint, symbol, decimals },
+//       currentPrice,            // human-readable B per A
+//       tick, tickSpacing,       // for CLMM/Whirlpool
+//       binStep,                  // for DLMM
+//       sqrtPriceX64,
+//       baseAprPct, rewardAprPct, // 30-day if available
+//       tvlUsd, vol24hUsd
+//   }, source: 'raydium-v3-api'|'orca-api'|'meteora-api'|... }
+//
+// Fails closed: returns 404 when no pool matches, 502 on upstream timeout.
+const fetch = global.fetch || ((...a) => import("node-fetch").then(({ default: f }) => f(...a)));
+
+const _WELL_KNOWN_MINTS = {
+  SOL: "So11111111111111111111111111111111111111112",
+  WSOL: "So11111111111111111111111111111111111111112",
+  USDC: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  USDT: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+  USDS: "USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA",
+  MSOL: "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",
+  JITOSOL: "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+  BSOL: "bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1",
+  JLP: "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4",
+  INF: "5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm",
+  RAY: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+  ORCA: "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE",
+};
+
+function _resolveMintForSymbol(sym) {
+  if (!sym) return null;
+  const s = String(sym).toUpperCase();
+  if (_WELL_KNOWN_MINTS[s]) return _WELL_KNOWN_MINTS[s];
+  // Solana base58 pubkeys are 32-44 chars; accept as-is when the user passed a mint.
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(sym)) return sym;
+  return null;
+}
+
+async function _fetchJsonWithTimeout(url, opts, timeoutMs = 6000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url, { ...(opts || {}), signal: ctrl.signal });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return await resp.json();
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function _raydiumClmmState(mintA, mintB) {
+  // Raydium V3 API: returns AMM v4, CPMM, and CLMM pools per mint pair.
+  const url = `https://api-v3.raydium.io/pools/info/mint?mint1=${mintA}&mint2=${mintB}&poolType=concentrated&poolSortField=liquidity&sortType=desc&pageSize=5&page=1`;
+  const body = await _fetchJsonWithTimeout(url, {}, 6000);
+  const items = body?.data?.data || [];
+  if (!items.length) return null;
+  const top = items[0];
+  const tickSpacing = top?.config?.tickSpacing ?? null;
+  return {
+    poolAddress: top.id,
+    programId: "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK", // Raydium CLMM v3
+    kind: "clmm",
+    tokenA: { mint: top.mintA?.address, symbol: top.mintA?.symbol, decimals: top.mintA?.decimals },
+    tokenB: { mint: top.mintB?.address, symbol: top.mintB?.symbol, decimals: top.mintB?.decimals },
+    currentPrice: Number(top.price ?? 0),
+    tick: top?.tickCurrent ?? null,
+    tickSpacing,
+    feeBps: top?.feeRate ? Math.round(Number(top.feeRate) * 1_000_000) : null,
+    sqrtPriceX64: null,
+    baseAprPct: Number(top?.day?.apr ?? 0),
+    rewardAprPct: Number(top?.day?.aprReward ?? 0),
+    tvlUsd: Number(top?.tvl ?? 0),
+    vol24hUsd: Number(top?.day?.volume ?? 0),
+  };
+}
+
+async function _orcaWhirlpoolState(mintA, mintB) {
+  // Orca public API.
+  const url = `https://api.mainnet.orca.so/v1/whirlpool/list?tokenMintA=${mintA}&tokenMintB=${mintB}`;
+  const body = await _fetchJsonWithTimeout(url, {}, 6000);
+  const items = body?.whirlpools || body?.data || [];
+  if (!items.length) {
+    // Retry reverse pair — Orca encodes a canonical ordering.
+    const url2 = `https://api.mainnet.orca.so/v1/whirlpool/list?tokenMintA=${mintB}&tokenMintB=${mintA}`;
+    const body2 = await _fetchJsonWithTimeout(url2, {}, 6000);
+    const items2 = body2?.whirlpools || body2?.data || [];
+    if (!items2.length) return null;
+    items.push(...items2);
+  }
+  const sorted = items.slice().sort((a, b) => (Number(b.tvl ?? 0) - Number(a.tvl ?? 0)));
+  const top = sorted[0];
+  return {
+    poolAddress: top.address,
+    programId: "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+    kind: "whirlpool",
+    tokenA: { mint: top.tokenA?.mint, symbol: top.tokenA?.symbol, decimals: top.tokenA?.decimals },
+    tokenB: { mint: top.tokenB?.mint, symbol: top.tokenB?.symbol, decimals: top.tokenB?.decimals },
+    currentPrice: Number(top?.price ?? 0),
+    tick: top?.tickCurrentIndex ?? null,
+    tickSpacing: top?.tickSpacing ?? null,
+    feeBps: top?.lpFeeRate != null ? Math.round(Number(top.lpFeeRate) * 1_000_000) : null,
+    sqrtPriceX64: top?.sqrtPrice ?? null,
+    baseAprPct: Number(top?.feeApr?.day ?? 0),
+    rewardAprPct: Number(top?.rewardApr?.day ?? 0),
+    tvlUsd: Number(top?.tvl ?? 0),
+    vol24hUsd: Number(top?.volume?.day ?? 0),
+  };
+}
+
+async function _meteoraDlmmState(mintA, mintB) {
+  // Meteora DLMM API.
+  const url = `https://dlmm-api.meteora.ag/pair/all_with_pagination?include_token_mints=${mintA},${mintB}&limit=20&page=0`;
+  const body = await _fetchJsonWithTimeout(url, {}, 6000);
+  const items = body?.pairs || body?.data || [];
+  const matches = items.filter((p) => {
+    const m0 = p?.mint_x?.toLowerCase?.() || "";
+    const m1 = p?.mint_y?.toLowerCase?.() || "";
+    const a = mintA.toLowerCase();
+    const b = mintB.toLowerCase();
+    return (m0 === a && m1 === b) || (m0 === b && m1 === a);
+  });
+  if (!matches.length) return null;
+  const top = matches.slice().sort((a, b) => Number(b.liquidity ?? 0) - Number(a.liquidity ?? 0))[0];
+  return {
+    poolAddress: top.address,
+    programId: "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+    kind: "dlmm",
+    tokenA: { mint: top.mint_x, symbol: top.name?.split("-")?.[0], decimals: top.mint_x_decimals },
+    tokenB: { mint: top.mint_y, symbol: top.name?.split("-")?.[1], decimals: top.mint_y_decimals },
+    currentPrice: Number(top?.current_price ?? 0),
+    tick: Number(top?.active_id ?? 0),
+    tickSpacing: null,
+    binStep: Number(top?.bin_step ?? 0),
+    feeBps: Number(top?.base_fee_percentage ?? 0) * 100,
+    baseAprPct: Number(top?.apr ?? 0),
+    rewardAprPct: Number(top?.farm_apr ?? 0),
+    tvlUsd: Number(top?.liquidity ?? 0),
+    vol24hUsd: Number(top?.trade_volume_24h ?? 0),
+  };
+}
+
+app.post("/pool_state", async (req, res) => {
+  const { protocol, mint0, mint1, pair } = req.body || {};
+  if (!protocol) return res.status(400).json({ error: "protocol is required." });
+  let a = mint0;
+  let b = mint1;
+  if ((!a || !b) && pair) {
+    const parts = String(pair).split(/[-\/_]/);
+    if (parts.length >= 2) {
+      a = a || _resolveMintForSymbol(parts[0]);
+      b = b || _resolveMintForSymbol(parts[1]);
+    }
+  }
+  if (!a || !b) {
+    return res.status(400).json({ error: "mint0+mint1 (or pair with known symbols) is required." });
+  }
+  const proto = String(protocol).toLowerCase();
+  try {
+    let state = null;
+    let source = null;
+    if (proto.includes("raydium")) {
+      state = await _raydiumClmmState(a, b);
+      source = "raydium-v3-api";
+    } else if (proto.includes("orca") || proto.includes("whirlpool")) {
+      state = await _orcaWhirlpoolState(a, b);
+      source = "orca-api";
+    } else if (proto.includes("meteora") || proto.includes("dlmm")) {
+      state = await _meteoraDlmmState(a, b);
+      source = "meteora-api";
+    } else {
+      return res.status(404).json({ error: `No pool-state probe wired for protocol '${protocol}'.` });
+    }
+    if (!state) return res.status(404).json({ error: `No ${proto} pool found for mints ${a}/${b}.` });
+    res.json({ ok: true, pool: state, source });
+  } catch (err) {
+    console.error("[pool_state]", protocol, err);
+    res.status(502).json({ error: err.message || "pool_state_failed" });
+  }
+});
+
 app.post("/verify", async (req, res) => {
   const { protocol, txHash } = req.body || {};
   if (!txHash) {
