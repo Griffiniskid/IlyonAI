@@ -161,20 +161,49 @@ async def _resolve_protocol_pair(
             chain_norm = "solana"
         elif head in EVM_PROTOS:
             pass
+    # Family-head fallback. DefiLlama collapses many variants into one slug
+    # (Raydium AMM v4 + CPMM + CLMM all live under project="raydium-amm"; no
+    # separate "raydium-clmm"). When the user names a sub-variant the strict
+    # substring filter rejects every entry. So if proto_norm carries a
+    # hyphen, also accept entries whose project starts with the same head.
+    proto_head_match = proto_norm.split("-")[0] if proto_norm else ""
+
+    def _proto_ok(project: str) -> bool:
+        if not proto_filter_active:
+            return True
+        if proto_norm in project or project in proto_norm:
+            return True
+        if proto_head_match and project.split("-")[0] == proto_head_match:
+            return True
+        return False
+
     def _match_catalog(catalog: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
         best: Optional[dict[str, Any]] = None
         best_score = -1.0
+        # Allow WSOL/SOL parity in the pair filter — DefiLlama almost always
+        # uses the wrapped form on Solana entries even when the user says
+        # "SOL". Same for ETH/WETH on EVM. Keeping the user's words honest in
+        # the UI while letting the catalog match the wrapped variant.
+        def _pair_variants(pn: str) -> list[str]:
+            base = [pn, "-".join(reversed(pn.split("-")))]
+            extras: list[str] = []
+            for v in base:
+                w = v
+                for raw, wrap in (("WSOL", "SOL"), ("SOL", "WSOL"), ("WETH", "ETH"), ("ETH", "WETH"), ("WBNB", "BNB"), ("BNB", "WBNB")):
+                    if raw in w:
+                        extras.append(w.replace(raw, wrap))
+            return list({*base, *extras})
+
         for entry in catalog:
             project = str(entry.get("project", "")).lower()
             symbol = str(entry.get("symbol", "")).upper().replace("/", "-")
             ec = str(entry.get("chain", "")).lower()
-            if proto_filter_active and proto_norm not in project and project not in proto_norm:
+            if not _proto_ok(project):
                 continue
             if chain_norm and chain_norm not in ec:
                 continue
             if pair_norm:
-                pair_alt = "-".join(reversed(pair_norm.split("-")))
-                if pair_norm not in symbol and pair_alt not in symbol:
+                if not any(v in symbol for v in _pair_variants(pair_norm)):
                     continue
             tvl = float(entry.get("tvlUsd") or 0)
             bias = SUPPORTED_CHAIN_BIAS.get(ec, 0.7)
