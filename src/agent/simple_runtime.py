@@ -1834,6 +1834,73 @@ _DIRECT_POOL_DEPOSIT_RE = re.compile(
 )
 
 
+_SOL_RECEIPT_DEPOSIT_RE = re.compile(
+    r"^\s*(?:put|add|deposit|provide|supply|stake)\s+"
+    rf"{_NUM_AMOUNT_RE}\s+"
+    r"(?P<token>[A-Za-z]{2,10})\s+"
+    r"(?:to|into|in|on)\s+"
+    r"(?:the\s+|a\s+)?"
+    r"(?P<receipt>JLP|JitoSOL|mSOL|MSOL|bSOL|BSOL|INF|jupSOL|jSOL|sSOL|"
+    r"jupiter-?perps?|jupiter[ -]?(?:lp|perps)|marinade|jito[ -]?(?:staked-sol|sol|liquid-staking)?|"
+    r"sanctum(?:-infinity)?|stader[ -]?sol)\b"
+    r"(?:\s+on\s+(?:solana|sol))?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_solana_receipt_deposit(message: str) -> tuple[str, dict] | None:
+    """'Add 25 USDT to JLP' / 'Stake 5 SOL on Marinade' (when stake detector
+    misses) / 'Supply 10 USDC to JitoSOL' route to execute_pool_position with
+    the protocol head set so the resolver locks onto the right Solana yield
+    program.
+    """
+    m = _SOL_RECEIPT_DEPOSIT_RE.search(message)
+    if not m:
+        return None
+    token = m.group("token").upper()
+    if token in _NOT_A_SYMBOL:
+        return None
+    rec = m.group("receipt").upper().replace("-", "").replace(" ", "")
+    # Receipt → canonical protocol slug + canonical receipt symbol.
+    receipt_map = {
+        "JLP": ("jupiter-perps", "JLP"),
+        "JUPITERPERPS": ("jupiter-perps", "JLP"),
+        "JUPITERPERP": ("jupiter-perps", "JLP"),
+        "JUPITERLP": ("jupiter-perps", "JLP"),
+        "JITOSOL": ("jito", "JitoSOL"),
+        "JITO": ("jito", "JitoSOL"),
+        "JITOSTAKEDSOL": ("jito", "JitoSOL"),
+        "JITOLIQUIDSTAKING": ("jito", "JitoSOL"),
+        "MSOL": ("marinade", "mSOL"),
+        "MARINADE": ("marinade", "mSOL"),
+        "BSOL": ("blazestake", "bSOL"),
+        "INF": ("sanctum-infinity", "INF"),
+        "SANCTUM": ("sanctum-infinity", "INF"),
+        "SANCTUMINFINITY": ("sanctum-infinity", "INF"),
+        "JUPSOL": ("jupiter-staked-sol", "jupSOL"),
+        "JSOL": ("jpool", "jSOL"),
+        "SSOL": ("solayer", "sSOL"),
+        "STADERSOL": ("stader", "BNSOL"),
+    }
+    proto, receipt_sym = receipt_map.get(rec, (rec.lower(), rec))
+    amount_value = _expand_numeric_amount(m.group("amount"), m.group("suffix"))
+    if amount_value is None or amount_value <= 0:
+        return None
+    price = _TOKEN_USD_HINT.get(token)
+    usd_amount = float(amount_value) * price if price else float(amount_value)
+    if usd_amount <= 0:
+        return None
+    return (
+        "execute_pool_position",
+        {
+            "pool": f"{proto} {receipt_sym}",
+            "amount": usd_amount,
+            "asset_in": token,
+            "chain": "solana",
+        },
+    )
+
+
 def _detect_direct_pool_deposit(message: str) -> tuple[str, dict] | None:
     """'Put 0.2 SOL to this pool uniswap-v4 USDT-SIREN' → execute_pool_position.
 
@@ -2467,7 +2534,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
         return multi_step
-    for detector in (_detect_direct_pool_deposit, _detect_add_liquidity, _detect_enso_vault_deposit, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_add_liquidity, _detect_enso_vault_deposit, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
