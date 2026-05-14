@@ -43,7 +43,17 @@ module.exports = {
       fees: { protocol: "Jupiter routing", network: "0.000005 SOL" },
     };
   },
-  async build({ asset, amount, user, extra = {}, slippageBps = 50 }, { connection } = {}) {
+  async build({ protocol, asset, amount, user, extra = {}, slippageBps = 50 }, { connection } = {}) {
+    // Honest sub-variant label so the step description doesn't lie. DefiLlama
+    // collapses every Raydium variant into 'raydium-amm', but when the
+    // upstream caller knows the user asked for CLMM we should say CLMM.
+    const _protoLower = String(protocol || "raydium-amm").toLowerCase();
+    const _variantLabel = (() => {
+      if (_protoLower.includes("clmm")) return "Raydium CLMM";
+      if (_protoLower.includes("cpmm") || _protoLower.includes("raydium-cp")) return "Raydium CPMM";
+      if (_protoLower.includes("amm-v3")) return "Raydium AMM v3";
+      return "Raydium AMM v4";
+    })();
     // Mode 1: fungible LP / share mint provided — single Jupiter route.
     // Raydium AMM v4 LP tokens are NOT on Jupiter's swap graph (Jupiter only
     // routes against tradable markets), so Mode 1 only succeeds for share
@@ -129,8 +139,8 @@ module.exports = {
         {
           b64: tx,
           action: "prep_swap",
-          summary: `Prep swap: ${half} ${sourceSym} → ${targetSym} (Raydium ${pairLabel} handoff)`,
-          description: `Swap ${half} ${sourceSym} into ${targetSym} via Jupiter so you hold one side of the ${pairLabel} pool. After this swap confirms, click the Raydium link to finish the LP add — Raydium AMM v4 direct-sign isn't wired yet for this in-chat flow.`,
+          summary: `Prep swap: ${half} ${sourceSym} → ${targetSym} (${_variantLabel} ${pairLabel} handoff)`,
+          description: `Swap ${half} ${sourceSym} into ${targetSym} via Jupiter so you hold one side of the ${pairLabel} pool. After this swap confirms, click the Raydium link to finish the LP add — ${_variantLabel} direct-sign isn't wired yet for this in-chat flow.`,
           inputSymbol: sourceSym,
           inputAmount: half,
           outputSymbol: targetSym,

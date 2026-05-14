@@ -367,6 +367,28 @@ async def build_yield_execution_plan(
             },
         ))
 
+    # User-level wallet hold floor. When the plan's only signable step is a
+    # half-zap prep_swap and the LP-add itself is link-only (Raydium / Orca /
+    # Meteora handoff), totals.assets_required reflects only the swap leg —
+    # so a user typing "$10 USDC" sees "USDC: 5" which is wrong. Surface the
+    # FULL deposit amount as the wallet floor.
+    try:
+        floor_sym = (asset_in or "").strip().upper()
+        if floor_sym and "+" not in floor_sym and not floor_sym.startswith("0X"):
+            existing = plan.totals.assets_required.get(floor_sym)
+            try:
+                existing_v = float(existing) if existing else 0.0
+            except (TypeError, ValueError):
+                existing_v = 0.0
+            req_v = float(amount) if amount else 0.0
+            if req_v > existing_v:
+                merged = dict(plan.totals.assets_required)
+                text = f"{req_v:.8f}".rstrip("0").rstrip(".") or "0"
+                merged[floor_sym] = text
+                plan.totals.assets_required = merged
+    except Exception:
+        pass
+
     plan_dict = plan.to_dict()
 
     # CLMM-like protos: V3 EVM + Solana concentrated/dynamic. Attach a
