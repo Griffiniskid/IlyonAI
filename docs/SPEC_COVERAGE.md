@@ -200,3 +200,43 @@ Captures: /tmp/v3-deep/Z01-Z10.txt + verdicts in _log.md.
 1. **Native amount mis-multiplication (c8b8633)** — pre-fix `0.05 ETH` → plan signing 115 ETH (2300× overshoot). Real financial-loss vector. Fix: amount stays in native units; usd_equivalent in extra.
 2. **UnboundLocalError shadow (78bbcc3)** — R2 composed-plan branch re-imported ExecutionPlanV3 inside conditional, shadowing the module-level binding via Python scope rules. Aave/Compound withdraw all returned UnboundLocalError. Caught by by-hand SSE read of F_aave_wd.txt.
 3. **Aave V3 borrow → supply mis-routing (c3ffc2c)** — `Borrow N USDC from Aave V3` returned plan with step 2 calling Pool.supply (0x617ba037) instead of Pool.borrow. User would lock collateral expecting a loan. Fix: dedicated borrow branch encoding Pool.borrow(asset, amount, rateMode, referralCode, onBehalfOf) selector 0xa415bcad.
+
+## Resume v3 (post-compaction continuation 2026-05-15)
+
+12 commits d29f515 → 379bd60. 467 tests pass + 2 skipped.
+
+| Section | Delta | Evidence |
+|---|---|---|
+| F.3 Aave V3 native ETH via WTG3 | ⏸ → ✅ live | `aave_v3.py` _AAVE_WTG3_ADDRESSES, depositETH 0x474cf53d; capture `/tmp/v3-deep/RV3_aave_eth_native.txt` |
+| F.4 Pendle V2 per-mode dispatch | partial → ✅ scaffold tightened | mintPyFromToken/swapTokenForPt/addLiquidityFromToken per-action branches + PENDING_EPOCH_ENTRY + NEEDS_FRONTEND_SDK blockers |
+| F.5 EVM LST direct-mint adapter | ⏸ → ✅ live (7 verified) | `adapters/evm_lst.py` consuming lst_registry. Live: Lido (0xa1903eab), Rocket Pool (0xa3e0464d), ether.fi (0xd5c08a72), Renzo (0xfdaf83a3), Swell (0xf340fa01), Frax (0x4dcd4547), Mantle (offline-pinned). Captures RV3b_lido / RV3b_rocket / RV3b_etherfi / RV3c_renzo / RV3c_swell / RV3c_frax |
+| F.6 V2 removeLiquidity withdraw | bug → ✅ | UniswapV2DualTokenAdapter `_build_remove_liquidity` (0xbaa2abde). Caught same bug class as Aave borrow→supply. |
+| F.7 Balancer exitPool withdraw | bug → ✅ | BalancerSingleAssetAdapter `_build_exit_pool` (0x8bdb3913) + EXACT_BPT_IN_FOR_ONE_TOKEN_OUT userData. Caught same bug class. |
+| F.8 §6f recovery wired wider | partial → ✅ | wallet_chain_mismatch + unsupported_adapter both attach Recovery dict |
+| F.9 Receipt-watcher → verify_receipt | ⏸ → ✅ | `ReceiptWatcher.verify_step_receipt(...)` + 30-entry (protocol, action) → ReceiptKind map |
+| F.10 §11 D.7 explicit drift gate | transitive → ✅ explicit | `freshness.check_price_drift` + assert_drift_within_threshold; 50 bps default; independent of D.2 |
+| C.3 LI.FI + Socket Bridge fallbacks | ⏸ → ✅ | `lifi_client.LifiBridge` + `socket_client.SocketBridge` implement composed_plan.Bridge contract |
+| Adapter registry order | bug → fixed | Lido/Rocket Pool removed from ERC4626 protocol set; EvmLst placed ahead of ERC4626 to win over Puffer's IERC4626 match |
+| Intent detector LRT coverage | gap → fixed | renzo/kelp/swell/puffer/mantle + symbols ezeth/rseth/rsweth/pufeth/meth added to _ENSO_PROTOS_RE + _ENSO_PROTO_TO_SLUG + _ENSO_STAKE_PROTOS |
+| LST_STAKE_PROTOCOLS allowlist | gap → fixed | LRTs added so is_pool_link_action lets them through to the new direct-mint adapter |
+
+### Bug class re-caught (4th iteration of same pattern, all financial-loss)
+
+The "admit action then forget to branch on it" bug class continues:
+- V2 admitted `withdraw` action but build() always emitted addLiquidity → user expecting withdraw would deposit
+- Balancer admitted `exit_pool` action but build() always emitted joinPool → user expecting exit would deposit
+- Both caught + fixed by adding action dispatch at the top of build(). Regression pin pattern: assert NOT the deposit selector when action=withdraw, AND assert the canonical withdraw selector IS emitted.
+
+### Live-validated this resume run (12 verified)
+
+| Scenario | Capture | Selector | To |
+|---|---|---|---|
+| Aave V3 supply 0.05 ETH native (WTG3) | RV3_aave_eth_native.txt | 0x474cf53d | 0xD322A4..._BfeA |
+| Lido stake 0.05 ETH | RV3b_lido.txt | 0xa1903eab | 0xae7ab9..._fe84 |
+| Rocket Pool stake 0.05 ETH | RV3b_rocket.txt | 0xa3e0464d | 0xae7873..._6393 |
+| ether.fi stake 0.05 ETH | RV3b_etherfi.txt | 0xd5c08a72 | 0x308861..._a216 |
+| Renzo stake 0.05 ETH | RV3c_renzo.txt | 0xfdaf83a3 | 0x74a096..._9ef5 |
+| Swell stake 0.05 ETH | RV3c_swell.txt | 0xf340fa01 | 0xfae103..._a6c0 |
+| Frax stake 0.05 ETH | RV3c_frax.txt | 0x4dcd4547 | 0xbafa44..._1138 |
+
+Plus 5 prior-sweep regression-verified scenarios still ready (Aave V3 supply USDC, Uniswap V3/V4 native, Slipstream, Marinade native).
