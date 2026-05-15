@@ -197,7 +197,13 @@ class UniswapV3NFTAdapter:
 
         fee_bps = int(extra.get("fee_bps") or extra.get("fee") or 500)
         proto_for_resolver = (
-            proto_norm if proto_norm in {"uniswap-v3", "pancakeswap-v3", "aerodrome-slipstream"} else "uniswap-v3"
+            proto_norm
+            if proto_norm in {
+                "uniswap-v3", "pancakeswap-v3",
+                "aerodrome-slipstream", "aerodrome-cl",
+                "velodrome-cl", "velodrome-slipstream",
+            }
+            else "uniswap-v3"
         )
 
         pool = await resolve_v3_pool(
