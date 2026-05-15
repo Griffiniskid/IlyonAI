@@ -6,6 +6,7 @@ from typing import Any
 
 from src.agent.protocol_urls import classify_pool_kind, is_pool_link_action, pool_protocol_url
 from src.agent.tools._base import err_envelope, ok_envelope
+from src.defi.apr_curve import empirical_cdf_or_fallback
 from src.defi.execution.adapters.base import YieldBuildRequest
 from src.defi.execution.capabilities import build_default_registry
 from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
@@ -457,7 +458,7 @@ async def build_yield_execution_plan(
                                 "market": {
                                     "base_apr_pct": float(sp.get("baseAprPct") or 0.0),
                                     "reward_apr_pct": float(sp.get("rewardAprPct") or 0.0),
-                                    "cdf_30d": _synth_cdf_30d(sides_sol[0], sides_sol[1]),
+                                    "cdf_30d": await empirical_cdf_or_fallback(sides_sol[0], sides_sol[1]),
                                     "kind": kind,
                                 },
                                 "initial_range": {
@@ -636,7 +637,7 @@ async def build_yield_execution_plan(
                                 "base_apr_pct": float(extra_dict.get("apy_base") or extra_dict.get("apy_total") or 0.0),
                                 "reward_apr_pct": float(extra_dict.get("apy_reward") or 0.0),
                                 "tvl_usd": float(extra_dict.get("tvl_usd") or 0.0),
-                                "cdf_30d": _synth_cdf_30d(sides[0], sides[1]),
+                                "cdf_30d": await empirical_cdf_or_fallback(sides[0], sides[1]),
                                 "kind": "v3" if "v3" in protocol.lower() else (
                                     "v4" if "v4" in protocol.lower() else (
                                         "slipstream" if "slipstream" in protocol.lower() else "v3"
