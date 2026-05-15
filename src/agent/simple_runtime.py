@@ -2830,6 +2830,14 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     #          "Redeem 0.5 yvUSDC from Yearn on Ethereum"
     #          "Withdraw all from Compound V3 USDC on Ethereum"
     def _detect_lifecycle_withdraw(msg: str) -> tuple[str, dict] | None:
+        text = msg.strip()
+        # Strip trailing "on <CHAIN>" first so the protocol regex doesn't
+        # greedily consume "on" as part of the protocol name.
+        chain = ""
+        m_chain = re.search(r"\bon\s+(?P<chain>[A-Za-z]+)\s*$", text, re.IGNORECASE)
+        if m_chain:
+            chain = m_chain.group("chain").lower()
+            text = text[: m_chain.start()].rstrip()
         m = re.match(
             r"^\s*(?P<verb>withdraw|redeem|claim)\s+"
             r"(?:(?P<all>all)|"
@@ -2837,16 +2845,14 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
             r"(?P<native>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z][A-Za-z0-9]{0,9})))"
             rf"\s+from\s+{_PROTOCOL_NAME_RE}"
             r"(?:\s+(?P<asset_tail>[A-Za-z][A-Za-z0-9]{0,9}))?"
-            r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?"
             r"\s*$",
-            msg.strip(),
+            text,
             re.IGNORECASE,
         )
         if not m:
             return None
         gd = m.groupdict()
         proto = re.sub(r"\s+", "-", (gd.get("protocol") or "").strip().lower())
-        chain = (gd.get("chain") or "").lower()
         asset = (gd.get("token") or gd.get("asset_tail") or "USDC").upper()
         if gd.get("all"):
             amount = 0  # adapter interprets 0 as max-uint sentinel
