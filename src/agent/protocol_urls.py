@@ -528,6 +528,7 @@ V3_PROTOCOLS = frozenset({
     "pancakeswap-v3", "pancake-v3",
     "sushiswap-v3", "sushi-v3",
     "aerodrome-slipstream", "aerodrome-cl",
+    "velodrome-cl", "velodrome-slipstream",
     "kim",
     "thena-v3", "thena-fusion",
     "ramses-v2", "ramses-cl",
