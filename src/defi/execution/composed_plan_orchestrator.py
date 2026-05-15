@@ -203,3 +203,34 @@ class ComposedPlanOrchestrator:
             await self._on_plan_update(plan_id, payload)
         except Exception as exc:  # noqa: BLE001
             logger.warning("plan-update callback failed for %s: %s", plan_id, exc)
+
+
+# ── Module-level singleton for runtime wire-in ──
+#
+# The runtime should construct one orchestrator at startup, install its
+# SSE push callback via set_runtime_callback(), and call
+# get_composed_plan_orchestrator().watch(...) from the receipt-watcher
+# after the bridge leg tx confirms (with the order_id observed in the
+# tx receipt).
+
+_singleton: ComposedPlanOrchestrator | None = None
+
+
+def get_composed_plan_orchestrator() -> ComposedPlanOrchestrator:
+    global _singleton
+    if _singleton is None:
+        _singleton = ComposedPlanOrchestrator()
+    return _singleton
+
+
+def set_runtime_callback(cb: PlanUpdateCallback) -> None:
+    """Install the runtime's SSE push callback into the singleton.
+    Call once at runtime startup."""
+    orch = get_composed_plan_orchestrator()
+    orch._on_plan_update = cb
+
+
+def reset_singleton_for_tests() -> None:
+    """Clear the singleton — tests-only escape hatch."""
+    global _singleton
+    _singleton = None

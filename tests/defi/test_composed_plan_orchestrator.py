@@ -243,6 +243,33 @@ def test_orchestrator_swallows_bridge_exceptions():
     assert step.status == "blocked"
 
 
+def test_singleton_returns_same_instance():
+    from src.defi.execution.composed_plan_orchestrator import (
+        get_composed_plan_orchestrator,
+        reset_singleton_for_tests,
+    )
+    reset_singleton_for_tests()
+    a = get_composed_plan_orchestrator()
+    b = get_composed_plan_orchestrator()
+    assert a is b
+
+
+def test_set_runtime_callback_wires_into_singleton():
+    from src.defi.execution.composed_plan_orchestrator import (
+        get_composed_plan_orchestrator,
+        reset_singleton_for_tests,
+        set_runtime_callback,
+    )
+    reset_singleton_for_tests()
+
+    async def _cb(plan_id, payload):
+        pass
+
+    set_runtime_callback(_cb)
+    orch = get_composed_plan_orchestrator()
+    assert orch._on_plan_update is _cb
+
+
 def test_no_callback_works_silently():
     """on_plan_update=None must not raise; orchestrator stays usable."""
     bridge = _StubBridge([{"state": "filled", "actual_dst_amount": 1}])
