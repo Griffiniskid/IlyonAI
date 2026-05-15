@@ -17,10 +17,13 @@ from src.data.asset_registry import NATIVE_PLACEHOLDER, RPC_FALLBACKS, _RPC_BY_C
 
 # selector("getPool(address,address,uint24)") = 0x1698ee82
 _GET_POOL_SEL = "0x1698ee82"
-# selector("getPool(address,address,int24)") = 0x4d18b203
+# selector("getPool(address,address,int24)") = 0x28af8d0b
 # Aerodrome Slipstream + Velodrome CL key their factory by tickSpacing
-# (int24) instead of fee_bps (uint24). Spec §6a.
-_GET_POOL_SLIPSTREAM_SEL = "0x4d18b203"
+# (int24) instead of fee_bps (uint24). Spec §6a. Some Solidly forks
+# expose the same mapping under `pools(address,address,int24)` = 0xca39b5f4
+# instead — the resolver tries both shapes.
+_GET_POOL_SLIPSTREAM_SEL = "0x28af8d0b"
+_POOLS_SLIPSTREAM_SEL = "0xca39b5f4"
 # selector("slot0()") = 0x3850c7bd
 _SLOT0_SEL = "0x3850c7bd"
 # selector("tickSpacing()") = 0xd0c93a7c
@@ -265,15 +268,21 @@ async def resolve_v3_pool(
             s for s in (1, 50, 100, 200, 2000) if s != primary
         ]
         for spacing in candidate_spacings:
-            call_data = (
-                _GET_POOL_SLIPSTREAM_SEL
-                + _encode_address(token0_addr)
-                + _encode_address(token1_addr)
-                + _encode_uint(spacing)
-            )
-            attempt = await _eth_call_with_fallback(chain_norm, cfg["factory"], call_data)
-            if attempt and attempt != "0x" and int(attempt, 16) != 0:
-                pool_hex = attempt
+            # Try the canonical getPool(address,address,int24) shape first;
+            # fall back to pools(...) for Solidly-fork variants that expose
+            # the mapping under that name (older Velodrome / Aerodrome v1).
+            for sel in (_GET_POOL_SLIPSTREAM_SEL, _POOLS_SLIPSTREAM_SEL):
+                call_data = (
+                    sel
+                    + _encode_address(token0_addr)
+                    + _encode_address(token1_addr)
+                    + _encode_uint(spacing)
+                )
+                attempt = await _eth_call_with_fallback(chain_norm, cfg["factory"], call_data)
+                if attempt and attempt != "0x" and int(attempt, 16) != 0:
+                    pool_hex = attempt
+                    break
+            if pool_hex:
                 break
     else:
         call_data = (
