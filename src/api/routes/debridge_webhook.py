@@ -35,11 +35,37 @@ async def debridge_webhook(request: web.Request) -> web.Response:
         order_id, state, parsed.get("actual_dst_amount"),
     )
 
-    # Persist into an order_events table so the runtime rebuild loop can
-    # observe the resolution next time it polls a pending composed plan.
-    # The schema (agent_008 migration, deferred) will own this table; for
-    # now we cache in app state so live composed-plan tests can drive a
-    # fill resolution without waiting for the DB write path.
+    # Persist into the debridge_events table (agent_008 schema) so the
+    # runtime rebuild loop survives process restarts. Falls back to the
+    # in-memory cache when the session factory isn't wired (dev env).
+    persisted = False
+    session_factory = request.app.get("_db_session_factory")
+    if session_factory is not None:
+        from sqlalchemy import text
+        try:
+            async with session_factory() as session:
+                await session.execute(
+                    text(
+                        "INSERT INTO debridge_events "
+                        "(order_id, state, actual_dst_amount, raw_json) "
+                        "VALUES (:order_id, :state, :actual, :raw) "
+                        "ON CONFLICT (order_id) DO UPDATE SET "
+                        "  state = EXCLUDED.state, "
+                        "  actual_dst_amount = EXCLUDED.actual_dst_amount, "
+                        "  received_at = NOW(), "
+                        "  raw_json = EXCLUDED.raw_json"
+                    ),
+                    {
+                        "order_id": order_id,
+                        "state": state,
+                        "actual": parsed.get("actual_dst_amount"),
+                        "raw": json.dumps(payload),
+                    },
+                )
+                await session.commit()
+                persisted = True
+        except Exception as exc:
+            logger.warning("debridge_events persist failed: %s", exc)
     cache: dict = request.app.setdefault("_debridge_events", {})
     cache[order_id] = {
         "state": state,
@@ -47,7 +73,9 @@ async def debridge_webhook(request: web.Request) -> web.Response:
         "received_at": time.time(),
     }
 
-    return web.json_response({"ok": True, "order_id": order_id, "state": state})
+    return web.json_response({
+        "ok": True, "order_id": order_id, "state": state, "persisted": persisted,
+    })
 
 
 def setup_debridge_routes(app: web.Application) -> None:
