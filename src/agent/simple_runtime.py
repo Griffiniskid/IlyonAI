@@ -2223,6 +2223,7 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     _V3_EVM_PROTOS = {
         "uniswap-v3", "pancakeswap-v3", "pancake-v3",
         "aerodrome-slipstream", "aerodrome-cl",
+        "velodrome-cl", "velodrome-slipstream",
     }
     _EVM_CHAINS_SET = {
         "ethereum", "polygon", "arbitrum", "optimism", "base", "avalanche", "bsc", "bnb",
