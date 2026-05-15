@@ -404,6 +404,29 @@ def parse_defi_intent(message: str) -> DefiIntent:
 
     protocol_filter = _parse_protocol_filter(text)
 
+    # "at least $1M TVL" / "TVL above $500k" / "min TVL $100K" → min_tvl floor.
+    min_tvl_parsed: float | None = None
+    tvl_m = re.search(
+        r"\b(?:tvl\s*(?:above|over|>|>=|at\s+least|min(?:imum)?\s+of)\s*"
+        r"|at\s+least\s+\$|min(?:imum)?\s+(?:tvl\s+)?(?:of\s+)?\$|with\s+at\s+least\s+\$|"
+        r"with\s+(?:tvl\s+)?(?:above|over)\s+\$)"
+        r"(\d+(?:\.\d+)?)\s*([kKmMbB])?",
+        text, re.IGNORECASE,
+    )
+    if tvl_m:
+        try:
+            v = float(tvl_m.group(1))
+            sfx = (tvl_m.group(2) or "").lower()
+            if sfx == "k":
+                v *= 1_000
+            elif sfx == "m":
+                v *= 1_000_000
+            elif sfx == "b":
+                v *= 1_000_000_000
+            min_tvl_parsed = v
+        except (TypeError, ValueError):
+            pass
+
     return DefiIntent(
         intent=intent,
         product_types=product_types,
@@ -423,4 +446,5 @@ def parse_defi_intent(message: str) -> DefiIntent:
         reinvestment_cadence=cadence,
         limit=limit,
         protocol_filter=protocol_filter,
+        min_tvl=min_tvl_parsed if min_tvl_parsed is not None else 100_000.0,
     )

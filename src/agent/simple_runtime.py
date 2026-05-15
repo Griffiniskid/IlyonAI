@@ -1845,6 +1845,7 @@ _SOL_RECEIPT_DEPOSIT_RE = re.compile(
     r"marinade(?:\s+(?:mSOL|MSOL|staked[ -]?sol|finance))?|"
     r"jito(?:[ -]?(?:staked-sol|sol|liquid-staking))?|"
     r"sanctum(?:[ -]?(?:infinity|INF))?|"
+    r"kamino(?:[ -]?(?:lend|vault|liquidity))?|"
     r"stader[ -]?sol|blazestake|jpool|solayer)\b"
     r"(?:\s+on\s+(?:solana|sol))?\s*$",
     re.IGNORECASE,
@@ -1895,6 +1896,10 @@ def _detect_solana_receipt_deposit(message: str) -> tuple[str, dict] | None:
         "SOLAYER": ("solayer", "sSOL"),
         "STADERSOL": ("stader", "BNSOL"),
         "STADER": ("stader", "BNSOL"),
+        "KAMINO": ("kamino", "kSOL"),
+        "KAMINOLEND": ("kamino-lend", "kUSDC"),
+        "KAMINOVAULT": ("kamino-liquidity", "kVAULT"),
+        "KAMINOLIQUIDITY": ("kamino-liquidity", "kVAULT"),
     }
     proto, receipt_sym = receipt_map.get(rec, (rec.lower(), rec))
     amount_value = _expand_numeric_amount(m.group("amount"), m.group("suffix"))
@@ -2388,6 +2393,10 @@ def _defi_intent_to_tool(intent: DefiIntent) -> tuple[str, dict] | None:
         params["stablecoin_only"] = True
     if getattr(intent, "protocol_filter", None):
         params["protocol_filter"] = intent.protocol_filter
+    # Only forward min_tvl when the user explicitly set it (the default
+    # 100K floor would override per-risk-tier defaults downstream).
+    if getattr(intent, "min_tvl", 100_000.0) != 100_000.0:
+        params["min_tvl"] = intent.min_tvl
     return "search_defi_opportunities", params
 
 
