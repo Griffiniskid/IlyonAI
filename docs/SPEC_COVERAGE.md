@@ -177,7 +177,7 @@ Total unit tests added this session: 66 (15 §6e + 15 §6f + 11 §6g + 15 §11 D
 | 8 new blocker codes | ✅ | KNOWN_BLOCKER_CODES MEV/GAS_MODEL/SELF_TRADE/JIT/POOL_LINK + KYC/AGGREGATOR/CAP/POOL_INIT/STALE/FROZEN/TOKEN_2022_HOOK |
 | §13 coverage | 9 → 26/27 implemented (only row 15 hardware-wallet ALT remains skip) | tests/defi/test_edge_case_appendix.py |
 
-Final tests: 335 passed, 2 skipped. 0 regressions across 55+ resume-v2 commits.
+Final tests: 344 passed, 2 skipped. 0 regressions across 65+ resume-v2 commits.
 
 ### Live-validated lifecycle scenarios (post-deploy 7c03814)
 
@@ -195,7 +195,8 @@ Final tests: 335 passed, 2 skipped. 0 regressions across 55+ resume-v2 commits.
 
 Captures: /tmp/v3-deep/Z01-Z10.txt + verdicts in _log.md.
 
-### Two critical bugs caught + fixed during resume-v2
+### Three critical bugs caught + fixed during resume-v2
 
 1. **Native amount mis-multiplication (c8b8633)** — pre-fix `0.05 ETH` → plan signing 115 ETH (2300× overshoot). Real financial-loss vector. Fix: amount stays in native units; usd_equivalent in extra.
 2. **UnboundLocalError shadow (78bbcc3)** — R2 composed-plan branch re-imported ExecutionPlanV3 inside conditional, shadowing the module-level binding via Python scope rules. Aave/Compound withdraw all returned UnboundLocalError. Caught by by-hand SSE read of F_aave_wd.txt.
+3. **Aave V3 borrow → supply mis-routing (c3ffc2c)** — `Borrow N USDC from Aave V3` returned plan with step 2 calling Pool.supply (0x617ba037) instead of Pool.borrow. User would lock collateral expecting a loan. Fix: dedicated borrow branch encoding Pool.borrow(asset, amount, rateMode, referralCode, onBehalfOf) selector 0xa415bcad.
