@@ -25,7 +25,14 @@ StepStatus = Literal[
     "blocked", "pending", "ready", "signing", "submitted", "confirmed", "failed", "skipped"
 ]
 PlanStatus = Literal[
-    "draft", "blocked", "ready", "executing", "complete", "failed", "aborted"
+    # Legacy runtime statuses kept as backward-compat shims.
+    "draft", "blocked", "ready", "executing", "complete", "failed", "aborted",
+    # Spec §12 canonical vocabulary — runtime is migrating to these. Both
+    # spellings coexist while writers convert; the §5 state machine maps
+    # legacy → canonical via _PLAN_TO_PIPELINE_STATE.
+    "DRAFTING", "READY_TO_SIGN", "SIGNING_IN_PROGRESS", "BROADCASTED",
+    "PENDING_DST_FILL", "REBUILDING", "CONFIRMING", "VERIFYING", "INDEXED",
+    "FAILED", "STUCK_BALANCE", "CANCELLED",
 ]
 RiskGate = Literal["clear", "soft_warn", "hard_block"]
 WalletKind = Literal["MetaMask", "Phantom", "WalletConnect"]
@@ -379,14 +386,30 @@ class ExecutionPlanV3:
 # Map plan.status terms → PipelineState (spec §5). Plan-level statuses are
 # a coarser projection of the pipeline state machine — this map collapses
 # the per-step lifecycle into the canonical spec vocabulary so illegal jumps
-# are caught at runtime.
+# are caught at runtime. Both legacy and canonical (spec §12) vocabularies
+# map; the §5 enforcer admits both spellings.
 _PLAN_TO_PIPELINE_STATE: dict[str, str] = {
+    # Legacy → PipelineState
     "draft": "Prompted",
     "ready": "ReadyToSign",
     "blocked": "Blocked",
     "executing": "Signing",
     "complete": "Indexed",
     "failed": "Failed",
+    "aborted": "Cancelled",
+    # Canonical §12 → PipelineState
+    "DRAFTING": "Prompted",
+    "READY_TO_SIGN": "ReadyToSign",
+    "SIGNING_IN_PROGRESS": "Signing",
+    "BROADCASTED": "Broadcasted",
+    "PENDING_DST_FILL": "PendingDstFill",
+    "REBUILDING": "Rebuilding",
+    "CONFIRMING": "Confirming",
+    "VERIFYING": "Verifying",
+    "INDEXED": "Indexed",
+    "FAILED": "Failed",
+    "STUCK_BALANCE": "StuckBalanceFlow",
+    "CANCELLED": "Cancelled",
 }
 
 
