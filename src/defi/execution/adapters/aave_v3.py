@@ -77,7 +77,7 @@ class AaveV3SupplyAdapter:
     adapter_id: str = "aave-v3-supply"
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base", "avalanche"})
     protocols: frozenset[str] = frozenset({"aave-v3", "aave", "aave v3", "aavev3"})
-    actions: frozenset[str] = frozenset({"supply", "deposit", "lend"})
+    actions: frozenset[str] = frozenset({"supply", "deposit", "lend", "withdraw"})
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
         chain_norm = chain.lower()
@@ -110,6 +110,52 @@ class AaveV3SupplyAdapter:
         if asset_meta is None:
             raise ValueError(f"Aave V3 adapter has no token metadata for {request.asset_in} on {request.chain}.")
         token_address, decimals = asset_meta
+
+        # Phase 4 lifecycle — withdraw(asset, amount, to) selector 0x69328dec.
+        extra = request.extra or {}
+        action_hint = (extra.get("action") or "").lower()
+        if action_hint == "withdraw":
+            withdraw_units = _to_unit(request.amount_in, decimals)
+            # type(uint256).max = withdraw all. Pass-through when caller asks
+            # "max" / amount=0.
+            if withdraw_units <= 0:
+                withdraw_units = (1 << 256) - 1
+            withdraw_calldata = (
+                "0x69328dec"
+                + _encode_address(token_address)
+                + _encode_uint256(withdraw_units)
+                + _encode_address(request.user_address)
+            )
+            withdraw_step = make_step(
+                index=1,
+                action="withdraw",
+                title=f"Withdraw {request.asset_in} from Aave V3",
+                description=(
+                    f"Withdraw {request.amount_in if withdraw_units != (1<<256)-1 else 'ALL'} "
+                    f"{request.asset_in} via Aave V3 Pool. aToken burned + underlying returned."
+                ),
+                chain=request.chain,
+                wallet="MetaMask",
+                protocol="aave-v3",
+                asset_in=f"a{request.asset_in}",
+                amount_in=str(request.amount_in),
+                asset_out=request.asset_in,
+                slippage_bps=0,
+                gas_estimate_usd=2.8,
+                duration_estimate_s=15,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm",
+                    chain_id=chain_id,
+                    to=pool_address,
+                    data=withdraw_calldata,
+                    value="0x0",
+                    spender=pool_address,
+                ),
+                risk_warnings=[
+                    "Withdraw burns aTokens 1:1 with the underlying balance + interest.",
+                ],
+            )
+            return [withdraw_step]
 
         amount_units = _to_unit(request.amount_in, decimals)
         if amount_units <= 0:
