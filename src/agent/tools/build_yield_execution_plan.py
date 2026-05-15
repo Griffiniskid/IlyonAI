@@ -98,6 +98,16 @@ async def build_yield_execution_plan(
     research_thesis: str | None = None,
     extra: dict[str, Any] | None = None,
 ):
+    # Resolve user_address early so the composed-plan branch + non-composed
+    # path both see the EVM/Solana wallet without raising "wallet missing".
+    if not user_address:
+        wallet = getattr(ctx, "wallet", None)
+        if wallet:
+            user_address = str(wallet)
+        if not user_address:
+            evm_alt = getattr(ctx, "evm_wallet", None)
+            if evm_alt:
+                user_address = str(evm_alt)
     # §6c composed-plan branch — when intent carries extra.source_chain that
     # differs from `chain`, snapshot a deBridge DLN bridge quote first, block
     # the deposit step on PENDING_DST_FILL, and let the runtime rebuild it
