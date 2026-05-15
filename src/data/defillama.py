@@ -74,13 +74,14 @@ def _normalize_pool_record(pool: Dict[str, Any]) -> Dict[str, Any]:
         utilization = total_borrow_usd / total_supply_usd
     utilization = _safe_float(utilization)
 
+    from src.agent.sanitizer import sanitise_onchain_string
     normalized = {
         "pool_id": pool.get("pool", ""),
         "pool": pool.get("pool", ""),
         "chain": pool.get("chain", ""),
         "project": pool.get("project", ""),
         "category": pool.get("category", ""),
-        "symbol": pool.get("symbol", ""),
+        "symbol": sanitise_onchain_string(pool.get("symbol", "")),
         "tvl_usd": tvl_usd,
         "tvlUsd": tvl_usd,
         "apy": apy,
@@ -389,10 +390,11 @@ class DefiLlamaClient:
             slug = p.get("slug", "").lower()
 
             if query_lower in name or query_lower in symbol or query_lower in slug:
+                from src.agent.sanitizer import sanitise_onchain_string
                 matches.append({
-                    "name": p.get("name", ""),
+                    "name": sanitise_onchain_string(p.get("name", "")),
                     "slug": p.get("slug", ""),
-                    "symbol": p.get("symbol", ""),
+                    "symbol": sanitise_onchain_string(p.get("symbol", "")),
                     "tvl": p.get("tvl", 0),
                     "chains": p.get("chains", []),
                     "category": p.get("category", ""),
