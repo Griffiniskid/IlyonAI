@@ -71,28 +71,84 @@ class PendleV2Adapter:
         )
 
     async def build(self, request: YieldBuildRequest) -> list[ExecutionStepV3]:
-        # Calldata encoding for the 3 modes lands in a follow-up commit.
-        # Returning a typed blocker keeps the registry hit but routes the
-        # user back to the Pendle app via pool_link until the encoder
-        # ships.
-        from src.defi.execution.models import KNOWN_BLOCKER_CODES, make_step
-        chain_id_map = {"ethereum": 1, "arbitrum": 42161, "optimism": 10, "bsc": 56, "base": 8453, "mantle": 5000}
+        """Per-mode dispatch — each Pendle mode emits its own typed step.
+
+        Pendle V4 router calldata uses nested structs (ApproxParams,
+        TokenInput, LimitOrderData) whose `guessOffchain` differs by market.
+        Hand-rolled values risk slippage reverts → we route the calldata
+        composition through the frontend Pendle SDK and keep the plan
+        authoritative on intent + selector + market + receiver only.
+        """
+        from src.defi.execution.models import make_step
+        import time
+
+        chain_id_map = {
+            "ethereum": 1, "arbitrum": 42161, "optimism": 10,
+            "bsc": 56, "base": 8453, "mantle": 5000,
+        }
         chain_id = chain_id_map.get(request.chain, 1)
+        router = _PENDLE_ROUTER.get(request.chain)
+        if router is None:
+            raise ValueError(f"Pendle V2 router not registered on {request.chain}.")
+
+        extra = request.extra or {}
+        # Epoch-boundary blocker — Pendle markets expire; the caller should
+        # surface PENDING_EPOCH_ENTRY when the chosen market is past expiry.
+        market_expiry_ts = extra.get("market_expiry_ts")
+        if market_expiry_ts is not None:
+            try:
+                expiry = int(market_expiry_ts)
+            except (TypeError, ValueError):
+                expiry = 0
+            if expiry > 0 and expiry < int(time.time()):
+                return [
+                    make_step(
+                        index=1, action="deposit_lp",
+                        title=f"Pendle market expired at ts={expiry}",
+                        description=(
+                            "The selected Pendle V2 market has passed its expiry "
+                            "timestamp. Choose an active market or wait for the "
+                            "next epoch to roll over."
+                        ),
+                        chain=request.chain, wallet="MetaMask", protocol="pendle-v2",
+                        asset_in=request.asset_in, amount_in=str(request.amount_in),
+                        slippage_bps=request.slippage_bps,
+                        blocker_codes=["PENDING_EPOCH_ENTRY"],
+                    ),
+                ]
+
+        action = (extra.get("action") or "add_liquidity").lower()
+        market = extra.get("market") or extra.get("market_address")
+        if not market:
+            raise ValueError(
+                "Pendle V2 build needs extra.market (the PT/YT/LP market address)."
+            )
+
+        if action in {"mint_py", "mint_py_from_token"}:
+            selector_pin = SEL_MINT_PY_FROM_TOKEN
+            mode_label = "mintPyFromToken"
+        elif action in {"swap_for_pt", "swap_token_for_pt"}:
+            selector_pin = SEL_SWAP_TOKEN_FOR_PT
+            mode_label = "swapTokenForPt"
+        else:
+            selector_pin = SEL_ADD_LIQUIDITY_FROM_TOKEN
+            mode_label = "addLiquidityFromToken"
+
         return [
             make_step(
-                index=1, action="deposit_lp",
-                title="Pendle V2 native exec (pending IDL wire-up)",
+                index=1,
+                action=action if action in {"mint_py", "swap_for_pt"} else "add_liquidity",
+                title=f"Pendle V2 {mode_label} on market {market[:10]}…",
                 description=(
-                    "Pendle V2 router calldata encoder is staged but the "
-                    "3-mode selector overloads need PendleSDK alignment. "
-                    "Until then, finalise the position on app.pendle.fi — "
-                    "all amount/range data flows through the same Preview "
-                    "card."
+                    f"Pendle V2 Router {router} call to {mode_label} (selector "
+                    f"{selector_pin}). Frontend Pendle SDK fills ApproxParams "
+                    f"+ TokenInput from the live market state before signing. "
+                    f"Market: {market}. Input: {request.amount_in} {request.asset_in}."
                 ),
                 chain=request.chain, wallet="MetaMask", protocol="pendle-v2",
                 asset_in=request.asset_in, amount_in=str(request.amount_in),
                 slippage_bps=request.slippage_bps,
-                blocker_codes=["POOL_LINK_REDIRECT"],
+                blocker_codes=["NEEDS_FRONTEND_SDK"],
             ),
         ]
 

@@ -77,6 +77,7 @@ KNOWN_BLOCKER_CODES: frozenset[str] = frozenset({
     "SELF_TRADE_AGAINST_OWN_LP",   # User-owned LP would be hit by their own prep-swap
     "JIT_ATTACK_ADJACENCY",        # Mempool JIT monitor flagged a sandwich risk
     "POOL_LINK_REDIRECT",          # Adapter unsupported — frontend pool_link card was emitted
+    "NEEDS_FRONTEND_SDK",          # Calldata composition needs in-browser SDK (Pendle ApproxParams, etc.)
 })
 
 

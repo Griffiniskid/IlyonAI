@@ -62,12 +62,27 @@ def test_refuses_unsupported_chain(adapter):
     assert r.supported is False
 
 
-def test_build_returns_pool_link_redirect_blocker(adapter):
+def test_build_returns_typed_blocker_with_market(adapter):
+    """After per-mode dispatch, build() emits NEEDS_FRONTEND_SDK with the
+    selector pinned in the description (replaces the prior POOL_LINK_REDIRECT
+    blanket-blocker)."""
+    req = YieldBuildRequest(
+        chain="ethereum", protocol="pendle-v2", asset_in="USDC",
+        amount_in=Decimal("100"),
+        user_address="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        extra={"market": "0xabcabcabcabcabcabcabcabcabcabcabcabcabca"},
+    )
+    steps = _run(adapter.build(req))
+    assert len(steps) == 1
+    assert "NEEDS_FRONTEND_SDK" in steps[0].blocker_codes
+
+
+def test_build_requires_market_address(adapter):
+    """Without a market address the adapter must raise — it cannot guess."""
     req = YieldBuildRequest(
         chain="ethereum", protocol="pendle-v2", asset_in="USDC",
         amount_in=Decimal("100"),
         user_address="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     )
-    steps = _run(adapter.build(req))
-    assert len(steps) == 1
-    assert "POOL_LINK_REDIRECT" in steps[0].blocker_codes
+    with pytest.raises(ValueError, match="extra.market"):
+        _run(adapter.build(req))
