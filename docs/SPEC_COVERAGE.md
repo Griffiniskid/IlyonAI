@@ -227,6 +227,22 @@ The "admit action then forget to branch on it" bug class continues:
 - Balancer admitted `exit_pool` action but build() always emitted joinPool → user expecting exit would deposit
 - Both caught + fixed by adding action dispatch at the top of build(). Regression pin pattern: assert NOT the deposit selector when action=withdraw, AND assert the canonical withdraw selector IS emitted.
 
+### Resume v3 commits 21 → 46 — frontend + runtime + cross-chain LIVE
+
+| Section | Delta | Evidence |
+|---|---|---|
+| C.2 runtime startup wire-in | offline → ✅ LIVE | `src/main.py` on_startup hook calls set_runtime_callback + installs _composed_plan_notifier into app state |
+| pending-plan registry + webhook handoff | ⏸ → ✅ | `src/defi/execution/pending_plans.py` register/get/drop/resolve_fill; webhook handler at debridge_webhook.py wired |
+| /api/v1/eip7702/prepare + /authorize + /{wallet} | ⏸ → ✅ | Nexus/Kernel signing; 12 pin tests; live ready |
+| /api/v1/audit/{wallet} | ⏸ → ✅ | session_key_audit_log reader; 9 pin tests; live 200 |
+| /api/v1/plans/{plan_id}/steps/{step_id}/permit2 | ⏸ → ✅ | signature handoff; 8 pin tests |
+| F.3 Aave V3 native ETH withdraw | ⏸ → ✅ LIVE | WTG3.withdrawETH 0x80500d20; 2-step (approve aWETH + withdrawETH); RV3_aave_eth_wd3.txt |
+| F.6 V2 LP withdraw LIVE | offline → ✅ LIVE | Canonical pair registry (PCS+Sushi+UniV2) auto-fills pool_address; RV3_v2_wd3.txt |
+| F.7 Balancer exit_pool LIVE | offline → ✅ LIVE | Default exit_token = first underlying; RV3_bal6.txt |
+| §6c cross-chain composed plan LIVE | wire-in → ✅ LIVE | ETH→Base USDC→Aave V3 (RV3_xchain4) + ETH→Arb USDC→Compound V3 (RV3_xchain_arb) |
+| D.7 drift gate wired into mark_step_status | offline → ✅ wired | broadcast flip refuses on > 50 bps drift; 6 pin tests |
+| §11 D.6 settings panels frontend | ⏸ → ✅ | AuditLogPanel + Eip7702OptInPanel + Permit2SigButton mounted in Settings |
+
 ### Phase E / agent_009 / G.2 additions (commits 14-21)
 
 | Section | Delta | Evidence |
