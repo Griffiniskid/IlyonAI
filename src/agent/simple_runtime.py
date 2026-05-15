@@ -2889,7 +2889,12 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
             r"(?P<native>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z][A-Za-z0-9]{0,9})))"
             # Both "from <PROTO>" (withdraw/claim) and "to <PROTO>" (repay) work.
             rf"\s+(?:from|to|on|against)\s+{_PROTOCOL_NAME_RE}"
-            r"(?:\s+(?P<asset_tail>[A-Za-z][A-Za-z0-9]{0,9}))?"
+            # Tail may be a single token (asset_tail) OR a hyphen-separated pair
+            # like "BNB-USDT" / "WETH/USDC" (pair_tail) — V2 LP removeLiquidity.
+            r"(?:\s+(?:"
+            r"(?P<pair_tail>[A-Za-z][A-Za-z0-9]{0,9}[-/][A-Za-z][A-Za-z0-9]{0,9})"
+            r"|(?P<asset_tail>[A-Za-z][A-Za-z0-9]{0,9})"
+            r"))?"
             r"\s*$",
             text,
             re.IGNORECASE,
@@ -2898,11 +2903,12 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
             return None
         gd = m.groupdict()
         proto = re.sub(r"\s+", "-", (gd.get("protocol") or "").strip().lower())
+        pair_tail = (gd.get("pair_tail") or "").upper().replace("/", "-")
         asset = (
             gd.get("token")
             or gd.get("all_token")
             or gd.get("asset_tail")
-            or "USDC"
+            or (pair_tail.split("-")[0] if pair_tail else "USDC")
         ).upper()
         if gd.get("all"):
             amount = 0  # adapter interprets 0 as max-uint sentinel
@@ -2921,6 +2927,14 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
             "withdraw": "withdraw", "redeem": "withdraw",
             "claim": "claim", "repay": "repay", "borrow": "borrow",
         }.get(verb, "withdraw")
+        extra: dict = {"action": action_out}
+        # Pair_tail = "BNB-USDT" → V2 LP removeLiquidity needs token_a/token_b.
+        if pair_tail:
+            sides = [s for s in pair_tail.split("-") if s]
+            if len(sides) >= 2:
+                extra["token_a"] = sides[0]
+                extra["token_b"] = sides[1]
+                extra["pool_symbol"] = pair_tail
         return (
             "build_yield_execution_plan",
             {
@@ -2929,7 +2943,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
                 "action": action_out,
                 "asset_in": asset,
                 "amount_in": amount,
-                "extra": {"action": action_out},
+                "extra": extra,
             },
         )
 
