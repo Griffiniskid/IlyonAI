@@ -82,7 +82,10 @@ class ERC4626VaultAdapter:
         "spark", "sky-lending", "sky", "sommelier", "origin", "origin-ether",
         "aera", "lido", "rocket-pool",
     })
-    actions: frozenset[str] = frozenset({"supply", "deposit", "lend", "stake"})
+    actions: frozenset[str] = frozenset({
+        "supply", "deposit", "lend", "stake",
+        "withdraw", "redeem",
+    })
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
         chain_norm = chain.lower()
@@ -126,6 +129,55 @@ class ERC4626VaultAdapter:
         vault_address, underlying_address, decimals = vault_meta
         if chain_id is None:
             raise ValueError(f"Unknown chain id for {request.chain}.")
+
+        # Phase 4 lifecycle — withdraw(uint256 assets, address receiver, address owner)
+        # selector 0xb460af94 / redeem(uint256 shares, address receiver, address owner)
+        # selector 0xba087652.
+        extra = request.extra or {}
+        action_hint = (extra.get("action") or "").lower()
+        if action_hint in {"withdraw", "redeem"}:
+            wd_units = _to_unit(request.amount_in, decimals)
+            if wd_units <= 0:
+                wd_units = (1 << 256) - 1
+            sel = "0xba087652" if action_hint == "redeem" else "0xb460af94"
+            data = (
+                sel
+                + _encode_uint256(wd_units)
+                + _encode_address(request.user_address)
+                + _encode_address(request.user_address)
+            )
+            step = make_step(
+                index=1,
+                action=action_hint,
+                title=f"{action_hint.title()} {request.asset_in} from {request.protocol} vault",
+                description=(
+                    f"ERC-4626 {action_hint}({request.amount_in}) — "
+                    f"{'shares' if action_hint == 'redeem' else 'assets'} returned to "
+                    f"{request.user_address}."
+                ),
+                chain=request.chain,
+                wallet="MetaMask",
+                protocol=request.protocol,
+                asset_in=f"{request.protocol}-{request.asset_in}",
+                amount_in=str(request.amount_in),
+                asset_out=request.asset_in,
+                slippage_bps=0,
+                gas_estimate_usd=2.0,
+                duration_estimate_s=15,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm",
+                    chain_id=chain_id,
+                    to=vault_address,
+                    data=data,
+                    value="0x0",
+                    spender=vault_address,
+                ),
+                risk_warnings=[
+                    f"Vault {request.protocol} may impose exit fee or pending-queue delay.",
+                ],
+            )
+            return [step]
+
         amount_units = _to_unit(request.amount_in, decimals)
         if amount_units <= 0:
             raise ValueError("amount_in must be > 0")
