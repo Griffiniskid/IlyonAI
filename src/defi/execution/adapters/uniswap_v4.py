@@ -48,9 +48,14 @@ _APPROVE_SEL = "0x095ea7b3"
 _MODIFY_LIQ_SEL = "0xdd46508f"  # modifyLiquidities(bytes,uint256)
 _PERMIT2_APPROVE_SEL = "0x87517c45"  # Permit2.approve(token,spender,amount,expiration)
 
+_ACTION_INCREASE_LIQUIDITY = 0x00
+_ACTION_DECREASE_LIQUIDITY = 0x01
 _ACTION_MINT_POSITION = 0x02
+_ACTION_BURN_POSITION = 0x05
 _ACTION_SETTLE_PAIR = 0x0d
 _ACTION_TAKE_PAIR = 0x0e
+_ACTION_CLEAR_OR_TAKE = 0x14
+_ACTION_SWEEP = 0x16
 
 # Permit2 canonical address — same on every EVM chain.
 _PERMIT2 = "0x000000000022d473030f116ddee9f6b43ac78ba3"
@@ -203,7 +208,7 @@ class UniswapV4NativeAdapter:
     adapter_id = "uniswap-v4"
     chains = {"ethereum", "polygon", "arbitrum", "optimism", "base", "bsc", "avalanche", "unichain"}
     protocols = {"uniswap-v4"}
-    actions = {"deposit_lp"}
+    actions = {"deposit_lp", "decrease_liquidity", "collect", "close_position"}
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
         if chain not in self.chains:
