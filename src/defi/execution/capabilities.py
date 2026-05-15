@@ -57,6 +57,7 @@ def build_default_registry() -> AdapterRegistry:
     Uniswap V3 / PancakeSwap V3 / Aerodrome Slipstream (concentrated liquidity).
     """
     from src.defi.execution.adapters.aave_v3 import AaveV3SupplyAdapter
+    from src.defi.execution.adapters.balancer import BalancerSingleAssetAdapter
     from src.defi.execution.adapters.compound_v3 import CompoundV3SupplyAdapter
     from src.defi.execution.adapters.curve import CurveSingleSidedAdapter
     from src.defi.execution.adapters.enso_shortcut import EnsoShortcutAdapter
@@ -78,6 +79,7 @@ def build_default_registry() -> AdapterRegistry:
             AaveV3SupplyAdapter(),
             CompoundV3SupplyAdapter(),
             CurveSingleSidedAdapter(),
+            BalancerSingleAssetAdapter(),
             ERC4626VaultAdapter(),
             EnsoShortcutAdapter(),
             SolanaYieldBuilderAdapter(),

@@ -167,7 +167,10 @@ class BalancerSingleAssetAdapter:
     adapter_id: str = "balancer-single-asset-join"
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base"})
     protocols: frozenset[str] = frozenset({"balancer", "balancer-v2", "balancer-v3"})
-    actions: frozenset[str] = frozenset({"deposit_lp", "add_liquidity", "provide_liquidity"})
+    actions: frozenset[str] = frozenset({
+        "deposit_lp", "add_liquidity", "provide_liquidity",
+        "exit_pool", "withdraw",
+    })
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
         if chain.lower() not in self.chains:
