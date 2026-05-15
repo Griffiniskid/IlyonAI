@@ -2937,7 +2937,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
                 },
             )
         m = re.match(
-            r"^\s*(?P<verb>withdraw|redeem|claim|repay|borrow)\s+"
+            r"^\s*(?P<verb>withdraw|redeem|claim|repay|borrow|exit|remove)\s+"
             r"(?:(?P<all>all)(?:\s+(?P<all_token>[A-Za-z][A-Za-z0-9]{0,9}))?|"
             r"(?:\$\s*(?P<usd>[\d,]+(?:\.\d+)?)|"
             r"(?P<native>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z][A-Za-z0-9]{0,9})))"
@@ -2979,7 +2979,9 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
         verb = (gd.get("verb") or "withdraw").lower()
         action_out = {
             "withdraw": "withdraw", "redeem": "withdraw",
+            "remove": "withdraw",
             "claim": "claim", "repay": "repay", "borrow": "borrow",
+            "exit": "exit_pool",
         }.get(verb, "withdraw")
         extra: dict = {"action": action_out}
         # Pair_tail = "BNB-USDT" → V2 LP removeLiquidity needs token_a/token_b.
