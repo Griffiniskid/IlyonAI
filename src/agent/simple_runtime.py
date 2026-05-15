@@ -2884,7 +2884,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
             )
         m = re.match(
             r"^\s*(?P<verb>withdraw|redeem|claim|repay|borrow)\s+"
-            r"(?:(?P<all>all)|"
+            r"(?:(?P<all>all)(?:\s+(?P<all_token>[A-Za-z][A-Za-z0-9]{0,9}))?|"
             r"(?:\$\s*(?P<usd>[\d,]+(?:\.\d+)?)|"
             r"(?P<native>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z][A-Za-z0-9]{0,9})))"
             # Both "from <PROTO>" (withdraw/claim) and "to <PROTO>" (repay) work.
@@ -2898,7 +2898,12 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
             return None
         gd = m.groupdict()
         proto = re.sub(r"\s+", "-", (gd.get("protocol") or "").strip().lower())
-        asset = (gd.get("token") or gd.get("asset_tail") or "USDC").upper()
+        asset = (
+            gd.get("token")
+            or gd.get("all_token")
+            or gd.get("asset_tail")
+            or "USDC"
+        ).upper()
         if gd.get("all"):
             amount = 0  # adapter interprets 0 as max-uint sentinel
         elif gd.get("usd"):
