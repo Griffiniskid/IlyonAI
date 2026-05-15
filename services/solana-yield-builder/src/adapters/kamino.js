@@ -24,6 +24,75 @@ const JITOSOL_MINT = "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn";
 
 module.exports = {
   aliases: ["kamino-finance", "kamino-lend", "kamino-vault"],
+  supportedActions: ["deposit", "supply", "withdraw", "unstake", "redeem"],
+
+  /**
+   * Phase 4 lifecycle — Kamino vault withdraw via REST.
+   * Mirrors the deposit's two-endpoint probe pattern; honest fallback
+   * when REST unreachable (no Jupiter inverse for vault shares).
+   */
+  async buildUnstake({ asset, amount, user, extra = {} }, { connection } = {}) {
+    const tryUrls = [
+      `${BASE}/v2/transactions/withdraw`,
+      `${BASE}/transactions/withdraw`,
+    ];
+    for (const url of tryUrls) {
+      try {
+        const ctl = new AbortController();
+        const tmo = setTimeout(() => ctl.abort(), 4000);
+        let resp;
+        try {
+          resp = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: ctl.signal,
+            body: JSON.stringify({
+              asset, amount, user,
+              market: extra.market || extra.market_address || extra.poolAddress,
+              reserve: extra.reserve || extra.reserve_address,
+              strategy: extra.strategy || extra.strategy_address,
+            }),
+          });
+        } finally {
+          clearTimeout(tmo);
+        }
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        const tx = data?.transaction || data?.tx;
+        if (!tx) continue;
+        const sim = connection ? await simulateBase64Tx({ b64: tx, connection }) : { ok: true };
+        if (!sim.ok) {
+          const e = new Error(`Kamino REST withdraw simulation failed: ${sim.errStr || "unknown"}`);
+          e.simulation = sim;
+          throw e;
+        }
+        return {
+          transactions: [
+            {
+              b64: tx,
+              summary: `Kamino withdraw ${amount} ${asset}`,
+              description: `Direct Kamino vault withdraw via official REST (${url}).`,
+              receiptToken: asset || "USDC",
+              feeUsd: 0.01,
+              durationS: 30,
+              warnings: [],
+              source: "kamino-rest",
+              simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
+            },
+          ],
+        };
+      } catch (err) {
+        if (err?.simulation) throw err;
+        continue;
+      }
+    }
+    // No Jupiter inverse for vault shares — surface honest blocker.
+    throw new Error(
+      "Kamino REST withdraw unreachable; no Jupiter inverse for vault shares. " +
+      "Finalise on app.kamino.finance/lending or vaults UI."
+    );
+  },
+
   async quote({ asset }) {
     return {
       expectedAmountOut: null,
