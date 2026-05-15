@@ -82,7 +82,7 @@ Tracked in `tests/defi/test_edge_case_appendix.py`. 9 rows implemented (case ass
 
 ## Commits this session
 
-31 commits (resume 2026-05-15T08:37Z, ongoing). Highlights:
+35 commits (resume 2026-05-15T08:37Z, ongoing). Live coverage at f339c52: all 12 sweep scenarios ready (Aave V3 Base fixed by per-asset aToken override map). 81 new unit tests, 0 regressions. Highlights:
 1. 72faac8 fix(intent): CLMM/DLMM/Whirlpool variant suffix after pair
 2. 82d80b1 feat(intent): Solana CLMM short-circuit to range_block emission (§6b)
 3. 7247533 feat(intent+plan): §6d 'with my <TOKEN>' source-token reassignment
