@@ -159,11 +159,40 @@ async def verify_receipt(
         )
 
     if k == ReceiptKind.V4_NFT:
-        # PoolManager.getPositionInfo(poolId, owner, salt) — encoded in §6a
-        # adapter; verifier wire-in follows when V4 position ids land in DB.
+        # PoolManager.getPositionInfo(bytes32 poolId, bytes32 positionId) selector 0x97fd7b42.
+        # positionId = keccak256(abi.encodePacked(owner, tickLower, tickUpper, salt)) per V4.
+        pool_manager = exp.get("pool_manager") or exp.get("poolManager")
+        pool_id = exp.get("pool_id") or exp.get("poolId")
+        position_id = exp.get("position_id") or exp.get("positionId")
+        if not pool_manager or not pool_id or not position_id:
+            return ReadResult(
+                confirmed=False, kind=k,
+                detail="V4_NFT verify requires expected.pool_manager + pool_id + position_id.",
+            )
+        data = (
+            "0x97fd7b42"
+            + str(pool_id).removeprefix("0x").rjust(64, "0")
+            + str(position_id).removeprefix("0x").rjust(64, "0")
+        )
+        raw = await _eth_call_with_fallback(chain, str(pool_manager), data)
+        if not raw or raw == "0x":
+            return ReadResult(
+                confirmed=False, kind=k,
+                detail=f"PoolManager.getPositionInfo returned no data for poolId {pool_id}.",
+            )
+        body = raw.removeprefix("0x")
+        # Layout: (uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128)
+        # The first 32-byte word starts with high-order zeros padding the uint128.
+        liquidity_hex = body[:64]
+        try:
+            liquidity = int(liquidity_hex, 16)
+        except ValueError:
+            return ReadResult(confirmed=False, kind=k, detail="getPositionInfo decode failed.")
+        ok = liquidity > 0
         return ReadResult(
-            confirmed=False, kind=k,
-            detail="V4_NFT verify pending: PoolManager.getPositionInfo wire-in.",
+            confirmed=ok, kind=k,
+            detail=f"PoolManager.getPositionInfo.liquidity={liquidity} > 0={ok}.",
+            raw={"liquidity": liquidity, "pool_id": pool_id, "position_id": position_id},
         )
 
     return ReadResult(

@@ -83,6 +83,38 @@ def test_verify_receipt_balance_kind_reads_rpc(monkeypatch):
     assert r.raw["balance"] == 100
 
 
+def test_verify_receipt_v4_nft_requires_pool_manager(monkeypatch):
+    async def _fake_call(*a, **kw):
+        return None
+    import src.defi.verification.receipt_reader as mod
+    monkeypatch.setattr(mod, "_eth_call_with_fallback", _fake_call)
+    r = _run(verify_receipt(
+        kind=ReceiptKind.V4_NFT, chain="ethereum", owner="0xabc", expected={},
+    ))
+    assert r.confirmed is False
+    assert "pool_manager" in r.detail
+
+
+def test_verify_receipt_v4_nft_decodes_liquidity(monkeypatch):
+    # Mock PoolManager.getPositionInfo to return non-zero liquidity (0x...64 = 100).
+    async def _fake_call(chain, to, data):
+        # 3 × 32-byte words: liquidity=100, feeGrowth0=0, feeGrowth1=0
+        return "0x" + "0" * 62 + "64" + "0" * 64 + "0" * 64
+    import src.defi.verification.receipt_reader as mod
+    monkeypatch.setattr(mod, "_eth_call_with_fallback", _fake_call)
+    r = _run(verify_receipt(
+        kind=ReceiptKind.V4_NFT, chain="ethereum",
+        owner="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        expected={
+            "pool_manager": "0x000000000004444c5dc75cB358380D2e3dE08A90",
+            "pool_id": "0x" + "ab" * 32,
+            "position_id": "0x" + "cd" * 32,
+        },
+    ))
+    assert r.confirmed is True
+    assert r.raw["liquidity"] == 100
+
+
 def test_verify_receipt_balance_below_min(monkeypatch):
     async def _fake_call(chain, to, data):
         return "0x" + "0" * 62 + "0a"  # 10
