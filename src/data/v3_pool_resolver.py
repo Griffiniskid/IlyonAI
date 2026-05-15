@@ -80,6 +80,14 @@ V3_FACTORIES: dict[tuple[str, str], dict[str, str]] = {
         "factory": "0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A",
         "nfp_manager": "0x827922686190790b37229fd06084350E74485b72",
     },
+    ("optimism", "velodrome-cl"): {
+        "factory": "0xCc0bDDB707055e04e497aB22a59c2aF4391cd12F",
+        "nfp_manager": "0x416b433906b1B72FA758e166e239c43d68dC6F29",
+    },
+    ("optimism", "velodrome-slipstream"): {
+        "factory": "0xCc0bDDB707055e04e497aB22a59c2aF4391cd12F",
+        "nfp_manager": "0x416b433906b1B72FA758e166e239c43d68dC6F29",
+    },
 }
 
 # Default tick spacing by fee tier (Uniswap V3 + PancakeSwap V3).
