@@ -593,14 +593,16 @@ def is_pool_link_action(*, action: str | None, protocol: str | None, chain: str 
     if c in ("solana", "sol"):
         return False
 
-    # V3 EVM executes natively via UniswapV3NFTAdapter (uniswap-v3,
-    # pancakeswap-v3 — both speak the Uniswap V3 factory.getPool(fee) ABI).
-    # Aerodrome Slipstream uses tickSpacing instead of fee in its factory,
-    # so the V3 NFT adapter can't resolve its pools — route through
-    # pool_link until a tickSpacing-aware Slipstream resolver lands.
+    # V3 EVM executes natively via UniswapV3NFTAdapter. As of commit
+    # 4554382 the v3_pool_resolver speaks both the Uniswap-style
+    # getPool(uint24) ABI and the Slipstream-style getPool(int24) ABI,
+    # so Aerodrome Slipstream and Velodrome CL now flow through the
+    # native NFPM mint instead of the pool_deposit_v3 redirect (§6a).
     V3_NATIVE_EXEC = frozenset({
         "uniswap-v3", "uniswap",
         "pancakeswap-v3", "pancake-v3",
+        "aerodrome-slipstream", "aerodrome-cl",
+        "velodrome-cl", "velodrome-slipstream",
     })
     if a in {"deposit_lp", "provide_liquidity", "add_liquidity"} and p in V3_PROTOCOLS:
         return p not in V3_NATIVE_EXEC
