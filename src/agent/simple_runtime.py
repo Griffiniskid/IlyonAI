@@ -2936,6 +2936,33 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
                     "extra": {"action": "claim", "reward_token": gd.get("reward").upper()},
                 },
             )
+        # 'Exit PROTOCOL PAIR with N TOKEN [on CHAIN]' — Balancer-style.
+        m_exit = re.match(
+            rf"^\s*exit\s+{_PROTOCOL_NAME_RE}"
+            r"(?:\s+(?P<pool>[A-Za-z][A-Za-z0-9]{0,9}(?:[-/][A-Za-z][A-Za-z0-9]{0,9})*))?"
+            r"\s+with\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z][A-Za-z0-9]{0,9})"
+            r"\s*$",
+            text,
+            re.IGNORECASE,
+        )
+        if m_exit:
+            gd2 = m_exit.groupdict()
+            proto = re.sub(r"\s+", "-", (gd2.get("protocol") or "").strip().lower())
+            return (
+                "build_yield_execution_plan",
+                {
+                    "chain": chain or "ethereum",
+                    "protocol": proto,
+                    "action": "exit_pool",
+                    "asset_in": gd2["token"].upper(),
+                    "amount_in": float(gd2["amount"].replace(",", "")),
+                    "extra": {
+                        "action": "exit_pool",
+                        "pool_key": (gd2.get("pool") or "").lower(),
+                        "exit_token": gd2["token"].upper(),
+                    },
+                },
+            )
         m = re.match(
             r"^\s*(?P<verb>withdraw|redeem|claim|repay|borrow|exit|remove)\s+"
             r"(?:(?P<all>all)(?:\s+(?P<all_token>[A-Za-z][A-Za-z0-9]{0,9}))?|"
