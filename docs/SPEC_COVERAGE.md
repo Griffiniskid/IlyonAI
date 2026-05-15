@@ -227,6 +227,19 @@ The "admit action then forget to branch on it" bug class continues:
 - Balancer admitted `exit_pool` action but build() always emitted joinPool → user expecting exit would deposit
 - Both caught + fixed by adding action dispatch at the top of build(). Regression pin pattern: assert NOT the deposit selector when action=withdraw, AND assert the canonical withdraw selector IS emitted.
 
+### Resume v3 commits 46 → 52 — webhook→rebuild handoff + Aave native repay + token registry broaden
+
+| Section | Delta | Evidence |
+|---|---|---|
+| §6c bridge-confirmed rekey | wire-gap → ✅ closed | `pending_plans.rekey(old, new)` + POST `/api/v1/plans/{plan_id}/bridge-confirmed`; 3 pin tests; live 404 honest |
+| Aave V3 native ETH repay (WTG3) | ⏸ → ✅ LIVE | repayETH 0x02c5fcf8 at WTG3 + msg.value; capture RF34b. Aave V3 native ETH full lifecycle (supply / withdraw / repay) now LIVE. |
+| Aave V3 _ASSETS broaden | gap → ✅ | Optimism USDT/DAI/WETH + Polygon DAI/WETH + Arbitrum DAI/WETH + Avax USDC/USDT + Base USDT/WETH |
+| _TOKEN_ADDRS xchain registry broaden | gap → ✅ | DAI@Arb/Opt/Polygon + USDT@Polygon/Opt + Base USDT/DAI |
+| Lifecycle 'exit PROTO PAIR' detector | ⏸ → ✅ LIVE | Balancer wsteth-weth → exit_pool 0x8bdb3913; capture RF10/RF6 |
+| Lifecycle 'remove' verb + pair-tail | ⏸ → ✅ LIVE | PCS V2 BNB-USDT removeLiquidity 0xbaa2abde; capture RF9 |
+| V2 canonical pair-address registry | ⏸ → ✅ | PCS BSC + Sushi/UniV2 Ethereum; auto-fills extra.pool_address |
+| Sanitizer SanitisedString __str__ | bug → ✅ | Card JSON used to leak dataclass repr; now returns sanitised text only |
+
 ### Resume v3 commits 21 → 46 — frontend + runtime + cross-chain LIVE
 
 | Section | Delta | Evidence |
