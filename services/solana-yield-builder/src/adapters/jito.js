@@ -14,7 +14,7 @@
  * vs SPL Stake Pool state account.
  */
 const { Connection, PublicKey, Transaction, ComputeBudgetProgram } = require("@solana/web3.js");
-const { depositSol } = require("@solana/spl-stake-pool");
+const { depositSol, withdrawSol } = require("@solana/spl-stake-pool");
 const { buildSwap, resolveMint, decimalsFor, SOL_MINT } = require("./jupiter");
 const { simulateBase64Tx } = require("./simulate");
 
@@ -23,6 +23,69 @@ const JITOSOL_MINT = "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn";
 
 module.exports = {
   aliases: ["jito-liquid-staking", "jitosol"],
+  supportedActions: ["deposit", "stake", "supply", "withdraw", "unstake", "redeem"],
+
+  /**
+   * Phase 4 lifecycle — JitoSOL → SOL via SPL Stake Pool withdrawSol.
+   * Note: SPL Stake Pool instant withdraws (withdrawSol) are subject to
+   * the pool's liquid SOL reserve; large amounts may need withdrawStake
+   * (deferred, returns a stake account that activates next epoch).
+   */
+  async buildUnstake({ amount, user }, { connection } = {}) {
+    if (!connection) {
+      throw new Error("Jito unstake requires a Solana connection.");
+    }
+    const userPubkey = new PublicKey(user);
+    const jitoSolLamports = Math.floor(Number(amount) * 1_000_000_000);
+    if (jitoSolLamports <= 0) {
+      throw new Error(`Jito unstake amount must be positive (got ${amount}).`);
+    }
+    const { instructions, signers } = await withdrawSol(
+      connection,
+      JITO_STAKE_POOL,
+      userPubkey,
+      userPubkey,            // destinationSolAccount = user wallet
+      jitoSolLamports,
+    );
+    const tx = new Transaction();
+    tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
+    tx.add(...instructions);
+    tx.feePayer = userPubkey;
+    const { blockhash } = await connection.getLatestBlockhash("confirmed");
+    tx.recentBlockhash = blockhash;
+    if (signers && signers.length) {
+      tx.partialSign(...signers);
+    }
+    const raw = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+    const b64 = raw.toString("base64");
+    const sim = await simulateBase64Tx({ b64, connection });
+    if (!sim.ok) {
+      const e = new Error(`Jito native unstake simulation failed: ${sim.errStr || "unknown"}`);
+      e.simulation = sim;
+      throw e;
+    }
+    return {
+      transactions: [
+        {
+          b64,
+          summary: `Jito unstake ${amount} JitoSOL → SOL`,
+          description: (
+            `Calls SPL Stake Pool withdrawSol on Jito's pool. ` +
+            `${amount} JitoSOL converts to SOL at the pool's on-chain exchange rate. ` +
+            `Subject to pool's liquid SOL reserve depth — falls back to withdrawStake ` +
+            `(deferred / next-epoch) for amounts beyond reserve.`
+          ),
+          receiptToken: "SOL",
+          feeUsd: 0.005,
+          durationS: 18,
+          warnings: [
+            "Instant unstake uses pool's SOL reserve; deep amounts may need deferred withdrawStake.",
+          ],
+          simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
+        },
+      ],
+    };
+  },
 
   async quote({ amount }) {
     return {
