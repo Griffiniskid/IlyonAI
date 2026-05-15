@@ -9,11 +9,11 @@ import { Key, Zap } from "lucide-react";
 /**
  * Phase 7 smart-account opt-in panel.
  *
- * Hits POST /api/v1/auth/eip7702/prepare to fetch the signing digest,
+ * Hits POST /api/v1/eip7702/prepare to fetch the signing digest,
  * then prompts MetaMask via window.ethereum.request to sign, then
- * POSTs to /api/v1/auth/eip7702/authorize.
+ * POSTs to /api/v1/eip7702/authorize.
  *
- * Renders active authorizations via GET /api/v1/auth/eip7702/{wallet}.
+ * Renders active authorizations via GET /api/v1/eip7702/{wallet}.
  */
 interface Eip7702Authorization {
   auth_id?: string;
@@ -37,7 +37,7 @@ export default function Eip7702OptInPanel({ userWallet }: Eip7702OptInPanelProps
 
   const reload = async () => {
     try {
-      const r = await fetch(`/api/v1/auth/eip7702/${userWallet}`);
+      const r = await fetch(`/api/v1/eip7702/${userWallet}`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
       setAuths((data.authorizations ?? []) as Eip7702Authorization[]);
@@ -56,7 +56,7 @@ export default function Eip7702OptInPanel({ userWallet }: Eip7702OptInPanelProps
     setError(null);
     try {
       // 1. fetch digest
-      const prepResp = await fetch("/api/v1/auth/eip7702/prepare", {
+      const prepResp = await fetch("/api/v1/eip7702/prepare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -78,7 +78,7 @@ export default function Eip7702OptInPanel({ userWallet }: Eip7702OptInPanelProps
       });
 
       // 3. send signature back to server
-      const authResp = await fetch("/api/v1/auth/eip7702/authorize", {
+      const authResp = await fetch("/api/v1/eip7702/authorize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

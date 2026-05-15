@@ -12,6 +12,7 @@ from src.api.routes.eip7702_auth import (
     authorize,
     list_authorizations,
     prepare_authorization,
+    setup_eip7702_routes,
 )
 
 
@@ -151,6 +152,20 @@ def test_authorize_then_list_roundtrip():
     data = _resp_json(_run(list_authorizations(list_req)))
     assert len(data["authorizations"]) == 1
     assert data["authorizations"][0]["nonce"] == 7
+
+
+def test_routes_register_under_eip7702_prefix():
+    """Routes mount at /api/v1/eip7702/* (NOT /api/v1/auth/*) so Caddy
+    falls through to the aiohttp app instead of hitting the uvicorn
+    auth front. Regression pin for the 404 caught on staging."""
+    from aiohttp import web
+    app = web.Application()
+    setup_eip7702_routes(app)
+    paths = {r.resource.canonical for r in app.router.routes()}
+    assert "/api/v1/eip7702/prepare" in paths
+    assert "/api/v1/eip7702/authorize" in paths
+    # auth-prefixed paths must NOT be registered.
+    assert "/api/v1/auth/eip7702/prepare" not in paths
 
 
 def test_prepare_handles_bad_json():

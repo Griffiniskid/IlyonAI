@@ -184,6 +184,9 @@ async def list_authorizations(request: web.Request) -> web.Response:
 
 
 def setup_eip7702_routes(app: web.Application) -> None:
-    app.router.add_post("/api/v1/auth/eip7702/prepare", prepare_authorization)
-    app.router.add_post("/api/v1/auth/eip7702/authorize", authorize)
-    app.router.add_get("/api/v1/auth/eip7702/{wallet}", list_authorizations)
+    # Staging routes /api/v1/auth/* through a separate uvicorn FastAPI app
+    # that doesn't know about these handlers. Mount under /api/v1/eip7702/
+    # so Caddy falls through to the aiohttp app cleanly.
+    app.router.add_post("/api/v1/eip7702/prepare", prepare_authorization)
+    app.router.add_post("/api/v1/eip7702/authorize", authorize)
+    app.router.add_get("/api/v1/eip7702/{wallet}", list_authorizations)
