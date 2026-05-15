@@ -88,6 +88,46 @@ V3_FACTORIES: dict[tuple[str, str], dict[str, str]] = {
         "factory": "0xCc0bDDB707055e04e497aB22a59c2aF4391cd12F",
         "nfp_manager": "0x416b433906b1B72FA758e166e239c43d68dC6F29",
     },
+    # Phase 6 chain expansion — canonical Uniswap V3 deploys on the new chains.
+    # Linea, Blast, Mantle and Unichain reuse the universal Uniswap deploy
+    # addresses; Scroll, zkSync, Gnosis, Celo, Sonic, Berachain factories
+    # land per official Uniswap docs.
+    ("linea", "uniswap-v3"): {
+        "factory": "0x31FAfd4889FA1269F7a13A66eE0fB458f27D72A9",
+        "nfp_manager": "0x4615C383F85D0a2BbED973d83ccecf5CB7121463",
+    },
+    ("blast", "uniswap-v3"): {
+        "factory": "0x792edAdE80af5fC680d96a2eD80A44247D2Cf6Fd",
+        "nfp_manager": "0xB218e4f7cF0533d4696fDfC419A0023D33345F28",
+    },
+    ("scroll", "uniswap-v3"): {
+        "factory": "0x70C62C8b8e801124A4Aa81ce07b637A3e83cb919",
+        "nfp_manager": "0xB39002E4033b162fAc607fc3471E205FA2aE5967",
+    },
+    ("mantle", "uniswap-v3"): {
+        "factory": "0x0d922Fb1Bc191F64970ac40376643808b4B74Df9",
+        "nfp_manager": "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364",
+    },
+    ("zksync", "uniswap-v3"): {
+        "factory": "0x8FdA5a7a8dCA67BBcDd10F02Fa0649A937215422",
+        "nfp_manager": "0x0616e5762c1E7Dc3723c50663dF10a162D690a86",
+    },
+    ("gnosis", "uniswap-v3"): {
+        "factory": "0xe32F7dD7e3f098D518ff19A22d5f028e076489B1",
+        "nfp_manager": "0xAE8fbE656a77519a7490054274910129c9244FA3",
+    },
+    ("celo", "uniswap-v3"): {
+        "factory": "0xAfE208a311B21f13EF87E33A90049fC17A7acDEc",
+        "nfp_manager": "0x3d79EdAaBC0EaB6F08ED885C05Fc0B014290D95A",
+    },
+    ("unichain", "uniswap-v3"): {
+        "factory": "0x1F98400000000000000000000000000000000003",
+        "nfp_manager": "0x943e6e07a7E8E791dAFC44083e54041D743C46E9",
+    },
+    # Berachain V3 not yet deployed by Uniswap at time of writing — BEX uses
+    # its own concentrated-liquidity AMM. Placeholder factory left out so
+    # the resolver falls back cleanly when builds target ('berachain','uniswap-v3').
+    # Sonic V3 — SwapX is the dominant CL DEX, not Uniswap. Placeholder out.
 }
 
 # Default tick spacing by fee tier (Uniswap V3 + PancakeSwap V3).
