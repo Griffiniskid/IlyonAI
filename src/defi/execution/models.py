@@ -46,6 +46,20 @@ class UnsignedStepTransaction:
         return {k: v for k, v in asdict(self).items() if v is not None}
 
 
+# Spec §6c — known step-level blocker codes for composed plans.
+# Surface as enum-shaped constants for IDE help; matched as strings.
+KNOWN_BLOCKER_CODES: frozenset[str] = frozenset({
+    "PENDING_DST_FILL",            # bridge leg in-flight, deposit awaits actual delta
+    "ADAPTER_QUOTE_REQUIRED",      # quote expired, must re-fetch before sign
+    "PRICE_DRIFT_RESIMULATE",      # >N bps drift since simulation, re-sim needed
+    "APPROVAL_MISSING",            # upstream approve not yet broadcast/confirmed
+    "ATA_CREATION_MISSING",        # Solana ATA must be created first
+    "PENDING_EPOCH_ENTRY",         # Pendle / Curve gauge / Marinade native epoch boundary
+    "PENDING_LIDO_QUEUE",          # Lido stake queue wait
+    "GAS_TOPUP_REQUIRED",          # dst-chain native gas insufficient
+})
+
+
 @dataclass
 class ExecutionStepV3:
     step_id: str
@@ -69,6 +83,13 @@ class ExecutionStepV3:
     transaction: UnsignedStepTransaction | None = None
     receipt: dict[str, Any] | None = None
     risk_warnings: list[str] = field(default_factory=list)
+    # Spec §6c composed-plan primitives (snapshot → rebuild → promote).
+    # Populated on bridge / async legs and consumed by the runtime rebuild
+    # loop when the upstream step's actual delta lands. None for same-chain
+    # synchronous steps.
+    snapshot: dict[str, Any] | None = None
+    fill_resolved: dict[str, Any] | None = None
+    recovery_hook: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -94,6 +115,14 @@ class ExecutionStepV3:
             "receipt": self.receipt,
             "risk_warnings": list(self.risk_warnings),
         }
+        # Composed-plan fields are optional — only surface when populated to
+        # keep the wire-format compact for same-chain plans.
+        if self.snapshot is not None:
+            data["snapshot"] = self.snapshot
+        if self.fill_resolved is not None:
+            data["fill_resolved"] = self.fill_resolved
+        if self.recovery_hook is not None:
+            data["recovery_hook"] = self.recovery_hook
         return data
 
 
