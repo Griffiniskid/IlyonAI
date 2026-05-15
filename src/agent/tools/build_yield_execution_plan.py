@@ -97,6 +97,86 @@ async def build_yield_execution_plan(
     research_thesis: str | None = None,
     extra: dict[str, Any] | None = None,
 ):
+    # §6c composed-plan branch — when intent carries extra.source_chain that
+    # differs from `chain`, snapshot a deBridge DLN bridge quote first, block
+    # the deposit step on PENDING_DST_FILL, and let the runtime rebuild it
+    # with the actual fill amount after the webhook resolves.
+    extra_dict_pre = extra or {}
+    src_chain_hint = (extra_dict_pre.get("source_chain") or "").lower()
+    if src_chain_hint and src_chain_hint != (chain or "").lower():
+        from src.defi.execution.composed_plan import (
+            Snapshot, block_step_for_async_fill, snapshot_bridge_quote,
+        )
+        from src.defi.execution.models import (
+            ExecutionPlanV3, ExecutionStepV3, UnsignedStepTransaction, make_step,
+        )
+        from src.routing.debridge_client import DeBridgeBridge
+        _CHAIN_ID_MAP = {
+            "ethereum": 1, "polygon": 137, "arbitrum": 42161, "optimism": 10,
+            "base": 8453, "avalanche": 43114, "bsc": 56, "solana": 0,
+        }
+        try:
+            bridge = DeBridgeBridge()
+            snap = await snapshot_bridge_quote(
+                bridge,
+                src_chain_id=_CHAIN_ID_MAP.get(src_chain_hint, 0),
+                dst_chain_id=_CHAIN_ID_MAP.get((chain or "").lower(), 0),
+                token_in=str(extra_dict_pre.get("source_token") or asset_in),
+                token_out=asset_in,
+                amount=int(float(amount_in) * 10 ** 18),  # naive; runtime adjusts per dec
+                recipient=user_address or "0x0",
+            )
+        except Exception as exc:  # noqa: BLE001
+            return err_envelope(
+                "composed_plan_bridge_quote_failed",
+                f"deBridge DLN quote failed for {src_chain_hint}→{chain}: {exc}",
+            )
+        plan = ExecutionPlanV3.new(
+            title=f"Cross-chain {action} via deBridge DLN",
+            summary=(
+                f"Bridge {amount_in} {asset_in} from {src_chain_hint} to {chain} "
+                f"via deBridge DLN, then {action} into {protocol}."
+            ),
+        )
+        bridge_step = make_step(
+            index=1, action="bridge", title="deBridge DLN bridge leg",
+            description=(
+                f"Bridge {amount_in} {asset_in} from {src_chain_hint} (chain_id "
+                f"{snap.src_chain_id}) to {chain} (chain_id {snap.dst_chain_id}). "
+                f"Expected dst amount {snap.expected_dst_amount} (slippage band "
+                f"{snap.slippage_bps_band_min}-{snap.slippage_bps_band_max} bps). "
+                f"Quote id {snap.quote_id}."
+            ),
+            chain=src_chain_hint, wallet="MetaMask", protocol="debridge-dln",
+            asset_in=asset_in, amount_in=str(amount_in),
+            asset_out=asset_in,
+        )
+        deposit_step = make_step(
+            index=2, action=action,
+            title=f"{protocol} {action} (blocked on bridge fill)",
+            description=(
+                f"Awaits actual dst-chain delivery from the deBridge DLN order. "
+                f"Runtime auto-rebuilds with the realised amount via "
+                f"composed_plan.rebuild_step_with_actual_delta."
+            ),
+            chain=chain, wallet="MetaMask", protocol=protocol,
+            asset_in=asset_in, amount_in=str(amount_in),
+        )
+        block_step_for_async_fill(deposit_step, blocker_code="PENDING_DST_FILL")
+        plan.steps = [bridge_step, deposit_step]
+        plan._recompute_step_statuses()
+        plan._refresh_plan_status()
+        # Stash the snapshot in the plan metadata so the rebuild loop can
+        # consume it without re-fetching.
+        if not hasattr(plan, "metadata") or plan.metadata is None:
+            plan.metadata = {}
+        plan.metadata["composed_plan_snapshot"] = snap.to_dict()
+        return ok_envelope(
+            data={"plan": plan.to_dict()},
+            card_type="execution_plan_v3",
+            card_payload=plan.to_dict(),
+        )
+
     if not user_address:
         wallet = getattr(ctx, "wallet", None)
         if wallet:
