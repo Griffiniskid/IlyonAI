@@ -87,3 +87,22 @@ def test_actions_include_borrow_claim_withdraw():
     a = CompoundV3SupplyAdapter()
     for action in ("supply", "withdraw", "borrow", "claim"):
         assert a.supports(chain="ethereum", protocol="compound-v3", action=action).supported
+
+
+def test_supply_emits_approve_plus_supply_2_steps():
+    """Compound v3 supply baseline — 2 steps (approve, supply). Regression pin
+    so the borrow/claim branches added later don't break the canonical path.
+    """
+    a = CompoundV3SupplyAdapter()
+    req = YieldBuildRequest(
+        chain="ethereum", protocol="compound-v3", asset_in="USDC",
+        amount_in=Decimal("100"),
+        user_address="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    steps = _run(a.build(req))
+    assert len(steps) == 2
+    assert steps[0].action == "approve"
+    assert steps[1].action == "supply"
+    # ERC20 approve → Comet.supply selector
+    assert steps[0].transaction.data.startswith("0x095ea7b3")
+    assert steps[1].transaction.data.startswith("0xf2b9fdb8")
