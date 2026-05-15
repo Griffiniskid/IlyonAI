@@ -660,6 +660,43 @@ async def build_yield_execution_plan(
         except Exception:
             pass
 
+    # §6d exposure_disclosure: when the user explicitly named a source token
+    # via "with my <SRC>" that is not one of the pool's legs, surface the
+    # silent reassignment in the plan card so the user understands their
+    # capital is being zapped through a swap and becomes exposed to a leg
+    # they didn't explicitly hold. Spec: "You said USDT. I'll split into
+    # 50.3% USDC + 49.7% SOL (the ratio for your selected range). After
+    # this trade, your position is exposed to SOL price movement, not just
+    # USDC peg."
+    try:
+        _src = (extra or {}).get("source_token")
+        if _src:
+            _src_u = str(_src).upper()
+            # Pool legs come from extra.pool_symbol when available; fall
+            # back to asset_in for single-asset deposits.
+            _pair_sym = str((extra or {}).get("pool_symbol") or asset_in or "")
+            _legs = [p.strip().upper() for p in _pair_sym.replace("/", "-").split("-") if p.strip()]
+            if _src_u and _src_u not in _legs:
+                _other_legs = [l for l in _legs if l]
+                _legs_human = " + ".join(_other_legs) if _other_legs else "the pool legs"
+                plan_dict["exposure_disclosure"] = {
+                    "source_token": _src_u,
+                    "pool_legs": _other_legs,
+                    "headline": (
+                        f"You said {_src_u}. I'll split it into {_legs_human} "
+                        f"via aggregator zap-in for this pool."
+                    ),
+                    "detail": (
+                        f"After this trade your position is exposed to "
+                        f"{_legs_human} price movement, not just the "
+                        f"{_src_u} peg. Slippage budget includes the swap "
+                        f"leg; review the Preview before signing."
+                    ),
+                    "severity": "info",
+                }
+    except Exception:
+        pass
+
     return ok_envelope(
         data={"plan": plan_dict, "adapter_id": capability.adapter_id},
         card_type="execution_plan_v3",

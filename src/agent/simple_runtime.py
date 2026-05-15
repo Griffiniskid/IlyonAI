@@ -2191,6 +2191,24 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     chain_raw = (_gd.get("chain") or _gd.get("chain_after") or "").lower()
     if chain_raw == "bnb":
         chain_raw = "bsc"
+    # §6d "with my <TOKEN>" silent reassignment: when the user names a source
+    # token that isn't one of the pool's legs, snapshot it so the downstream
+    # builder can (a) route through Enso multi-input zap and (b) surface an
+    # exposure_disclosure ("you said USDT, I'll split into 50.3% USDC +
+    # 49.7% SOL — position is exposed to SOL price movement, not just USDC
+    # peg"). The detector is intentionally permissive: it accepts "with my",
+    # "using my", "from my", and bare "my USDT" trailing the LP intent.
+    with_my_match = re.search(
+        r"\b(?:with|using|from|out\s+of)\s+my\s+(?P<src>[A-Za-z][A-Za-z0-9]{1,9})\b",
+        text,
+        re.IGNORECASE,
+    )
+    source_token: str | None = None
+    if with_my_match:
+        _src_candidate = with_my_match.group("src").upper()
+        if _src_candidate not in _NOISE_ASSET_TOKENS:
+            source_token = _src_candidate
+
     if proto in _V3_EVM_PROTOS and chain_raw in _EVM_CHAINS_SET:
         fee_match = re.search(r"(\d+(?:\.\d+)?)\s*%", text)
         if fee_match:
@@ -2199,6 +2217,11 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
         else:
             fee_bps = 500  # default to 0.05% tier
         extra_v3 = {"pool_symbol": pair, "fee_bps": fee_bps}
+        if source_token:
+            extra_v3["source_token"] = source_token
+            # Source-token override implies user-funded zap-in: route through
+            # the source asset, not the pool's primary leg.
+            asset_in = source_token
         return (
             "build_yield_execution_plan",
             {
@@ -2225,6 +2248,9 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     chain_for_solana = chain_raw or "solana"
     if proto in _SOLANA_CLMM_LIKE_PROTOS and chain_for_solana in _SOLANA_CHAINS_SET:
         extra_sol = {"pool_symbol": pair}
+        if source_token:
+            extra_sol["source_token"] = source_token
+            asset_in = source_token
         return (
             "build_yield_execution_plan",
             {
@@ -2240,6 +2266,12 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     params: dict = {"pool": pool_ref, "amount": amount, "asset_in": asset_in}
     if extra:
         params["extra"] = extra
+    if source_token:
+        params.setdefault("extra", {})["source_token"] = source_token
+        # Source-token override: user holds source_token, not asset_in. Route
+        # the zap-in from source_token; downstream builder splits the source
+        # into pool's required legs and surfaces exposure_disclosure (§6d).
+        params["asset_in"] = source_token
     return (
         "execute_pool_position",
         params,
@@ -2267,6 +2299,89 @@ _NOISE_ASSET_TOKENS = {
     "REINVEST", "REINVESTMENT", "REINVESTMENTS", "REBALANCE", "REBALANCING",
     "WALLET", "WALLETS",
 }
+
+
+# §6d no-protocol form: "Add liquidity to PAIR (pool)? with my SRC".
+# Spec-canonical phrasing: "Add liquidity to USDC/SOL pool with my USDT".
+# The existing _ADD_LIQUIDITY_RE requires an explicit protocol; this
+# detector fills the gap and routes through the pool resolver's bare-pair
+# fallback with source_token attached so downstream emits exposure
+# disclosure.
+_LP_WITH_MY_RE = re.compile(
+    r"^\s*(?:add|provide|deposit|put|invest)\s+(?:liquidity\s+)?"
+    r"(?:to|in|into|on|via|using)?\s*"
+    r"(?:the\s+|a\s+|an\s+)?"
+    # Optional explicit protocol head before pair — only matched when the
+    # _ADD_LIQUIDITY_RE blast didn't already short-circuit. Stays loose.
+    r"(?:[A-Za-z][A-Za-z0-9-]{1,20}\s+)?"
+    rf"{_PAIR_RE}"
+    r"(?:\s+pool|\s+lp|\s+pair)?"
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?"
+    r"(?:\s+with\s+\$?[\d,]+(?:\.\d+)?(?:\s+[A-Za-z]{2,10})?)?"
+    r"\s+(?:with|using|from|out\s+of)\s+my\s+"
+    r"(?P<src>[A-Za-z][A-Za-z0-9]{1,9})"
+    r"(?:\s+on\s+(?P<chain_after>[A-Za-z]+))?"
+    r"\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_lp_with_my(message: str) -> tuple[str, dict] | None:
+    """Match the §6d canonical 'Add liquidity to PAIR pool with my SOURCE'
+    form when no protocol is named, then forward to execute_pool_position
+    with source_token attached so the resolver picks the best matching
+    pool and the downstream builder emits the exposure disclosure.
+    """
+    text = message.strip()
+    m = _LP_WITH_MY_RE.search(text)
+    if not m:
+        return None
+    pair = (m.group("pair") or "").upper().replace("/", "-")
+    src = (m.group("src") or "").upper()
+    if not pair or not src or src in _NOISE_ASSET_TOKENS:
+        return None
+    # Reject if SRC is one of the pair legs — that's a passthrough zap and
+    # has no §6d ambiguity to resolve.
+    legs = set(pair.split("-"))
+    if src in legs:
+        return None
+    _gd = m.groupdict() or {}
+    chain_raw = (_gd.get("chain") or _gd.get("chain_after") or "").lower()
+    if chain_raw == "bnb":
+        chain_raw = "bsc"
+    # Amount: best-effort scan for "with $X" / "with N TOKEN".
+    amt_match = re.search(
+        r"\bwith\s+\$?\s*([\d,]+(?:\.\d+)?)\s*([kKmM])?\s*([A-Za-z]{2,10})?",
+        text,
+        re.IGNORECASE,
+    )
+    amount_val: float = 100.0
+    amount_is_usd = True
+    if amt_match:
+        try:
+            amount_val = float(amt_match.group(1).replace(",", ""))
+            sfx = (amt_match.group(2) or "").lower()
+            if sfx == "k":
+                amount_val *= 1_000
+            elif sfx == "m":
+                amount_val *= 1_000_000
+            unit = (amt_match.group(3) or "").upper()
+            if unit and unit not in {"USDC", "USDT", "USD", "DAI", "FRAX"}:
+                amount_is_usd = False
+        except (TypeError, ValueError):
+            pass
+    # Pool ref is bare pair — pool resolver handles via DefiLlama lookup.
+    pool_ref = pair
+    params: dict = {
+        "pool": pool_ref,
+        "amount": amount_val,
+        "amount_is_usd": amount_is_usd,
+        "asset_in": src,
+        "extra": {"source_token": src, "pool_symbol": pair},
+    }
+    if chain_raw:
+        params["chain"] = chain_raw
+    return ("execute_pool_position", params)
 
 
 def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] | None:
@@ -2626,7 +2741,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
         return multi_step
-    for detector in (_detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_add_liquidity, _detect_enso_vault_deposit, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_add_liquidity, _detect_lp_with_my, _detect_enso_vault_deposit, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
