@@ -249,7 +249,13 @@ async def build_yield_execution_plan(
         return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
 
     amount = _coerce_amount(amount_in)
-    if amount <= 0:
+    # Phase 4 lifecycle: claim / withdraw with amount=0 is the canonical
+    # "max" sentinel (adapter converts to uint256.max for withdraw, ignores
+    # amount entirely for claim). Skip the positivity gate for those actions.
+    _lifecycle_zero_ok = (action or "").lower() in {"claim", "withdraw"} or (
+        (extra or {}).get("action", "").lower() in {"claim", "withdraw"}
+    )
+    if amount <= 0 and not _lifecycle_zero_ok:
         return err_envelope("invalid_amount", "amount_in must be a positive decimal value.")
 
     # Pool-link gate: when the (action, protocol, chain) tuple is on the
