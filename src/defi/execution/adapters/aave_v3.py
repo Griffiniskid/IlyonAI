@@ -35,6 +35,27 @@ _AAVE_POOL_ADDRESSES: dict[str, str] = {
     "avalanche": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
 }
 
+# WrappedTokenGatewayV3 per chain (Aave V3 official addresses).
+# For native-gas-token deposits, the user calls WTG3.depositETH instead of
+# wrapping → approving → Pool.supply, which is what every Aave V3 UI does.
+_AAVE_WTG3_ADDRESSES: dict[str, str] = {
+    "ethereum": "0xD322A49006FC828F9B5B37Ab215F99B4E5caB19C",
+    "polygon":  "0xF5f61a1ab3488fCB6d86451846bcFa9cdc108eB0",
+    "arbitrum": "0xB5Ee21786D28c5Ba61661550879475976B707099",
+    "optimism": "0x60eE8b61a13c67d0191c851BEC8F0bc850160710",
+    "base":     "0x729b3EA8C005AbC58c9150fb57Ec161296F06766",
+}
+
+# Native gas token symbol per chain — when asset_in matches, route to WTG3.
+_NATIVE_TOKEN_BY_CHAIN: dict[str, str] = {
+    "ethereum": "ETH",
+    "polygon":  "MATIC",
+    "arbitrum": "ETH",
+    "optimism": "ETH",
+    "base":     "ETH",
+    "avalanche": "AVAX",
+}
+
 _CHAIN_IDS: dict[str, int] = {
     "ethereum": 1,
     "polygon": 137,
@@ -116,15 +137,72 @@ class AaveV3SupplyAdapter:
         if chain_id is None or pool_address is None:
             raise ValueError(f"Aave V3 adapter cannot build on chain {request.chain}.")
 
+        extra = request.extra or {}
+        action_hint = (extra.get("action") or "").lower()
+
+        # Native supply path runs before the ERC20 _ASSETS lookup, since
+        # native gas tokens have no ERC20 address.
+        native_sym = _NATIVE_TOKEN_BY_CHAIN.get(chain_norm)
+        if (
+            native_sym
+            and request.asset_in.upper() == native_sym
+            and action_hint in {"", "supply", "deposit", "lend"}
+        ):
+            wtg3 = _AAVE_WTG3_ADDRESSES.get(chain_norm)
+            if wtg3 is None:
+                raise ValueError(
+                    f"Aave V3 WrappedTokenGatewayV3 not registered on {chain_norm}."
+                )
+            native_units = _to_unit(request.amount_in, 18)
+            if native_units <= 0:
+                raise ValueError("amount_in must be > 0")
+            # depositETH(address pool, address onBehalfOf, uint16 referralCode)
+            wtg3_calldata = (
+                "0x474cf53d"
+                + _encode_address(pool_address)
+                + _encode_address(request.user_address)
+                + _encode_uint256(0)
+            )
+            value_hex = "0x" + format(native_units, "x")
+            native_step = make_step(
+                index=1,
+                action="supply",
+                title=f"Supply native {native_sym} to Aave V3",
+                description=(
+                    f"WrappedTokenGatewayV3.depositETH({pool_address}, "
+                    f"{request.user_address}, 0) at {wtg3}. Gateway wraps "
+                    f"{request.amount_in} {native_sym} and supplies to Aave V3 "
+                    f"Pool atomically. You receive aW{native_sym}."
+                ),
+                chain=request.chain,
+                wallet="MetaMask",
+                protocol="aave-v3",
+                asset_in=native_sym,
+                amount_in=str(request.amount_in),
+                asset_out=f"aW{native_sym}",
+                slippage_bps=0,
+                gas_estimate_usd=3.2,
+                duration_estimate_s=15,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm",
+                    chain_id=chain_id,
+                    to=wtg3,
+                    data=wtg3_calldata,
+                    value=value_hex,
+                    spender=wtg3,
+                ),
+                risk_warnings=[
+                    f"Native deposit wraps to W{native_sym} inside the gateway — no separate approve needed.",
+                    "Withdraw requires WTG3.withdrawETH and a one-time aToken approval to WTG3.",
+                ],
+            )
+            return [native_step]
+
         asset_key = (chain_norm, request.asset_in.upper())
         asset_meta = _ASSETS.get(asset_key)
         if asset_meta is None:
             raise ValueError(f"Aave V3 adapter has no token metadata for {request.asset_in} on {request.chain}.")
         token_address, decimals = asset_meta
-
-        # Phase 4 lifecycle — withdraw(asset, amount, to) selector 0x69328dec.
-        extra = request.extra or {}
-        action_hint = (extra.get("action") or "").lower()
         if action_hint == "borrow":
             # Pool.borrow(asset, amount, interestRateMode, referralCode, onBehalfOf)
             # selector 0xa415bcad. No approve step — borrow mints debt, doesn't pull funds.
