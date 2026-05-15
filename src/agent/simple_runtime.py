@@ -4517,12 +4517,23 @@ def _references_prior_pools_for_allocation(
     contextual hint ("allocate it"), sign/execute verbs, re-amount phrasings
     ("now do $X"), or a bare vague confirmation ("do that") within the
     prior-card context.
+
+    Refuses when message is an explicit single-protocol deposit (e.g.
+    "Stake 0.5 ETH on Renzo") — those should route through detect_intent,
+    not get re-distributed across prior search pools. v4-A02 caught this
+    silently allocating across Swell/Lido/Bifrost/Stader when user named
+    a new protocol.
     """
     if not message or not history_cards:
         return False
     has_prior = any(c.get("card_type") == "defi_opportunities" for c in history_cards)
     if not has_prior:
         return False
+    # Explicit single-protocol deposit short-circuit
+    if _ENSO_VAULT_DEPOSIT_RE.search(message):
+        rest_m = _ENSO_VAULT_DEPOSIT_RE.search(message)
+        if rest_m and _ENSO_PROTOS_RE.search(rest_m.group("rest") or ""):
+            return False
     if _references_prior_pools(message):
         return True
     if _ALLOCATE_CONTINUATION_RE.search(message):
