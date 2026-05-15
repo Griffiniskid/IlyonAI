@@ -2069,6 +2069,24 @@ _OPEN_POSITION_RE = re.compile(
 )
 
 
+# §6d no-amount fallback: "Add liquidity to PROTO PAIR (on CHAIN)? with my SRC".
+# The standard _ADD_LIQUIDITY_RE requires an explicit amount; this variant
+# captures intent with source-token override only and defaults amount=100 USD.
+_ADD_LIQ_NOAMT_WITHMY_RE = re.compile(
+    r"^\s*(?:add|provide|deposit)\s+(?:liquidity\s+)?"
+    r"(?:to|in|into|on)\s+"
+    rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}"
+    r"(?:\s+(?:DLMM|CLMM|CPMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion|V\d|v\d|pool))?"
+    r"(?:\s+\d+(?:\.\d+)?\s*%)?"
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?"
+    r"\s+(?:with|using|from|out\s+of)\s+my\s+"
+    r"(?P<src>[A-Za-z][A-Za-z0-9]{1,9})"
+    r"(?:\s+on\s+(?P<chain_after>[A-Za-z]+))?"
+    r"\s*$",
+    re.IGNORECASE,
+)
+
+
 def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     """Match 'Add liquidity to Uniswap V3 USDC/WETH on Ethereum with $100'
     and the inverted 'Deposit $100 into PancakeSwap V3 USDT-BNB on BSC' form,
@@ -2082,6 +2100,21 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     """
     text = message.strip()
     m = _ADD_LIQUIDITY_RE.search(text) or _ADD_LIQUIDITY_INV_RE.search(text) or _OPEN_POSITION_RE.search(text)
+    # §6d no-amount fallback: "with my <SRC>" form without an explicit amount.
+    # Synthesises a default amount=100 USD so the plan can build; the user
+    # can refine before signing. Surface a captured "src" via a synthetic
+    # `usd` group attribute so the downstream parser path picks it up.
+    _no_amt_synthetic = False
+    _no_amt_src: str | None = None
+    if not m:
+        m_noamt = _ADD_LIQ_NOAMT_WITHMY_RE.search(text)
+        if m_noamt:
+            m = m_noamt
+            _no_amt_synthetic = True
+            try:
+                _no_amt_src = (m_noamt.group("src") or "").upper() or None
+            except (IndexError, AttributeError):
+                _no_amt_src = None
     if not m:
         return None
     proto_raw = (m.group("protocol") or "").strip().lower()
@@ -2122,9 +2155,10 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
             proto = rewritten
     pool_ref = f"{proto} {pair}"
 
-    usd_str = m.group("usd")
-    native_str = m.group("native")
-    native_tok = (m.group("token") or "").upper()
+    _md = m.groupdict() or {}
+    usd_str = _md.get("usd")
+    native_str = _md.get("native")
+    native_tok = (_md.get("token") or "").upper()
     if usd_str:
         try:
             amount = float(usd_str.replace(",", ""))
@@ -2139,6 +2173,12 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
         price = _TOKEN_USD_HINT.get(native_tok, 1.0)
         amount = qty * price
         asset_in = native_tok
+    elif _no_amt_synthetic and _no_amt_src:
+        # §6d no-amount form: user named source token but no amount. Default
+        # to $100 USD-denominated; user can adjust in the Preview card before
+        # signing.
+        amount = 100.0
+        asset_in = _no_amt_src
     else:
         return None
     if amount <= 0:
