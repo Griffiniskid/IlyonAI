@@ -252,14 +252,29 @@ async def resolve_v3_pool(
     # Slipstream / Velodrome CL key the factory by tickSpacing — call the
     # int24 variant of getPool. For Uniswap V3 / PancakeSwap V3 keep the
     # uint24-fee variant.
+    pool_hex: str | None = None
     if proto_norm in _TICKSPACING_KEYED_PROTOCOLS:
-        spacing = SLIPSTREAM_FEE_TO_TICK_SPACING.get(fee_bps, 50)
-        call_data = (
-            _GET_POOL_SLIPSTREAM_SEL
-            + _encode_address(token0_addr)
-            + _encode_address(token1_addr)
-            + _encode_uint(spacing)
-        )
+        # The hinted fee_bps may not correspond to the user's actual pool
+        # tickSpacing (Aerodrome labels Slipstream pools as 5bp/10bp/30bp
+        # but stores them at tickSpacing=50/100/200/2000). Iterate over
+        # the known tickSpacings, starting from the requested fee's
+        # mapped spacing, and return the first non-zero pool. This is a
+        # blind probe; downstream Pool Index lookups pick TVL/volume.
+        primary = SLIPSTREAM_FEE_TO_TICK_SPACING.get(fee_bps, 50)
+        candidate_spacings = [primary] + [
+            s for s in (1, 50, 100, 200, 2000) if s != primary
+        ]
+        for spacing in candidate_spacings:
+            call_data = (
+                _GET_POOL_SLIPSTREAM_SEL
+                + _encode_address(token0_addr)
+                + _encode_address(token1_addr)
+                + _encode_uint(spacing)
+            )
+            attempt = await _eth_call_with_fallback(chain_norm, cfg["factory"], call_data)
+            if attempt and attempt != "0x" and int(attempt, 16) != 0:
+                pool_hex = attempt
+                break
     else:
         call_data = (
             _GET_POOL_SEL
@@ -267,7 +282,7 @@ async def resolve_v3_pool(
             + _encode_address(token1_addr)
             + _encode_uint(fee_bps)
         )
-    pool_hex = await _eth_call_with_fallback(chain_norm, cfg["factory"], call_data)
+        pool_hex = await _eth_call_with_fallback(chain_norm, cfg["factory"], call_data)
     if not pool_hex or pool_hex == "0x" or int(pool_hex, 16) == 0:
         async with _cache_lock:
             _cache[cache_key] = (now, None)
