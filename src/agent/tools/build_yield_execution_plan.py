@@ -578,8 +578,9 @@ async def build_yield_execution_plan(
                                 "liquidity": str(pool_state.liquidity),
                             },
                             "market": {
-                                "base_apr_pct": 0.0,
-                                "reward_apr_pct": 0.0,
+                                "base_apr_pct": float((extra or {}).get("apy_base") or (extra or {}).get("apy_total") or 0.0),
+                                "reward_apr_pct": float((extra or {}).get("apy_reward") or 0.0),
+                                "tvl_usd": float((extra or {}).get("tvl_usd") or 0.0),
                                 "cdf_30d": _synth_cdf_30d(sides[0], sides[1]),
                                 "kind": "v3" if "v3" in protocol.lower() else (
                                     "v4" if "v4" in protocol.lower() else (

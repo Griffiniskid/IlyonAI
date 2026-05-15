@@ -616,6 +616,17 @@ async def execute_pool_position(
     }
     if meta.get("underlyingTokens"):
         extra_out["underlying_tokens"] = meta.get("underlyingTokens")
+    # DefiLlama APY/APY components for range_block.market — drops the 0%
+    # placeholder we used to render for V3 EVM pools whose ticks resolved
+    # but whose yield wasn't surfaced from the catalog.
+    if meta.get("apy") is not None:
+        extra_out["apy_total"] = float(meta.get("apy") or 0.0)
+    if meta.get("apyBase") is not None:
+        extra_out["apy_base"] = float(meta.get("apyBase") or 0.0)
+    if meta.get("apyReward") is not None:
+        extra_out["apy_reward"] = float(meta.get("apyReward") or 0.0)
+    if meta.get("tvlUsd") is not None:
+        extra_out["tvl_usd"] = float(meta.get("tvlUsd") or 0.0)
     # Caller-supplied extra (e.g. dual-token V2 amounts from the parser) wins
     # over the meta-derived defaults so adapters can rely on it.
     if extra:
