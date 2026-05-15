@@ -85,3 +85,92 @@ def assert_fresh_before_broadcast(
             f"Simulation stale: elapsed={r.elapsed_s:.1f}s > {threshold_s}s. "
             "Refuse to broadcast — re-simulate first."
         )
+
+
+# ── Spec §11 D.7 — explicit price-drift re-simulation gate ──
+#
+# D.2 is *time-based* (30s). D.7 is *value-based*: even if a simulation
+# is fresh in wall-clock time, the underlying price quote may have moved
+# enough between simulate and broadcast to invalidate the slippage cap.
+# Spec threshold = 50 bps absolute drift on the headline quote.
+
+@dataclass
+class DriftResult:
+    drift_bps: float
+    threshold_bps: int
+    breached: bool
+    must_resimulate: bool
+    rationale: str
+
+    def to_dict(self) -> dict:
+        return {
+            "drift_bps": round(self.drift_bps, 2),
+            "threshold_bps": self.threshold_bps,
+            "breached": self.breached,
+            "must_resimulate": self.must_resimulate,
+            "rationale": self.rationale,
+        }
+
+
+def check_price_drift(
+    simulated_quote: float,
+    current_quote: float,
+    *,
+    threshold_bps: int = 50,
+) -> DriftResult:
+    """Compare a quote captured at simulate-time with the freshly polled
+    quote. Drift in basis points = |Δ / simulated| × 10_000.
+
+    Spec §11 D.7: when drift > 50 bps the plan must be re-simulated before
+    the broadcast goes out. This is independent of D.2 freshness — a
+    quote can shift 200 bps inside the 30s window during high-volatility
+    moments and the user's slippage cap would be silently invalidated.
+    """
+    if simulated_quote <= 0:
+        return DriftResult(
+            drift_bps=0.0,
+            threshold_bps=threshold_bps,
+            breached=True,
+            must_resimulate=True,
+            rationale="No simulated quote captured — cannot compare; force re-sim.",
+        )
+    if current_quote <= 0:
+        return DriftResult(
+            drift_bps=0.0,
+            threshold_bps=threshold_bps,
+            breached=True,
+            must_resimulate=True,
+            rationale="No current quote available — cannot compare; force re-sim.",
+        )
+    delta = abs(current_quote - simulated_quote)
+    drift_bps = (delta / float(simulated_quote)) * 10_000.0
+    breached = drift_bps > threshold_bps
+    return DriftResult(
+        drift_bps=drift_bps,
+        threshold_bps=threshold_bps,
+        breached=breached,
+        must_resimulate=breached,
+        rationale=(
+            f"Price drift {drift_bps:.1f} bps "
+            f"({'>' if breached else '≤'} {threshold_bps} bps). "
+            f"{'Re-simulate before broadcast (spec §11 D.7).' if breached else 'Safe to broadcast.'}"
+        ),
+    )
+
+
+def assert_drift_within_threshold(
+    simulated_quote: float,
+    current_quote: float,
+    *,
+    threshold_bps: int = 50,
+) -> None:
+    """Raise ValueError when the price drift exceeds the spec threshold.
+    Signer-orchestrator should call this just before broadcast alongside
+    the time-based freshness check.
+    """
+    r = check_price_drift(simulated_quote, current_quote, threshold_bps=threshold_bps)
+    if r.must_resimulate:
+        raise ValueError(
+            f"Price drift {r.drift_bps:.1f} bps > {threshold_bps} bps. "
+            "Refuse to broadcast — re-simulate first."
+        )
