@@ -41,6 +41,10 @@ _MINT_SEL = "0x88316456"  # NFP.mint((MintParams))
 _MULTICALL_SEL = "0xac9650d8"  # NFP.multicall(bytes[])
 _REFUND_ETH_SEL = "0x12210e8a"  # NFP.refundETH()
 _UNWRAP_WETH9_SEL = "0x49404b7c"  # NFP.unwrapWETH9(amountMin, recipient)
+# Phase 4 lifecycle selectors (NonfungiblePositionManager).
+_DECREASE_LIQ_SEL = "0x0c49ccbe"  # decreaseLiquidity((uint256,uint128,uint256,uint256,uint256))
+_COLLECT_SEL = "0xfc6f7865"       # collect((uint256,address,uint128,uint128))
+_BURN_SEL = "0x42966c68"          # burn(uint256)
 
 _CHAIN_IDS: dict[str, int] = {
     "ethereum": 1,
@@ -131,7 +135,10 @@ class UniswapV3NFTAdapter:
     adapter_id: str = "uniswap-v3-nft"
     chains: frozenset[str] = _SUPPORTED_CHAINS
     protocols: frozenset[str] = _SUPPORTED_PROTOCOLS
-    actions: frozenset[str] = frozenset({"deposit_lp", "provide_liquidity", "add_liquidity"})
+    actions: frozenset[str] = frozenset({
+        "deposit_lp", "provide_liquidity", "add_liquidity",
+        "decrease_liquidity", "collect", "close_position",
+    })
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
         chain_norm = chain.lower()
@@ -164,6 +171,15 @@ class UniswapV3NFTAdapter:
             raise ValueError(f"V3 NFT: unsupported chain {request.chain}.")
 
         extra = request.extra or {}
+
+        # Phase 4 lifecycle dispatch — decrease / collect / close routes to
+        # the NFP multicall builders below, no Enso swap leg.
+        action_norm = (extra.get("action") or "").lower() or "deposit_lp"
+        if action_norm in {"decrease_liquidity", "collect", "close_position"}:
+            return await self._build_lifecycle(
+                chain=chain_norm, chain_id=chain_id, protocol=proto_norm,
+                action=action_norm, extra=extra, user_address=request.user_address,
+            )
 
         # 1) Parse the pair the user picked.
         pair_str: str | None = extra.get("pool_symbol") or extra.get("pair")
@@ -683,6 +699,120 @@ class UniswapV3NFTAdapter:
         ))
 
         return steps
+
+    async def _build_lifecycle(
+        self,
+        *,
+        chain: str,
+        chain_id: int,
+        protocol: str,
+        action: str,
+        extra: dict[str, Any],
+        user_address: str,
+    ) -> list[ExecutionStepV3]:
+        """Phase 4 — decrease_liquidity / collect / close_position on the
+        NonfungiblePositionManager. Caller supplies the existing tokenId
+        + liquidity to remove via extra; this builder encodes a multicall
+        of decreaseLiquidity + collect (+ burn for close).
+        """
+        import time
+        from src.data.v3_pool_resolver import V3_FACTORIES
+        cfg = V3_FACTORIES.get((chain, protocol))
+        if not cfg or not cfg.get("nfp_manager"):
+            raise ValueError(
+                f"No NonfungiblePositionManager registered for ({chain}, {protocol})."
+            )
+        nfp = cfg["nfp_manager"]
+        token_id_raw = extra.get("token_id") or extra.get("tokenId")
+        if token_id_raw is None:
+            raise ValueError("Lifecycle action requires extra.token_id.")
+        token_id = int(token_id_raw)
+        liquidity = int(extra.get("liquidity") or 0)
+        if action != "collect" and liquidity <= 0:
+            raise ValueError("Lifecycle decrease_liquidity / close requires extra.liquidity > 0.")
+        amount0_min = int(extra.get("amount0_min") or 0)
+        amount1_min = int(extra.get("amount1_min") or 0)
+        deadline = int(time.time()) + 30 * 60
+        recipient = user_address
+
+        calls: list[str] = []
+        # decreaseLiquidity((tokenId, liquidity, amount0Min, amount1Min, deadline))
+        if action in {"decrease_liquidity", "close_position"} and liquidity > 0:
+            params = (
+                _enc_uint(token_id)
+                + _enc_uint(liquidity)
+                + _enc_uint(amount0_min)
+                + _enc_uint(amount1_min)
+                + _enc_uint(deadline)
+            )
+            calls.append(_DECREASE_LIQ_SEL + params)
+        # collect((tokenId, recipient, amount0Max=uint128.max, amount1Max=uint128.max))
+        u128_max = (1 << 128) - 1
+        collect_params = (
+            _enc_uint(token_id)
+            + _enc_addr(recipient)
+            + _enc_uint(u128_max)
+            + _enc_uint(u128_max)
+        )
+        calls.append(_COLLECT_SEL + collect_params)
+        # burn(tokenId) — close only.
+        if action == "close_position":
+            calls.append(_BURN_SEL + _enc_uint(token_id))
+
+        # Multicall(bytes[]) — inner calldata is hex strings prefixed with the
+        # selector "0x...". Strip the 0x before length / padding math.
+        n = len(calls)
+        offsets: list[str] = []
+        cursor = 32 * n
+        bodies: list[str] = []
+        for c in calls:
+            c_hex = c.removeprefix("0x")
+            cb = bytes.fromhex(c_hex)
+            offsets.append(_enc_uint(cursor))
+            body_padded = c_hex.ljust(((len(cb) + 31) // 32) * 64, "0")
+            bodies.append(_enc_uint(len(cb)) + body_padded)
+            cursor += 32 + ((len(cb) + 31) // 32) * 32
+        multicall_inner = _enc_uint(n) + "".join(offsets) + "".join(bodies)
+        # multicall(bytes[]) head: offset 32
+        multicall_data = _MULTICALL_SEL + _enc_uint(32) + multicall_inner
+
+        title_map = {
+            "decrease_liquidity": "Decrease V3 position",
+            "collect": "Collect V3 fees",
+            "close_position": "Close V3 position",
+        }
+        desc_map = {
+            "decrease_liquidity": (
+                f"Decrease liquidity by {liquidity} on tokenId {token_id} via "
+                f"{protocol} NFP {nfp}. Recipient {recipient}."
+            ),
+            "collect": (
+                f"Collect uncollected fees on tokenId {token_id} via "
+                f"{protocol} NFP {nfp}. Recipient {recipient}."
+            ),
+            "close_position": (
+                f"Close position tokenId {token_id} — decrease 100% + collect + burn — "
+                f"via {protocol} NFP {nfp}. Recipient {recipient}."
+            ),
+        }
+        return [
+            make_step(
+                index=1, action=action,
+                title=title_map[action],
+                description=desc_map[action],
+                chain=chain, wallet="MetaMask", protocol=protocol,
+                asset_in=None, amount_in=None,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm", chain_id=chain_id,
+                    to=nfp, data=multicall_data, value="0x0", spender=nfp,
+                ),
+                gas_estimate_usd=4.0, duration_estimate_s=30,
+                risk_warnings=[
+                    f"NFP multicall: {len(calls)} inner call(s). Tx fails if any sub-call reverts.",
+                    "Collected fees + decreased liquidity land in your wallet.",
+                ],
+            ),
+        ]
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
         return VerifyResult(confirmed=False, detail="V3 NFT receipt verify: read NonfungiblePositionManager.Transfer log for tokenId.")
