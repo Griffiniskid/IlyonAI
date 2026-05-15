@@ -32,6 +32,7 @@ from src.api.routes.stats import setup_stats_routes
 from src.api.routes.chains import setup_chains_routes
 from src.api.routes.contracts import setup_contracts_routes
 from src.api.routes.shield import setup_shield_routes
+from src.api.routes.debridge_webhook import setup_debridge_routes
 from src.api.routes.defi import setup_defi_routes
 from src.api.routes.intel import setup_intel_routes
 from src.api.routes.opportunities import setup_opportunity_routes
@@ -205,6 +206,7 @@ def create_api_app() -> web.Application:
     setup_contracts_routes(app)
     setup_shield_routes(app)
     setup_defi_routes(app)
+    setup_debridge_routes(app)
     setup_intel_routes(app)
     setup_opportunity_routes(app)
     setup_smart_money_routes(app)
@@ -277,6 +279,7 @@ def setup_api_routes(app: web.Application):
     setup_contracts_routes(app)
     setup_shield_routes(app)
     setup_defi_routes(app)
+    setup_debridge_routes(app)
     setup_intel_routes(app)
     setup_opportunity_routes(app)
     setup_smart_money_routes(app)
