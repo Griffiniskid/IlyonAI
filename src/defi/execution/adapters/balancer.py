@@ -8,6 +8,12 @@ Vault.joinPool ABI:
   joinPool(bytes32 poolId, address sender, address recipient, JoinPoolRequest request)
   JoinPoolRequest = (address[] assets, uint256[] maxAmountsIn, bytes userData, bool fromInternalBalance)
   selector: 0xb95cac28
+
+Vault.exitPool ABI (withdraw):
+  exitPool(bytes32 poolId, address sender, payable address recipient, ExitPoolRequest request)
+  ExitPoolRequest = (address[] assets, uint256[] minAmountsOut, bytes userData, bool toInternalBalance)
+  selector: 0x8bdb3913
+  userData (kind=EXACT_BPT_IN_FOR_ONE_TOKEN_OUT=0): (uint256 kind, uint256 bptAmountIn, uint256 exitTokenIndex)
 """
 from __future__ import annotations
 
@@ -29,6 +35,7 @@ from src.defi.execution.models import ExecutionStepV3, UnsignedStepTransaction, 
 
 _VAULT_ADDRESS = "0xBA12222222228d8Ba445958a75a0704d566BF2C8"  # all EVM chains
 _JOINPOOL_SELECTOR = "0xb95cac28"
+_EXITPOOL_SELECTOR = "0x8bdb3913"
 _APPROVE_SELECTOR = "0x095ea7b3"
 
 _CHAIN_IDS: dict[str, int] = {
@@ -133,6 +140,13 @@ def _encode_join_user_data(amounts_in: list[int], min_bpt: int) -> bytes:
     return abi_encode(["uint256", "uint256[]", "uint256"], [1, amounts_in, min_bpt])
 
 
+def _encode_exit_user_data_single(bpt_in: int, exit_token_index: int) -> bytes:
+    """userData for EXACT_BPT_IN_FOR_ONE_TOKEN_OUT (kind=0)."""
+    return abi_encode(
+        ["uint256", "uint256", "uint256"], [0, bpt_in, exit_token_index]
+    )
+
+
 def _encode_join_pool_calldata(
     pool_id: str,
     sender: str,
@@ -160,6 +174,43 @@ def _encode_join_pool_calldata(
         ],
     )
     return _JOINPOOL_SELECTOR + data.hex()
+
+
+def _encode_exit_pool_calldata(
+    pool_id: str,
+    sender: str,
+    recipient: str,
+    assets: list[str],
+    min_amounts_out: list[int],
+    user_data: bytes,
+) -> str:
+    """Hand-encode exitPool(bytes32, address, address, (address[], uint256[], bytes, bool))."""
+    pool_id_bytes = bytes.fromhex(pool_id[2:] if pool_id.startswith("0x") else pool_id)
+    if len(pool_id_bytes) != 32:
+        raise ValueError(f"poolId must be 32 bytes, got {len(pool_id_bytes)}")
+    data = abi_encode(
+        [
+            "bytes32",
+            "address",
+            "address",
+            "(address[],uint256[],bytes,bool)",
+        ],
+        [
+            pool_id_bytes,
+            sender,
+            recipient,
+            (assets, min_amounts_out, user_data, False),
+        ],
+    )
+    return _EXITPOOL_SELECTOR + data.hex()
+
+
+def _bpt_address_from_pool_id(pool_id: str) -> str:
+    """BPT contract = high 20 bytes of poolId (Balancer convention)."""
+    pid = pool_id[2:] if pool_id.startswith("0x") else pool_id
+    if len(pid) != 64:
+        raise ValueError(f"poolId must be 32 bytes hex, got {len(pid)} chars")
+    return "0x" + pid[:40]
 
 
 @dataclass
@@ -197,6 +248,7 @@ class BalancerSingleAssetAdapter:
             raise ValueError(f"Balancer adapter cannot build on chain {request.chain}.")
 
         extra = request.extra or {}
+        action = (extra.get("action") or "deposit_lp").lower()
         pool_hint = extra.get("pool_key") or extra.get("pool_address") or extra.get("poolAddress")
         resolved = _resolve_pool(chain_norm, pool_hint, request.asset_in)
         if resolved is None:
@@ -207,6 +259,9 @@ class BalancerSingleAssetAdapter:
         pool_key, pool_meta = resolved
         pool_id = pool_meta["poolId"]
         assets = pool_meta["assets"]
+
+        if action in {"withdraw", "exit_pool"}:
+            return self._build_exit_pool(request, chain_id, pool_key, pool_meta)
 
         asset_u = request.asset_in.upper()
         coin_index = None
@@ -314,6 +369,124 @@ class BalancerSingleAssetAdapter:
             ],
         )
         return [approve_step, join_step]
+
+    def _build_exit_pool(
+        self,
+        request: YieldBuildRequest,
+        chain_id: int,
+        pool_key: str,
+        pool_meta: dict,
+    ) -> list[ExecutionStepV3]:
+        """Encode exitPool with EXACT_BPT_IN_FOR_ONE_TOKEN_OUT (kind=0)."""
+        extra = request.extra or {}
+        pool_id = pool_meta["poolId"]
+        assets = pool_meta["assets"]
+        asset_addresses = [addr for _, addr, _ in assets]
+
+        # Exit token: caller picks via extra.exit_token (the symbol they want
+        # back). Default = the same asset they supplied originally.
+        exit_symbol = (extra.get("exit_token") or request.asset_in).upper()
+        exit_index = None
+        exit_decimals = None
+        for idx, (sym, _addr, dec) in enumerate(assets):
+            if sym.upper() == exit_symbol and exit_index is None:
+                exit_index = idx
+                exit_decimals = dec
+        if exit_index is None:
+            raise ValueError(
+                f"Balancer pool {pool_key} doesn't contain {exit_symbol}; "
+                f"available assets = {[s for s, _, _ in assets]}."
+            )
+
+        # amount_in for exit = BPT amount being burned (18 decimals always).
+        bpt_in = _to_unit(request.amount_in, 18)
+        if bpt_in <= 0:
+            raise ValueError("exitPool needs BPT amount > 0")
+
+        # Min amounts out: zero for non-exit tokens, slippage-bounded for exit.
+        slippage_bps = max(int(request.slippage_bps or 50), 10)
+        min_amounts_out = [0] * len(assets)
+        # Conservative single-asset value estimate before slippage.
+        scale_to_target = 10 ** (exit_decimals - 18) if exit_decimals > 18 else 1
+        scale_from_18 = 10 ** (18 - exit_decimals) if exit_decimals < 18 else 1
+        approx_out = bpt_in * scale_to_target // scale_from_18
+        min_amounts_out[exit_index] = (approx_out * (10_000 - slippage_bps)) // 10_000
+
+        user_data = _encode_exit_user_data_single(bpt_in, exit_index)
+        exit_calldata = _encode_exit_pool_calldata(
+            pool_id=pool_id,
+            sender=request.user_address,
+            recipient=request.user_address,
+            assets=asset_addresses,
+            min_amounts_out=min_amounts_out,
+            user_data=user_data,
+        )
+
+        bpt_address = _bpt_address_from_pool_id(pool_id)
+        approve_calldata = (
+            _APPROVE_SELECTOR + _encode_address(_VAULT_ADDRESS) + _encode_uint256(bpt_in)
+        )
+
+        approve_step = make_step(
+            index=1,
+            action="approve",
+            title=f"Approve BPT for Balancer Vault",
+            description=(
+                f"Approve {request.amount_in} BPT tokens so the Vault can burn "
+                f"them on exitPool."
+            ),
+            chain=request.chain,
+            wallet="MetaMask",
+            protocol="balancer",
+            asset_in=f"bal-{pool_key.upper()}-BPT",
+            amount_in=str(request.amount_in),
+            slippage_bps=0,
+            gas_estimate_usd=1.4,
+            duration_estimate_s=15,
+            transaction=UnsignedStepTransaction(
+                chain_kind="evm",
+                chain_id=chain_id,
+                to=bpt_address,
+                data=approve_calldata,
+                value="0x0",
+                spender=_VAULT_ADDRESS,
+            ),
+            risk_warnings=[
+                "Approval grants Vault permission to burn the exact BPT amount.",
+            ],
+        )
+        exit_step = make_step(
+            index=2,
+            action="exit_pool",
+            title=f"Exit Balancer {pool_key} to {exit_symbol}",
+            description=(
+                f"Burn {request.amount_in} BPT and pull underlying {exit_symbol}. "
+                f"Slippage cap {slippage_bps / 100:.2f}%."
+            ),
+            chain=request.chain,
+            wallet="MetaMask",
+            protocol="balancer",
+            asset_in=f"bal-{pool_key.upper()}-BPT",
+            amount_in=str(request.amount_in),
+            asset_out=exit_symbol,
+            slippage_bps=slippage_bps,
+            gas_estimate_usd=4.0,
+            duration_estimate_s=20,
+            depends_on=[approve_step.step_id],
+            transaction=UnsignedStepTransaction(
+                chain_kind="evm",
+                chain_id=chain_id,
+                to=_VAULT_ADDRESS,
+                data=exit_calldata,
+                value="0x0",
+                spender=_VAULT_ADDRESS,
+            ),
+            risk_warnings=[
+                "Single-token exits incur Balancer's price-impact fee.",
+                "Burning BPT is irreversible.",
+            ],
+        )
+        return [approve_step, exit_step]
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
         return VerifyResult(
