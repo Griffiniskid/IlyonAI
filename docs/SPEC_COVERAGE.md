@@ -177,4 +177,25 @@ Total unit tests added this session: 66 (15 §6e + 15 §6f + 11 §6g + 15 §11 D
 | 8 new blocker codes | ✅ | KNOWN_BLOCKER_CODES MEV/GAS_MODEL/SELF_TRADE/JIT/POOL_LINK + KYC/AGGREGATOR/CAP/POOL_INIT/STALE/FROZEN/TOKEN_2022_HOOK |
 | §13 coverage | 9 → 26/27 implemented (only row 15 hardware-wallet ALT remains skip) | tests/defi/test_edge_case_appendix.py |
 
-Final tests: 325 passed, 2 skipped. 0 regressions across 35+ resume-v2 commits.
+Final tests: 335 passed, 2 skipped. 0 regressions across 50+ resume-v2 commits.
+
+### Live-validated lifecycle scenarios (post-deploy 7c03814)
+
+10/10 ready in final regression sweep:
+- Aave V3 supply 100 USDC Base
+- Aave V3 withdraw 50 USDC Base (Pool.withdraw 0x69328dec)
+- Compound V3 withdraw 50 USDC Ethereum (Comet.withdraw 0xf3fef3a3)
+- Compound V3 claim COMP rewards Ethereum (CometRewards.claim 0xb7034f7e)
+- Uniswap V3 native ETH 0.05 Ethereum
+- Uniswap V4 native ETH 0.05 Ethereum (modifyLiquidities + Permit2)
+- Aerodrome Slipstream WETH-USDC Base
+- Velodrome CL WETH-USDC Optimism
+- Meteora DLMM SOL-USDC Solana (DexScreener + on-chain SDK)
+- Marinade native stake 1 SOL
+
+Captures: /tmp/v3-deep/Z01-Z10.txt + verdicts in _log.md.
+
+### Two critical bugs caught + fixed during resume-v2
+
+1. **Native amount mis-multiplication (c8b8633)** — pre-fix `0.05 ETH` → plan signing 115 ETH (2300× overshoot). Real financial-loss vector. Fix: amount stays in native units; usd_equivalent in extra.
+2. **UnboundLocalError shadow (78bbcc3)** — R2 composed-plan branch re-imported ExecutionPlanV3 inside conditional, shadowing the module-level binding via Python scope rules. Aave/Compound withdraw all returned UnboundLocalError. Caught by by-hand SSE read of F_aave_wd.txt.
