@@ -318,18 +318,51 @@ async def build_yield_execution_plan(
             title=f"{humanize_protocol(protocol)} {humanize_action(action)}",
             summary=f"Could not build execution plan for {humanize_protocol(protocol)} {humanize_action(action)} on {chain[:1].upper()+chain[1:]}.",
         )
+        # Spec §6f: classify the failure and attach a typed recovery
+        # posture so the frontend can surface explicit recovery buttons
+        # instead of a generic "try again" CTA.
+        from src.defi.recovery import FailureKind, decide_recovery
+        _msg = str(exc).lower()
+        if "slippage" in _msg:
+            _fk = FailureKind.SLIPPAGE_BREACH
+        elif "cap" in _msg or "supply cap" in _msg or "frozen" in _msg or "paused" in _msg:
+            _fk = FailureKind.DEPOSIT_CAP_REACHED
+        elif "blockhash" in _msg:
+            _fk = FailureKind.BLOCKHASH_EXPIRED
+        elif "gas" in _msg or "insufficient gas" in _msg:
+            _fk = FailureKind.GAS_INSUFFICIENT
+        elif "revert" in _msg or "transaction reverted" in _msg:
+            _fk = FailureKind.EXEC_REVERT
+        elif "simulation" in _msg and "failed" in _msg:
+            _fk = FailureKind.SIMULATION_FAIL
+        elif "user reject" in _msg or "user cancelled" in _msg:
+            _fk = FailureKind.USER_CANCELLED
+        else:
+            _fk = FailureKind.UNKNOWN
+        _recovery = decide_recovery(
+            _fk,
+            step_kind=action,
+            elapsed_since_fail_s=0,
+            current_slippage_bps=50,
+            user_slippage_cap_bps=500,
+        )
         plan.add_blocker(ExecutionBlocker(
             code="adapter_build_failed",
             severity="blocker",
             title="Adapter could not build steps",
             detail=str(exc),
             affected_step_ids=[],
-            cta="Adjust the asset, chain, or amount and try again.",
+            cta=_recovery.posture or "Adjust the asset, chain, or amount and try again.",
         ))
+        # Stash typed recovery on the plan dict so the frontend can render
+        # explicit recovery buttons. Spec §6f hard rule preserved: only
+        # AUTO_REBUILD is auto; everything else requires user click.
+        plan_dict = plan.to_dict()
+        plan_dict["recovery"] = _recovery.to_dict()
         return ok_envelope(
-            data={"plan": plan.to_dict()},
+            data={"plan": plan_dict},
             card_type="execution_plan_v3",
-            card_payload=plan.to_dict(),
+            card_payload=plan_dict,
         )
 
     proto_human = humanize_protocol(protocol)
