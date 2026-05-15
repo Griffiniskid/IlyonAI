@@ -480,7 +480,46 @@ async def build_yield_execution_plan(
             from src.data.asset_registry import resolve_any_evm_token
             from src.data.v3_tick_math import price_from_tick
 
-            extra_dict = extra or {}
+            extra_dict = dict(extra or {})
+            # If apy_base / apy_total wasn't pre-populated (direct-LP intent
+            # skips the meta-fetch), look it up from DefiLlama yields for the
+            # exact protocol + chain + symbol match so range_block.market
+            # shows real APR instead of a stale 0.
+            if not extra_dict.get("apy_base") and not extra_dict.get("apy_total"):
+                try:
+                    import aiohttp as _aiohttp
+                    _ll_url = "https://yields.llama.fi/pools"
+                    _pair_symbol_raw = (extra_dict.get("pool_symbol") or asset_in or "").upper().replace("/", "-")
+                    _pair_target = _pair_symbol_raw
+                    _pair_target_alt = "-".join(reversed(_pair_target.split("-")))
+                    async with _aiohttp.ClientSession(timeout=_aiohttp.ClientTimeout(total=6)) as _llsess:
+                        async with _llsess.get(_ll_url) as _llresp:
+                            if _llresp.status == 200:
+                                _lldata = await _llresp.json()
+                                _proto_l = protocol.lower()
+                                _chain_l = chain.lower()
+                                best = None
+                                best_tvl = 0.0
+                                for _e in (_lldata.get("data") or []):
+                                    if str(_e.get("project") or "").lower() != _proto_l:
+                                        continue
+                                    if _chain_l not in str(_e.get("chain") or "").lower():
+                                        continue
+                                    _sym = str(_e.get("symbol") or "").upper().replace("/", "-")
+                                    if _pair_target not in _sym and _pair_target_alt not in _sym:
+                                        continue
+                                    _t = float(_e.get("tvlUsd") or 0)
+                                    if _t > best_tvl:
+                                        best = _e
+                                        best_tvl = _t
+                                if best is not None:
+                                    extra_dict["apy_total"] = float(best.get("apy") or 0.0)
+                                    extra_dict["apy_base"] = float(best.get("apyBase") or 0.0)
+                                    extra_dict["apy_reward"] = float(best.get("apyReward") or 0.0)
+                                    extra_dict["tvl_usd"] = float(best.get("tvlUsd") or 0.0)
+                except Exception:
+                    pass
+
             pair_sym = extra_dict.get("pool_symbol") or asset_in or ""
             fee_bps = int(extra_dict.get("fee_bps") or 500)
             sides = [p.strip().upper()
@@ -578,9 +617,9 @@ async def build_yield_execution_plan(
                                 "liquidity": str(pool_state.liquidity),
                             },
                             "market": {
-                                "base_apr_pct": float((extra or {}).get("apy_base") or (extra or {}).get("apy_total") or 0.0),
-                                "reward_apr_pct": float((extra or {}).get("apy_reward") or 0.0),
-                                "tvl_usd": float((extra or {}).get("tvl_usd") or 0.0),
+                                "base_apr_pct": float(extra_dict.get("apy_base") or extra_dict.get("apy_total") or 0.0),
+                                "reward_apr_pct": float(extra_dict.get("apy_reward") or 0.0),
+                                "tvl_usd": float(extra_dict.get("tvl_usd") or 0.0),
                                 "cdf_30d": _synth_cdf_30d(sides[0], sides[1]),
                                 "kind": "v3" if "v3" in protocol.lower() else (
                                     "v4" if "v4" in protocol.lower() else (
