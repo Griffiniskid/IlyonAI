@@ -219,6 +219,53 @@ class AaveV3SupplyAdapter:
             )
             return [native_step]
 
+        # Native repay via WTG3.repayETH (selector 0x02c5fcf8). msg.value
+        # carries the repay amount; no approve step. Must check BEFORE
+        # _ASSETS lookup (native gas tokens have no ERC20 entry).
+        if action_hint == "repay" and (
+            _NATIVE_TOKEN_BY_CHAIN.get(chain_norm) == request.asset_in.upper()
+        ):
+            wtg3 = _AAVE_WTG3_ADDRESSES.get(chain_norm)
+            if wtg3 is None:
+                raise ValueError(
+                    f"Aave V3 WrappedTokenGatewayV3 not registered on {chain_norm}."
+                )
+            native_units = _to_unit(request.amount_in, 18)
+            if native_units <= 0:
+                native_units = (1 << 256) - 1
+            rate_mode = int(extra.get("rate_mode") or 2)
+            calldata = (
+                "0x02c5fcf8"
+                + _encode_address(pool_address)
+                + _encode_uint256(native_units)
+                + _encode_uint256(rate_mode)
+                + _encode_address(request.user_address)
+            )
+            value_hex = "0x" + format(native_units if native_units < (1 << 256) - 1 else 0, "x")
+            step = make_step(
+                index=1, action="repay",
+                title=f"Repay native {request.asset_in} via WTG3",
+                description=(
+                    f"WrappedTokenGatewayV3.repayETH({pool_address}, "
+                    f"{request.amount_in}, rateMode={rate_mode}, "
+                    f"onBehalfOf={request.user_address}) at {wtg3}. "
+                    f"msg.value carries {request.amount_in} {request.asset_in}; "
+                    f"gateway wraps + repays."
+                ),
+                chain=request.chain, wallet="MetaMask", protocol="aave-v3",
+                asset_in=request.asset_in, amount_in=str(request.amount_in),
+                slippage_bps=0, gas_estimate_usd=3.0, duration_estimate_s=15,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm", chain_id=chain_id,
+                    to=wtg3, data=calldata, value=value_hex,
+                    spender=wtg3,
+                ),
+                risk_warnings=[
+                    "Native repay sends ETH via WTG3 — no approve step.",
+                ],
+            )
+            return [step]
+
         # Native withdraw via WTG3 must check BEFORE _ASSETS lookup (native
         # gas tokens have no ERC20 metadata). Asset_in is the native symbol
         # (ETH/MATIC/AVAX); aToken address comes from extra.atoken_address.
