@@ -2211,6 +2211,32 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
             },
         )
 
+    # Solana CLMM/DLMM/Whirlpool short-circuit (§6b): route to
+    # build_yield_execution_plan so the sidecar pool_state probe emits the
+    # range_block payload. Without this the legacy execute_pool_position
+    # path falls through to prep_swap + "click the protocol link" handoff
+    # text — spec §6b violation.
+    _SOLANA_CLMM_LIKE_PROTOS = {
+        "raydium-clmm", "raydium-amm-v3",
+        "orca-whirlpools", "orca-clmm",
+        "meteora-dlmm",
+    }
+    _SOLANA_CHAINS_SET = {"solana", "sol"}
+    chain_for_solana = chain_raw or "solana"
+    if proto in _SOLANA_CLMM_LIKE_PROTOS and chain_for_solana in _SOLANA_CHAINS_SET:
+        extra_sol = {"pool_symbol": pair}
+        return (
+            "build_yield_execution_plan",
+            {
+                "chain": "solana",
+                "protocol": proto,
+                "action": "deposit_lp",
+                "asset_in": asset_in,
+                "amount_in": amount,
+                "extra": extra_sol,
+            },
+        )
+
     params: dict = {"pool": pool_ref, "amount": amount, "asset_in": asset_in}
     if extra:
         params["extra"] = extra
