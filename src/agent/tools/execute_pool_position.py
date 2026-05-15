@@ -107,11 +107,27 @@ def _fallback_pool_lookup(pool_id_or_ref: str) -> Optional[dict[str, Any]]:
 
 
 async def _fetch_pool_meta(pool_id: str) -> Optional[dict[str, Any]]:
-    """DefiLlama doesn't have a single-pool endpoint; we hit /pools and filter.
-    Cached by adapter, so fine for one-off lookups. Falls back to the static
-    catalog when DefiLlama is unreachable (yields API became paid-only in
-    2026-Q2 so /pools returns 404 globally on free callers).
+    """Three-tier lookup chain:
+       1. pool_index (DefiLlama refresher cache, sub-50ms — Phase 1.2 §1.2)
+       2. DefiLlama live /pools fetch (rate-limited, often 404)
+       3. Static fallback catalog (always available)
     """
+    # Tier 1 — pool_index cache. Session factory is wired in production;
+    # absent in dev env (skip silently).
+    try:
+        from src.storage.database import get_database  # type: ignore
+        from src.defi.pool_index.store import find_pool_by_id
+        db = get_database()
+        session_factory = getattr(db, "_session_factory", None) if db else None
+        if session_factory:
+            async with session_factory() as session:
+                row = await find_pool_by_id(session, pool_id=pool_id)
+                if row:
+                    return row
+    except Exception:
+        pass
+
+    # Tier 2 — DefiLlama live.
     try:
         async with aiohttp.ClientSession(timeout=_LLAMA_TIMEOUT) as sess:
             async with sess.get(_DEFILLAMA_POOLS_URL) as resp:
@@ -122,6 +138,8 @@ async def _fetch_pool_meta(pool_id: str) -> Optional[dict[str, Any]]:
                             return entry
     except Exception:
         pass
+
+    # Tier 3 — static fallback.
     return _fallback_pool_lookup(pool_id)
 
 
