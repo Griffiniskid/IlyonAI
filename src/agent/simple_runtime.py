@@ -2961,7 +2961,9 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
                     "extra": {
                         "action": "exit_pool",
                         "pool_key": (gd2.get("pool") or "").lower(),
-                        "exit_token": gd2["token"].upper(),
+                        # NOTE: exit_token is what the user gets BACK; without
+                        # an explicit "for <TOKEN>" tail we let the adapter
+                        # pick the pool's first underlying.
                     },
                 },
             )
