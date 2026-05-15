@@ -1661,6 +1661,11 @@ _ENSO_PROTOS_RE = re.compile(
     r"ether[\.\-]?fi|etherfi|weeth|"
     r"frax[ -]?ether|frx[ -]?ether|frax|sfrxeth|"
     r"stader|gmx|"
+    r"renzo|ezeth|"
+    r"kelp|kelp[ -]?dao|rseth|"
+    r"swell|rsweth|sweth|"
+    r"puffer|pufeth|"
+    r"mantle[ -]?staked|meth|"
     r"curve[ -]?dex|curve[ -]?finance|curve[ -]?stable|curve|"
     r"balancer[ -]?v2|balancer[ -]?v3|balancer|"
     r"velodrome|aerodrome"
@@ -1694,6 +1699,11 @@ _ENSO_PROTO_TO_SLUG = {
     "ether.fi": "ether.fi", "ether-fi": "ether.fi", "etherfi": "ether.fi", "weeth": "ether.fi",
     "frax": "frax", "frax ether": "frax-ether", "frax-ether": "frax-ether", "frx-ether": "frax-ether", "sfrxeth": "frax-ether",
     "stader": "stader", "gmx": "gmx",
+    "renzo": "renzo", "ezeth": "renzo",
+    "kelp": "kelp", "kelp dao": "kelp", "kelp-dao": "kelp", "rseth": "kelp",
+    "swell": "swell", "rsweth": "swell", "sweth": "swell",
+    "puffer": "puffer", "pufeth": "puffer",
+    "mantle staked": "mantle", "meth": "mantle",
     "curve": "curve", "curve dex": "curve", "curve-dex": "curve", "curve finance": "curve",
     "curve stable": "curve", "curve-stable": "curve", "curve-finance": "curve",
     "balancer": "balancer-v2", "balancer v2": "balancer-v2", "balancer-v2": "balancer-v2",
@@ -1703,6 +1713,7 @@ _ENSO_PROTO_TO_SLUG = {
 
 _ENSO_STAKE_PROTOS = frozenset({
     "lido", "rocket-pool", "ether.fi", "frax-ether", "stader",
+    "renzo", "kelp", "swell", "puffer", "mantle",
 })
 
 
