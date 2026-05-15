@@ -112,6 +112,45 @@ _REMOVE_LIQUIDITY_SELECTOR = "0xbaa2abde"
 _APPROVE_SELECTOR = "0x095ea7b3"
 
 
+# Popular V2 pair addresses keyed by (chain, sorted-token-pair). Auto-fills
+# extra.pool_address when the caller didn't supply one — avoids forcing the
+# user to know each V2 pair's contract for canonical pools.
+_V2_PAIRS: dict[tuple[str, str, str], str] = {
+    # PancakeSwap V2 BSC
+    ("bsc", "WBNB", "USDT"): "0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE",
+    ("bsc", "BNB", "USDT"):  "0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE",
+    ("bsc", "WBNB", "BUSD"): "0x58F876857a02D6762E0101bb5C46A8c1ED44Dc16",
+    ("bsc", "USDT", "BUSD"): "0x7EFaEf62fDdCCa950418312c6C91Aef321375A00",
+    ("bsc", "WBNB", "USDC"): "0xd99c7F6C65857AC913a8f880A4cb84032AB2FC5b",
+    # SushiSwap Ethereum
+    ("ethereum", "WETH", "USDC"): "0x397FF1542f962076d0BFE58eA045FfA2d347ACa0",
+    ("ethereum", "WETH", "USDT"): "0x06da0fd433C1A5d7a4faa01111c044910A184553",
+    ("ethereum", "WETH", "DAI"): "0xC3D03e4F041Fd4cD388c549Ee2A29a9E5075882f",
+    # Uniswap V2 Ethereum
+    ("ethereum-uniswap-v2", "WETH", "USDC"): "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc",
+    ("ethereum-uniswap-v2", "WETH", "USDT"): "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852",
+    ("ethereum-uniswap-v2", "WETH", "DAI"):  "0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11",
+}
+
+
+def _resolve_v2_pair(
+    chain: str, protocol: str, token_a: str, token_b: str,
+) -> str | None:
+    """Look up a canonical V2 pair address by (chain, sorted symbol pair)."""
+    a = token_a.upper()
+    b = token_b.upper()
+    keys: list[tuple[str, str, str]] = []
+    if protocol.lower() in {"uniswap-v2", "uniswap"}:
+        # Uniswap V2 + Sushi share chain "ethereum" — namespace uniswap-v2 ones.
+        keys.append(("ethereum-uniswap-v2", a, b))
+        keys.append(("ethereum-uniswap-v2", b, a))
+    keys.extend([(chain.lower(), a, b), (chain.lower(), b, a)])
+    for k in keys:
+        if k in _V2_PAIRS:
+            return _V2_PAIRS[k]
+    return None
+
+
 def _encode_uint256(value: int) -> str:
     if value < 0:
         raise ValueError("uint256 cannot be negative")
@@ -383,9 +422,17 @@ class UniswapV2DualTokenAdapter:
     ) -> list[ExecutionStepV3]:
         """Encode removeLiquidity(tokenA,tokenB,liquidity,amountAMin,amountBMin,to,deadline)."""
         extra = request.extra or {}
-        # LP token address — V2 pair contract. Caller passes `pool_address` from
-        # the position record (or factory.getPair lookup upstream).
+        # LP token address — V2 pair contract. Caller may pass `pool_address`
+        # directly; otherwise we look up the canonical pair from _V2_PAIRS
+        # for popular chains/protocols, so the lifecycle intent detector
+        # doesn't have to know the pair contract.
+        symbol_a = (extra.get("token_a") or request.asset_in).upper()
+        symbol_b = (extra.get("token_b") or "").upper()
         lp_address = extra.get("pool_address") or extra.get("lp_address")
+        if not lp_address and symbol_a and symbol_b:
+            lp_address = _resolve_v2_pair(
+                chain_norm, request.protocol, symbol_a, symbol_b,
+            )
         if not lp_address:
             raise ValueError(
                 "V2 removeLiquidity needs extra.pool_address (the V2 pair contract)."
@@ -394,8 +441,6 @@ class UniswapV2DualTokenAdapter:
         if not lp_address.startswith("0x") or len(lp_address) != 42:
             raise ValueError(f"Invalid V2 pair address: {lp_address}")
 
-        symbol_a = (extra.get("token_a") or request.asset_in).upper()
-        symbol_b = (extra.get("token_b") or "").upper()
         pool_symbol = (extra.get("pool_symbol") or "").upper()
         if not symbol_b and pool_symbol:
             parts = [p for p in pool_symbol.replace("/", "-").split("-") if p]
