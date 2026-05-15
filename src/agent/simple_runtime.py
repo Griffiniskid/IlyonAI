@@ -5290,6 +5290,21 @@ async def run_ephemeral_turn(
         # like "Raydium AMM SPACEX-WSOL" and prefer that hint.
         if prior_intent_override is None and history_cards:
             top_match = _LP_TOP_ONE_RE.search(message.strip())
+            # Refuse top-one sticky when the user explicitly named a protocol
+            # in THIS turn (e.g. "Stake 0.5 ETH on Renzo"). v4-A02 caught
+            # the sticky overriding the explicit pin: turn 5 routed to
+            # prior-card swell-liquid-staking instead of detect_intent's
+            # Renzo dispatch.
+            if top_match:
+                _msg_strip = message.strip()
+                _explicit_proto = _ENSO_PROTOS_RE.search(_msg_strip)
+                _explicit_ref = re.search(
+                    r"\b(top|first|best|#?\s*1|1st|option|pick|item|one|pool)\b",
+                    _msg_strip,
+                    re.IGNORECASE,
+                )
+                if _explicit_proto and not _explicit_ref:
+                    top_match = None
             if top_match:
                 # Try to recover an explicit protocol+pair hint from earlier
                 # user messages in this session.
@@ -5327,6 +5342,16 @@ async def run_ephemeral_turn(
                                 prior_hint_chain = "bsc" if cc in {"bsc", "bnb"} else cc
                             break
 
+                # Use the unit captured by _LP_TOP_ONE_RE as the asset
+                # when it is a real token symbol — falls back to USDC only
+                # when the user typed bare dollars / no unit. v4-A02 caught
+                # "Use 0.5 ETH" routing as USDC instead of ETH.
+                _unit_grp = (top_match.group("unit") or "").upper() if top_match else ""
+                _NON_ASSET_UNITS = {"USD", "$", "DOLLARS", "K", "M", "B", "BUCKS"}
+                _default_asset_in = (
+                    _unit_grp if _unit_grp and _unit_grp not in _NON_ASSET_UNITS else "USDC"
+                )
+
                 if prior_hint_proto and prior_hint_pair:
                     try:
                         amt_val = float(top_match.group("usd").replace(",", ""))
@@ -5335,7 +5360,7 @@ async def run_ephemeral_turn(
                     params = {
                         "pool": f"{prior_hint_proto} {prior_hint_pair}".strip(),
                         "amount": amt_val,
-                        "asset_in": "USDC",
+                        "asset_in": _default_asset_in,
                     }
                     if prior_hint_chain:
                         params["chain"] = prior_hint_chain
@@ -5358,7 +5383,7 @@ async def run_ephemeral_turn(
                                     params = {
                                         "pool": f"{top_proto} {top_sym}".strip(),
                                         "amount": amt_val,
-                                        "asset_in": "USDC",
+                                        "asset_in": _default_asset_in,
                                     }
                                     if top_chain:
                                         params["chain"] = top_chain
