@@ -138,7 +138,7 @@ app.post("/quote", async (req, res) => {
 });
 
 app.post("/build", async (req, res) => {
-  const { protocol, user } = req.body || {};
+  const { protocol, user, action } = req.body || {};
   if (!user) {
     return res.status(400).json({ error: "user (Solana wallet pubkey) is required." });
   }
@@ -148,11 +148,23 @@ app.post("/build", async (req, res) => {
     return res.status(400).json({ error: `Invalid Solana public key: ${user}` });
   }
   const adapter = resolveAdapter(protocol);
-  if (!adapter || typeof adapter.build !== "function") {
+  if (!adapter) {
     return res.status(404).json({ error: `No build adapter for protocol '${protocol}'.` });
   }
+  // Phase 4 lifecycle dispatch — withdraw/unstake/redeem routes to the
+  // adapter's buildUnstake() helper when present; deposit/supply/stake
+  // and missing action fall back to build().
+  const actionNorm = String(action || "").toLowerCase();
+  const isUnstake = ["withdraw", "unstake", "redeem", "exit"].includes(actionNorm);
   try {
-    const result = await adapter.build(req.body || {}, { connection, rpcUrl: RPC_URL });
+    let result;
+    if (isUnstake && typeof adapter.buildUnstake === "function") {
+      result = await adapter.buildUnstake(req.body || {}, { connection, rpcUrl: RPC_URL });
+    } else if (typeof adapter.build === "function") {
+      result = await adapter.build(req.body || {}, { connection, rpcUrl: RPC_URL });
+    } else {
+      return res.status(404).json({ error: `Adapter '${protocol}' missing build/${isUnstake ? "buildUnstake" : "build"}.` });
+    }
     res.json(result);
   } catch (err) {
     console.error("[build]", protocol, err);

@@ -24,6 +24,7 @@ const MSOL_MINT = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So";
 
 module.exports = {
   aliases: ["marinade-finance", "marinade-liquid-staking", "marinade-native-staking"],
+  supportedActions: ["deposit", "supply", "stake", "withdraw", "unstake", "redeem"],
 
   async quote({ amount }) {
     return {
@@ -31,6 +32,59 @@ module.exports = {
       receiptToken: "mSOL",
       apy: null,
       fees: { protocol: "Marinade native (no Jupiter slippage)", network: "0.000005 SOL" },
+    };
+  },
+
+  /**
+   * Phase 4 lifecycle — Marinade native liquid unstake (mSOL → SOL).
+   * Uses marinade.liquidUnstake(amount_mSOL). Subject to ~0.3% fee +
+   * pool depth. For amount==0 (full unstake), the runtime must fetch
+   * the user's full mSOL balance first.
+   */
+  async buildUnstake({ amount, user }, { connection } = {}) {
+    if (!connection) {
+      throw new Error("Marinade unstake requires a Solana connection.");
+    }
+    const userPubkey = new PublicKey(user);
+    const config = new MarinadeConfig({ connection, publicKey: userPubkey });
+    const marinade = new Marinade(config);
+    const mSOL_lamports = new BN(Math.floor(Number(amount) * 1_000_000_000));
+    if (mSOL_lamports.lte(new BN(0))) {
+      throw new Error(`Marinade unstake amount must be positive (got ${amount}).`);
+    }
+    const { transaction } = await marinade.liquidUnstake(mSOL_lamports);
+    transaction.feePayer = userPubkey;
+    const { blockhash } = await connection.getLatestBlockhash("confirmed");
+    transaction.recentBlockhash = blockhash;
+    const raw = transaction.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false,
+    });
+    const b64 = raw.toString("base64");
+    const sim = await simulateBase64Tx({ b64, connection });
+    if (!sim.ok) {
+      const e = new Error(`Marinade native unstake simulation failed: ${sim.errStr || "unknown"}`);
+      e.simulation = sim;
+      throw e;
+    }
+    return {
+      transactions: [
+        {
+          b64,
+          summary: `Marinade liquid unstake ${amount} mSOL → SOL`,
+          description: (
+            `Calls Marinade liquidUnstake(${amount} mSOL). Returns SOL immediately via ` +
+            `Marinade's instant-unstake liquidity pool. Fee ~0.3% on top of exchange rate.`
+          ),
+          receiptToken: "SOL",
+          feeUsd: 0.005,
+          durationS: 15,
+          warnings: [
+            "Instant unstake incurs ~0.3% Marinade fee; deferred unstake (next epoch) is fee-free.",
+          ],
+          simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
+        },
+      ],
     };
   },
 
