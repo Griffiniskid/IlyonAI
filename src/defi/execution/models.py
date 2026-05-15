@@ -271,21 +271,64 @@ class ExecutionPlanV3:
         self._recompute_step_statuses()
         self._refresh_plan_status()
 
+    # Map plan.status terms → PipelineState for spec §5 transition validation.
+    # Plan-level statuses are a coarser projection of the pipeline state
+    # machine — this map collapses the per-step lifecycle into the canonical
+    # spec vocabulary so illegal jumps are caught at runtime.
+    _PLAN_TO_PIPELINE_STATE: "dict[str, str]" = {
+        "draft": "Prompted",
+        "ready": "ReadyToSign",
+        "blocked": "Blocked",
+        "executing": "Signing",
+        "complete": "Indexed",
+        "failed": "Failed",
+    }
+
     def _refresh_plan_status(self) -> None:
+        prior = self.status
         if any(step.status == "failed" for step in self.steps):
-            self.status = "failed"
+            new_status = "failed"
+        elif all(step.status in {"confirmed", "skipped"} for step in self.steps) and self.steps:
+            new_status = "complete"
+        elif any(step.status in {"signing", "submitted"} for step in self.steps):
+            new_status = "executing"
+        elif any(step.status == "ready" for step in self.steps):
+            new_status = "ready"
+        elif any(b.severity == "blocker" for b in self.blockers):
+            new_status = "blocked"
+        else:
             return
-        if all(step.status in {"confirmed", "skipped"} for step in self.steps) and self.steps:
-            self.status = "complete"
+        if prior != new_status:
+            self._validate_pipeline_transition(prior, new_status)
+        self.status = new_status
+
+    def _validate_pipeline_transition(self, prior: str, next_status: str) -> None:
+        """Spec §5 — refuse silent illegal jumps. Soft-warn first, hard-raise
+        when the env flag IL_STRICT_STATE is set, so existing flows don't
+        break while wire-in beds in. Maps plan-status → PipelineState then
+        defers to src.defi.state_machine.is_legal_transition.
+        """
+        from src.defi.state_machine import PipelineState, is_legal_transition
+        prior_state = self._PLAN_TO_PIPELINE_STATE.get(prior)
+        next_state = self._PLAN_TO_PIPELINE_STATE.get(next_status)
+        if not prior_state or not next_state:
+            return  # initial entry or unmapped → tolerate
+        try:
+            prior_enum = PipelineState(prior_state)
+            next_enum = PipelineState(next_state)
+        except ValueError:
             return
-        if any(step.status in {"signing", "submitted"} for step in self.steps):
-            self.status = "executing"
-            return
-        if any(step.status == "ready" for step in self.steps):
-            self.status = "ready"
-            return
-        if any(b.severity == "blocker" for b in self.blockers):
-            self.status = "blocked"
+        if not is_legal_transition(prior_enum, next_enum):
+            import logging
+            import os
+            msg = (
+                f"plan {self.plan_id} illegal state transition "
+                f"{prior} ({prior_state}) → {next_status} ({next_state}) — "
+                "spec §5 forbids this jump"
+            )
+            logging.getLogger(__name__).warning(msg)
+            if os.environ.get("IL_STRICT_STATE") == "1":
+                raise ValueError(msg)
 
     def to_dict(self) -> dict[str, Any]:
         return {
