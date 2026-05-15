@@ -2937,9 +2937,11 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
                 },
             )
         # 'Exit PROTOCOL PAIR with N TOKEN [on CHAIN]' — Balancer-style.
+        # Use a tight protocol head (single word) so the pool tail can carry
+        # hyphenated pair names without being consumed by the protocol regex.
         m_exit = re.match(
-            rf"^\s*exit\s+{_PROTOCOL_NAME_RE}"
-            r"(?:\s+(?P<pool>[A-Za-z][A-Za-z0-9]{0,9}(?:[-/][A-Za-z][A-Za-z0-9]{0,9})*))?"
+            r"^\s*exit\s+(?P<protocol>balancer(?:[-\s]v\d)?|curve(?:[-\s]dex|[-\s]finance)?|uniswap[-\s]v\d|aerodrome|velodrome)"
+            r"(?:\s+(?P<pool>[A-Za-z][A-Za-z0-9]{0,9}(?:[-/][A-Za-z][A-Za-z0-9]{0,9})+))?"
             r"\s+with\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z][A-Za-z0-9]{0,9})"
             r"\s*$",
             text,
