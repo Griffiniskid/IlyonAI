@@ -107,9 +107,9 @@ async def build_yield_execution_plan(
         from src.defi.execution.composed_plan import (
             Snapshot, block_step_for_async_fill, snapshot_bridge_quote,
         )
-        from src.defi.execution.models import (
-            ExecutionPlanV3, ExecutionStepV3, UnsignedStepTransaction, make_step,
-        )
+        # ExecutionPlanV3 + ExecutionStepV3 are imported at module top; only
+        # bring in the helpers we don't already have.
+        from src.defi.execution.models import UnsignedStepTransaction, make_step
         from src.routing.debridge_client import DeBridgeBridge
         _CHAIN_ID_MAP = {
             "ethereum": 1, "polygon": 137, "arbitrum": 42161, "optimism": 10,
