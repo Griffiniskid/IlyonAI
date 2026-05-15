@@ -17,6 +17,10 @@ from src.data.asset_registry import NATIVE_PLACEHOLDER, RPC_FALLBACKS, _RPC_BY_C
 
 # selector("getPool(address,address,uint24)") = 0x1698ee82
 _GET_POOL_SEL = "0x1698ee82"
+# selector("getPool(address,address,int24)") = 0x4d18b203
+# Aerodrome Slipstream + Velodrome CL key their factory by tickSpacing
+# (int24) instead of fee_bps (uint24). Spec §6a.
+_GET_POOL_SLIPSTREAM_SEL = "0x4d18b203"
 # selector("slot0()") = 0x3850c7bd
 _SLOT0_SEL = "0x3850c7bd"
 # selector("tickSpacing()") = 0xd0c93a7c
@@ -82,6 +86,25 @@ FEE_TIER_TICK_SPACING: dict[int, int] = {
     3000: 60,  # 0.30%
     10000: 200,  # 1.00%
 }
+
+# Aerodrome Slipstream + Velodrome CL — fee-tier → tickSpacing.
+# Slipstream's factory is keyed by tickSpacing (not fee). Common
+# tickSpacings on Base (Slipstream): 1, 50, 100, 200, 2000.
+SLIPSTREAM_FEE_TO_TICK_SPACING: dict[int, int] = {
+    1: 1,        # <1bp / stable-stable
+    100: 50,     # 5bp / blue-chip / blue-chip-stable
+    500: 50,     # legacy alias — many ETH/USDC pools sit on tickSpacing=50
+    1000: 100,   # 10bp
+    3000: 200,   # 30bp
+    10000: 2000, # 1%
+}
+
+# Protocols that key their factory by tickSpacing (int24) not fee.
+_TICKSPACING_KEYED_PROTOCOLS = frozenset({
+    "aerodrome-slipstream",
+    "velodrome-cl",
+    "velodrome-slipstream",
+})
 
 
 @dataclass(frozen=True)
@@ -226,12 +249,24 @@ async def resolve_v3_pool(
         if hit and (now - hit[0]) < _TTL_S:
             return hit[1]
 
-    call_data = (
-        _GET_POOL_SEL
-        + _encode_address(token0_addr)
-        + _encode_address(token1_addr)
-        + _encode_uint(fee_bps)
-    )
+    # Slipstream / Velodrome CL key the factory by tickSpacing — call the
+    # int24 variant of getPool. For Uniswap V3 / PancakeSwap V3 keep the
+    # uint24-fee variant.
+    if proto_norm in _TICKSPACING_KEYED_PROTOCOLS:
+        spacing = SLIPSTREAM_FEE_TO_TICK_SPACING.get(fee_bps, 50)
+        call_data = (
+            _GET_POOL_SLIPSTREAM_SEL
+            + _encode_address(token0_addr)
+            + _encode_address(token1_addr)
+            + _encode_uint(spacing)
+        )
+    else:
+        call_data = (
+            _GET_POOL_SEL
+            + _encode_address(token0_addr)
+            + _encode_address(token1_addr)
+            + _encode_uint(fee_bps)
+        )
     pool_hex = await _eth_call_with_fallback(chain_norm, cfg["factory"], call_data)
     if not pool_hex or pool_hex == "0x" or int(pool_hex, 16) == 0:
         async with _cache_lock:
@@ -292,8 +327,15 @@ async def list_fee_tiers_with_pools(
     states for the tiers that exist. PancakeSwap V3 uses its own tier set
     (100 / 500 / 2500 / 10000 bps) — Uniswap V3 / Aerodrome Slipstream use
     100 / 500 / 3000 / 10000."""
-    if protocol.lower() == "pancakeswap-v3":
+    proto_l = protocol.lower()
+    if proto_l == "pancakeswap-v3":
         tiers = (100, 500, 2500, 10000)
+    elif proto_l in _TICKSPACING_KEYED_PROTOCOLS:
+        # Slipstream / Velodrome CL — these are tickSpacing-keyed at the
+        # factory layer. Use a synthetic fee_bps that maps cleanly via
+        # SLIPSTREAM_FEE_TO_TICK_SPACING so the upstream probe iterates
+        # over the four meaningful spacings (1 / 50 / 200 / 2000).
+        tiers = (1, 100, 3000, 10000)
     else:
         tiers = (100, 500, 3000, 10000)
     results = []
