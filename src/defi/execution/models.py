@@ -313,6 +313,34 @@ class ExecutionPlanV3:
                             from src.defi.freshness import assert_fresh_before_broadcast
                             assert_fresh_before_broadcast(sim_ts)
                         return
+            # §11 D.7 — explicit price-drift gate. Fires on any broadcast
+            # flip with both quotes captured in plan.metadata, independent
+            # of D.2 freshness (D.2 is time-based, D.7 is value-based).
+            meta = getattr(self, "metadata", None)
+            if isinstance(meta, dict):
+                sim_quote = meta.get("simulated_quote")
+                cur_quote = meta.get("current_quote")
+                if sim_quote is not None and cur_quote is not None:
+                    from src.defi.freshness import check_price_drift
+                    drift = check_price_drift(
+                        float(sim_quote), float(cur_quote),
+                    )
+                    if drift.breached:
+                        import logging
+                        import os
+                        logging.getLogger(__name__).warning(
+                            "drift refuse: plan=%s step=%s drift=%.1fbps > %dbps",
+                            self.plan_id, step_id, drift.drift_bps,
+                            drift.threshold_bps,
+                        )
+                        if os.environ.get("IL_STRICT_STATE") == "1":
+                            from src.defi.freshness import (
+                                assert_drift_within_threshold,
+                            )
+                            assert_drift_within_threshold(
+                                float(sim_quote), float(cur_quote),
+                            )
+                        return
         for step in self.steps:
             if step.step_id == step_id:
                 step.status = status
