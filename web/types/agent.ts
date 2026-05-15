@@ -396,6 +396,78 @@ export interface ExecutionPlanV3Payload {
     channels?: string[];
     rationale?: string;
   } | null;
+  composed_plan?: ComposedPlanSnapshot | null;
+  audit_chain?: AuditChainEntry[] | null;
+  freshness?: FreshnessResult | null;
+  drift?: DriftResult | null;
+}
+
+// ── §6c composed-plan primitives (deBridge / LI.FI / Socket bridges) ──
+
+export interface ComposedPlanSnapshot {
+  bridge_name: "debridge-dln" | "lifi" | "socket";
+  src_chain_id: number;
+  dst_chain_id: number;
+  token_in: string;
+  token_out: string;
+  src_amount: string;
+  expected_dst_amount: string;
+  slippage_bps_band: { min: number; max: number };
+  quote_id?: string | null;
+  captured_at: number;
+}
+
+export interface ComposedPlanFillResolution {
+  order_id: string;
+  state: "created" | "filled" | "cancelled" | "failed" | "timeout";
+  actual_dst_amount?: string | null;
+  realized_slippage_bps?: number | null;
+  resolved_at: number;
+}
+
+// ── §11 D.8 audit-trail HMAC chain ──
+
+export interface AuditChainEntry {
+  entry_id: string;
+  user_wallet: string;
+  prompt_hash: string;
+  plan_hash: string;
+  tx_hash?: string | null;
+  prev_hmac: string;
+  hmac: string;
+  ts: number;
+}
+
+// ── §11 D.5/D.6 session-key policy + revoke ──
+
+export interface SessionKeyPolicy {
+  policy_id: string;
+  wallet: string;
+  smart_account_address?: string | null;
+  spend_cap_usd: number;
+  allowlist_selectors: string[];
+  allowlist_targets: string[];
+  expires_at: number;
+  revoked_at?: number | null;
+  created_at: number;
+}
+
+// ── §11 D.2 + D.7 freshness/drift gates ──
+
+export interface FreshnessResult {
+  is_fresh: boolean;
+  elapsed_s: number;
+  threshold_s: number;
+  must_resimulate: boolean;
+  rationale: string;
+}
+
+export interface DriftResult {
+  drift_bps: number;
+  threshold_bps: number;
+  breached: boolean;
+  must_resimulate: boolean;
+  rationale: string;
 }
 
 export type CardType =
