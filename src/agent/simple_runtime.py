@@ -2016,12 +2016,20 @@ _ADD_LIQUIDITY_RE = re.compile(
     r"(?:\s+(?:DLMM|CLMM|CPMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion|V\d|v\d|pool))?"
     r"(?:\s+\d+(?:\.\d+)?\s*%)?"
     r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?"
-    rf"\s+{_AMOUNT_USD_OR_TOKEN_RE}"
+    # Allow "with my <SRC>" source-token hint to appear BEFORE the amount,
+    # e.g. "... on Ethereum with my USDT, $200". The trailing comma+space is
+    # tolerated so the amount regex still matches.
+    r"(?:[,\s]+with\s+my\s+(?P<src_pre>[A-Za-z][A-Za-z0-9]{1,9}))?"
+    r"[,\s]+"
+    rf"{_AMOUNT_USD_OR_TOKEN_RE}"
     # Optional second leg for V2 dual-token form: "and Y TOKEN_B".
     r"(?:\s+and\s+(?:\$\s*[\d,]+(?:\.\d+)?|[\d,]+(?:\.\d+)?\s+[A-Za-z]{2,10}))?"
     # Tolerate trailing "on CHAIN" after the amount — common phrasing
     # "Add liquidity to Raydium SOL-USDC CLMM with 10 USDC on Solana".
     r"(?:\s+on\s+(?P<chain_after>[A-Za-z]+))?"
+    # Tolerate trailing range-preset hint with optional leading comma:
+    # "..., balanced range" / " narrow range" / "wide" / "full range".
+    r"(?:[,\s]+(?:with\s+)?(?:narrow|balanced|wide|full)(?:\s+range)?)?"
     r"\s*$",
     re.IGNORECASE,
 )
@@ -2060,10 +2068,12 @@ _OPEN_POSITION_RE = re.compile(
     r"\s+(?:position|lp|liquidity)"
     r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?"
     rf"\s+(?:with\s+)?{_AMOUNT_USD_OR_TOKEN_RE}"
-    r"(?:\s+(?:with\s+)?(?:narrow|balanced|wide|full)(?:\s+range)?)?"
     # Tolerate trailing "on CHAIN" after the amount — common phrasing
     # "Open Uniswap V3 ETH-USDC position with 0.1 ETH on Ethereum".
     r"(?:\s+on\s+(?P<chain_after>[A-Za-z]+))?"
+    # Trailing range-preset hint may carry leading comma:
+    # "..., balanced range" / "narrow" / "wide range" / "full".
+    r"(?:[,\s]+(?:with\s+)?(?:narrow|balanced|wide|full)(?:\s+range)?)?"
     r"\s*$",
     re.IGNORECASE,
 )
@@ -2153,6 +2163,19 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
         rewritten = _VARIANT_REWRITE.get((proto_head, variant))
         if rewritten:
             proto = rewritten
+    # Bare "slipstream" with no chain-prefix: infer from chain. Aerodrome
+    # on Base, Velodrome CL on Optimism. Keeps the V3 short-circuit reachable
+    # for "Open Slipstream WETH-USDC position with 0.05 WETH on Base".
+    if proto == "slipstream":
+        _chain_for_slip = (
+            (m.groupdict() or {}).get("chain")
+            or (m.groupdict() or {}).get("chain_after")
+            or ""
+        ).lower()
+        if _chain_for_slip == "base":
+            proto = "aerodrome-slipstream"
+        elif _chain_for_slip in ("optimism", "op"):
+            proto = "velodrome-cl"
     pool_ref = f"{proto} {pair}"
 
     _md = m.groupdict() or {}
