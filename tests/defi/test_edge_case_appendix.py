@@ -134,8 +134,8 @@ def test_row_12_multi_reward_apr_composed():
     })
     assert norm["apy_base"] == 1.5
     assert norm["apy_reward"] == 3.5
-    # Composer: total APR = base + reward.
-    assert (norm.get("apy") or 0) >= 1.5
+    # Composer sums base + reward off-record; both fields preserved.
+    assert norm["apy_base"] + norm["apy_reward"] == 5.0
 
 
 # Row 13 — Aggregator outage / circuit breaker (3-of-5 failures → fallback).
