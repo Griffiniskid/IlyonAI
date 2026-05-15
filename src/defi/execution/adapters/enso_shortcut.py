@@ -171,9 +171,33 @@ class EnsoShortcutAdapter:
                         "puffer-pufeth": "0xd9a442856c234a39a81a089c06451ebaa4306a72",
                         "mantle-staked-eth": "0xd5f7838f5c461feff7fe49ea5ebaf7728bb0adfa",
                     },
+                    8453: {  # base — Aave V3 aTokens cover the most common deposit flow
+                        "aave-v3:usdc": "0x4e65fe4dba92790696d040ac24aa414708f5c0ab",  # aBasUSDC
+                        "aave-v3:weth": "0xd4a0e0b9149bcee3c920d2e00b5de09138fd8bb7",  # aBasWETH
+                        "aave-v3:cbeth": "0xcf3d55c10db69f28fd1a75bd73f3d8a2d9c595ad",
+                    },
+                    10: {  # optimism
+                        "aave-v3:usdc": "0x38d693ce1df5aadf7bc62595a37d667ad57922e5",
+                        "aave-v3:usdt": "0x6ab707aca953edaefbc4fd23ba73294241490620",
+                        "aave-v3:weth": "0xe50fa9b3c56ffb159cb0fca61f5c9d750e8128c8",
+                    },
+                    42161: {  # arbitrum
+                        "aave-v3:usdc": "0x724dc807b04555b71ed48a6896b6f41bb6c2b3b3",
+                        "aave-v3:usdc.e": "0x625e7708f30ca75bfd92586e17077590c60eb4cd",
+                        "aave-v3:weth": "0xe50fa9b3c56ffb159cb0fca61f5c9d750e8128c8",
+                    },
+                    137: {  # polygon
+                        "aave-v3:usdc": "0xa4d94019934d8333ef880abffbf2fdd611c762bd",
+                        "aave-v3:usdt": "0x6ab707aca953edaefbc4fd23ba73294241490620",
+                        "aave-v3:wmatic": "0x6d80113e533a2c0fe82eabd35f1875dcea89ea97",
+                    },
                 }
                 hub_map = _RECEIPT_BY_HUB.get(chain_id, {})
-                override = hub_map.get(protocol_slug)
+                # Two key shapes accepted:
+                #   - protocol_slug only (LST hubs — Renzo/Kelp/etc.)
+                #   - protocol_slug:asset_in (Aave V3 aTokens — per-asset receipt)
+                _asset_key = f"{protocol_slug}:{request.asset_in.lower()}"
+                override = hub_map.get(_asset_key) or hub_map.get(protocol_slug)
                 if override:
                     token_out_addr = override
                     apy_hint = extra.get("apy")
