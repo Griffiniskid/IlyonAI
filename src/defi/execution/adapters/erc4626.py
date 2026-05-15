@@ -80,7 +80,10 @@ class ERC4626VaultAdapter:
     protocols: frozenset[str] = frozenset({
         "yearn-finance", "yearn", "morpho-blue", "morpho", "metamorpho",
         "spark", "sky-lending", "sky", "sommelier", "origin", "origin-ether",
-        "aera", "lido", "rocket-pool",
+        "aera",
+        # Lido / Rocket Pool are NOT IERC4626 vaults — Lido is rebasing,
+        # rETH is a share-priced ERC20 but not IERC4626. They belong in
+        # EvmLstDirectMintAdapter so the direct-mint contracts get called.
     })
     actions: frozenset[str] = frozenset({
         "supply", "deposit", "lend", "stake",

@@ -82,11 +82,12 @@ def build_default_registry() -> AdapterRegistry:
             CompoundV3SupplyAdapter(),
             CurveSingleSidedAdapter(),
             BalancerSingleAssetAdapter(),
-            ERC4626VaultAdapter(),
-            # LST/LRT direct-mint precedes Enso so Lido/Rocket Pool/ether.fi/
-            # Renzo/Kelp/Swell/Frax/Mantle/Puffer go to the canonical mint
-            # contract instead of a generic Enso route.
+            # LST/LRT direct-mint precedes ERC4626 + Enso so Lido / Rocket Pool /
+            # ether.fi / Renzo / Kelp / Swell / Frax / Mantle / Puffer go to
+            # the canonical mint contract instead of being intercepted by the
+            # generic ERC-4626 share-token path or an Enso route.
             EvmLstDirectMintAdapter(),
+            ERC4626VaultAdapter(),
             PendleV2Adapter(),
             EnsoShortcutAdapter(),
             SolanaYieldBuilderAdapter(),
