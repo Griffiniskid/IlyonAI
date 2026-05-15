@@ -492,18 +492,34 @@ async def build_yield_execution_plan(
                     _pair_symbol_raw = (extra_dict.get("pool_symbol") or asset_in or "").upper().replace("/", "-")
                     _pair_target = _pair_symbol_raw
                     _pair_target_alt = "-".join(reversed(_pair_target.split("-")))
+                    # DefiLlama chain canonicalization. "Optimism" → "op mainnet";
+                    # "BSC" → "bsc"; "Polygon" → "polygon pos" sometimes; etc.
+                    _DEFILLAMA_CHAIN_ALIASES = {
+                        "optimism": ("op mainnet", "optimism"),
+                        "polygon": ("polygon", "polygon pos", "matic"),
+                        "bsc": ("bsc", "bnb smart chain", "binance"),
+                        "avalanche": ("avalanche", "avax"),
+                        "arbitrum": ("arbitrum", "arbitrum one"),
+                        "ethereum": ("ethereum",),
+                        "base": ("base",),
+                        "linea": ("linea",),
+                        "mantle": ("mantle",),
+                        "zksync": ("zksync era", "zksync"),
+                        "scroll": ("scroll",),
+                    }
+                    _chain_canonical = _DEFILLAMA_CHAIN_ALIASES.get(chain.lower(), (chain.lower(),))
                     async with _aiohttp.ClientSession(timeout=_aiohttp.ClientTimeout(total=6)) as _llsess:
                         async with _llsess.get(_ll_url) as _llresp:
                             if _llresp.status == 200:
                                 _lldata = await _llresp.json()
                                 _proto_l = protocol.lower()
-                                _chain_l = chain.lower()
                                 best = None
                                 best_tvl = 0.0
                                 for _e in (_lldata.get("data") or []):
                                     if str(_e.get("project") or "").lower() != _proto_l:
                                         continue
-                                    if _chain_l not in str(_e.get("chain") or "").lower():
+                                    _ec = str(_e.get("chain") or "").lower()
+                                    if not any(cv == _ec for cv in _chain_canonical):
                                         continue
                                     _sym = str(_e.get("symbol") or "").upper().replace("/", "-")
                                     if _pair_target not in _sym and _pair_target_alt not in _sym:
