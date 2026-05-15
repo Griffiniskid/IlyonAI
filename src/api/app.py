@@ -36,6 +36,7 @@ from src.api.routes.debridge_webhook import setup_debridge_routes
 from src.api.routes.defi import setup_defi_routes
 from src.api.routes.session_keys import setup_session_key_routes
 from src.api.routes.eip7702_auth import setup_eip7702_routes
+from src.api.routes.audit import setup_audit_routes
 from src.api.routes.intel import setup_intel_routes
 from src.api.routes.opportunities import setup_opportunity_routes
 from src.api.routes.smart_money import setup_smart_money_routes
@@ -211,6 +212,7 @@ def create_api_app() -> web.Application:
     setup_debridge_routes(app)
     setup_session_key_routes(app)
     setup_eip7702_routes(app)
+    setup_audit_routes(app)
     setup_intel_routes(app)
     setup_opportunity_routes(app)
     setup_smart_money_routes(app)
@@ -286,6 +288,7 @@ def setup_api_routes(app: web.Application):
     setup_debridge_routes(app)
     setup_session_key_routes(app)
     setup_eip7702_routes(app)
+    setup_audit_routes(app)
     setup_intel_routes(app)
     setup_opportunity_routes(app)
     setup_smart_money_routes(app)
