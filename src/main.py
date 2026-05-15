@@ -52,6 +52,36 @@ async def on_startup(app: web.Application):
     except Exception as e:
         logger.warning(f"Whale poller startup failed: {e}")
 
+    # Wire ComposedPlanOrchestrator notifier + webhook handoff. The notifier
+    # is invoked by the deBridge webhook handler when a pending plan resolves;
+    # plug it into the stream hub so SSE chat channels see the flip.
+    try:
+        from src.defi.execution.composed_plan_orchestrator import (
+            set_runtime_callback,
+        )
+        from src.platform.stream_hub import get_stream_hub
+
+        hub = get_stream_hub()
+
+        async def _push(plan_id: str, payload: dict):
+            try:
+                await hub.publish(f"plan:{plan_id}", payload)
+            except Exception as exc:  # noqa: BLE001 — orchestrator must not crash
+                logger.warning("composed-plan push failed: %s", exc)
+
+        set_runtime_callback(_push)
+
+        async def _webhook_notifier(payload: dict):
+            plan_id = payload.get("plan_id")
+            if not plan_id:
+                return
+            await _push(plan_id, payload)
+
+        app["_composed_plan_notifier"] = _webhook_notifier
+        logger.info("✅ ComposedPlanOrchestrator notifier wired to stream hub")
+    except Exception as e:
+        logger.warning(f"ComposedPlanOrchestrator startup failed: {e}")
+
     logger.info(f"✅ API Server ready on port {settings.web_api_port}")
 
 async def on_cleanup(app: web.Application):
