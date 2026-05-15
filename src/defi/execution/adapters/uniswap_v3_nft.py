@@ -517,9 +517,6 @@ class UniswapV3NFTAdapter:
             except Exception as exc:
                 raise ValueError(f"V3 NFT: Enso swap input→token1 failed: {exc}") from exc
 
-        # --- Approve token0 to NFP manager ---
-        # MAX uint256 approve so future deposits skip this step.
-        max_uint = (1 << 256) - 1
         # Estimated amounts the mint will pull. Side A is what the user
         # keeps (input minus what they swap to the other side); side B is
         # the swap-out estimate (compute from USD value + price).
@@ -548,6 +545,14 @@ class UniswapV3NFTAdapter:
         if is_input_token1:
             amount1_desired = max(input_units_total - swap0_units, amount1_desired)
 
+        # Spec §11 / D.3: scope each approval to exactly what the mint
+        # consumes, plus a 5% slippage buffer for tick-rounding drift.
+        # No unlimited approve. Permit2 path lands in a follow-up; this
+        # path remains a raw approve() because Permit2 needs typed-data
+        # signing wired through the frontend.
+        approve0_amount = amount0_desired + (amount0_desired // 20)
+        approve1_amount = amount1_desired + (amount1_desired // 20)
+
         sym0_lbl = (sym0 or pool.token0[:6] + "…").upper()
         sym1_lbl = (sym1 or pool.token1[:6] + "…").upper()
 
@@ -556,12 +561,15 @@ class UniswapV3NFTAdapter:
             index=step_idx,
             action="approve",
             title=f"Approve {sym0_lbl} to position manager",
-            description=f"One-time max approve so the {request.protocol} position manager can pull {sym0_lbl} during mint.",
+            description=(
+                f"Scoped approve so the {request.protocol} position manager can pull up to "
+                f"{approve0_amount} units of {sym0_lbl} for this mint (deposit + 5% buffer)."
+            ),
             chain=request.chain,
             wallet="MetaMask",
             protocol=request.protocol,
             asset_in=sym0_lbl,
-            amount_in="max",
+            amount_in=str(approve0_amount),
             slippage_bps=0,
             gas_estimate_usd=1.5,
             duration_estimate_s=15,
@@ -569,7 +577,7 @@ class UniswapV3NFTAdapter:
                 chain_kind="evm",
                 chain_id=chain_id,
                 to=pool.token0,
-                data=_encode_approve(pool.nfp_manager, max_uint),
+                data=_encode_approve(pool.nfp_manager, approve0_amount),
                 value="0x0",
                 spender=pool.nfp_manager,
             ),
@@ -581,12 +589,15 @@ class UniswapV3NFTAdapter:
             index=step_idx,
             action="approve",
             title=f"Approve {sym1_lbl} to position manager",
-            description=f"One-time max approve so the {request.protocol} position manager can pull {sym1_lbl} during mint.",
+            description=(
+                f"Scoped approve so the {request.protocol} position manager can pull up to "
+                f"{approve1_amount} units of {sym1_lbl} for this mint (deposit + 5% buffer)."
+            ),
             chain=request.chain,
             wallet="MetaMask",
             protocol=request.protocol,
             asset_in=sym1_lbl,
-            amount_in="max",
+            amount_in=str(approve1_amount),
             slippage_bps=0,
             gas_estimate_usd=1.5,
             duration_estimate_s=15,
@@ -594,7 +605,7 @@ class UniswapV3NFTAdapter:
                 chain_kind="evm",
                 chain_id=chain_id,
                 to=pool.token1,
-                data=_encode_approve(pool.nfp_manager, max_uint),
+                data=_encode_approve(pool.nfp_manager, approve1_amount),
                 value="0x0",
                 spender=pool.nfp_manager,
             ),
