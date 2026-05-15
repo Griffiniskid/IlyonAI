@@ -51,3 +51,17 @@ def test_withdraw_action_in_supported_set():
     a = AaveV3SupplyAdapter()
     r = a.supports(chain="ethereum", protocol="aave-v3", action="withdraw")
     assert r.supported is True
+
+
+def test_withdraw_payload_shape():
+    """Pool.withdraw(asset, amount, to) → 3-word payload."""
+    a = AaveV3SupplyAdapter()
+    req = YieldBuildRequest(
+        chain="base", protocol="aave-v3", asset_in="USDC", amount_in=Decimal("100"),
+        user_address="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        extra={"action": "withdraw"},
+    )
+    steps = _run(a.build(req))
+    body = steps[0].transaction.data[10:]
+    # 3 × 32-byte fields after selector
+    assert len(body) == 3 * 64
