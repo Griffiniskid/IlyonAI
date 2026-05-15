@@ -5748,6 +5748,70 @@ async def run_ephemeral_turn(
                     if inherited:
                         tool_input["chains"] = inherited
 
+            # Chain stickiness for execute paths: when user said "Execute"
+            # without naming a chain, and the prior turn narrowed to a
+            # specific chain via defi_opportunities (e.g. "Actually on
+            # Optimism"), inherit it into the execute call. Caught in v4
+            # matrix A01: turn 5 "Execute on Aave V3 with 250 USDC" was
+            # silently reverting to Ethereum/Base default.
+            if (
+                tool_name in {"build_yield_execution_plan", "execute_pool_position"}
+                and history_cards
+            ):
+                _msg_lower_exec = message.lower()
+                # Skip when user explicitly named a chain in this turn.
+                _explicit_chain = re.search(
+                    r"\b(ethereum|polygon|arbitrum|optimism|base|avalanche|avax|bsc|bnb|solana|sol|"
+                    r"linea|zksync|scroll|mantle|blast|berachain|bera|sonic)\b",
+                    _msg_lower_exec,
+                )
+                if not _explicit_chain:
+                    inherited_chain: str | None = None
+                    for hc in reversed(history_cards):
+                        ctype = (hc.get("card_type") or "").lower()
+                        payload = hc.get("payload") or {}
+                        if ctype in {"defi_opportunities", "stake"}:
+                            chains_prior = payload.get("chains") or []
+                            if len(chains_prior) == 1:
+                                inherited_chain = str(chains_prior[0]).lower()
+                                break
+                            items = payload.get("items") or payload.get("staking_options") or []
+                            derived = sorted({
+                                str(it.get("chain") or "").lower()
+                                for it in items if it.get("chain")
+                            })
+                            derived = [c for c in derived if c]
+                            if len(derived) == 1:
+                                inherited_chain = derived[0]
+                                break
+                        if ctype in {"execution_plan_v3", "execution_plan_v2", "pool_link"}:
+                            # last execution plan / pool link — inherit its chain
+                            ch = (payload.get("chain") or "").lower()
+                            if ch:
+                                inherited_chain = ch
+                                break
+                            steps = payload.get("steps") or []
+                            for st in steps:
+                                ch = str(st.get("chain") or "").lower()
+                                if ch:
+                                    inherited_chain = ch
+                                    break
+                            if inherited_chain:
+                                break
+                    if inherited_chain:
+                        if tool_name == "build_yield_execution_plan":
+                            current = (tool_input.get("chain") or "").lower()
+                            # Only override default fallbacks (ethereum/base) when
+                            # the prior narrowed elsewhere. Never overwrite an
+                            # explicit user-named chain in tool args.
+                            if (not current or current in {"ethereum", "base"}) and current != inherited_chain:
+                                tool_input["chain"] = inherited_chain
+                        else:  # execute_pool_position
+                            current = (tool_input.get("chain") or "").lower()
+                            if not current or current in {"ethereum", "base"}:
+                                if current != inherited_chain:
+                                    tool_input["chain"] = inherited_chain
+
             if tool_name == "explain_sentinel_methodology":
                 _emit_thoughts(collector, [
                     "Parsed Sentinel methodology request and selected explanation mode.",
