@@ -56,6 +56,16 @@ _NATIVE_TOKEN_BY_CHAIN: dict[str, str] = {
     "avalanche": "AVAX",
 }
 
+# Canonical aWETH (or aMATIC/aAVAX) per chain — needed for WTG3.withdrawETH
+# approval. Avoids forcing the caller to know these.
+_AAVE_NATIVE_ATOKEN: dict[str, str] = {
+    "ethereum": "0x4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8",  # aWETH
+    "polygon":  "0x6d80113e533a2C0fe82EaBD35f1875DcEA89Ea97",  # aWMATIC
+    "arbitrum": "0xe50fA9b3c56FfB159cB0FCA61F5c9D750e8128c8",  # aWETH
+    "optimism": "0xe50fA9b3c56FfB159cB0FCA61F5c9D750e8128c8",  # aWETH
+    "base":     "0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7",  # aWETH
+}
+
 _CHAIN_IDS: dict[str, int] = {
     "ethereum": 1,
     "polygon": 137,
@@ -212,7 +222,12 @@ class AaveV3SupplyAdapter:
             native_units = _to_unit(request.amount_in, 18)
             if native_units <= 0:
                 native_units = (1 << 256) - 1
-            atoken_addr = (extra.get("atoken_address") or extra.get("aToken") or "").lower()
+            atoken_addr = (
+                extra.get("atoken_address")
+                or extra.get("aToken")
+                or _AAVE_NATIVE_ATOKEN.get(chain_norm)
+                or ""
+            ).lower()
             if not atoken_addr or len(atoken_addr) != 42:
                 raise ValueError(
                     f"Native withdraw via WTG3 needs extra.atoken_address (the "
