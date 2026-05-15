@@ -387,6 +387,15 @@ export interface ExecutionPlanV3Payload {
     detail?: string;
     severity?: "info" | "warning" | "critical";
   } | null;
+  recovery?: {
+    action: "AUTO_REBUILD" | "ASK_USER" | "NO_AUTO" | "NOTIFY" | "ESCALATE";
+    posture: string;
+    new_slippage_bps?: number | null;
+    alternatives?: { pool_id: string; apr?: number; tvl?: number }[];
+    buttons?: string[];
+    channels?: string[];
+    rationale?: string;
+  } | null;
 }
 
 export type CardType =

@@ -198,6 +198,32 @@ export function ExecutionPlanV3Card({ payload, onSignStep }: Props) {
         </div>
       )}
 
+      {payload.recovery && payload.recovery.buttons && payload.recovery.buttons.length > 0 && (
+        <div className="relative border-b border-white/10 bg-rose-500/5 p-5">
+          <div className="mb-2 flex items-center gap-2 text-sm font-black text-rose-100">
+            <span aria-hidden="true">⏏</span> Recovery — {payload.recovery.posture}
+          </div>
+          {payload.recovery.rationale && (
+            <div className="mb-3 text-[12px] text-rose-100/70">
+              {payload.recovery.rationale}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {payload.recovery.buttons.map((label, idx) => (
+              <button
+                key={`${label}-${idx}`}
+                type="button"
+                disabled
+                title="Click handlers land in a follow-up commit"
+                className="rounded-full border border-rose-400/30 bg-rose-500/10 px-3 py-1 text-[11px] font-bold text-rose-100 opacity-70"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {payload.exposure_disclosure && (
         <div className="relative border-b border-white/10 bg-amber-500/5 p-5">
           <div className="mb-2 flex items-center gap-2 text-sm font-black text-amber-100">
