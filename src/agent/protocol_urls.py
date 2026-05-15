@@ -600,7 +600,7 @@ def is_pool_link_action(*, action: str | None, protocol: str | None, chain: str 
     # so Aerodrome Slipstream and Velodrome CL now flow through the
     # native NFPM mint instead of the pool_deposit_v3 redirect (§6a).
     V3_NATIVE_EXEC = frozenset({
-        "uniswap-v3", "uniswap",
+        "uniswap-v3", "uniswap", "uniswap-v4",
         "pancakeswap-v3", "pancake-v3",
         "aerodrome-slipstream", "aerodrome-cl",
         "velodrome-cl", "velodrome-slipstream",
