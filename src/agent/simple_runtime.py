@@ -1807,8 +1807,20 @@ def _detect_enso_vault_deposit(message: str) -> tuple[str, dict] | None:
     # "Aerodrome Slipstream WETH-USDC" routed to Enso vault deposit and
     # hit "no position token indexed for aerodrome WETH on base" because
     # Aerodrome bare is Enso-supported but Slipstream is V3-NFT-managed.
-    if re.search(r"\b(slipstream|whirlpool|whirlpools|clmm|dlmm|cpmm|v3\b)", rest, re.IGNORECASE):
+    #
+    # Note: standalone "v3" cannot be the refusal trigger — Aave V3 /
+    # Compound V3 / Yearn V3 / Spark V3 are lending / vault adapters
+    # routed through this path. The CL refusal targets DEX V3 with
+    # explicit pair format (TOKEN/TOKEN or TOKEN-TOKEN) or CL hints.
+    if re.search(r"\b(slipstream|whirlpool|whirlpools|clmm|dlmm|cpmm)\b", rest, re.IGNORECASE):
         return None
+    # Refuse plain DEX V3 (Uniswap V3 / PancakeSwap V3 / SushiSwap V3) only
+    # when paired with a pair pattern — lending V3 protocols don't carry
+    # pair syntax.
+    if re.search(r"\bv3\b", rest, re.IGNORECASE) and re.search(r"\b[A-Z]{2,10}[/-][A-Z]{2,10}\b", rest):
+        # Carve out lending V3 names which don't render pair syntax.
+        if not re.search(r"\b(aave|compound|spark|yearn|morpho|silo|sky)\b", rest, re.IGNORECASE):
+            return None
     proto_match = _ENSO_PROTOS_RE.search(rest)
     if not proto_match:
         return None
@@ -5309,8 +5321,12 @@ async def run_ephemeral_turn(
             if top_match:
                 _msg_strip = message.strip()
                 _explicit_proto = _ENSO_PROTOS_RE.search(_msg_strip)
+                # Only treat refs as explicit when the user actually used
+                # an ordinal selector ("top"/"first"/"best"/"#1"/"1st").
+                # Generic words like 'pool'/'item'/'one' false-match inside
+                # protocol names like 'Rocket Pool' (v4-A13).
                 _explicit_ref = re.search(
-                    r"\b(top|first|best|#?\s*1|1st|option|pick|item|one|pool)\b",
+                    r"\b(top|first|best|1st)\b|#?\s*1\b",
                     _msg_strip,
                     re.IGNORECASE,
                 )
