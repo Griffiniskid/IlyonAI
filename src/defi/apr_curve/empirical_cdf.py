@@ -66,16 +66,18 @@ def _slug_for(symbol: str) -> str | None:
     return _COINGECKO_SLUG.get(symbol.upper())
 
 
-async def _fetch_hourly_prices(slugs: list[str], *, span_hours: int = 720, timeout_s: float = 6.0) -> dict[str, list[tuple[int, float]]] | None:
+async def _fetch_hourly_prices(slugs: list[str], *, span_samples: int = 180, period: str = "4h", timeout_s: float = 6.0) -> dict[str, list[tuple[int, float]]] | None:
     """Return {slug: [(ts_s, usd_price), ...]} for the requested slugs.
 
-    DefiLlama coins/chart returns up to `span` samples at the requested
-    `period`. We ask for ~720 hours = 30 days at 1h period.
+    DefiLlama coins/chart caps each request at 500 total data points
+    (samples × coins). Default period=4h, span=180 fits 2 coins comfortably
+    (360 ≤ 500) and covers 30 days at 4-hour resolution — enough granularity
+    for the in-range probability CDF without breaking the API limit.
     """
     coin_keys = ",".join(f"coingecko:{s}" for s in slugs)
     url = (
         f"https://coins.llama.fi/chart/{coin_keys}"
-        f"?period=1h&span={span_hours}&searchWidth=600"
+        f"?period={period}&span={span_samples}&searchWidth=600"
     )
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout_s)) as sess:
@@ -111,20 +113,23 @@ async def _fetch_hourly_prices(slugs: list[str], *, span_hours: int = 720, timeo
 def _align_ratio_series(
     series_a: list[tuple[int, float]],
     series_b: list[tuple[int, float]],
+    *,
+    bucket_seconds: int = 14_400,
 ) -> list[float]:
-    """Inner-join two timestamp series on hour buckets, return ratio
-    series = price_a / price_b. Tolerates up to 30 minutes of drift.
+    """Inner-join two timestamp series on `bucket_seconds` buckets, return
+    ratio series = price_a / price_b. Default bucket=4 hours matches the
+    DefiLlama coins/chart period=4h cadence; pass bucket_seconds=3600 for
+    1h cadence. Tolerates ±1 bucket of drift between the two feeds.
     """
     if not series_a or not series_b:
         return []
-    b_by_hour = {ts // 3600: px for ts, px in series_b}
+    b_by_bucket = {ts // bucket_seconds: px for ts, px in series_b}
     ratios: list[float] = []
     for ts_a, px_a in series_a:
-        hour = ts_a // 3600
-        px_b = b_by_hour.get(hour)
+        bucket = ts_a // bucket_seconds
+        px_b = b_by_bucket.get(bucket)
         if px_b is None:
-            # Try ±1 hour drift.
-            px_b = b_by_hour.get(hour - 1) or b_by_hour.get(hour + 1)
+            px_b = b_by_bucket.get(bucket - 1) or b_by_bucket.get(bucket + 1)
         if px_b and px_b > 0 and px_a > 0:
             ratios.append(px_a / px_b)
     return ratios

@@ -9,10 +9,10 @@ from src.defi.apr_curve.empirical_cdf import (
 
 
 def test_align_ratio_series_inner_join_by_hour():
-    # Hourly ticks aligned.
+    # Hourly ticks aligned — use 1h bucket.
     sa = [(3600, 100.0), (7200, 110.0), (10800, 120.0)]
     sb = [(3600, 50.0), (7200, 50.0), (10800, 60.0)]
-    out = _align_ratio_series(sa, sb)
+    out = _align_ratio_series(sa, sb, bucket_seconds=3600)
     assert out == [2.0, 2.2, 2.0]
 
 
@@ -20,7 +20,7 @@ def test_align_ratio_series_drift_tolerance():
     # Series B has a 1-hour drift on the second sample.
     sa = [(3600, 100.0), (7200, 110.0)]
     sb = [(3600, 50.0), (10800, 50.0)]  # 10800 is +1 hour from 7200
-    out = _align_ratio_series(sa, sb)
+    out = _align_ratio_series(sa, sb, bucket_seconds=3600)
     assert len(out) == 2
     assert out[0] == 2.0
     assert out[1] == 2.2
@@ -28,9 +28,17 @@ def test_align_ratio_series_drift_tolerance():
 
 def test_align_ratio_series_handles_missing():
     sa = [(3600, 100.0), (7200, 110.0)]
-    sb = [(99999, 50.0)]  # no overlap
+    sb = [(999_999, 50.0)]  # no overlap even with 4h bucket
     out = _align_ratio_series(sa, sb)
     assert out == []
+
+
+def test_align_ratio_series_4h_bucket_default():
+    # Default bucket = 4 hours (14400s). Samples 4h apart should join.
+    sa = [(14_400, 100.0), (28_800, 110.0), (43_200, 120.0)]
+    sb = [(14_400, 50.0), (28_800, 55.0), (43_200, 60.0)]
+    out = _align_ratio_series(sa, sb)
+    assert out == [2.0, 2.0, 2.0]
 
 
 def test_empirical_cdf_buckets_stable_pair_near_1():
