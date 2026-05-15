@@ -164,7 +164,10 @@ class UniswapV2DualTokenAdapter:
         "baseswap",
         "trader-joe-v1", "trader-joe", "traderjoe",
     })
-    actions: frozenset[str] = frozenset({"deposit_lp", "add_liquidity", "provide_liquidity"})
+    actions: frozenset[str] = frozenset({
+        "deposit_lp", "add_liquidity", "provide_liquidity",
+        "remove_liquidity", "withdraw",
+    })
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
         if chain.lower() not in self.chains:
