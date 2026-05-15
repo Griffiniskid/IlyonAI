@@ -384,8 +384,16 @@ class BalancerSingleAssetAdapter:
         asset_addresses = [addr for _, addr, _ in assets]
 
         # Exit token: caller picks via extra.exit_token (the symbol they want
-        # back). Default = the same asset they supplied originally.
-        exit_symbol = (extra.get("exit_token") or request.asset_in).upper()
+        # back). Default = first asset in the pool (BPT-in path).
+        # asset_in for exit_pool is typically BPT (the pool share token) —
+        # falling back to it would always miss, so prefer the pool's first
+        # underlying when no explicit exit_token is given.
+        first_asset = assets[0][0] if assets else ""
+        exit_symbol = (
+            extra.get("exit_token")
+            or (request.asset_in if request.asset_in.upper() != "BPT" else first_asset)
+            or first_asset
+        ).upper()
         exit_index = None
         exit_decimals = None
         for idx, (sym, _addr, dec) in enumerate(assets):
