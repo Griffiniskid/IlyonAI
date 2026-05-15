@@ -449,6 +449,12 @@ LST_STAKE_PROTOCOLS = frozenset({
     "marinade-finance", "marinade-native", "marinade", "marinade-liquid-staking",
     "jito", "jito-liquid-staking",
     "sanctum", "sanctum-infinity", "sanctum-liquid-staking",
+    # LRTs (EigenLayer-restaked baskets) — direct-mint adapter ships real
+    # calldata for all of these; no pool_link redirect needed.
+    "renzo", "ezeth",
+    "kelp", "kelp-dao", "rseth",
+    "puffer", "pufeth",
+    "mantle", "mantle-staked", "meth", "mantle-staked-ether",
 })
 
 
