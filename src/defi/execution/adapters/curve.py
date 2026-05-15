@@ -149,7 +149,10 @@ class CurveSingleSidedAdapter:
     adapter_id: str = "curve-stable-singlesided"
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base"})
     protocols: frozenset[str] = frozenset({"curve", "curve-dex", "curve-finance", "curve-stable"})
-    actions: frozenset[str] = frozenset({"deposit_lp", "add_liquidity", "provide_liquidity"})
+    actions: frozenset[str] = frozenset({
+        "deposit_lp", "add_liquidity", "provide_liquidity",
+        "remove_liquidity_one_coin", "withdraw",
+    })
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
         if chain.lower() not in self.chains:
@@ -187,6 +190,67 @@ class CurveSingleSidedAdapter:
         pool_address = pool_meta["address"]
         coins = pool_meta["coins"]
         n_coins = len(coins)
+
+        # Phase 4 lifecycle — remove_liquidity_one_coin(uint256 burn,
+        # int128 i, uint256 min_dy) selector 0x1a4d01d2.
+        action_hint = (extra.get("action") or "").lower()
+        if action_hint in {"remove_liquidity_one_coin", "withdraw"}:
+            asset_u = request.asset_in.upper()
+            coin_index = None
+            for idx, (sym, _, dec) in enumerate(coins):
+                if sym.upper() == asset_u:
+                    coin_index = idx
+                    break
+            if coin_index is None:
+                raise ValueError(
+                    f"Curve pool {pool_key} on {chain_norm} does not contain {asset_u}; "
+                    f"coins = {[s for s, _, _ in coins]}."
+                )
+            burn_units = _to_unit(request.amount_in, 18)  # LP shares are 18-dec
+            min_dy = 0  # caller can supply via extra.min_dy; default = 0 (slippage gate)
+            try:
+                if extra.get("min_dy") is not None:
+                    min_dy = int(extra["min_dy"])
+            except (TypeError, ValueError):
+                pass
+            sel = "0x1a4d01d2"
+            data = (
+                sel
+                + format(burn_units & ((1 << 256) - 1), "064x")
+                + format(coin_index & ((1 << 256) - 1), "064x")
+                + format(min_dy & ((1 << 256) - 1), "064x")
+            )
+            step = make_step(
+                index=1,
+                action="remove_liquidity_one_coin",
+                title=f"Withdraw {request.asset_in} from Curve {pool_key}",
+                description=(
+                    f"Burn {request.amount_in} LP shares and receive {request.asset_in} via "
+                    f"remove_liquidity_one_coin (pool {pool_address})."
+                ),
+                chain=request.chain,
+                wallet="MetaMask",
+                protocol="curve",
+                asset_in=f"crv-{pool_key}-lp",
+                amount_in=str(request.amount_in),
+                asset_out=request.asset_in,
+                slippage_bps=int(request.slippage_bps or 50),
+                gas_estimate_usd=3.0,
+                duration_estimate_s=15,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm",
+                    chain_id=chain_id,
+                    to=pool_address,
+                    data=data,
+                    value="0x0",
+                    spender=pool_address,
+                ),
+                risk_warnings=[
+                    "Single-coin removal incurs Curve's per-pool exit fee (~0.04%).",
+                ],
+            )
+            return [step]
+
         selector = _ADD_LIQUIDITY_SELECTORS.get(n_coins)
         if selector is None:
             raise ValueError(f"Curve pool with {n_coins} coins not yet supported (selector missing).")
