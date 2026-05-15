@@ -56,7 +56,11 @@ def build_default_registry() -> AdapterRegistry:
     handles swap/bridge/stake fallbacks. The V3 NFT-position adapter handles
     Uniswap V3 / PancakeSwap V3 / Aerodrome Slipstream (concentrated liquidity).
     """
+    from src.defi.execution.adapters.aave_v3 import AaveV3SupplyAdapter
+    from src.defi.execution.adapters.compound_v3 import CompoundV3SupplyAdapter
+    from src.defi.execution.adapters.curve import CurveSingleSidedAdapter
     from src.defi.execution.adapters.enso_shortcut import EnsoShortcutAdapter
+    from src.defi.execution.adapters.erc4626 import ERC4626VaultAdapter
     from src.defi.execution.adapters.solana_yield_builder import SolanaYieldBuilderAdapter
     from src.defi.execution.adapters.uniswap_v2 import UniswapV2DualTokenAdapter
     from src.defi.execution.adapters.uniswap_v3_nft import UniswapV3NFTAdapter
@@ -65,9 +69,16 @@ def build_default_registry() -> AdapterRegistry:
 
     return AdapterRegistry(
         adapters=[
+            # V4 first so it wins over V3 NFT for uniswap-v4.
             UniswapV4NativeAdapter(),
             UniswapV3NFTAdapter(),
             UniswapV2DualTokenAdapter(),
+            # Protocol-native withdraw paths precede Enso so lifecycle actions
+            # land on the on-chain encoders instead of a generic Enso route.
+            AaveV3SupplyAdapter(),
+            CompoundV3SupplyAdapter(),
+            CurveSingleSidedAdapter(),
+            ERC4626VaultAdapter(),
             EnsoShortcutAdapter(),
             SolanaYieldBuilderAdapter(),
             WalletAssistantAdapter(),
