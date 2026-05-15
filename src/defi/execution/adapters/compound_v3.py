@@ -20,6 +20,15 @@ from src.defi.execution.adapters.base import (
 from src.defi.execution.models import ExecutionStepV3, UnsignedStepTransaction, make_step
 
 # Verified Comet (cToken v3) addresses, base-asset → comet contract per chain.
+_COMET_REWARDS_BY_CHAIN: dict[str, str] = {
+    "ethereum": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
+    "polygon":  "0x45939657d1CA34A8FA39A924B71D28Fe8431e581",
+    "arbitrum": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
+    "base":     "0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1",
+    "optimism": "0x443EA0340cb75a160F31A440722dec7b5bc3C2E9",
+}
+
+
 _COMET_BY_CHAIN_ASSET: dict[tuple[str, str], str] = {
     # Ethereum
     ("ethereum", "USDC"): "0xc3d688b66703497daa19211eedff47f25384cdc3",
@@ -58,7 +67,7 @@ class CompoundV3SupplyAdapter:
     adapter_id: str = "compound-v3-supply"
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base"})
     protocols: frozenset[str] = frozenset({"compound-v3", "compound", "compound v3", "compoundv3", "comet"})
-    actions: frozenset[str] = frozenset({"supply", "deposit", "lend", "withdraw"})
+    actions: frozenset[str] = frozenset({"supply", "deposit", "lend", "withdraw", "claim"})
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
         chain_norm = chain.lower()
@@ -93,6 +102,38 @@ class CompoundV3SupplyAdapter:
         # Phase 4 lifecycle — Comet.withdraw(asset, amount) selector 0xf3fef3a3.
         extra = request.extra or {}
         action_hint = (extra.get("action") or "").lower()
+        if action_hint == "claim":
+            rewards_addr = _COMET_REWARDS_BY_CHAIN.get(chain_norm)
+            if not rewards_addr:
+                raise ValueError(f"Compound v3 CometRewards not registered on {chain_norm}.")
+            # CometRewards.claim(address comet, address src, bool shouldAccrue) — 0xb7034f7e.
+            claim_data = (
+                "0xb7034f7e"
+                + _encode_address(comet_address)
+                + _encode_address(request.user_address)
+                + _encode_uint256(1)  # shouldAccrue = true
+            )
+            claim_step = make_step(
+                index=1, action="claim",
+                title=f"Claim COMP rewards from Compound v3 {request.asset_in}",
+                description=(
+                    f"CometRewards.claim(comet={comet_address}, src={request.user_address}, "
+                    f"accrue=true). Accumulated COMP for the {request.asset_in} market is "
+                    f"transferred to the user wallet."
+                ),
+                chain=request.chain, wallet="MetaMask", protocol="compound-v3",
+                asset_in="cCOMP-rewards", amount_in="0",
+                asset_out="COMP",
+                slippage_bps=0, gas_estimate_usd=2.0, duration_estimate_s=15,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm", chain_id=chain_id,
+                    to=rewards_addr, data=claim_data, value="0x0", spender=rewards_addr,
+                ),
+                risk_warnings=[
+                    "Claim accrues rewards on-chain and transfers COMP — no other side effects.",
+                ],
+            )
+            return [claim_step]
         if action_hint == "withdraw":
             wd_units = _to_unit(request.amount_in, decimals)
             if wd_units <= 0:
