@@ -66,3 +66,24 @@ def test_default_chain_when_omitted(detector):
     assert r is not None
     _, args = r
     assert args.get("chain") == "ethereum"
+
+
+def test_repay_verb_maps_to_repay_action(detector):
+    r = detector("Repay 25 USDC to Aave V3 on Base")
+    assert r is not None
+    _, args = r
+    assert args.get("action") == "repay"
+    assert args.get("protocol") == "aave-v3"
+    assert args.get("asset_in") == "USDC"
+    assert args.get("amount_in") == 25.0
+    assert args.get("chain") == "base"
+
+
+def test_borrow_verb_maps_to_borrow_action(detector):
+    r = detector("Borrow 100 USDC from Aave V3 on Ethereum")
+    assert r is not None
+    _, args = r
+    assert args.get("action") == "borrow"
+    assert args.get("protocol") == "aave-v3"
+    assert args.get("amount_in") == 100.0
+    assert args.get("chain") == "ethereum"
