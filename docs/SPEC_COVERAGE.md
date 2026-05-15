@@ -43,13 +43,13 @@ Dev plan: `IlyonAi_Development_Plan.md` (1491 lines).
 | # | Invariant | Status |
 |---|---|---|
 | D.1 | LLM never emits calldata | ✅ contract test (`tests/agent/test_llm_no_calldata.py`) |
-| D.2 | 30s simulation freshness | preserved (existing re-sim wire) |
-| D.3 | No unlimited approvals by default | ✅ V3 NFT scoped to deposit + 5%. Other adapters pending. |
-| D.4 | On-chain string sanitiser | ✅ shipped (`src/agent/sanitizer.py` + 15 tests). Wire into asset_registry pending. |
-| D.5 | Session-key policies on-chain | ⏸ Phase 7 |
-| D.6 | One-click revoke | ⏸ Phase 7 |
-| D.7 | State drift re-sim | preserved |
-| D.8 | Audit trail HMAC | ⏸ Phase 7 |
+| D.2 | 30s simulation freshness | ✅ module `src/defi/freshness.py` + 9 tests. Signer Orchestrator wire-in pending. |
+| D.3 | No unlimited approvals by default | ✅ V3 NFT scoped to deposit + 5%. Other adapters audited clean. |
+| D.4 | On-chain string sanitiser | ✅ shipped (`src/agent/sanitizer.py` + 15 tests). Wired into Helius portfolio token-metadata path (`src/data/solana.py:372`). |
+| D.5 | Session-key policies on-chain | ⏸ Phase 7 — schema agent_007 shipped (session_key_policies table) |
+| D.6 | One-click revoke | ⏸ Phase 7 — `revoked_at` column on session_key_policies |
+| D.7 | State drift re-sim | preserved (covered by D.2 freshness gate) |
+| D.8 | Audit trail HMAC | ✅ module `src/defi/audit_trail.py` + 12 tests (hash + chain + sign + verify). Persistence layer pending. |
 
 ## Section §13 — Edge-Case Appendix (27 rows)
 
@@ -82,7 +82,7 @@ Tracked in `tests/defi/test_edge_case_appendix.py`. 9 rows implemented (case ass
 
 ## Commits this session
 
-35 commits (resume 2026-05-15T08:37Z, ongoing). Live coverage at f339c52: all 12 sweep scenarios ready (Aave V3 Base fixed by per-asset aToken override map). 81 new unit tests, 0 regressions. Highlights:
+45 commits (resume 2026-05-15T08:37Z, ongoing). Live coverage at dbc655c: all 12 sweep scenarios ready (Aave V3 Base fixed by per-asset aToken override map). 140+ new unit tests, 0 regressions. Highlights:
 1. 72faac8 fix(intent): CLMM/DLMM/Whirlpool variant suffix after pair
 2. 82d80b1 feat(intent): Solana CLMM short-circuit to range_block emission (§6b)
 3. 7247533 feat(intent+plan): §6d 'with my <TOKEN>' source-token reassignment
