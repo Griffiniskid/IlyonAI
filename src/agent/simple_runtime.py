@@ -2825,10 +2825,11 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     if multi_step is not None:
         return multi_step
 
-    # Phase 4 lifecycle — withdraw / redeem detector.
+    # Phase 4 lifecycle — withdraw / redeem / claim detector.
     # Matches: "Withdraw 100 USDC from Aave V3 on Base"
     #          "Redeem 0.5 yvUSDC from Yearn on Ethereum"
     #          "Withdraw all from Compound V3 USDC on Ethereum"
+    #          "Claim COMP rewards from Compound V3 USDC on Ethereum"
     def _detect_lifecycle_withdraw(msg: str) -> tuple[str, dict] | None:
         text = msg.strip()
         # Strip trailing "on <CHAIN>" first so the protocol regex doesn't
@@ -2838,6 +2839,31 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
         if m_chain:
             chain = m_chain.group("chain").lower()
             text = text[: m_chain.start()].rstrip()
+        # Dedicated claim-rewards branch first — no amount, may have a
+        # reward-token symbol up front: "Claim COMP rewards from Compound V3 USDC".
+        m_claim = re.match(
+            r"^\s*claim\s+(?P<reward>[A-Za-z][A-Za-z0-9]{0,9})\s+rewards\s+from\s+"
+            rf"{_PROTOCOL_NAME_RE}"
+            r"(?:\s+(?P<asset_tail>[A-Za-z][A-Za-z0-9]{0,9}))?"
+            r"\s*$",
+            text,
+            re.IGNORECASE,
+        )
+        if m_claim:
+            gd = m_claim.groupdict()
+            proto = re.sub(r"\s+", "-", (gd.get("protocol") or "").strip().lower())
+            asset = (gd.get("asset_tail") or "USDC").upper()
+            return (
+                "build_yield_execution_plan",
+                {
+                    "chain": chain or "ethereum",
+                    "protocol": proto,
+                    "action": "claim",
+                    "asset_in": asset,
+                    "amount_in": 0,
+                    "extra": {"action": "claim", "reward_token": gd.get("reward").upper()},
+                },
+            )
         m = re.match(
             r"^\s*(?P<verb>withdraw|redeem|claim)\s+"
             r"(?:(?P<all>all)|"
