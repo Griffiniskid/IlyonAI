@@ -2256,7 +2256,7 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     # UniswapV3NFTAdapter builds a real swap+approve+mint plan instead of the
     # legacy pool_deposit_v3 redirect card.
     _V3_EVM_PROTOS = {
-        "uniswap-v3", "pancakeswap-v3", "pancake-v3",
+        "uniswap-v3", "uniswap-v4", "pancakeswap-v3", "pancake-v3",
         "aerodrome-slipstream", "aerodrome-cl",
         "velodrome-cl", "velodrome-slipstream",
     }
