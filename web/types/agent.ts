@@ -380,6 +380,13 @@ export interface ExecutionPlanV3Payload {
   research_thesis?: string | null;
   strategy_id?: string | null;
   range_block?: V3RangeBlock | null;
+  exposure_disclosure?: {
+    source_token: string;
+    pool_legs: string[];
+    headline: string;
+    detail?: string;
+    severity?: "info" | "warning" | "critical";
+  } | null;
 }
 
 export type CardType =

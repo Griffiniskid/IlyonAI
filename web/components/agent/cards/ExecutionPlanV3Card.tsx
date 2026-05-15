@@ -198,6 +198,22 @@ export function ExecutionPlanV3Card({ payload, onSignStep }: Props) {
         </div>
       )}
 
+      {payload.exposure_disclosure && (
+        <div className="relative border-b border-white/10 bg-amber-500/5 p-5">
+          <div className="mb-2 flex items-center gap-2 text-sm font-black text-amber-100">
+            <span aria-hidden="true">⚠</span> Source-token reassignment
+          </div>
+          <div className="text-sm text-amber-50">
+            {payload.exposure_disclosure.headline}
+          </div>
+          {payload.exposure_disclosure.detail && (
+            <div className="mt-1 text-[12px] text-amber-100/70">
+              {payload.exposure_disclosure.detail}
+            </div>
+          )}
+        </div>
+      )}
+
       {payload.range_block && (
         <div className="relative border-b border-white/10 p-5">
           <V3RangeBlock block={payload.range_block} />
