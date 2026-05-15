@@ -172,6 +172,30 @@ async def build_yield_execution_plan(
         if not hasattr(plan, "metadata") or plan.metadata is None:
             plan.metadata = {}
         plan.metadata["composed_plan_snapshot"] = snap.to_dict()
+        # Register in the in-memory pending-plan registry so the deBridge
+        # webhook can look up this plan by order_id and call
+        # rebuild_step_with_actual_delta + promote when DLN fills the order.
+        order_id = snap.quote_id  # DLN reuses quote_id as the order_id post-broadcast
+        if order_id:
+            try:
+                from src.defi.execution.pending_plans import (
+                    PendingPlan,
+                    register as register_pending,
+                )
+                await register_pending(PendingPlan(
+                    plan_id=plan.plan_id,
+                    order_id=str(order_id),
+                    plan=plan,
+                    deposit_step=deposit_step,
+                    snapshot=snap,
+                    user_wallet=user_address or "",
+                    src_chain=src_chain_hint,
+                    dst_chain=chain,
+                ))
+            except Exception:  # noqa: BLE001
+                # Registry failure is non-fatal — plan still surfaces with
+                # PENDING_DST_FILL blocker; user can re-prompt to retry.
+                pass
         return ok_envelope(
             data={"plan": plan.to_dict()},
             card_type="execution_plan_v3",

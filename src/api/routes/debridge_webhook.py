@@ -73,8 +73,34 @@ async def debridge_webhook(request: web.Request) -> web.Response:
         "received_at": time.time(),
     }
 
+    # Resolve any pending composed plan keyed by this order_id. On filled
+    # state, the helper calls rebuild_step_with_actual_delta + promote +
+    # drops the registry entry. Failure modes keep the blocker but drop
+    # the entry. Any push-to-user notifier is the caller's responsibility.
+    rebuild_payload = None
+    try:
+        from src.defi.execution.pending_plans import resolve_fill
+        rebuild_payload = await resolve_fill(
+            order_id,
+            actual_dst_amount=parsed.get("actual_dst_amount"),
+            state=state,
+        )
+    except Exception as exc:  # noqa: BLE001 — never fail the webhook on this
+        logger.warning("pending-plan resolve failed for %s: %s", order_id, exc)
+
+    # If a runtime SSE notifier callback is wired into the app, push the
+    # resolution to the user's chat channel so the UI flips without a poll.
+    if rebuild_payload is not None:
+        notifier = request.app.get("_composed_plan_notifier")
+        if notifier is not None:
+            try:
+                await notifier(rebuild_payload)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("composed-plan notifier failed: %s", exc)
+
     return web.json_response({
         "ok": True, "order_id": order_id, "state": state, "persisted": persisted,
+        "rebuild": rebuild_payload,
     })
 
 
