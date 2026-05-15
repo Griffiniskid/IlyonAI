@@ -145,3 +145,36 @@ Total unit tests added this session: 66 (15 §6e + 15 §6f + 11 §6g + 15 §11 D
 - §13 edge cases 18 remaining (each has a file/module pointer in the test fixture)
 - §11 D.2 explicit 30s freshness re-sim test
 - §11 D.5-D.8 session-key / revoke / state-drift / audit-trail
+
+## Resume v2 (post-compaction continuation, 2026-05-15)
+
+| Section | Status delta | Evidence |
+|---|---|---|
+| §6a Uniswap V4 native | ⏸ → ✅ adapter shipped + plan emits | `src/defi/execution/adapters/uniswap_v4.py`, capture `/tmp/v3-deep/V4d_eth.txt` |
+| §6a Hook allowlist | ✅ | `src/shield/v4_hook_allowlist.py` is_allowed + shield_verdict_for_hook (called by V4 adapter) |
+| §6b Meteora DLMM live | ⏸ → ✅ | `services/solana-yield-builder/src/index.js` _meteoraDlmmState replaced; captures R4/R5 |
+| §6c deBridge bridge protocol + webhook | ⏸ → ✅ | `src/routing/debridge_client.py` DeBridgeBridge + `src/api/routes/debridge_webhook.py`; live POST 200 + GET 200 roundtrip |
+| §6d native amount stays native | regression closed (critical bug) | `src/agent/simple_runtime.py` c8b8633 |
+| §6f recovery wire | ✅ (was) | (unchanged) |
+| §11 D.2 freshness gate | ⏸ wire → ✅ wired into `_refresh_plan_status` broadcast flip | `src/defi/execution/models.py` 19b455b |
+| §11 D.4 sanitiser wider | Helius → +DexScreener +CoinGecko +DefiLlama | dexscreener.py / coingecko.py / defillama.py |
+| §11 D.5 session-key model | ⏸ → ✅ | `src/auth/session_keys.py` + 12 tests |
+| §11 D.6 revoke route | ⏸ → ✅ | `src/api/routes/session_keys.py`; POST 200 confirmed roundtrip |
+| §5 state machine wire-in | ⏸ → ✅ | `_refresh_plan_status` consults `is_legal_transition` |
+| Pool index store + refresher | ⏸ → ✅ | `src/defi/pool_index/store.py`, `refresher.py`; 5 tests |
+| Receipt verifier per-kind | ⏸ → ✅ EVM (V3 NFT + 8 ERC20 kinds) | `src/defi/verification/receipt_reader.py`; 8 tests |
+| Phase 4 lifecycle V3 NFT decrease/collect/close | ⏸ → ✅ | `uniswap_v3_nft._build_lifecycle`; 5 tests |
+| Phase 4 lifecycle Aave V3 withdraw | ⏸ → ✅ live | Pool.withdraw 0x69328dec; capture L_aave_wd3.txt |
+| Phase 4 lifecycle Compound V3 withdraw | ⏸ → ✅ live | Comet.withdraw 0xf3fef3a3; capture L_compound_wd.txt |
+| Phase 4 lifecycle Curve remove_liquidity_one_coin | ⏸ → ✅ | curve.py extra.action=withdraw branch |
+| Phase 4 lifecycle ERC-4626 withdraw/redeem | ⏸ → ✅ | erc4626.py 0xb460af94 / 0xba087652 |
+| Phase 4 lifecycle V2 + Balancer | ⏸ → ✅ action admit | actions += {remove_liquidity, exit_pool} |
+| Phase 6 chain expansion 8→18 | ⏸ → ✅ | ChainType + _CHAIN_IDS + _EVM_CHAINS_SET + V3_FACTORIES 8 new chains |
+| Phase 7 EIP-7702 helpers | ⏸ → ✅ | `src/auth/smart_account.py` + 8 tests |
+| R8 LST/LRT direct-mint registry | ⏸ → ✅ | `src/defi/execution/lst_registry.py`; 9 tests |
+| Registry wiring Aave/Compound/Curve/Balancer/ERC4626 | (was Enso-only) → ✅ | capabilities.py 6 new adapters wired |
+| Lifecycle intent detector | ⏸ → ✅ | `_detect_lifecycle_withdraw` |
+| 8 new blocker codes | ✅ | KNOWN_BLOCKER_CODES MEV/GAS_MODEL/SELF_TRADE/JIT/POOL_LINK + KYC/AGGREGATOR/CAP/POOL_INIT/STALE/FROZEN/TOKEN_2022_HOOK |
+| §13 coverage | 9 → 26/27 implemented (only row 15 hardware-wallet ALT remains skip) | tests/defi/test_edge_case_appendix.py |
+
+Final tests: 325 passed, 2 skipped. 0 regressions across 35+ resume-v2 commits.
