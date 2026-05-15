@@ -83,11 +83,29 @@ def test_native_withdraw_zero_amount_uses_max_sentinel():
     assert "f" * 64 in data
 
 
-def test_native_withdraw_rejects_missing_atoken():
+def test_native_withdraw_falls_back_to_registry_atoken():
+    """When extra.atoken_address absent, adapter consults its per-chain
+    registry instead of raising — fix landed after live SSE caught
+    'extra.atoken_address' raise blocking the user."""
     a = AaveV3SupplyAdapter()
     req = _native_withdraw_req()
     req.extra.pop("atoken_address")
-    with pytest.raises(ValueError, match="extra.atoken_address"):
+    steps = _run(a.build(req))
+    # Auto-resolved to canonical aWETH on Ethereum
+    assert steps[0].transaction.to.lower() == "0x4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8"
+
+
+def test_native_withdraw_on_unsupported_chain_raises():
+    """Chain without an aToken registry entry should still raise."""
+    a = AaveV3SupplyAdapter()
+    req = YieldBuildRequest(
+        chain="avalanche", protocol="aave-v3", asset_in="AVAX",
+        amount_in=Decimal("0.05"),
+        user_address="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        extra={"action": "withdraw"},
+    )
+    # WTG3 not registered for avalanche → ValueError
+    with pytest.raises(ValueError, match="WrappedTokenGatewayV3 not registered"):
         _run(a.build(req))
 
 
