@@ -88,7 +88,7 @@ class AaveV3SupplyAdapter:
     adapter_id: str = "aave-v3-supply"
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base", "avalanche"})
     protocols: frozenset[str] = frozenset({"aave-v3", "aave", "aave v3", "aavev3"})
-    actions: frozenset[str] = frozenset({"supply", "deposit", "lend", "withdraw", "claim"})
+    actions: frozenset[str] = frozenset({"supply", "deposit", "lend", "withdraw", "claim", "repay", "borrow"})
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
         chain_norm = chain.lower()
@@ -125,6 +125,57 @@ class AaveV3SupplyAdapter:
         # Phase 4 lifecycle — withdraw(asset, amount, to) selector 0x69328dec.
         extra = request.extra or {}
         action_hint = (extra.get("action") or "").lower()
+        if action_hint == "repay":
+            repay_units = _to_unit(request.amount_in, decimals)
+            if repay_units <= 0:
+                repay_units = (1 << 256) - 1  # max sentinel
+            rate_mode = int(extra.get("rate_mode") or 2)  # 2 = variable, 1 = stable
+            # ERC20 approve(Pool, amount) first
+            approve_calldata = "0x095ea7b3" + _encode_address(pool_address) + _encode_uint256(repay_units)
+            # Pool.repay(asset, amount, rateMode, onBehalfOf) → 0x573ade81
+            repay_calldata = (
+                "0x573ade81"
+                + _encode_address(token_address)
+                + _encode_uint256(repay_units)
+                + _encode_uint256(rate_mode)
+                + _encode_address(request.user_address)
+            )
+            approve_step = make_step(
+                index=1, action="approve",
+                title=f"Approve {request.asset_in} for Aave V3 repay",
+                description=f"Allow Aave V3 Pool to pull up to {request.amount_in} {request.asset_in} for repay.",
+                chain=request.chain, wallet="MetaMask", protocol="aave-v3",
+                asset_in=request.asset_in, amount_in=str(request.amount_in),
+                slippage_bps=0, gas_estimate_usd=1.4, duration_estimate_s=15,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm", chain_id=chain_id,
+                    to=token_address, data=approve_calldata, value="0x0",
+                    spender=pool_address,
+                ),
+            )
+            repay_step = make_step(
+                index=2, action="repay",
+                title=f"Repay {request.asset_in} debt on Aave V3",
+                description=(
+                    f"Pool.repay({request.asset_in}, "
+                    f"{request.amount_in if repay_units != (1<<256)-1 else 'ALL'}, "
+                    f"rateMode={rate_mode}, onBehalfOf={request.user_address})."
+                ),
+                chain=request.chain, wallet="MetaMask", protocol="aave-v3",
+                asset_in=request.asset_in, amount_in=str(request.amount_in),
+                asset_out=f"a{request.asset_in}",
+                slippage_bps=0, gas_estimate_usd=2.5, duration_estimate_s=15,
+                depends_on=[approve_step.step_id],
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm", chain_id=chain_id,
+                    to=pool_address, data=repay_calldata, value="0x0",
+                    spender=pool_address,
+                ),
+                risk_warnings=[
+                    "Repay reduces debt balance; aToken accrual continues for any remaining supply.",
+                ],
+            )
+            return [approve_step, repay_step]
         if action_hint == "claim":
             rewards_addr = _AAVE_REWARDS_BY_CHAIN.get(chain_norm)
             if not rewards_addr:
