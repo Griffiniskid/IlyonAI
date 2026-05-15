@@ -1846,6 +1846,79 @@ def _detect_enso_vault_deposit(message: str) -> tuple[str, dict] | None:
     }
 
 
+_EXECUTE_NAMED_PROTO_RE = re.compile(
+    r"^\s*(?:execute|sign|do|run)\s+"
+    r"(?:on\s+|with\s+|the\s+)?"
+    r"(?P<proto>(?:aave|compound|spark|yearn|morpho|silo|sky|lido|rocket[\s-]?pool|"
+    r"ether[\.\s-]?fi|renzo|kelp|swell|frax|mantle|kamino|stader|"
+    r"jito|marinade|sanctum|raydium|orca|meteora|pendle|"
+    r"curve|balancer|aerodrome|velodrome|uniswap|pancakeswap|"
+    r"sushiswap|stargate)[a-z0-9-]*(?:\s*v?\d+)?)"
+    r"\s+(?:supply|deposit|stake|lend|allocate|with)?\s*"
+    r"\$?(?P<amount>[\d,]+(?:\.\d+)?)\s+"
+    r"(?P<asset>[A-Za-z]{2,10})"
+    r"(?:\s+(?:on|via|in)\s+(?P<chain>[A-Za-z]+))?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_execute_named_proto(message: str) -> tuple[str, dict] | None:
+    """Match 'Execute on Aave V3 with 250 USDC', 'Sign Lido 0.05 ETH',
+    'Run Compound V3 supply 100 USDC on Optimism' — natural-language
+    final-confirm verbs that name protocol + amount + asset directly.
+
+    Surfaces a build_yield_execution_plan tool intent so the dispatch
+    chain-stickiness inherits the prior turn's chain when none is
+    named explicitly. v4-A01 caught this falling through to
+    search_defi_opportunities when the user typed
+    'Execute on Aave V3 with 250 USDC' after switching chains.
+    """
+    m = _EXECUTE_NAMED_PROTO_RE.search(message.strip())
+    if not m:
+        return None
+    proto_raw = (m.group("proto") or "").strip().lower()
+    proto_norm = re.sub(r"\s+", "-", proto_raw)
+    # Map common aliases
+    _PROTO_ALIASES = {
+        "aave": "aave-v3", "aave-v3": "aave-v3",
+        "compound": "compound-v3", "compound-v3": "compound-v3",
+        "spark": "spark", "yearn": "yearn-finance", "yearn-finance": "yearn-finance",
+        "morpho": "morpho-blue", "morpho-blue": "morpho-blue",
+        "silo": "silo-v2", "sky": "sky-lending",
+        "lido": "lido", "rocket-pool": "rocket-pool", "rocketpool": "rocket-pool",
+        "ether.fi": "ether.fi", "etherfi": "ether.fi", "ether-fi": "ether.fi",
+        "renzo": "renzo", "kelp": "kelp", "swell": "swell", "frax": "frax",
+        "mantle": "mantle", "kamino": "kamino-lend",
+        "jito": "jito", "marinade": "marinade", "sanctum": "sanctum-infinity",
+        "raydium": "raydium-amm", "orca": "orca", "meteora": "meteora-dlmm",
+        "pendle": "pendle", "curve": "curve-dex", "balancer": "balancer",
+        "aerodrome": "aerodrome", "velodrome": "velodrome",
+        "uniswap": "uniswap-v3", "pancakeswap": "pancakeswap-amm-v3",
+        "sushiswap": "sushiswap", "stargate": "stargate",
+    }
+    slug = _PROTO_ALIASES.get(proto_norm) or _PROTO_ALIASES.get(proto_norm.split("-")[0]) or proto_norm
+    asset = m.group("asset").upper()
+    if asset in {"USD"}:
+        return None
+    amount = m.group("amount").replace(",", "")
+    chain_match = (m.group("chain") or "").lower()
+    chain = chain_match if chain_match else "ethereum"
+    if chain == "bnb":
+        chain = "bsc"
+    # Action heuristic from asset/proto family
+    _stake_protos = {"lido", "rocket-pool", "ether.fi", "renzo", "kelp", "swell",
+                     "frax", "mantle", "stader", "marinade", "jito",
+                     "sanctum-infinity"}
+    action = "stake" if slug in _stake_protos else "supply"
+    return "build_yield_execution_plan", {
+        "chain": chain,
+        "protocol": slug,
+        "action": action,
+        "asset_in": asset,
+        "amount_in": amount,
+    }
+
+
 def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
     """Match prompts like 'supply 100 USDC to Aave V3 on Ethereum' / 'execute Aave USDC supply 100'."""
     if not _AAVE_HINT.search(message):
@@ -3046,7 +3119,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
             },
         )
 
-    for detector in (_detect_cross_chain_then_yield, _detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_enso_vault_deposit, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_cross_chain_then_yield, _detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_enso_vault_deposit, _detect_execute_named_proto, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
