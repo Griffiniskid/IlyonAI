@@ -2182,19 +2182,29 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     usd_str = _md.get("usd")
     native_str = _md.get("native")
     native_tok = (_md.get("token") or "").upper()
+    amount_is_usd = False
+    usd_equivalent: float | None = None
     if usd_str:
         try:
             amount = float(usd_str.replace(",", ""))
         except (TypeError, ValueError):
             return None
         asset_in = "USDC"  # default USD-denominated leg until LLM refines
+        amount_is_usd = True
+        usd_equivalent = amount
     elif native_str and native_tok:
         try:
             qty = float(native_str.replace(",", ""))
         except (TypeError, ValueError):
             return None
+        # CRITICAL: amount stays in NATIVE units (qty) — never multiplied by
+        # USD price. The downstream adapter treats `amount_in` as the asset_in
+        # unit; passing USD here would have the user sign for $115 worth of
+        # ETH when they typed "0.05 ETH" (115× overshoot). USD-equivalent is
+        # surfaced separately for budgeting / Preview display only.
+        amount = qty
         price = _TOKEN_USD_HINT.get(native_tok, 1.0)
-        amount = qty * price
+        usd_equivalent = qty * price
         asset_in = native_tok
     elif _no_amt_synthetic and _no_amt_src:
         # §6d no-amount form: user named source token but no amount. Default
@@ -2202,6 +2212,8 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
         # signing.
         amount = 100.0
         asset_in = _no_amt_src
+        amount_is_usd = True
+        usd_equivalent = 100.0
     else:
         return None
     if amount <= 0:
@@ -2280,7 +2292,9 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
             fee_bps = int(round(fee_pct * 10_000))
         else:
             fee_bps = 500  # default to 0.05% tier
-        extra_v3 = {"pool_symbol": pair, "fee_bps": fee_bps}
+        extra_v3 = {"pool_symbol": pair, "fee_bps": fee_bps, "amount_is_usd": amount_is_usd}
+        if usd_equivalent is not None:
+            extra_v3["usd_equivalent"] = usd_equivalent
         if source_token:
             extra_v3["source_token"] = source_token
             # Source-token override implies user-funded zap-in: route through
@@ -2311,7 +2325,9 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     _SOLANA_CHAINS_SET = {"solana", "sol"}
     chain_for_solana = chain_raw or "solana"
     if proto in _SOLANA_CLMM_LIKE_PROTOS and chain_for_solana in _SOLANA_CHAINS_SET:
-        extra_sol = {"pool_symbol": pair}
+        extra_sol = {"pool_symbol": pair, "amount_is_usd": amount_is_usd}
+        if usd_equivalent is not None:
+            extra_sol["usd_equivalent"] = usd_equivalent
         if source_token:
             extra_sol["source_token"] = source_token
             asset_in = source_token
