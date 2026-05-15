@@ -67,6 +67,30 @@ def size() -> int:
     return len(_registry)
 
 
+async def rekey(old_order_id: str, new_order_id: str) -> PendingPlan | None:
+    """Update an entry's order_id — used when the bridge tx confirms with
+    the real DLN order_id (the quote-time id may be a placeholder).
+    """
+    async with _lock:
+        entry = _registry.pop(old_order_id, None)
+        if entry is None:
+            return None
+        # Build a new PendingPlan with the updated order_id since the
+        # dataclass is frozen-style; reconstruct it directly.
+        new_entry = PendingPlan(
+            plan_id=entry.plan_id,
+            order_id=new_order_id,
+            plan=entry.plan,
+            deposit_step=entry.deposit_step,
+            snapshot=entry.snapshot,
+            user_wallet=entry.user_wallet,
+            src_chain=entry.src_chain,
+            dst_chain=entry.dst_chain,
+        )
+        _registry[new_order_id] = new_entry
+        return new_entry
+
+
 async def resolve_fill(
     order_id: str,
     *,
