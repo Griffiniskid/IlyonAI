@@ -120,6 +120,7 @@ _SUPPORTED_PROTOCOLS = frozenset({
     "uniswap-v3", "uniswap",
     "pancakeswap-v3", "pancake-v3",
     "aerodrome-slipstream", "aerodrome-cl",
+    "velodrome-cl", "velodrome-slipstream",
 })
 
 _SUPPORTED_CHAINS = frozenset(_CHAIN_IDS.keys())
