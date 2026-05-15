@@ -83,6 +83,18 @@ class SanitisedString:
     def safe(self) -> bool:
         return not self.flagged_patterns
 
+    def __str__(self) -> str:
+        # When the dataclass is .format()-ed or str()-coerced (e.g. by
+        # json.dumps's default str() fallback, or card payload assembly that
+        # calls str(obj) for downstream rendering), surface ONLY the
+        # sanitised text — not the dataclass repr. Caught by SW7c Balancer
+        # exit live capture where the card payload leaked
+        # "SanitisedString(original='ADPUSDC', sanitised='ADPUSDC', …)".
+        return self.sanitised
+
+    def __repr__(self) -> str:
+        return self.sanitised
+
 
 def sanitise_onchain_string(value: str | None, *, max_len: int = 200) -> SanitisedString:
     """Sanitise a single on-chain string before LLM context.
