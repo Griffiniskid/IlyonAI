@@ -58,7 +58,7 @@ class CompoundV3SupplyAdapter:
     adapter_id: str = "compound-v3-supply"
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base"})
     protocols: frozenset[str] = frozenset({"compound-v3", "compound", "compound v3", "compoundv3", "comet"})
-    actions: frozenset[str] = frozenset({"supply", "deposit", "lend"})
+    actions: frozenset[str] = frozenset({"supply", "deposit", "lend", "withdraw"})
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
         chain_norm = chain.lower()
@@ -89,6 +89,44 @@ class CompoundV3SupplyAdapter:
         if asset_meta is None:
             raise ValueError(f"Compound v3 adapter has no token metadata for {request.asset_in} on {request.chain}.")
         token_address, decimals = asset_meta
+
+        # Phase 4 lifecycle — Comet.withdraw(asset, amount) selector 0xf3fef3a3.
+        extra = request.extra or {}
+        action_hint = (extra.get("action") or "").lower()
+        if action_hint == "withdraw":
+            wd_units = _to_unit(request.amount_in, decimals)
+            if wd_units <= 0:
+                wd_units = (1 << 256) - 1
+            wd_calldata = "0xf3fef3a3" + _encode_address(token_address) + _encode_uint256(wd_units)
+            step = make_step(
+                index=1,
+                action="withdraw",
+                title=f"Withdraw {request.asset_in} from Compound v3",
+                description=(
+                    f"Withdraw {request.amount_in if wd_units != (1<<256)-1 else 'ALL'} "
+                    f"{request.asset_in} from the {request.asset_in} Comet market."
+                ),
+                chain=request.chain,
+                wallet="MetaMask",
+                protocol="compound-v3",
+                asset_in=f"c{request.asset_in}v3",
+                amount_in=str(request.amount_in),
+                asset_out=request.asset_in,
+                slippage_bps=0,
+                gas_estimate_usd=2.5,
+                duration_estimate_s=15,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm",
+                    chain_id=chain_id,
+                    to=comet_address,
+                    data=wd_calldata,
+                    value="0x0",
+                    spender=comet_address,
+                ),
+                risk_warnings=["Withdraw burns Comet shares 1:1 with the underlying balance + interest."],
+            )
+            return [step]
+
         amount_units = _to_unit(request.amount_in, decimals)
         if amount_units <= 0:
             raise ValueError("amount_in must be > 0")
