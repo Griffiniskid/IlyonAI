@@ -2865,11 +2865,12 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
                 },
             )
         m = re.match(
-            r"^\s*(?P<verb>withdraw|redeem|claim)\s+"
+            r"^\s*(?P<verb>withdraw|redeem|claim|repay|borrow)\s+"
             r"(?:(?P<all>all)|"
             r"(?:\$\s*(?P<usd>[\d,]+(?:\.\d+)?)|"
             r"(?P<native>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z][A-Za-z0-9]{0,9})))"
-            rf"\s+from\s+{_PROTOCOL_NAME_RE}"
+            # Both "from <PROTO>" (withdraw/claim) and "to <PROTO>" (repay) work.
+            rf"\s+(?:from|to|on|against)\s+{_PROTOCOL_NAME_RE}"
             r"(?:\s+(?P<asset_tail>[A-Za-z][A-Za-z0-9]{0,9}))?"
             r"\s*$",
             text,
@@ -2891,15 +2892,21 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
         # Default chain: pick first registered chain for the protocol.
         if not chain:
             chain = "ethereum"
+        # Map verb → action; default withdraw for redeem.
+        verb = (gd.get("verb") or "withdraw").lower()
+        action_out = {
+            "withdraw": "withdraw", "redeem": "withdraw",
+            "claim": "claim", "repay": "repay", "borrow": "borrow",
+        }.get(verb, "withdraw")
         return (
             "build_yield_execution_plan",
             {
                 "chain": chain,
                 "protocol": proto,
-                "action": "withdraw",
+                "action": action_out,
                 "asset_in": asset,
                 "amount_in": amount,
-                "extra": {"action": "withdraw"},
+                "extra": {"action": action_out},
             },
         )
 
