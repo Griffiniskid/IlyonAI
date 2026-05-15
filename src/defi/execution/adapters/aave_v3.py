@@ -66,6 +66,17 @@ _AAVE_NATIVE_ATOKEN: dict[str, str] = {
     "base":     "0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7",  # aWETH
 }
 
+# Variable-debt WETH (or wrapped native) per chain. Used for WTG3.borrowETH:
+# user must first call debtToken.approveDelegation(WTG3, amount) to let the
+# gateway mint debt on their behalf.
+_AAVE_NATIVE_VARIABLE_DEBT: dict[str, str] = {
+    "ethereum": "0xeA51d7853EEFb32b6ee06b1C12E6dcCA88Be0fFE",  # variableDebtWETH
+    "polygon":  "0x4a1c3aD6Ed28a636ee1751C69071f6be75DEb8B8",  # variableDebtWMATIC
+    "arbitrum": "0x0c84331e39d6658Cd6e6b9ba04736cC4c4734351",  # variableDebtWETH
+    "optimism": "0x0c84331e39d6658Cd6e6b9ba04736cC4c4734351",  # variableDebtWETH
+    "base":     "0x24e6e0795b3c7c71D965fCc4f371803d1c1DcA1E",  # variableDebtWETH
+}
+
 _CHAIN_IDS: dict[str, int] = {
     "ethereum": 1,
     "polygon": 137,
@@ -339,6 +350,87 @@ class AaveV3SupplyAdapter:
                 ),
             )
             return [approve_step, wtg_step]
+
+        # Native borrow via WTG3.borrowETH (selector 0x66514c97). Requires
+        # approveDelegation on the variable-debt WETH token first; WTG3 then
+        # mints debt on behalf of the user, unwraps WETH → ETH, and sends it.
+        if (
+            action_hint == "borrow"
+            and request.asset_in.upper() == _NATIVE_TOKEN_BY_CHAIN.get(chain_norm, "").upper()
+        ):
+            wtg3 = _AAVE_WTG3_ADDRESSES.get(chain_norm)
+            if wtg3 is None:
+                raise ValueError(
+                    f"Aave V3 WrappedTokenGatewayV3 not registered on {chain_norm}."
+                )
+            debt_token = _AAVE_NATIVE_VARIABLE_DEBT.get(chain_norm)
+            if debt_token is None:
+                raise ValueError(
+                    f"Aave V3 variable-debt token not registered for native borrow on {chain_norm}."
+                )
+            borrow_units = _to_unit(request.amount_in, 18)
+            if borrow_units <= 0:
+                raise ValueError("Borrow amount must be > 0.")
+            rate_mode = int(extra.get("rate_mode") or 2)
+            # ICreditDelegationToken.approveDelegation(delegatee, amount) = 0xc04a8a10
+            approve_delegation_calldata = (
+                "0xc04a8a10"
+                + _encode_address(wtg3)
+                + _encode_uint256(borrow_units)
+            )
+            # WTG3.borrowETH(pool, amount, interestRateMode, referralCode) → 0x66514c97
+            borrow_eth_calldata = (
+                "0x66514c97"
+                + _encode_address(pool_address)
+                + _encode_uint256(borrow_units)
+                + _encode_uint256(rate_mode)
+                + _encode_uint256(0)  # referralCode
+            )
+            approve_delegation_step = make_step(
+                index=1, action="approve",
+                title=f"Approve variable debt delegation to WTG3",
+                description=(
+                    f"variableDebt{_NATIVE_TOKEN_BY_CHAIN.get(chain_norm)}."
+                    f"approveDelegation({wtg3}, {request.amount_in})."
+                    f" Allows WrappedTokenGatewayV3 to mint debt on your behalf."
+                ),
+                chain=request.chain, wallet="MetaMask", protocol="aave-v3",
+                asset_in=None, amount_in=str(request.amount_in),
+                slippage_bps=0, gas_estimate_usd=1.4, duration_estimate_s=15,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm", chain_id=chain_id,
+                    to=debt_token, data=approve_delegation_calldata, value="0x0",
+                    spender=wtg3,
+                ),
+                risk_warnings=[
+                    "Delegation lets WTG3 incur debt on your behalf — only the WTG3 address can use it.",
+                ],
+            )
+            borrow_eth_step = make_step(
+                index=2, action="borrow",
+                title=f"Borrow native {request.asset_in} via WTG3",
+                description=(
+                    f"WrappedTokenGatewayV3.borrowETH({pool_address}, "
+                    f"{request.amount_in}, rateMode={rate_mode}, referralCode=0). "
+                    f"Mints variable debt against your existing collateral. "
+                    f"WTG3 unwraps WETH and forwards native {request.asset_in} to your wallet."
+                ),
+                chain=request.chain, wallet="MetaMask", protocol="aave-v3",
+                asset_in=None, amount_in=str(request.amount_in),
+                asset_out=request.asset_in,
+                slippage_bps=0, gas_estimate_usd=3.0, duration_estimate_s=15,
+                depends_on=[approve_delegation_step.step_id],
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm", chain_id=chain_id,
+                    to=wtg3, data=borrow_eth_calldata, value="0x0",
+                    spender=wtg3,
+                ),
+                risk_warnings=[
+                    "Native borrow REVERTS if collateral health factor drops below 1.0.",
+                    f"Variable-rate debt — interest accrues continuously. rateMode={rate_mode}.",
+                ],
+            )
+            return [approve_delegation_step, borrow_eth_step]
 
         asset_key = (chain_norm, request.asset_in.upper())
         asset_meta = _ASSETS.get(asset_key)
