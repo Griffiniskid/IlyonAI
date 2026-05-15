@@ -283,14 +283,36 @@ class UniswapV4NativeAdapter:
             tick_spacing=tick_spacing,
         )
 
-        # Amount split (50/50 in dollar value for balanced range — defer
-        # ratio_from_range math to V3 helper).
-        deposit_units = _to_units(request.amount_in, dec_a)
-        half = deposit_units // 2
-        # For V4 mint, the user provides amount0Max + amount1Max as upper bounds.
-        # Liquidity is computed off the desired ratio; we pass the half-split.
-        amount0_max = half
-        amount1_max = half
+        # Amount split — 50/50 in USD-value terms. amount0/amount1 must each
+        # use their own currency's decimals or the plan signs the wrong size
+        # (USDC at 18-dec is $26B for a 0.05 ETH input — financial-loss bug).
+        usd_equiv = float(extra.get("usd_equivalent") or 0.0)
+        if usd_equiv <= 0:
+            # Fall back to half of the funding leg in its native units, leaving
+            # the other side at 0 (one-sided position).
+            deposit_units = _to_units(request.amount_in, dec_a)
+            half = deposit_units // 2
+            half_amount0 = half if not is_native_a or currency0 == ("0x" + "00" * 20) else 0
+            half_amount1 = half if not is_native_b or currency1 == ("0x" + "00" * 20) else 0
+            amount0_max, amount1_max = half_amount0, half_amount1
+        else:
+            half_usd = usd_equiv / 2.0
+            implied_price_per_funding = usd_equiv / float(request.amount_in)  # USD per funding-unit
+            # Currency0 amount: convert half_usd into currency0 units. Currency0
+            # is funding when funding is the native side AND native maps to
+            # currency0 (= address(0)); else currency0 is a stable.
+            funding_is_currency0 = (
+                (is_native_a and currency0 == "0x" + "00" * 20)
+                or (not is_native_a and addr_a.lower() == currency0.lower())
+            )
+            if funding_is_currency0:
+                amount0_max = int((half_usd / implied_price_per_funding) * (10 ** dec0))
+                # Other side priced 1:1 if it's USDC/USDT/stablecoin family,
+                # else default to 1 USD per token (best-effort until price feed).
+                amount1_max = int(half_usd * (10 ** dec1))
+            else:
+                amount1_max = int((half_usd / implied_price_per_funding) * (10 ** dec1))
+                amount0_max = int(half_usd * (10 ** dec0))
         liquidity = 0  # placeholder — let positionManager compute via amount caps
 
         owner = request.user_address
