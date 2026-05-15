@@ -339,16 +339,19 @@ async function _meteoraDlmmState(mintA, mintB) {
   const tokenB = baseAddr === a
     ? { mint: top.quoteToken.address, symbol: top.quoteToken.symbol, decimals: top.quoteToken.decimals ?? null }
     : { mint: top.baseToken.address, symbol: top.baseToken.symbol, decimals: top.baseToken.decimals ?? null };
-  // SDK enrichment for binStep + activeId. The @meteora-ag/dlmm package
-  // sets module.exports = exports.default (its index.js rebinds), so the
-  // DLMM class is the require result itself — no `.default` indirection.
+  // SDK enrichment for binStep + activeId + baseFactor → fee_bps. The
+  // @meteora-ag/dlmm package sets module.exports = exports.default (its
+  // index.js rebinds), so the DLMM class is the require result itself —
+  // no `.default` indirection.
   let binStep = 0;
   let activeId = 0;
+  let baseFactor = 0;
   try {
     const DLMM = require("@meteora-ag/dlmm");
     const lb = await DLMM.create(connection, new PublicKey(poolAddress));
     binStep = Number(lb?.lbPair?.binStep ?? 0);
     activeId = Number(lb?.lbPair?.activeId ?? 0);
+    baseFactor = Number(lb?.lbPair?.parameters?.baseFactor ?? 0);
   } catch (e) {
     console.warn("[meteora-dlmm] SDK enrichment failed for", poolAddress, ":", e.message);
   }
@@ -359,11 +362,13 @@ async function _meteoraDlmmState(mintA, mintB) {
   const tvl = Number(top?.liquidity?.usd ?? 0);
   const vol24 = Number(top?.volume?.h24 ?? 0);
   const priceUsd = Number(top?.priceUsd ?? 0);
-  // DLMM fee % is encoded per bin step; without the on-chain MeteoraConfig
-  // probe we approximate via DexScreener's reported volume/fees ratio. When
-  // unknown we conservatively assume 0.1% (10 bps) which is the most common
-  // DLMM tier; the range card explicitly labels base_apr as estimated.
-  const feeBps = 10;
+  // DLMM base fee per Meteora docs: base_fee_rate_bps = baseFactor × binStep / 100.
+  // baseFactor + binStep both come from on-chain LbPair, so this is exact —
+  // no estimate. Fallback 10 bps only when the SDK enrichment failed (in
+  // which case binStep=0 too and the formula produces 0 — we floor to 10 so
+  // the APR estimate isn't visually zero).
+  const feeBpsExact = baseFactor && binStep ? (baseFactor * binStep) / 100 : 0;
+  const feeBps = feeBpsExact > 0 ? feeBpsExact : 10;
   const baseAprPct = tvl > 0 ? (vol24 * (feeBps / 10000) * 365 / tvl) * 100 : 0;
   return {
     poolAddress,
