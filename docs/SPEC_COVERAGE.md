@@ -82,7 +82,7 @@ Tracked in `tests/defi/test_edge_case_appendix.py`. 9 rows implemented (case ass
 
 ## Commits this session
 
-19 commits (resume 2026-05-15T08:37Z):
+31 commits (resume 2026-05-15T08:37Z, ongoing). Highlights:
 1. 72faac8 fix(intent): CLMM/DLMM/Whirlpool variant suffix after pair
 2. 82d80b1 feat(intent): Solana CLMM short-circuit to range_block emission (§6b)
 3. 7247533 feat(intent+plan): §6d 'with my <TOKEN>' source-token reassignment
@@ -102,6 +102,19 @@ Tracked in `tests/defi/test_edge_case_appendix.py`. 9 rows implemented (case ass
 17. b99630d feat(execution): §6c composed-plan snapshot/block/watch/rebuild/promote + 15 tests
 18. d3f74c5 test(spec): §13 27-row edge-case appendix (9 assert, 18 skip-marked)
 19. 7ba9a98 test(safety): §11 D.1 LLM-no-calldata contract test
+20. e949857 docs: SPEC_COVERAGE.md initial ledger
+21. 0f8ae05 feat(v3-resolver): §6a Slipstream tickSpacing-keyed factory.getPool(int24) [wrong selector first attempt]
+22. 4554382 fix(v3-resolver): Slipstream probe all 5 tickSpacings
+23. 11a0faf feat(routing): admit Slipstream/Velodrome-CL to V3_NATIVE_EXEC
+24. ba5b79d docs: SPEC_COVERAGE.md 15-scenario sweep tally
+25. 48bb6a7 fix(v3-resolver): correct Slipstream getPool selector 0x28af8d0b + pools(...) fallback
+26. 0f3c4c8 docs: §6a Slipstream LIVE 4-step native mint
+27. e2a6c2f feat(v3-resolver): Velodrome CL Optimism CLFactory + NFPM addresses
+28. ebf91fb feat(intent): admit velodrome-cl to V3 short-circuit
+29. 8006296 feat(routing): admit velodrome-cl to V3_PROTOCOLS
+30. 2fb0159 feat(v3-nft): admit velodrome-cl to V3 NFT supported set
+31. 373ee2a fix(v3-nft): preserve velodrome-cl in resolver call to pick correct NFPM
+32. e28a256 docs: §6a Velodrome CL Optimism live
 
 Total unit tests added this session: 66 (15 §6e + 15 §6f + 11 §6g + 15 §11 D.4 + 15 §6c + 9 §13 + 3 §11 D.1 — counts may be ±2 due to fixture-only tests).
 
