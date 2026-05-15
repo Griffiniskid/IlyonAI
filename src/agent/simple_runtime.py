@@ -527,6 +527,60 @@ _TOKEN_NATIVE_CHAIN: dict[str, str] = {
 }
 
 
+_CROSS_CHAIN_YIELD_RE = re.compile(
+    r"^\s*bridge\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})\s+"
+    r"from\s+(?P<src>[A-Za-z]+)\s+to\s+(?P<dst>[A-Za-z]+)\s+then\s+"
+    r"(?P<verb>supply|deposit|stake|provide|lend|add)\s+(?:liquidity\s+)?"
+    r"(?:to|into|on|with|via)\s+(?P<rest>.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_cross_chain_then_yield(message: str) -> tuple[str, dict] | None:
+    """Spec §7 S4-S6 — cross-chain deposit intent.
+
+    'Bridge 100 USDC from Ethereum to Base then supply to Aave V3' →
+    build_yield_execution_plan with extra.source_chain set so the
+    composed-plan branch fires (snapshot deBridge quote + register
+    pending plan + block deposit on PENDING_DST_FILL).
+    """
+    m = _CROSS_CHAIN_YIELD_RE.search(message.strip())
+    if not m:
+        return None
+    src = m.group("src").lower()
+    dst = m.group("dst").lower()
+    if src == "bnb":
+        src = "bsc"
+    if dst == "bnb":
+        dst = "bsc"
+    proto_match = _ENSO_PROTOS_RE.search(m.group("rest"))
+    if not proto_match:
+        return None
+    proto = _enso_normalize_slug(proto_match.group(1))
+    verb = m.group("verb").lower()
+    if proto in _ENSO_STAKE_PROTOS or verb == "stake":
+        action = "stake"
+    elif proto.startswith(("curve", "balancer")):
+        action = "deposit_lp"
+    else:
+        action = "supply"
+    return (
+        "build_yield_execution_plan",
+        {
+            "chain": dst,
+            "protocol": proto,
+            "action": action,
+            "asset_in": m.group("token").upper(),
+            "amount_in": float(m.group("amount").replace(",", "")),
+            "extra": {
+                "source_chain": src,
+                "source_token": m.group("token").upper(),
+                "action": action,
+            },
+        },
+    )
+
+
 def _detect_bridge_then_stake(message: str) -> tuple[str, dict] | None:
     # First try the strict 'from X to Y' form
     pattern = re.compile(
@@ -2947,7 +3001,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
             },
         )
 
-    for detector in (_detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_enso_vault_deposit, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_cross_chain_then_yield, _detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_enso_vault_deposit, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
