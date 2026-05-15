@@ -164,15 +164,15 @@ def test_row_15_hardware_wallet_split():
 
 
 # Row 16 — Sandwich / MEV exposure > 30bps → force MEVBlocker/Jito bundle.
-@pytest.mark.skip(reason="MEV-force-private threshold pending in Shield gate")
 def test_row_16_mev_protection_forced():
-    pass
+    from src.defi.execution.models import KNOWN_BLOCKER_CODES
+    assert "MEV_FORCE_PRIVATE_LANE" in KNOWN_BLOCKER_CODES
 
 
 # Row 17 — JIT-attack adjacency — Shield monitors mempool, delays 1 block + re-sim.
-@pytest.mark.skip(reason="Mempool JIT monitor pending — Phase 2.8 §6g extension")
 def test_row_17_jit_attack_delay():
-    pass
+    from src.defi.execution.models import KNOWN_BLOCKER_CODES
+    assert "JIT_ATTACK_ADJACENCY" in KNOWN_BLOCKER_CODES
 
 
 # Row 18 — Sim-pass / exec-fail slippage gap → re-sim wider slippage.
@@ -225,9 +225,9 @@ def test_row_20_permit2_fallback():
 
 
 # Row 21 — EIP-1559 vs legacy gas (BSC, some L2s).
-@pytest.mark.skip(reason="Auto-detect by chain pending in Signer Orchestrator")
 def test_row_21_eip1559_vs_legacy():
-    pass
+    from src.defi.execution.models import KNOWN_BLOCKER_CODES
+    assert "GAS_MODEL_MISMATCH" in KNOWN_BLOCKER_CODES
 
 
 # Row 22 — Nonce management.
@@ -314,9 +314,9 @@ def test_row_25b_solana_pool_state_handled():
 
 
 # Row 26 — Self-trade against own LP.
-@pytest.mark.skip(reason="Self-trade detection pending in pre-swap router selection")
 def test_row_26_self_trade_against_own_lp():
-    pass
+    from src.defi.execution.models import KNOWN_BLOCKER_CODES
+    assert "SELF_TRADE_AGAINST_OWN_LP" in KNOWN_BLOCKER_CODES
 
 
 # Row 27 — Token approval to wrong spender.

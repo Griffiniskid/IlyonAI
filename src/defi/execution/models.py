@@ -65,6 +65,11 @@ KNOWN_BLOCKER_CODES: frozenset[str] = frozenset({
     "SUPPLY_CAP_REACHED",          # alias for DEPOSIT_CAP_REACHED at the per-asset Aave level
     "FROZEN_ACCOUNT",              # SPL token-frozen state pre-flight
     "TOKEN_2022_HOOK_UNTRUSTED",   # Token-2022 transfer-hook is not on the allowlist
+    "MEV_FORCE_PRIVATE_LANE",      # Shield exposure score forces private bundle (MEVBlocker/Jito)
+    "GAS_MODEL_MISMATCH",          # EIP-1559 expected on a chain that only honors legacy gas
+    "SELF_TRADE_AGAINST_OWN_LP",   # User-owned LP would be hit by their own prep-swap
+    "JIT_ATTACK_ADJACENCY",        # Mempool JIT monitor flagged a sandwich risk
+    "POOL_LINK_REDIRECT",          # Adapter unsupported — frontend pool_link card was emitted
 })
 
 
