@@ -2824,7 +2824,54 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     multi_step = _detect_bridge_then_stake(message)
     if multi_step is not None:
         return multi_step
-    for detector in (_detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_add_liquidity, _detect_lp_with_my, _detect_enso_vault_deposit, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+
+    # Phase 4 lifecycle — withdraw / redeem detector.
+    # Matches: "Withdraw 100 USDC from Aave V3 on Base"
+    #          "Redeem 0.5 yvUSDC from Yearn on Ethereum"
+    #          "Withdraw all from Compound V3 USDC on Ethereum"
+    def _detect_lifecycle_withdraw(msg: str) -> tuple[str, dict] | None:
+        m = re.match(
+            r"^\s*(?P<verb>withdraw|redeem|claim)\s+"
+            r"(?:(?P<all>all)|"
+            r"(?:\$\s*(?P<usd>[\d,]+(?:\.\d+)?)|"
+            r"(?P<native>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z][A-Za-z0-9]{0,9})))"
+            rf"\s+from\s+{_PROTOCOL_NAME_RE}"
+            r"(?:\s+(?P<asset_tail>[A-Za-z][A-Za-z0-9]{0,9}))?"
+            r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?"
+            r"\s*$",
+            msg.strip(),
+            re.IGNORECASE,
+        )
+        if not m:
+            return None
+        gd = m.groupdict()
+        proto = re.sub(r"\s+", "-", (gd.get("protocol") or "").strip().lower())
+        chain = (gd.get("chain") or "").lower()
+        asset = (gd.get("token") or gd.get("asset_tail") or "USDC").upper()
+        if gd.get("all"):
+            amount = 0  # adapter interprets 0 as max-uint sentinel
+        elif gd.get("usd"):
+            amount = float(gd["usd"].replace(",", ""))
+        elif gd.get("native"):
+            amount = float(gd["native"].replace(",", ""))
+        else:
+            return None
+        # Default chain: pick first registered chain for the protocol.
+        if not chain:
+            chain = "ethereum"
+        return (
+            "build_yield_execution_plan",
+            {
+                "chain": chain,
+                "protocol": proto,
+                "action": "withdraw",
+                "asset_in": asset,
+                "amount_in": amount,
+                "extra": {"action": "withdraw"},
+            },
+        )
+
+    for detector in (_detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_enso_vault_deposit, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
