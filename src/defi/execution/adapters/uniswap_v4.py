@@ -22,10 +22,16 @@ from decimal import Decimal
 from typing import Any
 
 from src.data.asset_registry import NATIVE_PLACEHOLDER, resolve_any_evm_token
+from src.data.v3_pool_resolver import _eth_call_with_fallback
 from src.data.v3_tick_math import (
     sqrt_price_x96_from_tick,
     tick_range_from_pct,
 )
+try:
+    from eth_utils import keccak as _keccak
+except ImportError:
+    _keccak = None
+_V4_GETSLOT0_SEL = "0xc815641c"  # keccak("getSlot0(bytes32)")[:4]
 from src.defi.execution.adapters.base import (
     CapabilityResult,
     VerifyResult,
@@ -271,11 +277,24 @@ class UniswapV4NativeAdapter:
         # Range
         lower_pct = float(extra.get("range_lower_pct") or -10.0)
         upper_pct = float(extra.get("range_upper_pct") or 10.0)
-        # PoolKey resolver: stub — current spot from cached pool state would
-        # require PoolManager.getSlot0(poolId) RPC. For first-cut we hardcode
-        # the centered range; downstream Preview reads on-chain slot0 to draw
-        # the actual range card.
+        # On-chain slot0 read via PoolManager.getSlot0(poolId). PoolId =
+        # keccak256(abi.encode(PoolKey)) where PoolKey is the 160-byte struct.
         current_tick = int(extra.get("current_tick") or 0)
+        if not extra.get("current_tick") and _keccak is not None:
+            pool_key_hex = _encode_pool_key(currency0, currency1, fee_bps, tick_spacing, hooks_addr)
+            pool_id = _keccak(bytes.fromhex(pool_key_hex)).hex()
+            pm_addr = _V4_POOL_MANAGER[chain]
+            slot0_data = _V4_GETSLOT0_SEL + pool_id.rjust(64, "0")
+            slot0_hex = await _eth_call_with_fallback(chain, pm_addr, slot0_data)
+            if slot0_hex and slot0_hex != "0x":
+                raw = slot0_hex.removeprefix("0x")
+                if len(raw) >= 128:
+                    # Layout: (uint160 sqrtPriceX96, int24 tick, uint24 protoFee, uint24 lpFee)
+                    tick_word = raw[64:128]
+                    tick_int = int(tick_word, 16)
+                    if tick_int >= 2 ** 255:
+                        tick_int -= 2 ** 256
+                    current_tick = tick_int
         tick_lower, tick_upper = tick_range_from_pct(
             current_tick=current_tick,
             lower_pct=lower_pct,
