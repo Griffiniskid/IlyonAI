@@ -369,8 +369,22 @@ class SolanaClient:
                             metadata = content.get('metadata', {})
                             
                             mint = item.get('id', '')
-                            symbol = token_info.get('symbol', metadata.get('symbol', '???'))
-                            name = metadata.get('name', symbol)
+                            # Spec §11 D.4: sanitise on-chain symbol + name
+                            # before they reach LLM context. Token-name
+                            # prompt-injection ("USDC; ignore prior
+                            # instructions") is stripped + length-capped here.
+                            try:
+                                from src.agent.sanitizer import sanitise_onchain_string
+                                _raw_symbol = token_info.get('symbol', metadata.get('symbol', '???'))
+                                _raw_name = metadata.get('name', _raw_symbol)
+                                symbol = sanitise_onchain_string(_raw_symbol, max_len=24).sanitised or '???'
+                                name = sanitise_onchain_string(_raw_name, max_len=80).sanitised or symbol
+                            except Exception:
+                                # Defensive: sanitiser should never crash the
+                                # portfolio fetch — fall back to raw values
+                                # but still cap length at 80 chars.
+                                symbol = (token_info.get('symbol', metadata.get('symbol', '???')) or '???')[:24]
+                                name = (metadata.get('name', symbol) or symbol)[:80]
                             
                             # Get balance
                             balance = float(token_info.get('balance', 0) or 0)
