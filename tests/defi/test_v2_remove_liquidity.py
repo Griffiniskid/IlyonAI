@@ -73,10 +73,23 @@ def test_withdraw_payload_is_7_words():
     assert len(body) == 7 * 64
 
 
-def test_withdraw_rejects_missing_pool_address():
+def test_withdraw_falls_back_to_canonical_pair_registry():
+    """When extra.pool_address absent + canonical pair in _V2_PAIRS,
+    adapter auto-resolves the pair contract."""
     a = UniswapV2DualTokenAdapter()
     req = _pcs_remove_request()
     req.extra.pop("pool_address")
+    # PCS V2 BNB-USDT pair canonical address
+    steps = _run(a.build(req))
+    assert steps[0].transaction.to.lower() == "0x16b9a82891338f9ba80e2d6970fdda79d1eb0dae"
+
+
+def test_withdraw_rejects_unknown_pair():
+    """Unknown chain/pair AND no extra.pool_address → typed error."""
+    a = UniswapV2DualTokenAdapter()
+    req = _pcs_remove_request()
+    req.extra.pop("pool_address")
+    req.extra["token_b"] = "XYZ"  # not in any registry
     with pytest.raises(ValueError, match="extra.pool_address"):
         _run(a.build(req))
 
