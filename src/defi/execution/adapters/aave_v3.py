@@ -198,6 +198,75 @@ class AaveV3SupplyAdapter:
             )
             return [native_step]
 
+        # Native withdraw via WTG3 must check BEFORE _ASSETS lookup (native
+        # gas tokens have no ERC20 metadata). Asset_in is the native symbol
+        # (ETH/MATIC/AVAX); aToken address comes from extra.atoken_address.
+        if action_hint == "withdraw" and (
+            _NATIVE_TOKEN_BY_CHAIN.get(chain_norm) == request.asset_in.upper()
+        ):
+            wtg3 = _AAVE_WTG3_ADDRESSES.get(chain_norm)
+            if wtg3 is None:
+                raise ValueError(
+                    f"Aave V3 WrappedTokenGatewayV3 not registered on {chain_norm}."
+                )
+            native_units = _to_unit(request.amount_in, 18)
+            if native_units <= 0:
+                native_units = (1 << 256) - 1
+            atoken_addr = (extra.get("atoken_address") or extra.get("aToken") or "").lower()
+            if not atoken_addr or len(atoken_addr) != 42:
+                raise ValueError(
+                    f"Native withdraw via WTG3 needs extra.atoken_address (the "
+                    f"a{request.asset_in} contract on {chain_norm})."
+                )
+            approve_calldata = (
+                "0x095ea7b3"
+                + _encode_address(wtg3)
+                + _encode_uint256(native_units)
+            )
+            withdraw_calldata = (
+                "0x80500d20"
+                + _encode_address(pool_address)
+                + _encode_uint256(native_units)
+                + _encode_address(request.user_address)
+            )
+            approve_step = make_step(
+                index=1, action="approve",
+                title=f"Approve a{request.asset_in} for WTG3",
+                description=(
+                    f"Approve {request.amount_in} a{request.asset_in} so the "
+                    f"WrappedTokenGatewayV3 can burn it to redeem the underlying "
+                    f"and unwrap to native {request.asset_in}."
+                ),
+                chain=request.chain, wallet="MetaMask", protocol="aave-v3",
+                asset_in=f"a{request.asset_in}", amount_in=str(request.amount_in),
+                slippage_bps=0, gas_estimate_usd=1.4, duration_estimate_s=15,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm", chain_id=chain_id,
+                    to=atoken_addr, data=approve_calldata, value="0x0",
+                    spender=wtg3,
+                ),
+            )
+            wtg_step = make_step(
+                index=2, action="withdraw",
+                title=f"Withdraw native {request.asset_in} via WTG3",
+                description=(
+                    f"WrappedTokenGatewayV3.withdrawETH({pool_address}, "
+                    f"{request.amount_in if native_units != (1<<256)-1 else 'ALL'}, "
+                    f"{request.user_address}) at {wtg3}."
+                ),
+                chain=request.chain, wallet="MetaMask", protocol="aave-v3",
+                asset_in=f"a{request.asset_in}", amount_in=str(request.amount_in),
+                asset_out=request.asset_in,
+                slippage_bps=0, gas_estimate_usd=3.2, duration_estimate_s=15,
+                depends_on=[approve_step.step_id],
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm", chain_id=chain_id,
+                    to=wtg3, data=withdraw_calldata, value="0x0",
+                    spender=wtg3,
+                ),
+            )
+            return [approve_step, wtg_step]
+
         asset_key = (chain_norm, request.asset_in.upper())
         asset_meta = _ASSETS.get(asset_key)
         if asset_meta is None:
