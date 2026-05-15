@@ -11,6 +11,12 @@ V2 Router ABI:
                uint amountAMin, uint amountBMin,
                address to, uint deadline)
   selector: 0xe8e33700
+
+  removeLiquidity(address tokenA, address tokenB,
+                  uint liquidity,
+                  uint amountAMin, uint amountBMin,
+                  address to, uint deadline)
+  selector: 0xbaa2abde
 """
 from __future__ import annotations
 
@@ -102,6 +108,7 @@ _TOKENS: dict[tuple[str, str], tuple[str, int]] = {
 
 
 _ADD_LIQUIDITY_SELECTOR = "0xe8e33700"
+_REMOVE_LIQUIDITY_SELECTOR = "0xbaa2abde"
 _APPROVE_SELECTOR = "0x095ea7b3"
 
 
@@ -200,6 +207,9 @@ class UniswapV2DualTokenAdapter:
             )
 
         extra = request.extra or {}
+        action = (extra.get("action") or "deposit_lp").lower()
+        if action in {"withdraw", "remove_liquidity"}:
+            return self._build_remove_liquidity(request, chain_id, router, chain_norm)
         # Dual-token mode requires both legs. The runtime supplies token_a /
         # token_b / amount_a / amount_b in `extra` when the parser captures the
         # "X TOKEN_A and Y TOKEN_B" phrasing. Fall back to asset_in + the pool
@@ -363,6 +373,139 @@ class UniswapV2DualTokenAdapter:
             ],
         )
         return [approve_a_step, approve_b_step, add_step]
+
+    def _build_remove_liquidity(
+        self,
+        request: YieldBuildRequest,
+        chain_id: int,
+        router: str,
+        chain_norm: str,
+    ) -> list[ExecutionStepV3]:
+        """Encode removeLiquidity(tokenA,tokenB,liquidity,amountAMin,amountBMin,to,deadline)."""
+        extra = request.extra or {}
+        # LP token address — V2 pair contract. Caller passes `pool_address` from
+        # the position record (or factory.getPair lookup upstream).
+        lp_address = extra.get("pool_address") or extra.get("lp_address")
+        if not lp_address:
+            raise ValueError(
+                "V2 removeLiquidity needs extra.pool_address (the V2 pair contract)."
+            )
+        lp_address = str(lp_address).lower()
+        if not lp_address.startswith("0x") or len(lp_address) != 42:
+            raise ValueError(f"Invalid V2 pair address: {lp_address}")
+
+        symbol_a = (extra.get("token_a") or request.asset_in).upper()
+        symbol_b = (extra.get("token_b") or "").upper()
+        pool_symbol = (extra.get("pool_symbol") or "").upper()
+        if not symbol_b and pool_symbol:
+            parts = [p for p in pool_symbol.replace("/", "-").split("-") if p]
+            if len(parts) >= 2:
+                cand = parts[1] if parts[0] == symbol_a else parts[0]
+                symbol_b = cand
+        if not symbol_b:
+            raise ValueError(
+                "V2 removeLiquidity needs both pair sides (token_a + token_b in extra "
+                "or pool_symbol like 'USDC-WETH')."
+            )
+
+        token_a_meta = _resolve_token(chain_norm, symbol_a)
+        token_b_meta = _resolve_token(chain_norm, symbol_b)
+        if token_a_meta is None or token_b_meta is None:
+            raise ValueError(
+                f"V2 removeLiquidity needs token metadata for {symbol_a} and {symbol_b} "
+                f"on {chain_norm}."
+            )
+        addr_a, _ = token_a_meta
+        addr_b, _ = token_b_meta
+
+        # LP tokens are always 18-decimal in canonical V2 forks.
+        liquidity_units = _to_unit(request.amount_in, 18)
+        if liquidity_units <= 0:
+            raise ValueError("V2 removeLiquidity needs liquidity > 0.")
+
+        # Slippage applied to OUT token mins — 0 means accept any (zero slippage
+        # check). For safety surface a small floor when the caller doesn't supply
+        # explicit min amounts.
+        min_a_units = int(extra.get("amount_a_min") or 0)
+        min_b_units = int(extra.get("amount_b_min") or 0)
+        deadline = int(time.time()) + 30 * 60
+
+        remove_calldata = (
+            _REMOVE_LIQUIDITY_SELECTOR
+            + _encode_address(addr_a)
+            + _encode_address(addr_b)
+            + _encode_uint256(liquidity_units)
+            + _encode_uint256(min_a_units)
+            + _encode_uint256(min_b_units)
+            + _encode_address(request.user_address)
+            + _encode_uint256(deadline)
+        )
+
+        approve_calldata = (
+            _APPROVE_SELECTOR + _encode_address(router) + _encode_uint256(liquidity_units)
+        )
+
+        proto_label = request.protocol.replace("-", " ").title()
+        approve_step = make_step(
+            index=1,
+            action="approve",
+            title=f"Approve LP {symbol_a}-{symbol_b} for {proto_label} router",
+            description=(
+                f"Approve {request.amount_in} LP tokens so the {proto_label} router "
+                f"can burn them on removeLiquidity."
+            ),
+            chain=request.chain,
+            wallet="MetaMask",
+            protocol=request.protocol,
+            asset_in=f"LP-{symbol_a}-{symbol_b}",
+            amount_in=str(request.amount_in),
+            slippage_bps=0,
+            gas_estimate_usd=1.4,
+            duration_estimate_s=15,
+            transaction=UnsignedStepTransaction(
+                chain_kind="evm",
+                chain_id=chain_id,
+                to=lp_address,
+                data=approve_calldata,
+                value="0x0",
+                spender=router,
+            ),
+            risk_warnings=[
+                "Approval grants the router permission to burn the exact LP amount.",
+            ],
+        )
+        remove_step = make_step(
+            index=2,
+            action="remove_liquidity",
+            title=f"Remove liquidity from {proto_label} {symbol_a}/{symbol_b}",
+            description=(
+                f"Burn {request.amount_in} LP and pull underlying {symbol_a} + {symbol_b}. "
+                f"Min-amounts {min_a_units} {symbol_a} / {min_b_units} {symbol_b}."
+            ),
+            chain=request.chain,
+            wallet="MetaMask",
+            protocol=request.protocol,
+            asset_in=f"LP-{symbol_a}-{symbol_b}",
+            amount_in=str(request.amount_in),
+            asset_out=f"{symbol_a}+{symbol_b}",
+            slippage_bps=int(request.slippage_bps or 100),
+            gas_estimate_usd=3.5,
+            duration_estimate_s=20,
+            depends_on=[approve_step.step_id],
+            transaction=UnsignedStepTransaction(
+                chain_kind="evm",
+                chain_id=chain_id,
+                to=router,
+                data=remove_calldata,
+                value="0x0",
+                spender=router,
+            ),
+            risk_warnings=[
+                "Removing liquidity burns LP tokens irreversibly.",
+                "Underlying amounts depend on current pool reserves.",
+            ],
+        )
+        return [approve_step, remove_step]
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
         return VerifyResult(
