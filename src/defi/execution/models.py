@@ -270,6 +270,36 @@ class ExecutionPlanV3:
                 prior_unconfirmed = True
 
     def mark_step_status(self, step_id: str, status: StepStatus, *, receipt: dict[str, Any] | None = None) -> None:
+        # §11 D.2 — refuse to flip a step to 'submitted' when the cached
+        # simulation is older than the 30s freshness window. Plan must store
+        # `simulated_at` (POSIX ts) in metadata for the check to fire; absent
+        # metadata is a soft-pass so legacy flows keep working.
+        if status == "submitted":
+            sim_at = getattr(self, "simulated_at", None) or (
+                self.totals.assets_required.get("__sim_at__") if self.totals else None
+            )
+            if sim_at:
+                try:
+                    sim_ts = float(sim_at)
+                except (TypeError, ValueError):
+                    sim_ts = 0.0
+                if sim_ts > 0:
+                    from src.defi.freshness import is_simulation_fresh
+                    fr = is_simulation_fresh(sim_ts)
+                    if not fr.is_fresh:
+                        # Soft-warn + skip the broadcast flip; runtime should
+                        # re-simulate and call mark_step_status again with a
+                        # fresh sim. Hard-raise when IL_STRICT_STATE=1.
+                        import logging
+                        import os
+                        logging.getLogger(__name__).warning(
+                            "freshness refuse: plan=%s step=%s elapsed=%.1fs > %ds",
+                            self.plan_id, step_id, fr.elapsed_s, fr.threshold_s,
+                        )
+                        if os.environ.get("IL_STRICT_STATE") == "1":
+                            from src.defi.freshness import assert_fresh_before_broadcast
+                            assert_fresh_before_broadcast(sim_ts)
+                        return
         for step in self.steps:
             if step.step_id == step_id:
                 step.status = status
