@@ -11,6 +11,7 @@ from src.defi.execution.adapters.base import YieldBuildRequest
 from src.defi.execution.capabilities import build_default_registry
 from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
 from src.defi.execution.preflight import WalletInventory, evaluate_preflight
+from src.defi.recovery import FailureKind, Recovery, RecoveryAction, decide_recovery
 from src.defi.strategy.memory import StrategyRecord, remember_strategy
 
 
@@ -228,7 +229,14 @@ async def build_yield_execution_plan(
             affected_step_ids=[],
             cta="Connect an EVM wallet (MetaMask) to sign this action.",
         ))
-        return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
+        plan_dict = plan.to_dict()
+        plan_dict["recovery"] = Recovery(
+            action=RecoveryAction.ASK_USER,
+            posture="Wrong wallet — switch to MetaMask",
+            buttons=["Connect MetaMask", "Try a different chain", "Cancel"],
+            rationale="EVM action needs an EVM wallet. No auto-recovery possible.",
+        ).to_dict()
+        return ok_envelope(data={"plan": plan_dict}, card_type="execution_plan_v3", card_payload=plan_dict)
     if is_solana_chain and not _is_sol_addr(user_address):
         plan = ExecutionPlanV3.new(
             title=f"{humanize_protocol(protocol)} {humanize_action(action)}",
@@ -246,7 +254,14 @@ async def build_yield_execution_plan(
             affected_step_ids=[],
             cta="Connect a Solana wallet (Phantom) to sign this action.",
         ))
-        return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
+        plan_dict = plan.to_dict()
+        plan_dict["recovery"] = Recovery(
+            action=RecoveryAction.ASK_USER,
+            posture="Wrong wallet — switch to Phantom",
+            buttons=["Connect Phantom", "Try a different chain", "Cancel"],
+            rationale="Solana action needs a Solana wallet. No auto-recovery possible.",
+        ).to_dict()
+        return ok_envelope(data={"plan": plan_dict}, card_type="execution_plan_v3", card_payload=plan_dict)
 
     amount = _coerce_amount(amount_in)
     # Phase 4 lifecycle: claim / withdraw with amount=0 is the canonical
@@ -379,10 +394,20 @@ async def build_yield_execution_plan(
             affected_step_ids=[],
             cta="Pick an adapter-supported protocol such as Aave V3 supply on Ethereum/Polygon/Arbitrum/Base.",
         ))
+        plan_dict = plan.to_dict()
+        plan_dict["recovery"] = Recovery(
+            action=RecoveryAction.ASK_USER,
+            posture="No verified adapter — pick a different route",
+            buttons=["Try Aave V3", "Try Compound V3", "Cancel"],
+            rationale=(
+                f"{protocol} {action} on {chain} is not in any adapter's coverage. "
+                "Pick an adapter-supported route or change one of (protocol, action, chain)."
+            ),
+        ).to_dict()
         return ok_envelope(
-            data={"plan": plan.to_dict()},
+            data={"plan": plan_dict},
             card_type="execution_plan_v3",
-            card_payload=plan.to_dict(),
+            card_payload=plan_dict,
         )
 
     adapter = registry.adapter_for(chain=chain, protocol=protocol, action=action)
