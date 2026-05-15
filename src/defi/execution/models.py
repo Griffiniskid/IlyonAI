@@ -271,19 +271,6 @@ class ExecutionPlanV3:
         self._recompute_step_statuses()
         self._refresh_plan_status()
 
-    # Map plan.status terms → PipelineState for spec §5 transition validation.
-    # Plan-level statuses are a coarser projection of the pipeline state
-    # machine — this map collapses the per-step lifecycle into the canonical
-    # spec vocabulary so illegal jumps are caught at runtime.
-    _PLAN_TO_PIPELINE_STATE: "dict[str, str]" = {
-        "draft": "Prompted",
-        "ready": "ReadyToSign",
-        "blocked": "Blocked",
-        "executing": "Signing",
-        "complete": "Indexed",
-        "failed": "Failed",
-    }
-
     def _refresh_plan_status(self) -> None:
         prior = self.status
         if any(step.status == "failed" for step in self.steps):
@@ -309,8 +296,8 @@ class ExecutionPlanV3:
         defers to src.defi.state_machine.is_legal_transition.
         """
         from src.defi.state_machine import PipelineState, is_legal_transition
-        prior_state = self._PLAN_TO_PIPELINE_STATE.get(prior)
-        next_state = self._PLAN_TO_PIPELINE_STATE.get(next_status)
+        prior_state = _PLAN_TO_PIPELINE_STATE.get(prior)
+        next_state = _PLAN_TO_PIPELINE_STATE.get(next_status)
         if not prior_state or not next_state:
             return  # initial entry or unmapped → tolerate
         try:
@@ -344,6 +331,20 @@ class ExecutionPlanV3:
             "research_thesis": self.research_thesis,
             "strategy_id": self.strategy_id,
         }
+
+
+# Map plan.status terms → PipelineState (spec §5). Plan-level statuses are
+# a coarser projection of the pipeline state machine — this map collapses
+# the per-step lifecycle into the canonical spec vocabulary so illegal jumps
+# are caught at runtime.
+_PLAN_TO_PIPELINE_STATE: dict[str, str] = {
+    "draft": "Prompted",
+    "ready": "ReadyToSign",
+    "blocked": "Blocked",
+    "executing": "Signing",
+    "complete": "Indexed",
+    "failed": "Failed",
+}
 
 
 def make_step(
