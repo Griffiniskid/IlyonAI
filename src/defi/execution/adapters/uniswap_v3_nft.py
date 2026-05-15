@@ -54,6 +54,16 @@ _CHAIN_IDS: dict[str, int] = {
     "base": 8453,
     "avalanche": 43114,
     "bsc": 56,
+    "linea": 59144,
+    "scroll": 534352,
+    "mantle": 5000,
+    "blast": 81457,
+    "zksync": 324,
+    "gnosis": 100,
+    "celo": 42220,
+    "sonic": 146,
+    "berachain": 80094,
+    "unichain": 130,
 }
 
 

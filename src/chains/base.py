@@ -21,6 +21,17 @@ class ChainType(Enum):
     POLYGON = "polygon"
     OPTIMISM = "optimism"
     AVALANCHE = "avalanche"
+    # Phase 6 chain expansion (R7): 10 additional EVM L1/L2s.
+    LINEA = "linea"
+    SCROLL = "scroll"
+    MANTLE = "mantle"
+    BLAST = "blast"
+    ZKSYNC = "zksync"
+    GNOSIS = "gnosis"
+    CELO = "celo"
+    SONIC = "sonic"
+    BERACHAIN = "berachain"
+    UNICHAIN = "unichain"
 
     @property
     def display_name(self) -> str:
@@ -34,6 +45,16 @@ class ChainType(Enum):
             "polygon": "Polygon",
             "optimism": "Optimism",
             "avalanche": "Avalanche",
+            "linea": "Linea",
+            "scroll": "Scroll",
+            "mantle": "Mantle",
+            "blast": "Blast",
+            "zksync": "zkSync Era",
+            "gnosis": "Gnosis Chain",
+            "celo": "Celo",
+            "sonic": "Sonic",
+            "berachain": "Berachain",
+            "unichain": "Unichain",
         }
         return names.get(self.value, self.value.title())
 
@@ -53,6 +74,16 @@ class ChainType(Enum):
             "optimism": 10,
             "avalanche": 43114,
             "base": 8453,
+            "linea": 59144,
+            "scroll": 534352,
+            "mantle": 5000,
+            "blast": 81457,
+            "zksync": 324,
+            "gnosis": 100,
+            "celo": 42220,
+            "sonic": 146,
+            "berachain": 80094,
+            "unichain": 130,
         }
         return chain_ids.get(self.value)
 
@@ -68,6 +99,16 @@ class ChainType(Enum):
             "polygon": "POL",
             "optimism": "ETH",
             "avalanche": "AVAX",
+            "linea": "ETH",
+            "scroll": "ETH",
+            "mantle": "MNT",
+            "blast": "ETH",
+            "zksync": "ETH",
+            "gnosis": "xDAI",
+            "celo": "CELO",
+            "sonic": "S",
+            "berachain": "BERA",
+            "unichain": "ETH",
         }
         return symbols.get(self.value, "ETH")
 

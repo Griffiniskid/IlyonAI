@@ -2262,6 +2262,9 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     }
     _EVM_CHAINS_SET = {
         "ethereum", "polygon", "arbitrum", "optimism", "base", "avalanche", "bsc", "bnb",
+        # Phase 6 chain expansion (R7).
+        "linea", "scroll", "mantle", "blast", "zksync",
+        "gnosis", "celo", "sonic", "berachain", "unichain",
     }
     _gd = m.groupdict() or {}
     chain_raw = (_gd.get("chain") or _gd.get("chain_after") or "").lower()
