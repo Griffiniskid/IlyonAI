@@ -1,0 +1,278 @@
+"""Spec §6c — cross-chain composed plans (snapshot → block → rebuild → promote).
+
+A composed plan is a multi-leg LP intent that crosses chains or has an
+async dependency. The chat surface shows all legs upfront in a single
+thread; the destination-side step blocks on `pending_dst_fill` until
+the bridge solver fills, then the runtime rebuilds the deposit step
+with the actual delta and promotes it to ready.
+
+This module ships the four primitives:
+
+  - snapshot(quote, expected_dst_amount, slippage_band_bps) — capture
+    the solver-quoted destination amount at plan-build time.
+  - block(plan_step, blocker_code) — mark a step as blocked on an
+    async fill (PENDING_DST_FILL, PENDING_EPOCH_ENTRY, etc.).
+  - rebuild(plan_step, actual_dst_amount) — re-emit the dependent
+    step's calldata with the actual delta after fill resolution.
+  - promote(plan_step) — flip a step from blocked → ready once
+    rebuild succeeds.
+
+Bridge fill detection lives in DeBridgeOrderWatcher (webhook + RPC
+poll dual-signal). The composed-plan builder is bridge-agnostic — pass
+any Bridge implementation that satisfies the protocol.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+from dataclasses import dataclass, field
+from typing import Any, Awaitable, Callable, Protocol
+
+from src.defi.execution.models import ExecutionStepV3
+
+logger = logging.getLogger(__name__)
+
+
+class Bridge(Protocol):
+    """Bridge interface — deBridge DLN, LI.FI, Socket all conform."""
+
+    name: str
+
+    async def quote(
+        self,
+        *,
+        src_chain_id: int,
+        dst_chain_id: int,
+        token_in: str,
+        token_out: str,
+        amount: int,
+        recipient: str,
+    ) -> dict[str, Any]:
+        """Return {expected_dst_amount, slippage_bps_band, quote_id, ttl_s}."""
+        ...
+
+    async def status(self, order_id: str) -> dict[str, Any]:
+        """Return {state: 'created'|'filled'|'cancelled'|'failed', actual_dst_amount?}."""
+        ...
+
+
+@dataclass
+class Snapshot:
+    """Captured solver quote at plan-build time."""
+
+    bridge_name: str
+    src_chain_id: int
+    dst_chain_id: int
+    token_in: str
+    token_out: str
+    src_amount: int
+    expected_dst_amount: int
+    slippage_bps_band_min: int
+    slippage_bps_band_max: int
+    quote_id: str | None = None
+    captured_at: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "bridge_name": self.bridge_name,
+            "src_chain_id": self.src_chain_id,
+            "dst_chain_id": self.dst_chain_id,
+            "token_in": self.token_in,
+            "token_out": self.token_out,
+            "src_amount": str(self.src_amount),
+            "expected_dst_amount": str(self.expected_dst_amount),
+            "slippage_bps_band": {
+                "min": self.slippage_bps_band_min,
+                "max": self.slippage_bps_band_max,
+            },
+            "quote_id": self.quote_id,
+            "captured_at": self.captured_at,
+        }
+
+
+@dataclass
+class FillResolution:
+    """Actual fill data observed after webhook / RPC poll resolves."""
+
+    order_id: str
+    state: str                       # "filled" | "cancelled" | "failed" | "timeout"
+    actual_dst_amount: int | None = None
+    realized_slippage_bps: int | None = None
+    resolved_at: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "order_id": self.order_id,
+            "state": self.state,
+            "actual_dst_amount": (
+                str(self.actual_dst_amount) if self.actual_dst_amount is not None else None
+            ),
+            "realized_slippage_bps": self.realized_slippage_bps,
+            "resolved_at": self.resolved_at,
+        }
+
+
+async def snapshot_bridge_quote(
+    bridge: Bridge,
+    *,
+    src_chain_id: int,
+    dst_chain_id: int,
+    token_in: str,
+    token_out: str,
+    amount: int,
+    recipient: str,
+    slippage_band_min_bps: int = 5,
+    slippage_band_max_bps: int = 20,
+) -> Snapshot:
+    """Step 1 of §6c — capture the bridge's expected destination amount."""
+    import time
+
+    q = await bridge.quote(
+        src_chain_id=src_chain_id,
+        dst_chain_id=dst_chain_id,
+        token_in=token_in,
+        token_out=token_out,
+        amount=amount,
+        recipient=recipient,
+    )
+    expected_dst = int(q.get("expected_dst_amount", 0))
+    if expected_dst <= 0:
+        raise ValueError(f"Bridge {bridge.name} returned zero/missing expected_dst_amount.")
+    return Snapshot(
+        bridge_name=bridge.name,
+        src_chain_id=src_chain_id,
+        dst_chain_id=dst_chain_id,
+        token_in=token_in,
+        token_out=token_out,
+        src_amount=amount,
+        expected_dst_amount=expected_dst,
+        slippage_bps_band_min=int(q.get("slippage_bps_band", {}).get("min", slippage_band_min_bps)),
+        slippage_bps_band_max=int(q.get("slippage_bps_band", {}).get("max", slippage_band_max_bps)),
+        quote_id=q.get("quote_id"),
+        captured_at=time.time(),
+    )
+
+
+def block_step_for_async_fill(step: ExecutionStepV3, *, blocker_code: str = "PENDING_DST_FILL") -> None:
+    """Step 2 — mark the deposit step blocked on an async fill.
+
+    Mutates the step in place; idempotent.
+    """
+    if blocker_code not in step.blocker_codes:
+        step.blocker_codes.append(blocker_code)
+    step.status = "blocked"
+
+
+async def watch_for_fill(
+    bridge: Bridge,
+    order_id: str,
+    *,
+    poll_interval_s: float = 2.0,
+    max_poll_s: float = 900.0,  # 15 minutes
+    on_progress: Callable[[dict], Awaitable[None]] | None = None,
+) -> FillResolution:
+    """Step 3 — exponential-backoff poll for the bridge order to fill.
+
+    Webhook integration is the preferred signal in production; this RPC
+    poller is the always-on fallback.
+    """
+    import time
+
+    started = time.time()
+    interval = poll_interval_s
+    while True:
+        elapsed = time.time() - started
+        if elapsed > max_poll_s:
+            return FillResolution(
+                order_id=order_id,
+                state="timeout",
+                resolved_at=time.time(),
+            )
+        try:
+            status = await bridge.status(order_id)
+        except Exception as exc:  # noqa: BLE001 — defensive
+            logger.warning("Bridge status poll failed: %s", exc)
+            status = {"state": "unknown"}
+        state = status.get("state", "unknown")
+        if on_progress:
+            try:
+                await on_progress({"state": state, "elapsed_s": elapsed})
+            except Exception:  # noqa: BLE001
+                pass
+        if state in {"filled", "cancelled", "failed"}:
+            actual = status.get("actual_dst_amount")
+            realized = status.get("realized_slippage_bps")
+            return FillResolution(
+                order_id=order_id,
+                state=state,
+                actual_dst_amount=int(actual) if actual is not None else None,
+                realized_slippage_bps=int(realized) if realized is not None else None,
+                resolved_at=time.time(),
+            )
+        await asyncio.sleep(interval)
+        # Backoff up to 15 seconds.
+        interval = min(interval * 1.5, 15.0)
+
+
+def rebuild_step_with_actual_delta(
+    step: ExecutionStepV3,
+    *,
+    snapshot: Snapshot,
+    fill: FillResolution,
+    rebuilder: Callable[[int], ExecutionStepV3] | None = None,
+) -> ExecutionStepV3:
+    """Step 4 — rebuild the dependent step with the actual fill amount.
+
+    When `rebuilder` is provided, it gets called with the actual dst
+    amount and must return a fresh ExecutionStepV3 with updated
+    calldata + amount_in. The fresh step inherits the original
+    step_id, depends_on, and index so dependents stay coherent.
+
+    Without a `rebuilder`, this fn just updates `step.fill_resolved`
+    and clears the PENDING_DST_FILL blocker. The actual calldata
+    refresh is the caller's responsibility.
+    """
+    step.snapshot = snapshot.to_dict()
+    step.fill_resolved = fill.to_dict()
+    if fill.state != "filled":
+        # Refund / cancellation surfaces a recovery hook.
+        from src.defi.recovery import FailureKind, decide_recovery
+
+        recovery = decide_recovery(
+            FailureKind.BRIDGE_SUBMISSION_FAILED
+            if fill.state in {"cancelled", "failed"}
+            else FailureKind.UNKNOWN,
+            step_kind="bridge",
+            elapsed_since_fail_s=0,
+        )
+        step.recovery_hook = recovery.to_dict()
+        return step
+    # Clear the blocker code and re-emit calldata via rebuilder.
+    step.blocker_codes = [c for c in step.blocker_codes if c != "PENDING_DST_FILL"]
+    if rebuilder and fill.actual_dst_amount is not None:
+        try:
+            fresh = rebuilder(fill.actual_dst_amount)
+            # Copy over identity so dependents don't break.
+            fresh.step_id = step.step_id
+            fresh.index = step.index
+            fresh.depends_on = step.depends_on
+            return fresh
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("rebuilder failed: %s", exc)
+    return step
+
+
+def promote_step_to_ready(step: ExecutionStepV3) -> None:
+    """Step 4b — flip a freshly-rebuilt step from blocked → ready.
+
+    Asserts the blocker is cleared and fill is resolved before
+    flipping. Caller must call this AFTER rebuild_step_with_actual_delta
+    confirmed `fill.state == "filled"`.
+    """
+    if step.blocker_codes:
+        raise ValueError(
+            f"Cannot promote step with active blocker_codes: {step.blocker_codes}"
+        )
+    if not step.fill_resolved or step.fill_resolved.get("state") != "filled":
+        raise ValueError("Cannot promote — fill not resolved.")
+    step.status = "ready"
