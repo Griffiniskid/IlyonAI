@@ -4,6 +4,8 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import dynamic from "next/dynamic";
 import AssistantWalletSettings from "@/components/agent-app/AssistantWalletSettings";
 import SessionKeyPanel from "@/components/settings/SessionKeyPanel";
+import AuditLogPanel from "@/components/settings/AuditLogPanel";
+import Eip7702OptInPanel from "@/components/settings/Eip7702OptInPanel";
 
 // Dynamically import WalletMultiButton with SSR disabled to prevent hydration mismatch
 const WalletMultiButton = dynamic(
@@ -35,8 +37,10 @@ export default function SettingsPage() {
 
       {/* Session-key policies (§11 D.5/D.6) */}
       {connected && publicKey ? (
-        <div className="mt-6">
+        <div className="mt-6 space-y-4">
           <SessionKeyPanel userWallet={publicKey.toBase58()} />
+          <Eip7702OptInPanel userWallet={publicKey.toBase58()} />
+          <AuditLogPanel userWallet={publicKey.toBase58()} />
         </div>
       ) : null}
 
