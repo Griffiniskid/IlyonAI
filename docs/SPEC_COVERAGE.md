@@ -177,7 +177,7 @@ Total unit tests added this session: 66 (15 §6e + 15 §6f + 11 §6g + 15 §11 D
 | 8 new blocker codes | ✅ | KNOWN_BLOCKER_CODES MEV/GAS_MODEL/SELF_TRADE/JIT/POOL_LINK + KYC/AGGREGATOR/CAP/POOL_INIT/STALE/FROZEN/TOKEN_2022_HOOK |
 | §13 coverage | 9 → 26/27 implemented (only row 15 hardware-wallet ALT remains skip) | tests/defi/test_edge_case_appendix.py |
 
-Final tests: 344 passed, 2 skipped. 0 regressions across 65+ resume-v2 commits.
+Final tests: 370 passed, 2 skipped. 0 regressions across 75+ resume-v2 commits.
 
 ### Live-validated lifecycle scenarios (post-deploy 7c03814)
 
