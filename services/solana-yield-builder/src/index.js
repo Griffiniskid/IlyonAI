@@ -339,12 +339,13 @@ async function _meteoraDlmmState(mintA, mintB) {
   const tokenB = baseAddr === a
     ? { mint: top.quoteToken.address, symbol: top.quoteToken.symbol, decimals: top.quoteToken.decimals ?? null }
     : { mint: top.baseToken.address, symbol: top.baseToken.symbol, decimals: top.baseToken.decimals ?? null };
-  // SDK enrichment for binStep + activeId. Defer load of @meteora-ag/dlmm
-  // so the require cost is paid only when a Meteora DLMM intent fires.
+  // SDK enrichment for binStep + activeId. The @meteora-ag/dlmm package
+  // sets module.exports = exports.default (its index.js rebinds), so the
+  // DLMM class is the require result itself — no `.default` indirection.
   let binStep = 0;
   let activeId = 0;
   try {
-    const DLMM = require("@meteora-ag/dlmm").default;
+    const DLMM = require("@meteora-ag/dlmm");
     const lb = await DLMM.create(connection, new PublicKey(poolAddress));
     binStep = Number(lb?.lbPair?.binStep ?? 0);
     activeId = Number(lb?.lbPair?.activeId ?? 0);
