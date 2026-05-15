@@ -127,3 +127,32 @@ def test_verify_receipt_balance_below_min(monkeypatch):
     ))
     assert r.confirmed is False
     assert "10" in r.detail
+
+
+def test_verify_receipt_v3_nft_with_liquidity(monkeypatch):
+    """V3_NFT confirms when NFP.positions(tokenId).liquidity > 0."""
+    async def _fake_call(chain, to, data):
+        # 12-word return: nonce, operator, token0, token1, fee, tickLower,
+        # tickUpper, liquidity=42, ...
+        # Fill 12 × 32 = 384 bytes; only liquidity word matters here.
+        body = "00" * 32 * 7  # words 0..6
+        body += "00" * 31 + "2a"  # word 7 liquidity = 42
+        body += "00" * 32 * 4    # words 8..11
+        return "0x" + body
+    import src.defi.verification.receipt_reader as mod
+    monkeypatch.setattr(mod, "_eth_call_with_fallback", _fake_call)
+    r = _run(verify_receipt(
+        kind=ReceiptKind.V3_NFT, chain="ethereum",
+        owner="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        expected={"nfpm": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88", "token_id": 12345},
+    ))
+    assert r.confirmed is True
+    assert r.raw["liquidity"] == 42
+
+
+def test_verify_receipt_v3_nft_requires_nfpm(monkeypatch):
+    r = _run(verify_receipt(
+        kind=ReceiptKind.V3_NFT, chain="ethereum", owner="0xabc", expected={},
+    ))
+    assert r.confirmed is False
+    assert "nfpm" in r.detail
