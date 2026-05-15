@@ -15,6 +15,17 @@ from src.defi.execution.adapters.base import (
 from src.defi.execution.models import ExecutionStepV3, UnsignedStepTransaction, make_step
 
 # Aave V3 Pool addresses per chain (verified mainnets).
+_AAVE_REWARDS_BY_CHAIN: dict[str, str] = {
+    # RewardsController per official Aave docs (covers stkAAVE / gauge incentives).
+    "ethereum": "0x8164Cc65827dcFe994AB23944CBC90e0aa80bFcb",
+    "polygon":  "0x929EC64c34a17401F460460D4B9390518E5B473e",
+    "arbitrum": "0x929EC64c34a17401F460460D4B9390518E5B473e",
+    "optimism": "0x929EC64c34a17401F460460D4B9390518E5B473e",
+    "base":     "0xf9cc4F0D883F1a1eb2c253bdb46c254Ca51E1F44",
+    "avalanche":"0x929EC64c34a17401F460460D4B9390518E5B473e",
+}
+
+
 _AAVE_POOL_ADDRESSES: dict[str, str] = {
     "ethereum": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
     "polygon": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
@@ -77,7 +88,7 @@ class AaveV3SupplyAdapter:
     adapter_id: str = "aave-v3-supply"
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base", "avalanche"})
     protocols: frozenset[str] = frozenset({"aave-v3", "aave", "aave v3", "aavev3"})
-    actions: frozenset[str] = frozenset({"supply", "deposit", "lend", "withdraw"})
+    actions: frozenset[str] = frozenset({"supply", "deposit", "lend", "withdraw", "claim"})
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
         chain_norm = chain.lower()
@@ -114,6 +125,45 @@ class AaveV3SupplyAdapter:
         # Phase 4 lifecycle — withdraw(asset, amount, to) selector 0x69328dec.
         extra = request.extra or {}
         action_hint = (extra.get("action") or "").lower()
+        if action_hint == "claim":
+            rewards_addr = _AAVE_REWARDS_BY_CHAIN.get(chain_norm)
+            if not rewards_addr:
+                raise ValueError(f"Aave V3 RewardsController not registered on {chain_norm}.")
+            # RewardsController.claimAllRewards(address[] assets, address to) — selector 0xbb492bf5.
+            # Dynamic-encoded address[]: offset (32 bytes pointing to head end) +
+            # to address + length + asset (only the aToken here, which user
+            # supplied via extra.aToken or we derive as the aave receipt).
+            atoken = (
+                (extra.get("aToken") or extra.get("atoken") or token_address).lower()
+            )
+            head = (
+                _encode_uint256(64)                  # offset to assets array
+                + _encode_address(request.user_address)
+                + _encode_uint256(1)                 # array length = 1
+                + _encode_address(atoken)            # the aToken address
+            )
+            data = "0xbb492bf5" + head
+            step = make_step(
+                index=1, action="claim",
+                title=f"Claim Aave V3 rewards for {request.asset_in}",
+                description=(
+                    f"RewardsController.claimAllRewards([{atoken}], {request.user_address}) "
+                    f"at {rewards_addr}. Accumulated rewards (stkAAVE / gauge incentives) "
+                    f"transferred to the user wallet."
+                ),
+                chain=request.chain, wallet="MetaMask", protocol="aave-v3",
+                asset_in=f"a{request.asset_in}", amount_in="0",
+                asset_out="REWARDS",
+                slippage_bps=0, gas_estimate_usd=2.5, duration_estimate_s=15,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm", chain_id=chain_id,
+                    to=rewards_addr, data=data, value="0x0", spender=rewards_addr,
+                ),
+                risk_warnings=[
+                    "Claim transfers accrued rewards to your wallet — no allowance or principal touched.",
+                ],
+            )
+            return [step]
         if action_hint == "withdraw":
             withdraw_units = _to_unit(request.amount_in, decimals)
             # type(uint256).max = withdraw all. Pass-through when caller asks
