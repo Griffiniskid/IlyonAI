@@ -67,7 +67,7 @@ class CompoundV3SupplyAdapter:
     adapter_id: str = "compound-v3-supply"
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base"})
     protocols: frozenset[str] = frozenset({"compound-v3", "compound", "compound v3", "compoundv3", "comet"})
-    actions: frozenset[str] = frozenset({"supply", "deposit", "lend", "withdraw", "claim"})
+    actions: frozenset[str] = frozenset({"supply", "deposit", "lend", "withdraw", "claim", "borrow"})
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
         chain_norm = chain.lower()
@@ -134,6 +134,39 @@ class CompoundV3SupplyAdapter:
                 ],
             )
             return [claim_step]
+        if action_hint == "borrow":
+            # Compound v3 borrowing is Comet.withdraw on the base asset against
+            # supplied collateral. Same selector 0xf3fef3a3 (asset, amount).
+            # Surface as "borrow" semantically — user sees the loan, not a
+            # withdrawal of their own deposit.
+            wd_units = _to_unit(request.amount_in, decimals)
+            if wd_units <= 0:
+                raise ValueError("Borrow amount must be > 0.")
+            wd_calldata = "0xf3fef3a3" + _encode_address(token_address) + _encode_uint256(wd_units)
+            step = make_step(
+                index=1, action="borrow",
+                title=f"Borrow {request.asset_in} from Compound v3",
+                description=(
+                    f"Comet.withdraw({request.asset_in}, {request.amount_in}) — "
+                    f"borrows against your collateralised supply. Compound v3 "
+                    f"borrow uses the same selector as withdraw because the base "
+                    f"asset is the borrowable token in each market."
+                ),
+                chain=request.chain, wallet="MetaMask", protocol="compound-v3",
+                asset_in=None, amount_in=str(request.amount_in),
+                asset_out=request.asset_in,
+                slippage_bps=0, gas_estimate_usd=2.5, duration_estimate_s=15,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm", chain_id=chain_id,
+                    to=comet_address, data=wd_calldata, value="0x0",
+                    spender=comet_address,
+                ),
+                risk_warnings=[
+                    "Comet borrow requires collateral pre-supplied to this market.",
+                    "Borrow REVERTS if your borrow capacity (per Comet's getBorrowCapacityOf) is exceeded.",
+                ],
+            )
+            return [step]
         if action_hint == "withdraw":
             wd_units = _to_unit(request.amount_in, decimals)
             if wd_units <= 0:
