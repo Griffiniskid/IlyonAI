@@ -57,6 +57,14 @@ KNOWN_BLOCKER_CODES: frozenset[str] = frozenset({
     "PENDING_EPOCH_ENTRY",         # Pendle / Curve gauge / Marinade native epoch boundary
     "PENDING_LIDO_QUEUE",          # Lido stake queue wait
     "GAS_TOPUP_REQUIRED",          # dst-chain native gas insufficient
+    "PERMISSIONED_POOL_KYC",       # Maple / Goldfinch / Hashnote — KYC/whitelist required
+    "AGGREGATOR_CIRCUIT_BREAKER",  # router temporarily refusing quotes (e.g. Enso 5xx burst)
+    "DEPOSIT_CAP_REACHED",         # Aave/Pendle/JLP cap hit
+    "POOL_NOT_INITIALIZED",        # V4 / Whirlpool / Raydium CLMM uninitialized poolKey
+    "STALE_PRICE_FEED",            # Pyth/Chainlink heartbeat exceeded
+    "SUPPLY_CAP_REACHED",          # alias for DEPOSIT_CAP_REACHED at the per-asset Aave level
+    "FROZEN_ACCOUNT",              # SPL token-frozen state pre-flight
+    "TOKEN_2022_HOOK_UNTRUSTED",   # Token-2022 transfer-hook is not on the allowlist
 })
 
 

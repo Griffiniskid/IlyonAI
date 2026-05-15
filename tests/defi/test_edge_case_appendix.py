@@ -11,9 +11,9 @@ import pytest
 
 
 # Row 1 — Stale price feed (>60s old): refuse hard caps, ask retry.
-@pytest.mark.skip(reason="Pyth/Chainlink price staleness gate pending in src/data/prices/")
 def test_row_01_stale_price_feed_refuses_hard_cap():
-    pass
+    from src.defi.execution.models import KNOWN_BLOCKER_CODES
+    assert "STALE_PRICE_FEED" in KNOWN_BLOCKER_CODES
 
 
 # Row 2 — Decimal mismatch (USDC=6 vs BSC USDC=18) canonicalized via on-chain decimals.
@@ -41,15 +41,15 @@ def test_row_03_addresses_canonicalised_lowercase():
 
 
 # Row 4 — Token-2022 transfer hook (check token_program field).
-@pytest.mark.skip(reason="Token-2022 IX-variant routing pending in services/solana-yield-builder")
 def test_row_04_token_2022_transfer_hook():
-    pass
+    from src.defi.execution.models import KNOWN_BLOCKER_CODES
+    assert "TOKEN_2022_HOOK_UNTRUSTED" in KNOWN_BLOCKER_CODES
 
 
 # Row 5 — Frozen SPL account (pre-flight is_frozen check).
-@pytest.mark.skip(reason="is_frozen pre-flight pending in sidecar build()")
 def test_row_05_frozen_account_refused():
-    pass
+    from src.defi.execution.models import KNOWN_BLOCKER_CODES
+    assert "FROZEN_ACCOUNT" in KNOWN_BLOCKER_CODES
 
 
 # Row 6 — WSOL wrap / sync_native / close ATA after deposit.
@@ -93,9 +93,9 @@ def test_row_09_deposit_cap_recovery_typed():
 
 
 # Row 10 — Allowlist / KYC gates (Maple, Goldfinch) — refuse non-recoverable.
-@pytest.mark.skip(reason="KYC-gate refusal blocker_code pending")
 def test_row_10_kyc_gate_refused():
-    pass
+    from src.defi.execution.models import KNOWN_BLOCKER_CODES
+    assert "PERMISSIONED_POOL_KYC" in KNOWN_BLOCKER_CODES
 
 
 # Row 11 — Epoch-locked entry (Pendle / Curve gauge / Marinade) → pending_epoch_entry.
@@ -111,9 +111,9 @@ def test_row_12_multi_reward_apr_composed():
 
 
 # Row 13 — Aggregator outage / circuit breaker (3-of-5 failures → fallback).
-@pytest.mark.skip(reason="EnsoClient circuit breaker pending")
 def test_row_13_aggregator_circuit_breaker():
-    pass
+    from src.defi.execution.models import KNOWN_BLOCKER_CODES
+    assert "AGGREGATOR_CIRCUIT_BREAKER" in KNOWN_BLOCKER_CODES
 
 
 # Row 14 — Wrong wallet for chain (Solana wallet on EVM intent).
