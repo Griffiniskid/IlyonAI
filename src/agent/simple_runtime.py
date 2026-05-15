@@ -2012,13 +2012,16 @@ _ADD_LIQUIDITY_RE = re.compile(
     r"^\s*(?:add|provide|deposit)\s+(?:liquidity\s+)?"
     r"(?:to|in|into|on)\s+"
     rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}"
-    # Optional trailing pool-variant suffix ("DLMM", "CLMM", "AMM", "V3").
-    r"(?:\s+(?:DLMM|CLMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion|V\d|v\d|pool))?"
+    # Optional trailing pool-variant suffix ("DLMM", "CLMM", "CPMM", "AMM", "V3").
+    r"(?:\s+(?:DLMM|CLMM|CPMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion|V\d|v\d|pool))?"
     r"(?:\s+\d+(?:\.\d+)?\s*%)?"
     r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?"
     rf"\s+{_AMOUNT_USD_OR_TOKEN_RE}"
     # Optional second leg for V2 dual-token form: "and Y TOKEN_B".
     r"(?:\s+and\s+(?:\$\s*[\d,]+(?:\.\d+)?|[\d,]+(?:\.\d+)?\s+[A-Za-z]{2,10}))?"
+    # Tolerate trailing "on CHAIN" after the amount — common phrasing
+    # "Add liquidity to Raydium SOL-USDC CLMM with 10 USDC on Solana".
+    r"(?:\s+on\s+(?P<chain_after>[A-Za-z]+))?"
     r"\s*$",
     re.IGNORECASE,
 )
@@ -2052,12 +2055,15 @@ _ADD_LIQUIDITY_INV_RE = re.compile(
 _OPEN_POSITION_RE = re.compile(
     r"^\s*open\s+(?:a\s+|an\s+)?"
     rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}"
-    r"(?:\s+(?:DLMM|CLMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion|V\d|v\d))?"
+    r"(?:\s+(?:DLMM|CLMM|CPMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion|V\d|v\d))?"
     r"(?:\s+\d+(?:\.\d+)?\s*%)?"
     r"\s+(?:position|lp|liquidity)"
     r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?"
     rf"\s+(?:with\s+)?{_AMOUNT_USD_OR_TOKEN_RE}"
     r"(?:\s+(?:with\s+)?(?:narrow|balanced|wide|full)(?:\s+range)?)?"
+    # Tolerate trailing "on CHAIN" after the amount — common phrasing
+    # "Open Uniswap V3 ETH-USDC position with 0.1 ETH on Ethereum".
+    r"(?:\s+on\s+(?P<chain_after>[A-Za-z]+))?"
     r"\s*$",
     re.IGNORECASE,
 )
@@ -2082,6 +2088,38 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     # Normalize "uniswap v3" → "uniswap-v3" for the pool resolver / kind gate.
     proto = re.sub(r"\s+", "-", proto_raw)
     pair = (m.group("pair") or "").upper().replace("/", "-")
+    # Variant-suffix rewrite (§6b): when the user appended CLMM / DLMM /
+    # Whirlpool / Slipstream / CPMM / Fusion *after* the pair, the regex
+    # consumes the token but loses the protocol sub-variant. Without this
+    # rewrite "Raydium SOL-USDC CLMM" routes to plain "raydium" which the
+    # downstream family-head selector collapses to raydium-amm, costing the
+    # in-chat range card. Restore the explicit sub-variant before building
+    # pool_ref so execute_pool_position._CLMM_SUB_VARIANTS gate trips.
+    variant_match = re.search(
+        r"\b(DLMM|CLMM|CPMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion)\b",
+        text,
+        re.IGNORECASE,
+    )
+    if variant_match:
+        variant = variant_match.group(1).lower()
+        proto_head = proto.split("-")[0]
+        _VARIANT_REWRITE = {
+            ("raydium", "clmm"): "raydium-clmm",
+            ("raydium", "cpmm"): "raydium-cp",
+            ("raydium", "amm"): "raydium-amm",
+            ("orca", "whirlpool"): "orca-whirlpools",
+            ("orca", "whirlpools"): "orca-whirlpools",
+            ("orca", "clmm"): "orca-clmm",
+            ("meteora", "dlmm"): "meteora-dlmm",
+            ("meteora", "amm"): "meteora",
+            ("aerodrome", "slipstream"): "aerodrome-slipstream",
+            ("velodrome", "slipstream"): "velodrome-slipstream",
+            ("velodrome", "clmm"): "velodrome-cl",
+            ("pancakeswap", "fusion"): "pancakeswap-v3",
+        }
+        rewritten = _VARIANT_REWRITE.get((proto_head, variant))
+        if rewritten:
+            proto = rewritten
     pool_ref = f"{proto} {pair}"
 
     usd_str = m.group("usd")
@@ -2149,7 +2187,8 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     _EVM_CHAINS_SET = {
         "ethereum", "polygon", "arbitrum", "optimism", "base", "avalanche", "bsc", "bnb",
     }
-    chain_raw = (m.group("chain") or "").lower() if "chain" in (m.groupdict() or {}) else ""
+    _gd = m.groupdict() or {}
+    chain_raw = (_gd.get("chain") or _gd.get("chain_after") or "").lower()
     if chain_raw == "bnb":
         chain_raw = "bsc"
     if proto in _V3_EVM_PROTOS and chain_raw in _EVM_CHAINS_SET:
