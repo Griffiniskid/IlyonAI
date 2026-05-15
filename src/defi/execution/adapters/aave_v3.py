@@ -125,6 +125,46 @@ class AaveV3SupplyAdapter:
         # Phase 4 lifecycle — withdraw(asset, amount, to) selector 0x69328dec.
         extra = request.extra or {}
         action_hint = (extra.get("action") or "").lower()
+        if action_hint == "borrow":
+            # Pool.borrow(asset, amount, interestRateMode, referralCode, onBehalfOf)
+            # selector 0xa415bcad. No approve step — borrow mints debt, doesn't pull funds.
+            borrow_units = _to_unit(request.amount_in, decimals)
+            if borrow_units <= 0:
+                raise ValueError("Borrow amount must be > 0.")
+            rate_mode = int(extra.get("rate_mode") or 2)  # 2 = variable, 1 = stable
+            borrow_calldata = (
+                "0xa415bcad"
+                + _encode_address(token_address)
+                + _encode_uint256(borrow_units)
+                + _encode_uint256(rate_mode)
+                + _encode_uint256(0)  # referralCode
+                + _encode_address(request.user_address)
+            )
+            borrow_step = make_step(
+                index=1, action="borrow",
+                title=f"Borrow {request.asset_in} from Aave V3",
+                description=(
+                    f"Pool.borrow({request.asset_in}, {request.amount_in}, "
+                    f"rateMode={rate_mode}, referralCode=0, onBehalfOf={request.user_address}). "
+                    f"Mints variable-rate debt against your existing collateral; the asset is "
+                    f"transferred to your wallet."
+                ),
+                chain=request.chain, wallet="MetaMask", protocol="aave-v3",
+                asset_in=None, amount_in=str(request.amount_in),
+                asset_out=request.asset_in,
+                slippage_bps=0, gas_estimate_usd=3.0, duration_estimate_s=15,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm", chain_id=chain_id,
+                    to=pool_address, data=borrow_calldata, value="0x0",
+                    spender=pool_address,
+                ),
+                risk_warnings=[
+                    "Borrow requires existing collateral with sufficient health factor.",
+                    f"Variable-rate debt — interest accrues continuously. rateMode={rate_mode}.",
+                    "Borrow will REVERT if your collateralized health factor goes below 1.0.",
+                ],
+            )
+            return [borrow_step]
         if action_hint == "repay":
             repay_units = _to_unit(request.amount_in, decimals)
             if repay_units <= 0:
