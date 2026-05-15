@@ -654,10 +654,11 @@ class DexScreenerClient:
 
             if address and address not in seen_addresses:
                 seen_addresses.add(address)
+                from src.agent.sanitizer import sanitise_onchain_string
                 results.append({
                     "address": address,
-                    "symbol": base.get("symbol", "???"),
-                    "name": base.get("name", "Unknown"),
+                    "symbol": sanitise_onchain_string(base.get("symbol", "???")),
+                    "name": sanitise_onchain_string(base.get("name", "Unknown")),
                     "chain": self._normalize_chain(pair.get("chainId")) or pair.get("chainId"),
                     "dex": pair.get("dexId", "unknown"),
                     "logo_url": pair.get("info", {}).get("imageUrl"),

@@ -108,13 +108,14 @@ class CoinGeckoClient:
         if not data:
             return []
 
+        from src.agent.sanitizer import sanitise_onchain_string
         coins = data.get("coins", [])
         results = []
         for coin in coins[:20]:
             results.append({
                 "id": coin.get("id", ""),
-                "name": coin.get("name", ""),
-                "symbol": coin.get("symbol", ""),
+                "name": sanitise_onchain_string(coin.get("name", "")),
+                "symbol": sanitise_onchain_string(coin.get("symbol", "")),
                 "market_cap_rank": coin.get("market_cap_rank"),
                 "thumb": coin.get("thumb", ""),
                 "large": coin.get("large", ""),
@@ -156,14 +157,15 @@ class CoinGeckoClient:
         if not data:
             return []
 
+        from src.agent.sanitizer import sanitise_onchain_string
         coins = data.get("coins", [])
         results = []
         for entry in coins:
             item = entry.get("item", {})
             results.append({
                 "id": item.get("id", ""),
-                "name": item.get("name", ""),
-                "symbol": item.get("symbol", ""),
+                "name": sanitise_onchain_string(item.get("name", "")),
+                "symbol": sanitise_onchain_string(item.get("symbol", "")),
                 "market_cap_rank": item.get("market_cap_rank"),
                 "price_btc": item.get("price_btc", 0),
                 "score": item.get("score", 0),
@@ -195,11 +197,12 @@ class CoinGeckoClient:
         community = data.get("community_data", {})
         developer = data.get("developer_data", {})
 
+        from src.agent.sanitizer import sanitise_onchain_string
         return {
             "id": data.get("id", ""),
-            "name": data.get("name", ""),
-            "symbol": data.get("symbol", ""),
-            "description": data.get("description", {}).get("en", ""),
+            "name": sanitise_onchain_string(data.get("name", "")),
+            "symbol": sanitise_onchain_string(data.get("symbol", "")),
+            "description": sanitise_onchain_string(data.get("description", {}).get("en", "")),
             "image": data.get("image", {}).get("large", ""),
             "market_cap_rank": data.get("market_cap_rank"),
             "categories": data.get("categories", []),
