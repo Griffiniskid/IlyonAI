@@ -227,6 +227,16 @@ The "admit action then forget to branch on it" bug class continues:
 - Balancer admitted `exit_pool` action but build() always emitted joinPool → user expecting exit would deposit
 - Both caught + fixed by adding action dispatch at the top of build(). Regression pin pattern: assert NOT the deposit selector when action=withdraw, AND assert the canonical withdraw selector IS emitted.
 
+### Phase E / agent_009 / G.2 additions (commits 14-21)
+
+| Section | Delta | Evidence |
+|---|---|---|
+| C.2 ComposedPlanOrchestrator | ⏸ → ✅ | `composed_plan_orchestrator.py` — async task pool keyed by plan_id, watch / cancel / shutdown + singleton getter + 11 pin tests |
+| E.1 Biconomy Nexus wrapper | ⏸ → ✅ | `src/auth/biconomy_nexus.py` — pins impl 0x000000aC74357BFEa72BBD0781833631F732cf19 + 17-chain support set + 11 pin tests |
+| E.2 ZeroDev Kernel sibling | ⏸ → ✅ | `src/auth/zerodev_kernel.py` — Kernel v3 impl 0xd6CEDDe84be40893d153Be9d467CD6aD37875b28 + 10 pin tests |
+| E.4 alembic agent_009 | ⏸ → ✅ | `migrations/versions/20260515_biconomy_authorizations.py` — biconomy_session_authorizations table |
+| G.2 §12 PlanStatus canonical | partial → ✅ pin | 6 regression-pin tests on the 12 canonical statuses + legacy admit |
+
 ### Live-validated this resume run (12 verified)
 
 | Scenario | Capture | Selector | To |
