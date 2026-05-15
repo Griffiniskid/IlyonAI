@@ -116,16 +116,55 @@ async def build_yield_execution_plan(
             "ethereum": 1, "polygon": 137, "arbitrum": 42161, "optimism": 10,
             "base": 8453, "avalanche": 43114, "bsc": 56, "solana": 0,
         }
+        # Per-chain stablecoin + native + LST symbol → address map. deBridge DLN
+        # rejects symbol names with HTTP 400; the API needs the EVM contract.
+        _TOKEN_ADDRS: dict[tuple[str, str], tuple[str, int]] = {
+            ("ethereum", "USDC"): ("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", 6),
+            ("ethereum", "USDT"): ("0xdac17f958d2ee523a2206206994597c13d831ec7", 6),
+            ("ethereum", "DAI"):  ("0x6b175474e89094c44da98b954eedeac495271d0f", 18),
+            ("ethereum", "WETH"): ("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", 18),
+            ("ethereum", "WBTC"): ("0x2260fac5e5542a773aa44fbcfedf7c193bc2c599", 8),
+            ("base", "USDC"):     ("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", 6),
+            ("base", "WETH"):     ("0x4200000000000000000000000000000000000006", 18),
+            ("arbitrum", "USDC"): ("0xaf88d065e77c8cc2239327c5edb3a432268e5831", 6),
+            ("arbitrum", "USDT"): ("0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9", 6),
+            ("arbitrum", "WETH"): ("0x82af49447d8a07e3bd95bd0d56f35241523fbab1", 18),
+            ("optimism", "USDC"): ("0x0b2c639c533813f4aa9d7837caf62653d097ff85", 6),
+            ("optimism", "WETH"): ("0x4200000000000000000000000000000000000006", 18),
+            ("polygon", "USDC"):  ("0x3c499c542cef5e3811e1192ce70d8cc03d5c3359", 6),
+            ("polygon", "WETH"):  ("0x7ceb23fd6bc0add59e62ac25578270cff1b9f619", 18),
+            ("avalanche", "USDC"):("0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e", 6),
+            ("bsc", "USDC"):      ("0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d", 18),
+            ("bsc", "USDT"):      ("0x55d398326f99059ff775485246999027b3197955", 18),
+        }
+        src_sym = str(extra_dict_pre.get("source_token") or asset_in).upper()
+        dst_sym = str(asset_in).upper()
+        src_meta = _TOKEN_ADDRS.get((src_chain_hint, src_sym))
+        dst_meta = _TOKEN_ADDRS.get(((chain or "").lower(), dst_sym))
+        if src_meta is None or dst_meta is None:
+            return err_envelope(
+                "composed_plan_token_unknown",
+                f"deBridge needs the EVM contract for {src_sym}@{src_chain_hint} or "
+                f"{dst_sym}@{chain}. Add the (chain, symbol) entry to "
+                f"_TOKEN_ADDRS or pass extra.source_token_address.",
+            )
+        src_addr, src_dec = src_meta
+        if not user_address or user_address == "0x0":
+            return err_envelope(
+                "composed_plan_wallet_missing",
+                "Cross-chain composed plan needs an EVM wallet address. "
+                "Reconnect MetaMask and retry.",
+            )
         try:
             bridge = DeBridgeBridge()
             snap = await snapshot_bridge_quote(
                 bridge,
                 src_chain_id=_CHAIN_ID_MAP.get(src_chain_hint, 0),
                 dst_chain_id=_CHAIN_ID_MAP.get((chain or "").lower(), 0),
-                token_in=str(extra_dict_pre.get("source_token") or asset_in),
-                token_out=asset_in,
-                amount=int(float(amount_in) * 10 ** 18),  # naive; runtime adjusts per dec
-                recipient=user_address or "0x0",
+                token_in=src_addr,
+                token_out=dst_meta[0],
+                amount=int(float(amount_in) * 10 ** src_dec),
+                recipient=user_address,
             )
         except Exception as exc:  # noqa: BLE001
             return err_envelope(
