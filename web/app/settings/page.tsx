@@ -3,6 +3,7 @@
 import { useWallet } from "@solana/wallet-adapter-react";
 import dynamic from "next/dynamic";
 import AssistantWalletSettings from "@/components/agent-app/AssistantWalletSettings";
+import SessionKeyPanel from "@/components/settings/SessionKeyPanel";
 
 // Dynamically import WalletMultiButton with SSR disabled to prevent hydration mismatch
 const WalletMultiButton = dynamic(
@@ -31,6 +32,13 @@ export default function SettingsPage() {
 
       {/* Agent wallet (Phantom/MetaMask/email session used for the AI Agent) */}
       <AssistantWalletSettings />
+
+      {/* Session-key policies (§11 D.5/D.6) */}
+      {connected && publicKey ? (
+        <div className="mt-6">
+          <SessionKeyPanel userWallet={publicKey.toBase58()} />
+        </div>
+      ) : null}
 
       {/* Wallet Section */}
       <section id="auth">
