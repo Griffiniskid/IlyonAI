@@ -108,7 +108,15 @@ Total unit tests added this session: 66 (15 §6e + 15 §6f + 11 §6g + 15 §11 D
 
 10-scenario sweep at d3f74c5:
 - 8/10 ✅ ready (S00 Aave V3, S01 Uniswap V3 native, S02 PCS V3, S03 Raydium CLMM, S04 Marinade native, S06 Lido, S08 Orca Whirlpool, S09 §6d w/ named protocol)
-- 2 blocked with typed §6f recovery posture (S05 Orca DEX timeout, S07 Curve volatile) — both pre-existing issues, not regressions
+- 2 blocked with typed §6f recovery posture (S05 Orca DEX timeout transient, S07 Curve volatile) — both pre-existing issues, not regressions
+
+15-scenario wide sweep at 11a0faf:
+- 12/15 ✅ ready (Aave V3, Uniswap V3 native ETH, PCS V3, Raydium CLMM, Marinade native, "with my USDT" canonical, Lido, Orca Whirlpool, PCS w/ my BNB, Sanctum INF, Stader, Compound V3)
+- 3 blocked, all carry typed §6f recovery posture:
+  - Aerodrome Slipstream — v3_pool_resolver returns None; factory.getPool selector + Slipstream factory address need on-chain ABI verification
+  - Jito — @solana/spl-stake-pool refuses on empty test wallet (honest balance check)
+  - Spark sUSDS — adapter_build_failed (Enso/registry gap, separate)
+- 0 regressions in 22 commits
 
 ## Pending work (not done in this session)
 
