@@ -1748,6 +1748,13 @@ def _detect_enso_vault_deposit(message: str) -> tuple[str, dict] | None:
     if asset in _NOT_A_SYMBOL or asset in _NOISE_ASSET_TOKENS:
         return None
     rest = m.group("rest")
+    # Refuse when the user typed a concentrated-liquidity variant — those are
+    # V3-NFT positions, not Enso vaults. Caught by SW7 regression where
+    # "Aerodrome Slipstream WETH-USDC" routed to Enso vault deposit and
+    # hit "no position token indexed for aerodrome WETH on base" because
+    # Aerodrome bare is Enso-supported but Slipstream is V3-NFT-managed.
+    if re.search(r"\b(slipstream|whirlpool|whirlpools|clmm|dlmm|cpmm|v3\b)", rest, re.IGNORECASE):
+        return None
     proto_match = _ENSO_PROTOS_RE.search(rest)
     if not proto_match:
         return None
