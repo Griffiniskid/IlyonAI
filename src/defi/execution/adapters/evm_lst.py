@@ -218,11 +218,29 @@ class EvmLstDirectMintAdapter:
             return [step]
 
         # ── ERC20-in paths (Kelp depositAsset / Puffer ERC-4626) ──
+        # Auto-wrap path: when user passes asset_in=ETH but the protocol
+        # requires ERC20 input, default to WETH on the same chain + prepend
+        # a wrap step (WETH.deposit() selector 0xd0e30db0). Caught by v4-A18
+        # blocking on Kelp ETH input.
+        _WETH_ADDRS: dict[str, str] = {
+            "ethereum": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+            "arbitrum": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+            "optimism": "0x4200000000000000000000000000000000000006",
+            "base":     "0x4200000000000000000000000000000000000006",
+            "polygon":  "0x7ceb23fd6bc0add59e62ac25578270cff1b9f619",
+            "avalanche": "0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7",
+        }
+        chain_norm = request.chain.lower()
         token_in_address = extra.get("token_address")
+        _auto_wrap = False
         if not token_in_address:
-            raise ValueError(
-                f"{entry.protocol} mint expects ERC20 input — pass extra.token_address."
-            )
+            if request.asset_in.upper() == "ETH" and chain_norm in _WETH_ADDRS:
+                token_in_address = _WETH_ADDRS[chain_norm]
+                _auto_wrap = True
+            else:
+                raise ValueError(
+                    f"{entry.protocol} mint expects ERC20 input — pass extra.token_address."
+                )
         if mint.selector == "0x47e7ef24":  # Kelp depositAsset(address, uint256)
             calldata = (
                 mint.selector
@@ -234,12 +252,34 @@ class EvmLstDirectMintAdapter:
         else:
             raise ValueError(f"Unknown ERC20 selector shape {mint.selector}")
 
+        # Wrap step first when auto-wrap fired
+        wrap_step = None
+        if _auto_wrap:
+            wrap_step = make_step(
+                index=1, action="approve",  # 'wrap' not in canonical actions enum yet
+                title=f"Wrap {request.amount_in} ETH → WETH",
+                description=(
+                    f"WETH.deposit() at {token_in_address}. msg.value carries {request.amount_in} ETH. "
+                    f"Required because {proto_label} mint accepts ERC20 input."
+                ),
+                chain=request.chain, wallet="MetaMask", protocol=request.protocol,
+                asset_in="ETH", amount_in=str(request.amount_in),
+                asset_out="WETH",
+                slippage_bps=0, gas_estimate_usd=1.4, duration_estimate_s=15,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm", chain_id=chain_id,
+                    to=token_in_address, data="0xd0e30db0", value="0x" + format(amount_units, "x"),
+                    spender=token_in_address,
+                ),
+                risk_warnings=["Wrap converts native ETH to WETH 1:1; unwrap is symmetric."],
+            )
+
         approve_calldata = (
             _APPROVE_SELECTOR + _encode_address(mint.contract) + _encode_uint256(amount_units)
         )
         approve_step = make_step(
-            index=1, action="approve",
-            title=f"Approve {request.asset_in} for {proto_label}",
+            index=2 if wrap_step else 1, action="approve",
+            title=f"Approve {'WETH' if _auto_wrap else request.asset_in} for {proto_label}",
             description=(
                 f"Approve {request.amount_in} {request.asset_in} so {proto_label} "
                 f"can pull funds for direct mint."
@@ -254,7 +294,7 @@ class EvmLstDirectMintAdapter:
             ),
         )
         mint_step = make_step(
-            index=2, action="stake",
+            index=3 if wrap_step else 2, action="stake",
             title=f"Mint {entry.receipt_token} via {proto_label}",
             description=(
                 f"Direct mint at {mint.contract} ({mint.selector}). "
@@ -274,6 +314,8 @@ class EvmLstDirectMintAdapter:
                 f"{proto_label} direct mint may queue when daily cap is hit.",
             ],
         )
+        if wrap_step:
+            return [wrap_step, approve_step, mint_step]
         return [approve_step, mint_step]
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
