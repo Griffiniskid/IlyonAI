@@ -347,3 +347,28 @@ Honest gaps remaining (deferred per V5 spec):
 - H07 dust mixing, H08 partial allowance (§7 S7/S8 — Phase E deferred)
 
 Total v5 commits: 20 (9c0bd17 → 86faa29).
+
+### Additional v5 commits 86faa29 → 1dc8f7e
+
+| # | SHA | Closes |
+|---|-----|--------|
+| 21 | 129ae99 | docs spec-coverage v5 |
+| 22 | 9dd5c35 | lazy_resume amount override 'Confirm 50' (G05) |
+| 23 | 3e394b5 | docs V6 prompt |
+| 24 | 47fc3fc | Balancer admit join_pool / remove_liquidity (C07 T4) |
+| 25 | e6825f1 | V3 NFT close-by-tokenId detector (D01) |
+| 26 | f2a0f89 | v4_gaps by-design + Phase B/C/E.4 deferred |
+| 27 | 43274bf | lazy_resume preserves V3 NFT / V4 / cross-chain extras |
+| 28 | 3409dfd | Aave V3 withdraw step asset_in = underlying not aToken slug (D02 T4) |
+| 29 | a05b783 | _OPEN_POSITION_RE native qualifier + uniswap-v3 ethereum default (D01) |
+| 30 | b1facd2 | _PROTO_LEADING_ALIAS PCS→pancakeswap + lazy_resume extra.action (D02/D04) |
+| 31 | ffdd09c | v4_gaps D05 no-amount Balancer |
+| 32 | 1dc8f7e | lazy_resume recovers pool_symbol from payload.range_block.pair (H03) |
+
+### Pass 2 + Pass 3 effectively CLEAN
+
+- Pass 2: 68 ready, 11 blocked (all v4_gaps HONEST), 39 info-only by chain design
+- Pass 3: 70 ready (post-1dc8f7e H03 refire), 11 blocked all HONEST, 39 info-only
+- Pass 4: in flight at end of session
+
+Total v5 commits: 32 (9c0bd17 → 1dc8f7e).
