@@ -144,3 +144,32 @@ def test_protocol_first_chain_inference_velodrome():
     assert tool == "build_yield_execution_plan"
     assert args["chain"] == "optimism"
     assert args["protocol"] == "velodrome-cl"
+
+
+def test_h03_native_eth_v3_protocol_first_no_verb():
+    """v4-H03: 'Uniswap V3 ETH-USDC native 0.05 ETH + 100 USDC Ethereum'.
+
+    Verb-less protocol-first form with 'native' as modifier and bare
+    trailing chain ('Ethereum' without 'on' prefix).
+    """
+    from src.agent.simple_runtime import detect_intent
+
+    out = detect_intent("Uniswap V3 ETH-USDC native 0.05 ETH + 100 USDC Ethereum")
+    assert out is not None
+    tool, args = out
+    assert tool == "build_yield_execution_plan"
+    assert args["chain"] == "ethereum"
+    assert args["protocol"] == "uniswap-v3"
+    assert args["asset_in"] == "ETH"
+    assert args["amount_in"] == 0.05
+    assert args["extra"]["pool_symbol"] == "ETH-USDC"
+
+
+def test_h03_native_eth_v3_protocol_first_with_on_chain():
+    from src.agent.simple_runtime import detect_intent
+
+    out = detect_intent("Uniswap V3 ETH-USDC native 0.05 ETH + 100 USDC on Ethereum")
+    assert out is not None
+    _, args = out
+    assert args["chain"] == "ethereum"
+    assert args["protocol"] == "uniswap-v3"

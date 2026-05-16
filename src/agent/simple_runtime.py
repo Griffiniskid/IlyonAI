@@ -2506,12 +2506,17 @@ _LP_PROTO_FIRST_RE = re.compile(
     r"(?:\s+\d+(?:\.\d+)?\s*%)?"
     r"\s+"
     r"(?:(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|bnb|linea|scroll|mantle|blast|zksync|gnosis|celo|sonic|berachain|unichain|solana|sol)\s+)?"
-    r"(?:deposit|add|provide|open|mint|create|lp|stake)\s+"
-    r"(?:(?:liquidity|position|lp|dual[-\s]?token|using|split\s+half|both\s+legs)\s+)*"
+    # Verb is OPTIONAL — protocol-first phrasing sometimes omits the verb
+    # and just uses 'native' / 'wrapped' as the modifier
+    # ("Uniswap V3 ETH-USDC native 0.05 ETH + 100 USDC Ethereum").
+    r"(?:(?:deposit|add|provide|open|mint|create|lp|stake)\s+)?"
+    r"(?:(?:liquidity|position|lp|dual[-\s]?token|using|split\s+half|both\s+legs|native|wrapped)\s+)*"
     rf"{_AMOUNT_USD_OR_TOKEN_RE}"
     r"(?:\s*[+]\s*(?P<amt_b>[\d,]+(?:\.\d+)?)\s+(?P<tok_b>[A-Za-z]{2,10}))?"
     r"(?:\s+and\s+(?:\$\s*[\d,]+(?:\.\d+)?|[\d,]+(?:\.\d+)?\s+[A-Za-z]{2,10}))?"
     r"(?:\s+on\s+(?P<chain_after>[A-Za-z]+))?"
+    # Trailing bare chain word (no 'on' prefix), only at end of string.
+    r"(?:\s+(?P<chain_tail>ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|bnb|linea|scroll|mantle|blast|zksync|gnosis|celo|sonic|berachain|unichain|solana|sol))?"
     r"(?:\s*\([^)]*\))?"
     r"(?:[,\s]+(?:with\s+)?(?:narrow|balanced|wide|full)(?:\s+range)?)?"
     r"\s*$",
@@ -2696,7 +2701,9 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
         "gnosis", "celo", "sonic", "berachain", "unichain",
     }
     _gd = m.groupdict() or {}
-    chain_raw = (_gd.get("chain") or _gd.get("chain_after") or "").lower()
+    chain_raw = (
+        _gd.get("chain") or _gd.get("chain_after") or _gd.get("chain_tail") or ""
+    ).lower()
     if chain_raw == "bnb":
         chain_raw = "bsc"
     # Infer chain when the regex didn't capture one: BSC-specific native tokens
