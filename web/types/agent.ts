@@ -270,6 +270,17 @@ export interface DefiOpportunitiesPayload {
   blockers: Array<Record<string, unknown>>;
 }
 
+export interface Permit2PermitSingle {
+  details: {
+    token: string;
+    amount: string;
+    expiration: number;
+    nonce: number;
+  };
+  spender: string;
+  sigDeadline: number;
+}
+
 export interface ExecutionPlanV3StepTransaction {
   chain_kind: "evm" | "solana";
   chain_id?: number | null;
@@ -279,6 +290,10 @@ export interface ExecutionPlanV3StepTransaction {
   gas?: string | null;
   serialized?: string | null;
   spender?: string | null;
+  /** When set, the step requires a Permit2 EIP-712 signature before the
+   * raw `data` is broadcast. The runtime splices the signature into
+   * the calldata via /api/v1/plans/{plan_id}/steps/{step_id}/permit2. */
+  permit_payload?: Permit2PermitSingle | null;
 }
 
 export type ExecutionPlanV3StepStatus =

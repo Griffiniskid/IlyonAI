@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ExecutionPlanV3Payload, ExecutionPlanV3Step, ExecutionPlanV3Blocker } from "@/types/agent";
 import { AlertTriangle, ArrowRight, CheckCircle2, Clock, LockKeyhole, Play, Power, Route, ShieldAlert, Wallet, Zap } from "lucide-react";
 import { V3RangeBlock } from "./V3RangeBlock";
+import Permit2SigButton from "./Permit2SigButton";
 
 interface Props {
   payload: ExecutionPlanV3Payload;
@@ -95,15 +96,25 @@ function StepRow({
             <LockKeyhole className="h-3.5 w-3.5" /> {badge.label}
           </span>
           {step.status === "ready" && isFirstReady && onSignStep && (
-            <button
-              type="button"
-              data-testid={`sign-step-${step.step_id}`}
-              disabled={!canSign}
-              onClick={() => onSignStep(planId, step.step_id)}
-              className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-300 to-orange-300 px-4 py-2 text-xs font-black text-amber-950 shadow-lg shadow-amber-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Play className="h-3.5 w-3.5" /> Sign step {step.index}
-            </button>
+            <>
+              {step.transaction?.permit_payload && step.transaction?.chain_id ? (
+                <Permit2SigButton
+                  planId={planId}
+                  stepId={step.step_id}
+                  chainId={step.transaction.chain_id}
+                  permitMessage={step.transaction.permit_payload as unknown as Parameters<typeof Permit2SigButton>[0]["permitMessage"]}
+                />
+              ) : null}
+              <button
+                type="button"
+                data-testid={`sign-step-${step.step_id}`}
+                disabled={!canSign}
+                onClick={() => onSignStep(planId, step.step_id)}
+                className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-300 to-orange-300 px-4 py-2 text-xs font-black text-amber-950 shadow-lg shadow-amber-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Play className="h-3.5 w-3.5" /> Sign step {step.index}
+              </button>
+            </>
           )}
           {step.status === "ready" && !isFirstReady && (
             <span className="text-[10px] text-slate-500">unlocks after step {step.index - 1}</span>
