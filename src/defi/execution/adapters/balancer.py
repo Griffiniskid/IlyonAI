@@ -220,7 +220,8 @@ class BalancerSingleAssetAdapter:
     protocols: frozenset[str] = frozenset({"balancer", "balancer-v2", "balancer-v3"})
     actions: frozenset[str] = frozenset({
         "deposit_lp", "add_liquidity", "provide_liquidity",
-        "exit_pool", "withdraw",
+        "join_pool", "join",  # Balancer-native verb alias (v4-C07 turn 4)
+        "exit_pool", "withdraw", "remove_liquidity",
     })
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
