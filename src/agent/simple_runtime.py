@@ -2213,9 +2213,39 @@ def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
     asset = match.group("asset").upper()
     if asset.lower() in {"on", "to", "of"}:
         return None
-    amount = match.group("amount").replace(",", "")
+    # Chain words sometimes get captured as the asset when the message form is
+    # 'Aave V3 USDC supply 100 Base' — the verb-first sub-regex consumes
+    # 'supply 100 Base' and treats Base as asset. v4-H13 caught this. Re-scan
+    # for a real token symbol BEFORE the verb and prefer that asset; treat the
+    # captured 'asset' as a bare chain hint when it overlaps the chain set.
+    _CHAIN_WORDS = {
+        "ETHEREUM", "POLYGON", "ARBITRUM", "OPTIMISM", "BASE", "AVALANCHE",
+        "AVAX", "BSC", "BNB", "SOLANA", "SOL", "LINEA", "ZKSYNC", "SCROLL",
+        "MANTLE", "BLAST", "GNOSIS", "CELO", "SONIC", "BERACHAIN", "UNICHAIN",
+    }
     chain_match = match.groupdict().get("chain")
     chain = (chain_match or "ethereum").lower()
+    if asset in _CHAIN_WORDS:
+        # Bare chain word captured as asset — promote to chain hint and
+        # re-extract the asset from the leading text before 'supply'.
+        bare_chain = asset.lower()
+        if bare_chain == "avax":
+            bare_chain = "avalanche"
+        elif bare_chain in {"bnb"}:
+            bare_chain = "bsc"
+        elif bare_chain == "sol":
+            bare_chain = "solana"
+        chain = bare_chain
+        alt2 = re.search(
+            r"aave(?:\s*v3)?\s+(?P<asset>[A-Za-z]{2,10})\s+(?:supply|deposit|lend)",
+            message, re.IGNORECASE,
+        )
+        if not alt2:
+            return None
+        asset = alt2.group("asset").upper()
+        if asset in _CHAIN_WORDS or asset.lower() in {"on", "to", "of"}:
+            return None
+    amount = match.group("amount").replace(",", "")
     return "build_yield_execution_plan", {
         "chain": chain,
         "protocol": "aave-v3",
