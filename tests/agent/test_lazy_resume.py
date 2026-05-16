@@ -119,6 +119,13 @@ def test_lifecycle_detector_bare_chain_aliases():
 
 
 def test_lazy_resume_matches_bridge_variants():
+    """Vague resumes ('Confirm', 'Execute step 2') route to the
+    destination supply step. Bridge-specific resumes ('Execute the
+    bridge step now', 'Confirm bridge') refuse — bridge is owned by the
+    composed_plan orchestrator, not build_yield_execution_plan. v4-E01/
+    E02 caught: action=bridge protocol=debridge-dln surfaced
+    unsupported_adapter at the build path.
+    """
     from src.agent.simple_runtime import _detect_lazy_resume_from_history
 
     hc = [
@@ -135,10 +142,17 @@ def test_lazy_resume_matches_bridge_variants():
             },
         }
     ]
-    for msg in ["Confirm", "Execute the bridge step now", "Confirm bridge",
-                "Execute destination step", "Execute step 2"]:
+    # Vague / destination-step resumes still pick the supply leg.
+    for msg in ["Confirm", "Execute destination step", "Execute step 2"]:
         out = _detect_lazy_resume_from_history(msg, hc)
         assert out is not None, f"{msg!r} should resume"
+        _, args = out
+        assert args["protocol"] == "aave-v3"
+        assert args["action"] == "supply"
+    # Bridge-named resumes refuse — would route to unsupported build path.
+    for msg in ["Execute the bridge step now", "Confirm bridge"]:
+        out = _detect_lazy_resume_from_history(msg, hc)
+        assert out is None, f"{msg!r} should refuse (bridge unsupported in build path)"
 
 
 def test_lazy_resume_matches_withdraw_suffix():

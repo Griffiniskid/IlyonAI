@@ -2063,6 +2063,17 @@ def _detect_lazy_resume_from_history(
     if not _LAZY_RESUME_RE.search(message.strip()):
         return None
     action_hint = _extract_action_hint(message)
+    # Bridge steps live inside composed-plan execution_plan_v3 cards and
+    # are NOT routable via build_yield_execution_plan (capabilities registry
+    # has no Capability adapter for action=bridge — that's owned by the
+    # ComposedPlanOrchestrator + LI.FI/Socket/deBridge bridge protocol
+    # contracts). v4-E01/E02 caught: turn 4 'Execute the bridge step now'
+    # picked action=bridge protocol=debridge-dln → unsupported_adapter.
+    # Skip lazy resume on bridge — runtime falls through to detect_intent
+    # so the user re-issues the bridge command (or clicks Sign on the
+    # existing card from prior turns).
+    if action_hint == "bridge":
+        return None
     # Walk back to find the most recent matching plan.
     for hc in reversed(history_cards):
         ctype = (hc.get("card_type") or "").lower()
