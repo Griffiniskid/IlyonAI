@@ -1890,6 +1890,93 @@ _LAZY_RESUME_RE = re.compile(
 )
 
 
+_PROTO_ASSET_VERB_RE = re.compile(
+    r"^\s*(?:execute|sign|do|run|confirm)\s+"
+    r"(?:(?:the|my)\s+)?"
+    r"(?P<proto>(?:aave|compound|spark|yearn|morpho|silo|sky|lido|rocket[\s-]?pool|"
+    r"ether[\.\s-]?fi|renzo|kelp|swell|frax|mantle|kamino|stader|"
+    r"jito|marinade|sanctum|raydium|orca|meteora|pendle|"
+    r"curve|balancer|aerodrome|velodrome|uniswap|pancakeswap|"
+    r"sushiswap|stargate)[a-z0-9-]*(?:\s*v?\d+)?)"
+    r"\s+(?P<asset>[A-Za-z]{2,10})\s+"
+    r"(?P<action>supply|deposit|stake|lend|allocate)"
+    r"(?:\s+(?:on|via|in)\s+(?P<chain>[A-Za-z]+))?\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_lazy_proto_asset_action(
+    message: str, history_cards: list[dict] | None
+) -> tuple[str, dict] | None:
+    """Match 'Execute PROTO ASSET supply/deposit/stake [on CHAIN]' where
+    the message names protocol + asset + action but lacks an amount;
+    inherit amount from the prior pool_link / execution_plan_v3 in history.
+
+    v4-A07/A09 caught this falling through to pool-search.
+    """
+    if not history_cards:
+        return None
+    m = _PROTO_ASSET_VERB_RE.search(message.strip())
+    if not m:
+        return None
+    proto_raw = (m.group("proto") or "").strip().lower()
+    proto_norm = re.sub(r"\s+", "-", proto_raw)
+    _PROTO_ALIASES = {
+        "aave": "aave-v3", "aave-v3": "aave-v3",
+        "compound": "compound-v3", "compound-v3": "compound-v3",
+        "spark": "spark", "yearn": "yearn-finance", "yearn-finance": "yearn-finance",
+        "morpho": "morpho-blue", "morpho-blue": "morpho-blue",
+        "silo": "silo-v2", "sky": "sky-lending",
+        "lido": "lido", "rocket-pool": "rocket-pool",
+        "ether.fi": "ether.fi", "etherfi": "ether.fi",
+        "renzo": "renzo", "kelp": "kelp", "swell": "swell", "frax": "frax",
+        "mantle": "mantle",
+    }
+    slug = _PROTO_ALIASES.get(proto_norm) or _PROTO_ALIASES.get(proto_norm.split("-")[0]) or proto_norm
+    asset = (m.group("asset") or "").upper()
+    action_raw = (m.group("action") or "supply").lower()
+    action = "stake" if action_raw == "stake" else ("supply" if action_raw in {"supply", "lend", "deposit"} else "supply")
+    chain_match = (m.group("chain") or "").lower()
+
+    # Inherit amount + chain from history
+    amount: str | None = None
+    inferred_chain: str | None = chain_match if chain_match else None
+    for hc in reversed(history_cards):
+        ctype = (hc.get("card_type") or "").lower()
+        payload = hc.get("payload") or {}
+        if ctype == "execution_plan_v3":
+            for st in (payload.get("steps") or [])[::-1]:
+                if (st.get("asset_in") or "").upper() == asset:
+                    amount = str(st.get("amount_in") or "")
+                    if not inferred_chain:
+                        inferred_chain = (st.get("chain") or "").lower() or None
+                    break
+            if amount:
+                break
+        if ctype in {"pool_link", "pool_deposit_v3"}:
+            if (payload.get("asset_in") or "").upper() == asset:
+                amt = payload.get("amount")
+                if isinstance(amt, dict):
+                    amt = amt.get("human") or amt.get("value")
+                amount = str(amt) if amt else None
+                if not inferred_chain:
+                    inferred_chain = (payload.get("chain") or "").lower() or None
+                if amount:
+                    break
+    if not amount:
+        return None
+    chain_final = inferred_chain or "ethereum"
+    if chain_final == "bnb":
+        chain_final = "bsc"
+    return "build_yield_execution_plan", {
+        "chain": chain_final,
+        "protocol": slug,
+        "action": action,
+        "asset_in": asset,
+        "amount_in": amount,
+    }
+
+
 def _detect_lazy_resume_from_history(
     message: str, history_cards: list[dict] | None
 ) -> tuple[str, dict] | None:
@@ -5930,6 +6017,10 @@ async def run_ephemeral_turn(
         # 'do it', 'confirm') with no protocol/asset/amount detail get
         # rebuilt from the last execution_plan_v3/pool_link in history.
         lazy = _detect_lazy_resume_from_history(message, history_cards)
+        if lazy is None:
+            # PROTO ASSET deposit/supply/stake without amount → inherit
+            # amount from history (v4-A07/A09).
+            lazy = _detect_lazy_proto_asset_action(message, history_cards)
         intent = lazy if lazy else detect_intent(message)
 
     try:
