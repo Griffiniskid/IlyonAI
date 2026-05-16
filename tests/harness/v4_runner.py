@@ -107,6 +107,7 @@ def main() -> int:
     ap.add_argument("--list", action="store_true", help="list all chain IDs")
     ap.add_argument("--force", action="store_true", help="overwrite existing captures")
     ap.add_argument("--delay", type=float, default=1.5, help="seconds between turns")
+    ap.add_argument("--start-from", help="skip all chains before this chain_id (alphabetical)")
     args = ap.parse_args()
 
     if args.list:
@@ -126,6 +127,8 @@ def main() -> int:
         return 1
 
     OUT_ROOT.mkdir(parents=True, exist_ok=True)
+    if args.start_from:
+        chains = [c for c in chains if c.id >= args.start_from]
     for ch in chains:
         run_chain(ch, delay_between_turns=args.delay, force=args.force)
     return 0
