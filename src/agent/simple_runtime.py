@@ -1862,6 +1862,81 @@ _EXECUTE_NAMED_PROTO_RE = re.compile(
 )
 
 
+_LAZY_RESUME_RE = re.compile(
+    r"^\s*(?:please\s+)?(?:execute|sign|do|confirm|proceed|go\s+ahead|run|finalize)"
+    r"(?:\s+(?:it|that|now|the\s+(?:deposit|plan|stake|swap|bridge|transaction|tx)|"
+    r"the\s+(?:top|first|best)\s+(?:one|pool|option|allocation)|the\s+\w+\s+leg))?\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_lazy_resume_from_history(
+    message: str, history_cards: list[dict] | None
+) -> tuple[str, dict] | None:
+    """Match vague final-confirm forms ('execute', 'do it', 'confirm', 'sign')
+    and rebuild the last execution_plan_v3 / pool_link / pool_deposit_v3
+    parameters as a fresh build_yield_execution_plan call. This avoids
+    DefiLlama re-search drift on the final turn.
+
+    v4-A06/A12/A15/etc caught these falling through to search → defi_opps
+    instead of returning execution_plan_v3.
+    """
+    if not history_cards:
+        return None
+    if not _LAZY_RESUME_RE.search(message.strip()):
+        return None
+    # Walk back to find the most recent execution_plan_v3 / pool_link card.
+    for hc in reversed(history_cards):
+        ctype = (hc.get("card_type") or "").lower()
+        payload = hc.get("payload") or {}
+        if ctype == "execution_plan_v3":
+            steps = payload.get("steps") or []
+            if not steps:
+                continue
+            # Use the terminal action step (last non-approve). When the plan
+            # only carries approve+supply, the supply step is the real one.
+            for st in reversed(steps):
+                if (st.get("action") or "").lower() not in {"approve", "wrap", "unwrap"}:
+                    target_step = st
+                    break
+            else:
+                target_step = steps[-1]
+            chain = (payload.get("chain") or target_step.get("chain") or "").lower()
+            protocol = (target_step.get("protocol") or payload.get("protocol") or "").lower()
+            asset_in = target_step.get("asset_in") or ""
+            amount_in = target_step.get("amount_in") or ""
+            action = (target_step.get("action") or "supply").lower()
+            if chain and protocol and asset_in and amount_in:
+                return "build_yield_execution_plan", {
+                    "chain": chain,
+                    "protocol": protocol,
+                    "action": action,
+                    "asset_in": asset_in.upper(),
+                    "amount_in": str(amount_in),
+                }
+        if ctype in {"pool_link", "pool_deposit_v3"}:
+            chain = (payload.get("chain") or "").lower()
+            protocol = (payload.get("protocol") or "").lower()
+            asset_in = (payload.get("asset_in") or "").upper()
+            amount = payload.get("amount")
+            if isinstance(amount, dict):
+                amount = amount.get("human") or amount.get("value")
+            amount_str = str(amount) if amount else ""
+            if chain and protocol and asset_in and amount_str:
+                # Stake protos override action
+                _stake = {"lido", "rocket-pool", "ether.fi", "renzo", "kelp", "swell",
+                          "frax", "mantle", "stader", "marinade", "jito"}
+                action = "stake" if protocol in _stake else "supply"
+                return "build_yield_execution_plan", {
+                    "chain": chain,
+                    "protocol": protocol,
+                    "action": action,
+                    "asset_in": asset_in,
+                    "amount_in": amount_str,
+                }
+    return None
+
+
 def _detect_execute_named_proto(message: str) -> tuple[str, dict] | None:
     """Match 'Execute on Aave V3 with 250 USDC', 'Sign Lido 0.05 ETH',
     'Run Compound V3 supply 100 USDC on Optimism' — natural-language
@@ -5831,8 +5906,11 @@ async def run_ephemeral_turn(
         else:
             intent = detect_intent(message)
     else:
-        # Detect intent
-        intent = detect_intent(message)
+        # Lazy-resume probe: vague final-confirm verbs ('execute',
+        # 'do it', 'confirm') with no protocol/asset/amount detail get
+        # rebuilt from the last execution_plan_v3/pool_link in history.
+        lazy = _detect_lazy_resume_from_history(message, history_cards)
+        intent = lazy if lazy else detect_intent(message)
 
     try:
         final_content = ""
