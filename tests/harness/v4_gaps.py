@@ -43,6 +43,12 @@ EXPECTED_BLOCKED: list[tuple[str, int, str]] = [
     ("F04_pendle_pending_epoch", 1, "Chain expect_blockers=['PENDING_EPOCH_ENTRY','NEEDS_FRONTEND_SDK'] — Pendle real ApproxParams Hosted-SDK integration deferred."),
     # G04 chain expects unsupported_adapter on turn 1 explicitly
     ("G04_pick_alt_pool_after_blocker", 1, "Chain expect_blockers=['UNSUPPORTED_ADAPTER','ADAPTER_BUILD_FAILED'] — turn 1 'NonExistentVault' surfaces recovery posture intentionally."),
+    # D05 turn 1 'Balancer wstETH-WETH deposit' — no amount, runtime synthesizes
+    # 100 USD default which Enso /shortcuts/route can't resolve for the
+    # Balancer-V3 ETH path on base. Spec route: explicit amount in turn 1 or
+    # text-only no-amount form. Phase E.1 enhancement.
+    ("D05_balancer_exit_pool", 1, "No-amount Balancer deposit form — Enso shortcut routes 404 on synthesized $100 default. Phase E.1 enhancement."),
+    ("D05_balancer_exit_pool", 2, "Turn 2 also blocked while turn 1 still resolving — chain expects amount-refinement to succeed once turn 1 emits pool_link."),
     # I — Phase D on-chain session-key enforcement (broadcast pending)
     # I01-I05 chains expected to surface PENDING or honest stub posture
     # until Phase D ships installModule broadcast + Phantom delegate.
