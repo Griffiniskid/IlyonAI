@@ -279,3 +279,24 @@ The "admit action then forget to branch on it" bug class continues:
 | Frax stake 0.05 ETH | RV3c_frax.txt | 0x4dcd4547 | 0xbafa44..._1138 |
 
 Plus 5 prior-sweep regression-verified scenarios still ready (Aave V3 supply USDC, Uniswap V3/V4 native, Slipstream, Marinade native).
+
+## Resume v4 (post-compaction 2026-05-16)
+
+15+ commits 5806836 → 8dd4d75. Multi-turn matrix harness at
+`tests/harness/v4_matrix.py` (120 chains × ≥4 turns each, 9 categories).
+
+| Section | Delta | Evidence |
+|---|---|---|
+| F.5 Aave V3 native ETH borrow | ⏸ → ✅ | WTG3.borrowETH 0x66514c97 + variableDebtWETH.approveDelegation 0xc04a8a10; tests/defi/test_aave_v3_native_borrow.py |
+| Phase D DLN orderId discovery | ⏸ → ✅ | src/agent/debridge_order_extractor.py + ReceiptWatcher.wait_evm_receipt annotates result['debridge_order_id']; 5 pin tests |
+| E.1 Nexus session-key install/uninstall | partial → ✅ | build_install_session_key_module_calldata + build_uninstall_*; selectors 0x9517e29f / 0xa71763a8; 7 pin tests |
+| G.1/G.3 Permit2SigButton wired | ⏸ → ✅ | ExecutionPlanV3Card renders Permit2SigButton above Sign step when step.transaction.permit_payload present |
+| G.2 plan SSE → cross-chain progress | ⏸ → ✅ | web/hooks/usePlanStream.ts EventSource subscriber; ExecutionPlanV3Card flips PENDING_DST_FILL → ready on bridge_resolution event |
+| Intent-routing bug fixes | ⏸ → ✅ | 5 caught + fixed: chain stickiness on execute, top-one pool over-rode explicit proto, allocation hijacked single-protocol deposits, v3 false-refusal blocked lending V3, Pool ref-word false-match inside Rocket Pool |
+| Kelp ETH auto-wrap | ⏸ → ✅ | EvmLstDirectMintAdapter prepends WETH.deposit() 0xd0e30db0 when asset_in=ETH but protocol mint requires ERC20; 2 pin tests |
+| `_detect_execute_named_proto` | ⏸ → ✅ | 'Execute on Aave V3 with 250 USDC' returns build_yield_execution_plan instead of falling to search |
+| `_detect_lazy_resume_from_history` | ⏸ → ✅ | vague final-confirm verbs ('execute', 'do it', 'confirm', 'sign') rebuild from last execution_plan_v3/pool_link card |
+| `_detect_lazy_proto_asset_action` | ⏸ → ✅ | 'Execute PROTO ASSET supply' inherits amount + chain from history |
+| `_ENSO_PROTOS_RE` expansion | partial → ✅ | added Marinade/Jito/Sanctum/Blaze/Drift/JLP/Raydium/Orca/Meteora/Kamino + Aave/Compound (with v?\d) + Yearn v2/v3 + Morpho/Spark/Sky/Silo/Pendle + Uniswap/PancakeSwap/SushiSwap heads |
+| Blue-chip filter | ⏸ → ✅ | 'Only blue-chip protocols' expands to allowlist {aave-v3, compound-v3, lido, rocket-pool, yearn-finance, morpho-blue, curve-dex, balancer, uniswap-v3, spark, sky-lending} |
+
