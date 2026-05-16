@@ -306,3 +306,44 @@ Plus 5 prior-sweep regression-verified scenarios still ready (Aave V3 supply USD
 - f9014a2 — Lifecycle detector accepts bare chain suffix ('Withdraw all USDC from Aave V3 Base' → chain=base, no need for 'on Base')
 
 Total v4 commits: 22 (56b7b26 → f9014a2).
+
+## Resume v5 (post-compaction 2026-05-16, ~05:30 UTC)
+
+20 commits 9c0bd17 → 86faa29. **8 financial-loss bug class catches +
+fixes**, all surfaced by hand-reading Pass 2 SSE captures.
+
+| Section | Delta | Evidence |
+|---|---|---|
+| Pure-refine carve-out (no protocol+no ordinal+no anaphora skips top-one hijack) | ⏸ → ✅ | src/agent/simple_runtime.py 86faa29 — closes A09 'Use $500 USDT' refining → prior PENDLE-USDT hijack |
+| Aave V3 chain-word captured as asset (BASE → base + USDC) | ⏸ → ✅ | _detect_aave_supply chain-word promotion + alt2 re-extract; 90d66cf + f7878bb |
+| Lifecycle proto strip trailing receipt/asset words (yearn-usdc-vault → yearn) | ⏸ → ✅ | _TRAILING_NOISE iter strip in lifecycle path; ceb30c8 |
+| Per-protocol canonical-chain default for lifecycle (PCS V2 → bsc, Aerodrome → base, Velodrome → optimism, Raydium/Orca/Meteora → solana) | ⏸ → ✅ | _PROTO_CHAIN_DEFAULT map; f98e20d |
+| Balancer native gas-token alias for pool lookup + leg-match (ETH ↔ WETH on ethereum/base/arbitrum/optimism; MATIC ↔ WMATIC; AVAX ↔ WAVAX; BNB ↔ WBNB) | ⏸ → ✅ | _NATIVE_TO_WRAPPER applied to _resolve_pool + per-leg coin_index; 5aa999f + 1ae7ee3 |
+| Bridge-action lazy_resume refusal (composed_plan owns bridge, build_yield_execution_plan has no Capability adapter for action=bridge) | ⏸ → ✅ | action_hint=='bridge' returns None; 973ff37 |
+| _LP_PROTO_FIRST_RE — protocol-first LP form for §7 S1/S2 dual-token + S3 native-V3 verb-less | ⏸ → ✅ | _LP_PROTO_FIRST_RE + verb-optional + native/wrapped qualifiers + bare-chain tail + chain inference for canonical protos; 9c0bd17/e0a11ff/f5f1ee0/076e096 |
+| Anaphora resume ('Deposit X there' / 'in that pool') | ⏸ → ✅ | _LP_TOP_ONE_RE trailing anaphora pattern; 41a7a06 |
+| Lifecycle bare-amount + digit-leading pool ('Remove from PROTO PAIR', 'Withdraw 1000 DAI from Curve 3pool') | ⏸ → ✅ | amount group optional + pair_tail charset starts [A-Za-z0-9]; 35e284b |
+| Refine inherits product_types from prior items (A07 'Spark only' / A19 'Marinade only' don't lose staking filter) | ⏸ → ✅ | _last_defi_card_constraints derives from items[].product_type; 3308b65 |
+| Continuation-modifier asset_in capture ('Use $250 instead' surfaced asset_in=INSTEAD) | ⏸ → ✅ | _NON_ASSET_UNITS expansion to INSTEAD/NOW/THEN/IN/TO/HERE/THERE; f35f16e |
+| lazy_proto_asset bare-amount fallback to user history (turn 3 emits text-only, turn 4 'Execute Spark DAI deposit' inherits 100 DAI from history user message) | ⏸ → ✅ | history scan when no card carries asset; 645b3b1 |
+| Carve-out explicit-ref regex must not match bare amount digit '1' (was breaking A11/A19/A20) | ⏸ → ✅ | require '#' prefix on digit-1; 36d0000 |
+| v4_gaps.py allowlist for HONEST-RECOVERY chains (A20/D12-15/E09/E11/F07/H07/H08 spec-deferred) | ⏸ → ✅ | tests/harness/v4_gaps.py is_expected_blocked helper; d25da10 |
+
+### Pass 2 status (against 1ae7ee3+ staging)
+
+In-flight at the time of writing (chain ~20/120). Pass 1 baseline = 45
+ready chains. Pass 2 trajectory: substantial improvement, +25 ready
+chains observed across the chains captured pre-refire (65/120 ready
+at the end of first sweep). 8 financial-loss bug classes caught.
+
+Honest gaps remaining (deferred per V5 spec):
+- A20 Jito empty-wallet (SDK balance check — V5 acceptable)
+- D12-D15 Solana close lifecycle (Phase C — needs per-program SDK close IXs)
+- E09 Morpho Blue Arb USDC, E11 Yearn V3 yvWETH Arb (vault registry
+  needs verified on-chain addresses; public APIs unavailable per V5 rule)
+- F04 Pendle PENDING_EPOCH/NEEDS_FRONTEND_SDK (Phase E.4 — needs Pendle
+  Hosted SDK quote endpoint)
+- F07 Token-2022 hook (Phase E.7 — Solana sidecar adapter expansion)
+- H07 dust mixing, H08 partial allowance (§7 S7/S8 — Phase E deferred)
+
+Total v5 commits: 20 (9c0bd17 → 86faa29).
