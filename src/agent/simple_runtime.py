@@ -5926,6 +5926,19 @@ async def run_ephemeral_turn(
                 )
                 if _explicit_proto and not _explicit_ref:
                     top_match = None
+                # Pure-refine messages — amount-only with no protocol,
+                # no ordinal selector, no anaphora — must NOT hijack the
+                # prior defi_opportunities top item. v4-A09 turn 3
+                # 'Use $500 USDT' previously routed to prior top item
+                # (uniswap-v3 PENDLE-USDT) instead of staying on the
+                # refine path that preserves the prior pool_link.
+                _anaphora_ref = re.search(
+                    r"\b(?:there|here|in\s+(?:that|this)|into\s+(?:that|this)|to\s+(?:that|this))\b",
+                    _msg_strip,
+                    re.IGNORECASE,
+                )
+                if top_match and not _explicit_ref and not _anaphora_ref and not _explicit_proto:
+                    top_match = None
             if top_match:
                 # Try to recover an explicit protocol+pair hint from earlier
                 # user messages in this session.
