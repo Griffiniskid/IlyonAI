@@ -5718,8 +5718,14 @@ async def run_ephemeral_turn(
                 # an ordinal selector ("top"/"first"/"best"/"#1"/"1st").
                 # Generic words like 'pool'/'item'/'one' false-match inside
                 # protocol names like 'Rocket Pool' (v4-A13).
+                # The bare-digit `#?\s*1\b` alternative previously matched
+                # the "1" in "1 SOL" / "1 USDC" amount tokens, false-claiming
+                # an ordinal selector and disabling the protocol carve-out
+                # (v4-A19/A20: "Stake 1 SOL on Marinade" routed to prior
+                # defi_opportunities top item 'gmtrade SOL-USDC' instead of
+                # Marinade native). Require the '#' prefix on the bare digit.
                 _explicit_ref = re.search(
-                    r"\b(top|first|best|1st)\b|#?\s*1\b",
+                    r"\b(top|first|best|1st)\b|#\s*1\b",
                     _msg_strip,
                     re.IGNORECASE,
                 )
