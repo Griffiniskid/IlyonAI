@@ -590,7 +590,12 @@ class AaveV3SupplyAdapter:
                 chain=request.chain,
                 wallet="MetaMask",
                 protocol="aave-v3",
-                asset_in=f"a{request.asset_in}",
+                # asset_in is the user-perspective underlying (USDC), NOT the
+                # receipt-token slug "aUSDC". v4-D02 caught: prior step
+                # surfaced asset_in="aUSDC", lazy_resume rebuilt next turn
+                # with asset_in=AUSDC, Aave V3 adapter refused 'no token
+                # metadata for AUSDC on base'.
+                asset_in=request.asset_in,
                 amount_in=str(request.amount_in),
                 asset_out=request.asset_in,
                 slippage_bps=0,
