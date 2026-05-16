@@ -1889,7 +1889,7 @@ _LAZY_RESUME_RE = re.compile(
     # (PROTO ASSET amount) form because those would match more specific
     # detectors before this lazy path.
     r"(?:\s+(?:it|that|now|this|all|"
-    r"withdraw(?:al)?|deposit|stake|swap|bridge|borrow|repay|claim|exit|"
+    r"withdraw(?:al)?|deposit|supply|stake|swap|bridge|borrow|repay|claim|exit|"
     r"remove|redeem|migrate|refinance|"
     r"the\s+[\w\s]{0,30}(?:deposit|plan|stake|swap|bridge|transaction|tx|"
     r"buy|step|leg|allocation|option|pool|rebuild|fallback|fill|rebalance|"
@@ -1989,6 +1989,34 @@ def _detect_lazy_proto_asset_action(
     }
 
 
+_ACTION_VERB_MAP = {
+    "withdraw": "withdraw", "withdrawal": "withdraw", "withdrawing": "withdraw",
+    "redeem": "withdraw", "redeeming": "withdraw",
+    "exit": "exit_pool", "exiting": "exit_pool",
+    "remove": "remove_liquidity", "removing": "remove_liquidity",
+    "borrow": "borrow", "borrowing": "borrow",
+    "repay": "repay", "repaying": "repay",
+    "claim": "claim", "claiming": "claim",
+    "bridge": "bridge", "bridging": "bridge",
+    "stake": "stake", "staking": "stake",
+    "swap": "swap", "swapping": "swap",
+    "supply": "supply", "supplying": "supply",
+    "deposit": "supply", "depositing": "supply",
+}
+
+
+def _extract_action_hint(message: str) -> str | None:
+    """Extract action verb from message tail ('Confirm withdraw' → 'withdraw').
+    Used to filter history match in lazy_resume so the right kind of step
+    gets resumed.
+    """
+    _msg = message.strip().lower()
+    for word, action in _ACTION_VERB_MAP.items():
+        if re.search(rf"\b{re.escape(word)}\b", _msg):
+            return action
+    return None
+
+
 def _detect_lazy_resume_from_history(
     message: str, history_cards: list[dict] | None
 ) -> tuple[str, dict] | None:
@@ -1999,12 +2027,19 @@ def _detect_lazy_resume_from_history(
 
     v4-A06/A12/A15/etc caught these falling through to search → defi_opps
     instead of returning execution_plan_v3.
+
+    v4-D02 follow-up: when the message names an action verb ('withdraw',
+    'bridge', 'borrow', 'repay', 'claim', 'exit', 'remove'), prefer
+    history plans whose terminal step matches that action — so 'Confirm
+    withdraw' after a blocked withdraw + successful supply resumes the
+    withdraw intent, not the supply.
     """
     if not history_cards:
         return None
     if not _LAZY_RESUME_RE.search(message.strip()):
         return None
-    # Walk back to find the most recent execution_plan_v3 / pool_link card.
+    action_hint = _extract_action_hint(message)
+    # Walk back to find the most recent matching plan.
     for hc in reversed(history_cards):
         ctype = (hc.get("card_type") or "").lower()
         payload = hc.get("payload") or {}
@@ -2012,14 +2047,26 @@ def _detect_lazy_resume_from_history(
             steps = payload.get("steps") or []
             if not steps:
                 continue
-            # Use the terminal action step (last non-approve). When the plan
-            # only carries approve+supply, the supply step is the real one.
-            for st in reversed(steps):
-                if (st.get("action") or "").lower() not in {"approve", "wrap", "unwrap"}:
-                    target_step = st
-                    break
+            # When user named a specific action verb, prefer steps with
+            # that action. Otherwise pick the last non-approve step.
+            target_step = None
+            if action_hint:
+                # Only accept plans whose terminal step matches the named
+                # action. When no plan in history matches, return None (fall
+                # through to detect_intent).
+                for st in reversed(steps):
+                    if (st.get("action") or "").lower() == action_hint:
+                        target_step = st
+                        break
+                if target_step is None:
+                    continue  # try next history card
             else:
-                target_step = steps[-1]
+                for st in reversed(steps):
+                    if (st.get("action") or "").lower() not in {"approve", "wrap", "unwrap"}:
+                        target_step = st
+                        break
+                else:
+                    target_step = steps[-1]
             chain = (payload.get("chain") or target_step.get("chain") or "").lower()
             protocol = (target_step.get("protocol") or payload.get("protocol") or "").lower()
             asset_in = target_step.get("asset_in") or ""
