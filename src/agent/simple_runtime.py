@@ -4931,15 +4931,30 @@ def _synthesize_refine_search_args(
             args["min_tvl"] = v
         except ValueError:
             pass
-    # Protocol filter ("only Aave V3", "only Curve")
-    proto_m = re.search(
-        r"\b(?:only|just|filter\s+to)\s+([\w-]+(?:\s*v?\d)?)",
+    # Protocol filter ("only Aave V3", "only Curve", "only blue-chip")
+    # "blue-chip" / "bluechip" expands to a set of major audited protocols.
+    _BLUE_CHIPS = {
+        "aave-v3", "compound-v3", "lido", "rocket-pool", "yearn-finance",
+        "morpho-blue", "curve-dex", "balancer", "uniswap-v3", "spark",
+        "sky-lending",
+    }
+    _bluechip_m = re.search(
+        r"\b(?:only|just|filter\s+to)\s+(?:the\s+)?blue[\s-]?chip(?:\s+protocols?)?\b",
         message, re.IGNORECASE,
     )
-    if proto_m:
-        args["asset_hint"] = None  # don't reuse prior asset hint
-        # use protocol slug as substring for ranking re-ordering — pass via a custom kwarg
-        args["protocol_filter"] = proto_m.group(1).strip().lower().replace(" ", "-")
+    if _bluechip_m:
+        args["asset_hint"] = None
+        args["blue_chip_only"] = True
+        args["protocol_allowlist"] = sorted(_BLUE_CHIPS)
+    else:
+        proto_m = re.search(
+            r"\b(?:only|just|filter\s+to)\s+([\w-]+(?:\s*v?\d)?)",
+            message, re.IGNORECASE,
+        )
+        if proto_m:
+            args["asset_hint"] = None  # don't reuse prior asset hint
+            # use protocol slug as substring for ranking re-ordering — pass via a custom kwarg
+            args["protocol_filter"] = proto_m.group(1).strip().lower().replace(" ", "-")
     # Reject prior pools — pass exclude_pool_ids from prior card
     if _REJECT_PRIOR_RE.search(message):
         prior_ids = []
