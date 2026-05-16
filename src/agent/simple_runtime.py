@@ -1884,8 +1884,17 @@ _EXECUTE_NAMED_PROTO_RE = re.compile(
 
 _LAZY_RESUME_RE = re.compile(
     r"^\s*(?:please\s+)?(?:execute|sign|do|confirm|proceed|go\s+ahead|run|finalize)"
-    r"(?:\s+(?:it|that|now|the\s+(?:deposit|plan|stake|swap|bridge|transaction|tx)|"
-    r"the\s+(?:top|first|best)\s+(?:one|pool|option|allocation)|the\s+\w+\s+leg))?\s*[.!?]*\s*$",
+    # Optional descriptive tail: any number of words containing
+    # confirmation/selection cues; never matches a fully-detailed deposit
+    # (PROTO ASSET amount) form because those would match more specific
+    # detectors before this lazy path.
+    r"(?:\s+(?:it|that|now|this|all|"
+    r"the\s+[\w\s]{0,30}(?:deposit|plan|stake|swap|bridge|transaction|tx|"
+    r"buy|step|leg|allocation|option|pool|rebuild|fallback|fill|rebalance|"
+    r"cancel|claim|borrow|repay|top|first|best|largest|biggest|smallest|"
+    r"one)|"
+    r"step\s+\d+|destination\s+step|bridge\s+(?:step|now)|"
+    r"each\s+leg))*\s*[.!?]*\s*$",
     re.IGNORECASE,
 )
 
