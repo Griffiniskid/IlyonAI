@@ -90,3 +90,60 @@ def test_execute_named_proto_refuses_vague():
 
     assert _detect_execute_named_proto("Execute the deposit") is None
     assert _detect_execute_named_proto("Just confirm") is None
+
+
+def test_lifecycle_detector_bare_chain_suffix():
+    """v4-D02 caught 'Withdraw all USDC from Aave V3 Base' chain=ethereum."""
+    from src.agent.simple_runtime import detect_intent
+
+    out = detect_intent("Withdraw all USDC from Aave V3 Base")
+    assert out is not None
+    _, args = out
+    assert args.get("chain") == "base"
+    assert args.get("protocol") == "aave-v3"
+    assert args.get("asset_in") == "USDC"
+
+
+def test_lifecycle_detector_bare_chain_aliases():
+    from src.agent.simple_runtime import detect_intent
+
+    cases = [
+        ("Withdraw all USDC from Aave V3 BNB", "bsc"),
+        ("Withdraw all USDC from Aave V3 Avax", "avalanche"),
+    ]
+    for msg, expected_chain in cases:
+        out = detect_intent(msg)
+        assert out is not None
+        _, args = out
+        assert args.get("chain") == expected_chain, (msg, args)
+
+
+def test_lazy_resume_matches_bridge_variants():
+    from src.agent.simple_runtime import _detect_lazy_resume_from_history
+
+    hc = [
+        {
+            "card_type": "execution_plan_v3",
+            "payload": {
+                "chain": "ethereum",
+                "steps": [
+                    {"action": "bridge", "chain": "ethereum", "protocol": "debridge-dln",
+                     "asset_in": "USDC", "amount_in": "100"},
+                    {"action": "supply", "chain": "base", "protocol": "aave-v3",
+                     "asset_in": "USDC", "amount_in": "100"},
+                ],
+            },
+        }
+    ]
+    for msg in ["Confirm", "Execute the bridge step now", "Confirm bridge",
+                "Execute destination step", "Execute step 2"]:
+        out = _detect_lazy_resume_from_history(msg, hc)
+        assert out is not None, f"{msg!r} should resume"
+
+
+def test_lazy_resume_matches_withdraw_suffix():
+    from src.agent.simple_runtime import _LAZY_RESUME_RE
+
+    for msg in ["Confirm withdraw", "Confirm withdrawal", "Execute withdraw",
+                "Confirm exit", "Confirm redeem", "Confirm repay", "Execute claim"]:
+        assert _LAZY_RESUME_RE.search(msg), f"{msg!r} should match"
