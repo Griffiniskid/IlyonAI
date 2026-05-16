@@ -300,3 +300,9 @@ Plus 5 prior-sweep regression-verified scenarios still ready (Aave V3 supply USD
 | `_ENSO_PROTOS_RE` expansion | partial → ✅ | added Marinade/Jito/Sanctum/Blaze/Drift/JLP/Raydium/Orca/Meteora/Kamino + Aave/Compound (with v?\d) + Yearn v2/v3 + Morpho/Spark/Sky/Silo/Pendle + Uniswap/PancakeSwap/SushiSwap heads |
 | Blue-chip filter | ⏸ → ✅ | 'Only blue-chip protocols' expands to allowlist {aave-v3, compound-v3, lido, rocket-pool, yearn-finance, morpho-blue, curve-dex, balancer, uniswap-v3, spark, sky-lending} |
 
+
+### Additional v4 commit ed26750→f9014a2
+
+- f9014a2 — Lifecycle detector accepts bare chain suffix ('Withdraw all USDC from Aave V3 Base' → chain=base, no need for 'on Base')
+
+Total v4 commits: 22 (56b7b26 → f9014a2).
