@@ -2130,6 +2130,16 @@ def _detect_lazy_resume_from_history(
                 rebuilt_extra: dict = {}
                 step_extra = target_step.get("extra") or {}
                 payload_extra = payload.get("extra") or {}
+                # Always pass action into extra so the adapter's dispatch
+                # routes correctly (Aave V3 reads extra.action to choose
+                # between supply / withdraw / borrow / repay branches).
+                # v4-D02 T4 caught: lazy_resume preserved top-level
+                # action='withdraw' but extra.action defaulted to
+                # 'deposit_lp', routing to supply branch which then
+                # raised 'amount_in must be > 0' on the withdraw-all
+                # sentinel amount=0.
+                if action and action not in {"deposit_lp", "deposit", ""}:
+                    rebuilt_extra["action"] = action
                 for k in (
                     "pool_symbol", "fee_bps", "pool_key", "pool_address",
                     "token_id", "rate_mode", "source_token",
@@ -2681,6 +2691,28 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     proto_raw = (m.group("protocol") or "").strip().lower()
     # Normalize "uniswap v3" → "uniswap-v3" for the pool resolver / kind gate.
     proto = re.sub(r"\s+", "-", proto_raw)
+    # Protocol aliases — common abbreviations the regex captures verbatim
+    # need to map to the canonical DefiLlama / capability-registry slug.
+    # v4-D04 caught: 'PCS V2' captured as proto='pcs-v2' → DefiLlama
+    # search refused 'pcs-v2 BNB-USDT did not match any pool'.
+    _PROTO_LEADING_ALIAS = {
+        "pcs-v2": "pancakeswap-v2",
+        "pcs-v3": "pancakeswap-v3",
+        "pcs": "pancakeswap-v3",
+        "pancake-v2": "pancakeswap-v2",
+        "pancake-v3": "pancakeswap-v3",
+        "pancake": "pancakeswap",
+        "uni-v3": "uniswap-v3",
+        "uni-v4": "uniswap-v4",
+        "uni": "uniswap-v3",
+        "aero": "aerodrome",
+        "velo": "velodrome",
+        "ray-amm": "raydium-amm",
+        "ray-clmm": "raydium-clmm",
+        "ray": "raydium",
+    }
+    if proto in _PROTO_LEADING_ALIAS:
+        proto = _PROTO_LEADING_ALIAS[proto]
     pair = (m.group("pair") or "").upper().replace("/", "-")
     # Variant-suffix rewrite (§6b): when the user appended CLMM / DLMM /
     # Whirlpool / Slipstream / CPMM / Fusion *after* the pair, the regex
