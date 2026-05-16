@@ -2236,8 +2236,14 @@ def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
         elif bare_chain == "sol":
             bare_chain = "solana"
         chain = bare_chain
+        # Allow an optional chain word between asset and verb:
+        # 'Aave V3 USDC Base supply 100' (v4-G05 turn 1) puts the chain
+        # token after the asset.
         alt2 = re.search(
-            r"aave(?:\s*v3)?\s+(?P<asset>[A-Za-z]{2,10})\s+(?:supply|deposit|lend)",
+            r"aave(?:\s*v3)?\s+(?P<asset>[A-Za-z]{2,10})"
+            r"(?:\s+(?:ethereum|polygon|arbitrum|optimism|base|avalanche|avax|bsc|bnb|"
+            r"linea|zksync|scroll|mantle|blast|gnosis|celo|sonic|berachain|unichain))?"
+            r"\s+(?:supply|deposit|lend)",
             message, re.IGNORECASE,
         )
         if not alt2:
