@@ -2501,7 +2501,10 @@ _ADD_LIQ_NOAMT_WITHMY_RE = re.compile(
 # USDC (split half)" that the standard verb-first detectors miss.
 _LP_PROTO_FIRST_RE = re.compile(
     r"^\s*"
-    rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}\s+"
+    rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}"
+    # Optional fee-tier marker between pair and chain/verb ("0.05%", "0.3%").
+    r"(?:\s+\d+(?:\.\d+)?\s*%)?"
+    r"\s+"
     r"(?:(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|bnb|linea|scroll|mantle|blast|zksync|gnosis|celo|sonic|berachain|unichain|solana|sol)\s+)?"
     r"(?:deposit|add|provide|open|mint|create|lp|stake)\s+"
     r"(?:(?:liquidity|position|lp|dual[-\s]?token|using|split\s+half|both\s+legs)\s+)*"
@@ -2696,6 +2699,26 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     chain_raw = (_gd.get("chain") or _gd.get("chain_after") or "").lower()
     if chain_raw == "bnb":
         chain_raw = "bsc"
+    # Infer chain when the regex didn't capture one: BSC-specific native tokens
+    # (BNB / WBNB) in the pair imply BSC; PancakeSwap V3 / Aerodrome Slipstream
+    # / Velodrome CL have canonical-chain defaults (BSC / Base / Optimism).
+    # Closes C12 (PancakeSwap V3 BNB-USDT 0.05% deposit ...) and bare-chain
+    # Aerodrome / Velodrome refinements that previously dropped to the
+    # execute_pool_position generic path because no chain suffix was present.
+    if not chain_raw:
+        pair_upper = pair.upper()
+        if "BNB" in pair_upper or "WBNB" in pair_upper:
+            chain_raw = "bsc"
+        elif "MATIC" in pair_upper or "WMATIC" in pair_upper:
+            chain_raw = "polygon"
+        elif "AVAX" in pair_upper or "WAVAX" in pair_upper:
+            chain_raw = "avalanche"
+        elif proto in {"pancakeswap-v3", "pancake-v3"}:
+            chain_raw = "bsc"
+        elif proto in {"aerodrome-slipstream", "aerodrome-cl"}:
+            chain_raw = "base"
+        elif proto in {"velodrome-cl", "velodrome-slipstream"}:
+            chain_raw = "optimism"
     # §6d "with my <TOKEN>" silent reassignment: when the user names a source
     # token that isn't one of the pool's legs, snapshot it so the downstream
     # builder can (a) route through Enso multi-input zap and (b) surface an

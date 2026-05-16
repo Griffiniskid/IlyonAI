@@ -93,3 +93,54 @@ def test_protocol_first_does_not_false_match_confirm():
 
     assert detect_intent("Confirm") is None
     assert detect_intent("Execute") is None
+
+
+def test_c12_pancakeswap_v3_bnb_usdt_fee_tier_dual():
+    """v4-C12: 'PancakeSwap V3 BNB-USDT 0.05% deposit 0.1 BNB and 30 USDT'.
+
+    Captures fee-tier marker between PAIR and verb, defaults chain to BSC
+    when BNB/WBNB in the pair (PancakeSwap V3 canonical home).
+    """
+    from src.agent.simple_runtime import detect_intent
+
+    out = detect_intent("PancakeSwap V3 BNB-USDT 0.05% deposit 0.1 BNB and 30 USDT")
+    assert out is not None
+    tool, args = out
+    assert tool == "build_yield_execution_plan"
+    assert args["chain"] == "bsc"
+    assert args["protocol"] == "pancakeswap-v3"
+    assert args["extra"]["pool_symbol"] == "BNB-USDT"
+    assert args["extra"]["fee_bps"] == 500
+
+
+def test_uniswap_v3_fee_tier_03pct():
+    from src.agent.simple_runtime import detect_intent
+
+    out = detect_intent("Uniswap V3 USDC-WETH 0.3% deposit 100 USDC + 0.03 WETH on Ethereum")
+    assert out is not None
+    _, args = out
+    assert args["chain"] == "ethereum"
+    assert args["protocol"] == "uniswap-v3"
+    assert args["extra"]["fee_bps"] == 3000
+
+
+def test_protocol_first_chain_inference_aerodrome():
+    from src.agent.simple_runtime import detect_intent
+
+    out = detect_intent("Aerodrome Slipstream WETH-USDC deposit 50 USDC")
+    assert out is not None
+    tool, args = out
+    assert tool == "build_yield_execution_plan"
+    assert args["chain"] == "base"
+    assert args["protocol"] == "aerodrome-slipstream"
+
+
+def test_protocol_first_chain_inference_velodrome():
+    from src.agent.simple_runtime import detect_intent
+
+    out = detect_intent("Velodrome CL WETH-USDC deposit 50 USDC")
+    assert out is not None
+    tool, args = out
+    assert tool == "build_yield_execution_plan"
+    assert args["chain"] == "optimism"
+    assert args["protocol"] == "velodrome-cl"
