@@ -285,13 +285,19 @@ class BalancerSingleAssetAdapter:
             return self._build_exit_pool(request, chain_id, pool_key, pool_meta)
 
         asset_u = request.asset_in.upper()
+        # Match the per-leg pool index using the SAME native→wrapper alias
+        # used for pool lookup. v4-C07 turn 2/4: pool resolution succeeded
+        # (asset_for_lookup="WETH") but the leg-index check below still
+        # compared 'ETH' against pool symbols ['wstETH','WETH'] and missed.
+        asset_for_match = _NATIVE_TO_WRAPPER.get((chain_norm, asset_u)) or asset_u
+        asset_for_match_u = asset_for_match.upper()
         coin_index = None
         token_address = None
         decimals = None
         asset_addresses: list[str] = []
         for idx, (sym, addr, dec) in enumerate(assets):
             asset_addresses.append(addr)
-            if sym.upper() == asset_u and coin_index is None:
+            if sym.upper() == asset_for_match_u and coin_index is None:
                 coin_index = idx
                 token_address = addr
                 decimals = dec
