@@ -1889,9 +1889,12 @@ _LAZY_RESUME_RE = re.compile(
     # (PROTO ASSET amount) form because those would match more specific
     # detectors before this lazy path.
     r"(?:\s+(?:it|that|now|this|all|"
+    r"withdraw(?:al)?|deposit|stake|swap|bridge|borrow|repay|claim|exit|"
+    r"remove|redeem|migrate|refinance|"
     r"the\s+[\w\s]{0,30}(?:deposit|plan|stake|swap|bridge|transaction|tx|"
     r"buy|step|leg|allocation|option|pool|rebuild|fallback|fill|rebalance|"
-    r"cancel|claim|borrow|repay|top|first|best|largest|biggest|smallest|"
+    r"cancel|claim|borrow|repay|withdraw|withdrawal|exit|remove|redeem|"
+    r"migration|refinance|top|first|best|largest|biggest|smallest|"
     r"one)|"
     r"step\s+\d+|destination\s+step|bridge\s+(?:step|now)|"
     r"each\s+leg))*\s*[.!?]*\s*$",
