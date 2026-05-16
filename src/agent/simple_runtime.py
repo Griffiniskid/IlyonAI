@@ -5754,7 +5754,16 @@ async def run_ephemeral_turn(
         r"(?:with\s+)?\$?\s*(?P<usd>[\d,]+(?:\.\d+)?)"
         r"(?:\s+(?P<unit>[A-Za-z]{2,10}))?"
         # Optional trailing 'to the top one' too — keep prior behaviour.
-        r"(?:\s+(?:to|into|in|on)\s+the\s+(?:top|first|best)(?:\s+one|\s+pool|\s+option)?)?\b",
+        r"(?:\s+(?:to|into|in|on)\s+the\s+(?:top|first|best)(?:\s+one|\s+pool|\s+option)?)?"
+        # Anaphora forms — 'there' / 'here' / 'into that pool' / 'in this one'
+        # — closes v4-A03 ('Deposit 500 USDC there') which previously fell
+        # through to search_defi_opportunities instead of resuming from the
+        # prior pool_link card. The carve-out below treats anaphora as a
+        # valid ordinal-selector substitute.
+        r"(?:\s+(?:there|here|in\s+(?:that|this)(?:\s+(?:one|pool|option))?|"
+        r"into\s+(?:that|this)(?:\s+(?:one|pool|option))?|"
+        r"to\s+(?:that|this)(?:\s+(?:one|pool|option))?))?"
+        r"\b",
         re.IGNORECASE,
     )
 
@@ -5855,10 +5864,17 @@ async def run_ephemeral_turn(
                 # for INSTEAD" (v4-A01 turn 3 "Use $250 instead" surfaced
                 # asset_in=INSTEAD, adapter_build_failed). Reject these
                 # continuation words alongside the USD-denominator words.
+                # Anaphora prepositions ('in', 'to', 'on', 'at', 'here',
+                # 'there') also fall through as units when followed by an
+                # anaphora phrase ("Use $200 in this one"): the unit group
+                # greedily grabs 'in' before the trailing anaphora pattern
+                # can consume it.
                 _NON_ASSET_UNITS = {
                     "USD", "$", "DOLLARS", "K", "M", "B", "BUCKS",
                     "INSTEAD", "NOW", "THEN", "PLEASE", "AGAIN",
                     "TODAY", "TONIGHT", "TOMORROW", "ASAP",
+                    "IN", "TO", "ON", "AT", "INTO", "ONTO",
+                    "HERE", "THERE",
                 }
                 _default_asset_in = (
                     _unit_grp if _unit_grp and _unit_grp not in _NON_ASSET_UNITS else "USDC"
