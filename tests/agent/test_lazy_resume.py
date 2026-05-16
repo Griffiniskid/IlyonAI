@@ -147,3 +147,61 @@ def test_lazy_resume_matches_withdraw_suffix():
     for msg in ["Confirm withdraw", "Confirm withdrawal", "Execute withdraw",
                 "Confirm exit", "Confirm redeem", "Confirm repay", "Execute claim"]:
         assert _LAZY_RESUME_RE.search(msg), f"{msg!r} should match"
+
+
+def test_lazy_resume_action_aware_picks_withdraw_over_supply():
+    """When user says 'Confirm withdraw' with mixed history, pick withdraw."""
+    from src.agent.simple_runtime import _detect_lazy_resume_from_history
+
+    hc = [
+        {"card_type": "execution_plan_v3", "payload": {"chain": "base",
+         "steps": [{"action": "supply", "chain": "base", "protocol": "aave-v3",
+                    "asset_in": "USDC", "amount_in": "100"}]}},
+        {"card_type": "execution_plan_v3", "payload": {"chain": "base",
+         "steps": [{"action": "withdraw", "chain": "base", "protocol": "aave-v3",
+                    "asset_in": "USDC", "amount_in": "100"}]}},
+    ]
+    out = _detect_lazy_resume_from_history("Confirm withdraw", hc)
+    assert out is not None
+    assert out[1]["action"] == "withdraw"
+
+
+def test_lazy_resume_action_aware_picks_supply_when_named():
+    from src.agent.simple_runtime import _detect_lazy_resume_from_history
+
+    hc = [
+        {"card_type": "execution_plan_v3", "payload": {"chain": "base",
+         "steps": [{"action": "supply", "chain": "base", "protocol": "aave-v3",
+                    "asset_in": "USDC", "amount_in": "100"}]}},
+        {"card_type": "execution_plan_v3", "payload": {"chain": "base",
+         "steps": [{"action": "withdraw", "chain": "base", "protocol": "aave-v3",
+                    "asset_in": "USDC", "amount_in": "100"}]}},
+    ]
+    out = _detect_lazy_resume_from_history("Confirm supply", hc)
+    assert out is not None
+    assert out[1]["action"] == "supply"
+
+
+def test_lazy_resume_returns_none_when_no_matching_action_in_history():
+    """'Confirm bridge' with no bridge plan in history → None (fall through)."""
+    from src.agent.simple_runtime import _detect_lazy_resume_from_history
+
+    hc = [
+        {"card_type": "execution_plan_v3", "payload": {"chain": "base",
+         "steps": [{"action": "supply", "chain": "base", "protocol": "aave-v3",
+                    "asset_in": "USDC", "amount_in": "100"}]}},
+    ]
+    out = _detect_lazy_resume_from_history("Confirm bridge", hc)
+    assert out is None
+
+
+def test_extract_action_hint_returns_canonical_action():
+    from src.agent.simple_runtime import _extract_action_hint
+
+    assert _extract_action_hint("Confirm withdraw") == "withdraw"
+    assert _extract_action_hint("Execute withdrawal") == "withdraw"
+    assert _extract_action_hint("Confirm exit") == "exit_pool"
+    assert _extract_action_hint("Execute remove") == "remove_liquidity"
+    assert _extract_action_hint("Confirm bridge") == "bridge"
+    assert _extract_action_hint("Confirm supply") == "supply"
+    assert _extract_action_hint("Confirm") is None
