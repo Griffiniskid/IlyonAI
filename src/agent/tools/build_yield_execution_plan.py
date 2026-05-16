@@ -124,26 +124,35 @@ async def build_yield_execution_plan(
         from src.routing.debridge_client import DeBridgeBridge
         _CHAIN_ID_MAP = {
             "ethereum": 1, "polygon": 137, "arbitrum": 42161, "optimism": 10,
-            "base": 8453, "avalanche": 43114, "bsc": 56, "solana": 0,
+            "base": 8453, "avalanche": 43114, "bsc": 56,
+            # deBridge Solana cluster ID per docs.debridge.finance/dln/api
+            "solana": 7565164,
         }
         # Per-chain stablecoin + native + LST symbol → address map. deBridge DLN
-        # rejects symbol names with HTTP 400; the API needs the EVM contract.
+        # rejects symbol names with HTTP 400; the API needs the EVM contract or
+        # the SPL mint for Solana. Native ETH on EVM chains is normalised to
+        # the canonical WETH9 address with auto-wrap handled by deBridge DLN's
+        # order builder (ETH → wrap → WETH → bridge → unwrap on dst).
         _TOKEN_ADDRS: dict[tuple[str, str], tuple[str, int]] = {
             ("ethereum", "USDC"): ("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", 6),
             ("ethereum", "USDT"): ("0xdac17f958d2ee523a2206206994597c13d831ec7", 6),
             ("ethereum", "DAI"):  ("0x6b175474e89094c44da98b954eedeac495271d0f", 18),
             ("ethereum", "WETH"): ("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", 18),
+            ("ethereum", "ETH"):  ("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", 18),
             ("ethereum", "WBTC"): ("0x2260fac5e5542a773aa44fbcfedf7c193bc2c599", 8),
             ("base", "USDC"):     ("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", 6),
             ("base", "WETH"):     ("0x4200000000000000000000000000000000000006", 18),
+            ("base", "ETH"):      ("0x4200000000000000000000000000000000000006", 18),
             ("arbitrum", "USDC"): ("0xaf88d065e77c8cc2239327c5edb3a432268e5831", 6),
             ("arbitrum", "USDT"): ("0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9", 6),
             ("arbitrum", "DAI"):  ("0xda10009cbd5d07dd0cecc66161fc93d7c9000da1", 18),
             ("arbitrum", "WETH"): ("0x82af49447d8a07e3bd95bd0d56f35241523fbab1", 18),
+            ("arbitrum", "ETH"):  ("0x82af49447d8a07e3bd95bd0d56f35241523fbab1", 18),
             ("optimism", "USDC"): ("0x0b2c639c533813f4aa9d7837caf62653d097ff85", 6),
             ("optimism", "USDT"): ("0x94b008aa00579c1307b0ef2c499ad98a8ce58e58", 6),
             ("optimism", "DAI"):  ("0xda10009cbd5d07dd0cecc66161fc93d7c9000da1", 18),
             ("optimism", "WETH"): ("0x4200000000000000000000000000000000000006", 18),
+            ("optimism", "ETH"):  ("0x4200000000000000000000000000000000000006", 18),
             ("polygon", "USDC"):  ("0x3c499c542cef5e3811e1192ce70d8cc03d5c3359", 6),
             ("polygon", "USDT"):  ("0xc2132d05d31c914a87c6611c10748aeb04b58e8f", 6),
             ("polygon", "DAI"):   ("0x8f3cf7ad23cd3cadbd9735aff958023239c6a063", 18),
@@ -151,8 +160,17 @@ async def build_yield_execution_plan(
             ("base", "USDT"):     ("0xfde4c96c8593536e31f229ea8f37b2ada2699bb2", 6),
             ("base", "DAI"):      ("0x50c5725949a6f0c72e6c4a641f24049a917db0cb", 18),
             ("avalanche", "USDC"):("0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e", 6),
+            ("avalanche", "WETH"):("0x49d5c2bdffac6ce2bfdb6640f4f80f226bc10bab", 18),
+            ("avalanche", "ETH"): ("0x49d5c2bdffac6ce2bfdb6640f4f80f226bc10bab", 18),
             ("bsc", "USDC"):      ("0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d", 18),
             ("bsc", "USDT"):      ("0x55d398326f99059ff775485246999027b3197955", 18),
+            ("bsc", "WETH"):      ("0x2170ed0880ac9a755fd29b2688956bd959f933f8", 18),
+            ("bsc", "ETH"):       ("0x2170ed0880ac9a755fd29b2688956bd959f933f8", 18),
+            # Solana SPL mints — required for ETH/BSC/Polygon ↔ Solana bridging
+            ("solana", "USDC"):   ("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", 6),
+            ("solana", "USDT"):   ("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", 6),
+            ("solana", "SOL"):    ("So11111111111111111111111111111111111111112", 9),
+            ("solana", "WSOL"):   ("So11111111111111111111111111111111111111112", 9),
         }
         src_sym = str(extra_dict_pre.get("source_token") or asset_in).upper()
         dst_sym = str(asset_in).upper()

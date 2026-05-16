@@ -7019,8 +7019,24 @@ async def run_ephemeral_turn(
                     "amount and token. For example: `bridge 0.1 SOL to ETH chain` "
                     "or `swap 1 SOL to USDC`."
                 )
+            # Safety guard — refuse contextual-fallback prose that impersonates
+            # an Execution Plan card / fabricates tx hashes / asserts
+            # session-key state without an on-chain oracle. Pass 4 hand-read
+            # surfaced this class across F/G/H/I/E/C: LLM-only "Status: ready
+            # · 3 signatures required" with empty card_ids, fake tx hashes,
+            # fabricated Curve calldata, "auto-compound is confirmed" without
+            # any Phase-D broadcast.
+            final_card_ids_pre = locals().get("card_ids_for_final", []) or []
+            cleaned, stripped = _strip_unbacked_claims(
+                cleaned, has_real_card=bool(final_card_ids_pre)
+            )
+            if stripped:
+                logger.warning(
+                    "strip_unbacked_claims: refused unbacked claim in fallback prose (session=%s)",
+                    session_id,
+                )
             final_content = cleaned
-        
+
         # Emit final frame
         elapsed = int((__import__('time').monotonic() - started) * 1000)
         final_card_ids = locals().get("card_ids_for_final", []) or []
@@ -7149,6 +7165,81 @@ async def run_simple_turn(
             )
         except Exception:
             pass
+
+
+_UNBACKED_FAKE_CARD_RE = re.compile(
+    r'Status:\s*`?ready`?'
+    r'|\d+\s+signature\(?s\)?\s+required'
+    r'|(?:▶|▷|\\u25b6)\s*Step\s*\d+'
+    r'|Execution\s+Plan\s+card\s+above'
+    r'|card\s+above\s+to\s+(?:begin|sign|proceed)'
+    r'|Open\s+the\s+(?:Updated\s+)?Execution\s+Plan',
+    re.IGNORECASE,
+)
+_UNBACKED_FAKE_TX_RE = re.compile(
+    r'(?:tx\s+|Tx\s*[:—–-]\s*|transaction\s+|submitted:[\s\S]{0,80}?Tx)\s*`?0x[0-9a-fA-F]{4,}'
+    r'|https?://(?:etherscan|basescan|arbiscan|optimistic|polygonscan|bscscan|snowtrace|solscan|explorer\.solana)\.[^\s)]+'
+    r'|`0x[0-9a-fA-F]{3,}…[0-9a-fA-F]{2,}`',
+    re.IGNORECASE,
+)
+_UNBACKED_FAKE_CALLDATA_RE = re.compile(r'\b0x[0-9a-fA-F]{120,}', re.IGNORECASE)
+_UNBACKED_STATE_ASSERT_RE = re.compile(
+    r'(?:auto[- ]?compound|session\s+key|spend\s+cap|policy|delegation|rebalanc(?:e|ing)|approval)'
+    r'.{0,140}?'
+    r'(?:is\s+confirmed|is\s+active|already\s+(?:revoked|active|withdrawn|removed)'
+    r'|\bconfirmed\b|\brevoked\b|\bset\s+up\b|\benabled\b)',
+    re.IGNORECASE | re.DOTALL,
+)
+_UNBACKED_FAKE_FEE_RE = re.compile(
+    r'(?:bridge\s+fee\s+(?:for|is|of)|fee\s+(?:for|is|of|≈|~)\s+\d+(?:\.\d+)?\s*ETH'
+    r'|fee\s+for\s+0?\.?\d+\s*ETH\s+via\s+deBridge'
+    r'|cost\s+(?:is|of)\s+≈\s*\$\d)',
+    re.IGNORECASE,
+)
+
+
+def _strip_unbacked_claims(content: str, *, has_real_card: bool) -> tuple[str, bool]:
+    """Pass-4 safety guard: refuse contextual-fallback prose that fabricates
+    execution-plan card text, tx hashes, calldata, bridge fees, or session-key
+    state assertions without a deterministic tool result behind it.
+
+    Surfaced in Pass-4 hand-read across F/G/H/I/E/C categories: LLM-only
+    "Status: ready · 3 signature(s) required" with empty card_ids, fake
+    `0x3f8a…c1d2` tx hashes pretending bridge confirmation, "auto-compound is
+    confirmed" / "policy already revoked" with no Phase-D broadcast oracle,
+    and 1.5KB blobs of fabricated Curve add_liquidity calldata. All of these
+    are financial-loss false-claims when no card backs them.
+
+    Returns (new_content, was_stripped). When has_real_card=True we trust the
+    prose because a deterministic tool produced an actual card. When the
+    fallback ran without a card and we detect any forbidden pattern, we swap
+    in a typed refusal directing the user to the deterministic verb form.
+    """
+    if has_real_card or not content:
+        return content, False
+    hits: list[str] = []
+    if _UNBACKED_FAKE_CARD_RE.search(content):
+        hits.append("fake_card_impersonation")
+    if _UNBACKED_FAKE_TX_RE.search(content):
+        hits.append("fake_tx_hash")
+    if _UNBACKED_FAKE_CALLDATA_RE.search(content):
+        hits.append("fabricated_calldata")
+    if _UNBACKED_STATE_ASSERT_RE.search(content):
+        hits.append("unbacked_state_assertion")
+    if _UNBACKED_FAKE_FEE_RE.search(content):
+        hits.append("fabricated_fee")
+    if not hits:
+        return content, False
+    refusal = (
+        "I can't confirm that action without a deterministic Sentinel tool "
+        "producing the calldata. Try an explicit verb form — for example "
+        "`Supply 100 USDC to Aave V3 on Base`, `Stake 1 SOL on Marinade`, "
+        "or `Bridge 100 USDC from Ethereum to Base via deBridge`. The "
+        "deterministic adapters emit a signable Execution Plan card; the "
+        "freeform fallback never invents transaction hashes, bridge fees, "
+        "calldata, or session-key state."
+    )
+    return refusal, True
 
 
 def _clean_response(content: str) -> str:
