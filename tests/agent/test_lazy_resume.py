@@ -1,0 +1,92 @@
+"""Lazy-resume + execute-named-proto regression pins.
+
+v4-A01/A06/A09 caught vague final-confirm verbs falling through to
+search_defi_opportunities instead of rebuilding from prior plan card.
+"""
+from __future__ import annotations
+
+
+def test_lazy_resume_picks_last_execution_plan():
+    from src.agent.simple_runtime import _detect_lazy_resume_from_history
+
+    history = [
+        {
+            "card_type": "execution_plan_v3",
+            "payload": {
+                "chain": "optimism",
+                "steps": [
+                    {"action": "approve", "chain": "optimism", "protocol": "aave-v3",
+                     "asset_in": "USDC", "amount_in": "250"},
+                    {"action": "supply", "chain": "optimism", "protocol": "aave-v3",
+                     "asset_in": "USDC", "amount_in": "250"},
+                ],
+            },
+        }
+    ]
+    for msg in ["Execute", "Execute it", "Confirm", "Do that", "Sign now",
+                "Execute the deposit", "Proceed", "Run it"]:
+        out = _detect_lazy_resume_from_history(msg, history)
+        assert out is not None, f"{msg!r} should resume"
+        _, args = out
+        assert args["chain"] == "optimism"
+        assert args["protocol"] == "aave-v3"
+        assert args["asset_in"] == "USDC"
+        assert args["amount_in"] == "250"
+        assert args["action"] == "supply"
+
+
+def test_lazy_resume_picks_pool_link_when_no_execution_plan():
+    from src.agent.simple_runtime import _detect_lazy_resume_from_history
+
+    history = [
+        {
+            "card_type": "pool_link",
+            "payload": {
+                "chain": "ethereum", "protocol": "lido",
+                "asset_in": "ETH", "amount": "0.05",
+            },
+        }
+    ]
+    out = _detect_lazy_resume_from_history("Execute", history)
+    assert out is not None
+    _, args = out
+    assert args["protocol"] == "lido"
+    assert args["action"] == "stake"
+
+
+def test_lazy_resume_refuses_random_text():
+    from src.agent.simple_runtime import _detect_lazy_resume_from_history
+
+    history = [
+        {"card_type": "execution_plan_v3", "payload": {"chain": "base",
+         "steps": [{"action": "supply", "chain": "base", "protocol": "aave-v3",
+                    "asset_in": "USDC", "amount_in": "100"}]}}
+    ]
+    assert _detect_lazy_resume_from_history("Tell me about Uniswap", history) is None
+    assert _detect_lazy_resume_from_history("What's TVL?", history) is None
+
+
+def test_execute_named_proto_aliases():
+    from src.agent.simple_runtime import _detect_execute_named_proto
+
+    cases = [
+        ("Execute on Aave V3 with 250 USDC", "aave-v3", "supply", "USDC", "250"),
+        ("Sign Lido 0.05 ETH", "lido", "stake", "ETH", "0.05"),
+        ("Execute Compound V3 supply 100 USDC on Optimism", "compound-v3", "supply", "USDC", "100"),
+        ("Run Renzo 0.05 ETH", "renzo", "stake", "ETH", "0.05"),
+    ]
+    for msg, proto, action, asset, amt in cases:
+        out = _detect_execute_named_proto(msg)
+        assert out is not None, f"{msg!r} should detect"
+        _, args = out
+        assert args["protocol"] == proto, (msg, args)
+        assert args["action"] == action, (msg, args)
+        assert args["asset_in"] == asset, (msg, args)
+        assert args["amount_in"] == amt, (msg, args)
+
+
+def test_execute_named_proto_refuses_vague():
+    from src.agent.simple_runtime import _detect_execute_named_proto
+
+    assert _detect_execute_named_proto("Execute the deposit") is None
+    assert _detect_execute_named_proto("Just confirm") is None
