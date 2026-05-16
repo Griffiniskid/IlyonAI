@@ -5,6 +5,7 @@ import type { ExecutionPlanV3Payload, ExecutionPlanV3Step, ExecutionPlanV3Blocke
 import { AlertTriangle, ArrowRight, CheckCircle2, Clock, LockKeyhole, Play, Power, Route, ShieldAlert, Wallet, Zap } from "lucide-react";
 import { V3RangeBlock } from "./V3RangeBlock";
 import Permit2SigButton from "./Permit2SigButton";
+import { usePlanStream } from "@/hooks/usePlanStream";
 
 interface Props {
   payload: ExecutionPlanV3Payload;
@@ -141,7 +142,41 @@ export function ExecutionPlanV3Card({ payload, onSignStep }: Props) {
   const [acknowledged, setAcknowledged] = useState(false);
   const [autoExecute, setAutoExecute] = useState(false);
   const lastSignedStepIdRef = useRef<string | null>(null);
-  const steps = payload.steps || [];
+  // Subscribe to plan-level SSE so bridge_resolution events flip the
+  // dst supply step PENDING_DST_FILL → ready without re-polling chat.
+  const hasPendingBridge = (payload.steps || []).some((s) =>
+    (s.blocker_codes || []).includes("PENDING_DST_FILL"),
+  );
+  const { lastEvent: planEvent, connected: planStreamConnected } = usePlanStream(
+    hasPendingBridge ? payload.plan_id : null,
+  );
+  const [bridgeOverrideStatus, setBridgeOverrideStatus] = useState<{
+    step_id: string;
+    status: "ready" | "confirmed" | "failed";
+    actual_dst_amount?: number | string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!planEvent || planEvent.kind !== "bridge_resolution" || !planEvent.step_id) return;
+    if (planEvent.state === "filled" && planEvent.step_status) {
+      setBridgeOverrideStatus({
+        step_id: planEvent.step_id,
+        status: (planEvent.step_status as "ready" | "confirmed" | "failed"),
+        actual_dst_amount: planEvent.actual_dst_amount,
+      });
+    } else if (planEvent.state === "cancelled" || planEvent.state === "failed") {
+      setBridgeOverrideStatus({ step_id: planEvent.step_id, status: "failed" });
+    }
+  }, [planEvent]);
+
+  const stepsRaw = payload.steps || [];
+  const steps = bridgeOverrideStatus
+    ? stepsRaw.map((s) =>
+        s.step_id === bridgeOverrideStatus.step_id
+          ? { ...s, status: bridgeOverrideStatus.status, blocker_codes: [] }
+          : s,
+      )
+    : stepsRaw;
   const totals = payload.totals || ({} as ExecutionPlanV3Payload["totals"]);
   const firstReady = steps.find((step) => step.status === "ready");
   const needsAck = payload.requires_double_confirm || payload.risk_gate !== "clear";
