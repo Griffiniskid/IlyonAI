@@ -3183,12 +3183,25 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     #          "Claim COMP rewards from Compound V3 USDC on Ethereum"
     def _detect_lifecycle_withdraw(msg: str) -> tuple[str, dict] | None:
         text = msg.strip()
-        # Strip trailing "on <CHAIN>" first so the protocol regex doesn't
-        # greedily consume "on" as part of the protocol name.
+        # Strip trailing chain name first so the protocol regex doesn't
+        # greedily consume it. Handles both "on Base" and bare "Base"
+        # (v4-D02 caught 'Withdraw all USDC from Aave V3 Base' defaulting
+        # chain=ethereum when bare "Base" wasn't matched).
         chain = ""
-        m_chain = re.search(r"\bon\s+(?P<chain>[A-Za-z]+)\s*$", text, re.IGNORECASE)
+        m_chain = re.search(
+            r"\b(?:on\s+)?(?P<chain>ethereum|polygon|arbitrum|optimism|base|"
+            r"avalanche|avax|bsc|bnb|solana|sol|linea|zksync|scroll|mantle|"
+            r"blast|berachain|sonic|gnosis|celo|unichain)\s*$",
+            text, re.IGNORECASE,
+        )
         if m_chain:
             chain = m_chain.group("chain").lower()
+            if chain == "bnb":
+                chain = "bsc"
+            elif chain == "sol":
+                chain = "solana"
+            elif chain == "avax":
+                chain = "avalanche"
             text = text[: m_chain.start()].rstrip()
         # Dedicated claim-rewards branch first — no amount, may have a
         # reward-token symbol up front: "Claim COMP rewards from Compound V3 USDC".
