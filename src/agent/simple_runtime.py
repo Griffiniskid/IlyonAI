@@ -2805,7 +2805,8 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
             chain_raw = "polygon"
         elif "AVAX" in pair_upper or "WAVAX" in pair_upper:
             chain_raw = "avalanche"
-        elif proto in {"pancakeswap-v3", "pancake-v3"}:
+        elif proto in {"pancakeswap-v3", "pancake-v3", "pancakeswap-v2",
+                       "pancake-v2", "pcs-v2", "pcs-v3", "pcs"}:
             chain_raw = "bsc"
         elif proto in {"aerodrome-slipstream", "aerodrome-cl"}:
             chain_raw = "base"
@@ -3525,7 +3526,30 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
             amount = 0
         # Default chain: pick first registered chain for the protocol.
         if not chain:
-            chain = "ethereum"
+            # Per-protocol canonical-chain inference for lifecycle paths.
+            # Closes v4-D04 'Withdraw 10 LP from PancakeSwap V2 BNB-USDT'
+            # which previously defaulted to ethereum.
+            _PROTO_CHAIN_DEFAULT = {
+                "pancakeswap-v3": "bsc", "pancake-v3": "bsc",
+                "pancakeswap-v2": "bsc", "pancake-v2": "bsc",
+                "pcs-v2": "bsc", "pcs-v3": "bsc", "pcs": "bsc",
+                "pancakeswap": "bsc",
+                "aerodrome-slipstream": "base", "aerodrome-cl": "base",
+                "aerodrome": "base",
+                "velodrome-cl": "optimism", "velodrome-slipstream": "optimism",
+                "velodrome": "optimism",
+                "raydium": "solana", "raydium-amm": "solana",
+                "raydium-clmm": "solana", "raydium-cp": "solana",
+                "orca": "solana", "orca-whirlpools": "solana",
+                "orca-clmm": "solana", "orca-dex": "solana",
+                "meteora": "solana", "meteora-dlmm": "solana",
+                "kamino-lend": "solana", "kamino-liquidity": "solana",
+                "kamino": "solana",
+                "marinade": "solana", "jito": "solana",
+                "sanctum": "solana", "sanctum-infinity": "solana",
+                "drift": "solana",
+            }
+            chain = _PROTO_CHAIN_DEFAULT.get(proto, "ethereum")
         # Map verb → action; default withdraw for redeem.
         verb = (gd.get("verb") or "withdraw").lower()
         action_out = {
