@@ -5780,7 +5780,18 @@ async def run_ephemeral_turn(
                 # when the user typed bare dollars / no unit. v4-A02 caught
                 # "Use 0.5 ETH" routing as USDC instead of ETH.
                 _unit_grp = (top_match.group("unit") or "").upper() if top_match else ""
-                _NON_ASSET_UNITS = {"USD", "$", "DOLLARS", "K", "M", "B", "BUCKS"}
+                # Trailing continuation modifiers ("instead", "now", "then",
+                # "please", "again") get caught by the (?P<unit>[A-Za-z]{2,10})
+                # group and previously routed as asset_in="INSTEAD" / "NOW" /
+                # etc., which the adapter then refused with "no token metadata
+                # for INSTEAD" (v4-A01 turn 3 "Use $250 instead" surfaced
+                # asset_in=INSTEAD, adapter_build_failed). Reject these
+                # continuation words alongside the USD-denominator words.
+                _NON_ASSET_UNITS = {
+                    "USD", "$", "DOLLARS", "K", "M", "B", "BUCKS",
+                    "INSTEAD", "NOW", "THEN", "PLEASE", "AGAIN",
+                    "TODAY", "TONIGHT", "TOMORROW", "ASAP",
+                }
                 _default_asset_in = (
                     _unit_grp if _unit_grp and _unit_grp not in _NON_ASSET_UNITS else "USDC"
                 )
