@@ -2457,6 +2457,10 @@ _ADD_LIQUIDITY_RE = re.compile(
 )
 
 # Inverted form: "Deposit $AMOUNT into PROTOCOL PAIR on CHAIN"
+# PAIR is optional — when omitted, the downstream pair-from-dual-token
+# inference reconstructs pool_symbol from the leading 'X TOK and Y TOK'
+# form (v4-C04 'Deposit 0.05 WETH and 100 USDC into Aerodrome Slipstream'
+# — message has no explicit PAIR after the protocol).
 _ADD_LIQUIDITY_INV_RE = re.compile(
     r"^\s*(?:deposit|add|put|invest)\s+"
     r"(?:\$\s*(?P<usd>[\d,]+(?:\.\d+)?)|"
@@ -2464,7 +2468,8 @@ _ADD_LIQUIDITY_INV_RE = re.compile(
     # Optional second leg before the "into PROTOCOL" tail: "and Y TOKEN_B".
     r"(?:\s+and\s+(?:\$\s*[\d,]+(?:\.\d+)?|[\d,]+(?:\.\d+)?\s+[A-Za-z]{2,10}))?"
     r"\s+(?:into|in|to|on)\s+"
-    rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}"
+    rf"{_PROTOCOL_NAME_RE}"
+    rf"(?:\s+{_PAIR_RE})?"
     # Optional trailing pool-variant suffix ("DLMM", "CLMM", "AMM", "V3").
     r"(?:\s+(?:DLMM|CLMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion|V\d|v\d|pool))?"
     r"(?:\s+\d+(?:\.\d+)?\s*%)?"
@@ -2708,6 +2713,15 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
             # as the USD-equivalent for budgeting / UI, but the adapter reads
             # the two legs from extra.
             asset_in = tok_a
+            # When the regex didn't capture a pair (PAIR is optional in the
+            # inverted form), reconstruct from dual-token legs. Closes
+            # v4-C04 'Deposit 0.05 WETH and 100 USDC into Aerodrome Slipstream'
+            # which previously left pair="" → V3 NFT adapter raised
+            # 'cannot resolve MSUSD or USDC' after pulling junk from the
+            # default-pair fallback.
+            if not pair:
+                pair = f"{tok_a}-{tok_b}"
+                pool_ref = f"{proto} {pair}"
 
     # V3 EVM short-circuit: route Uniswap V3 / PancakeSwap V3 / Aerodrome
     # Slipstream straight to build_yield_execution_plan so the new
