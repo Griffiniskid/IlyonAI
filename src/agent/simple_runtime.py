@@ -1897,7 +1897,11 @@ _LAZY_RESUME_RE = re.compile(
     r"migration|refinance|top|first|best|largest|biggest|smallest|"
     r"one)|"
     r"step\s+\d+|destination\s+step|bridge\s+(?:step|now)|"
-    r"each\s+leg))*\s*[.!?]*\s*$",
+    r"each\s+leg))*"
+    # Optional trailing amount override — 'Confirm 50' / 'Execute 100 USDC'.
+    # Captured for downstream override in _detect_lazy_resume_from_history.
+    r"(?:\s+\$?(?P<override_amt>[\d,]+(?:\.\d+)?)(?:\s+(?P<override_tok>[A-Za-z]{2,10}))?)?"
+    r"\s*[.!?]*\s*$",
     re.IGNORECASE,
 )
 
@@ -2060,8 +2064,14 @@ def _detect_lazy_resume_from_history(
     """
     if not history_cards:
         return None
-    if not _LAZY_RESUME_RE.search(message.strip()):
+    lazy_match = _LAZY_RESUME_RE.search(message.strip())
+    if not lazy_match:
         return None
+    # 'Confirm 50' / 'Execute 100 USDC' — extract amount override from the
+    # tail of the message. v4-G05 turn 4 'Confirm 50' previously returned
+    # None (regex required amount-less tail); now resumes the prior plan
+    # with amount=50 overriding the prior plan's amount.
+    override_amt = (lazy_match.groupdict().get("override_amt") or "").replace(",", "") or None
     action_hint = _extract_action_hint(message)
     # Bridge steps live inside composed-plan execution_plan_v3 cards and
     # are NOT routable via build_yield_execution_plan (capabilities registry
@@ -2108,12 +2118,13 @@ def _detect_lazy_resume_from_history(
             amount_in = target_step.get("amount_in") or ""
             action = (target_step.get("action") or "supply").lower()
             if chain and protocol and asset_in and amount_in:
+                effective_amount = override_amt if override_amt else str(amount_in)
                 return "build_yield_execution_plan", {
                     "chain": chain,
                     "protocol": protocol,
                     "action": action,
                     "asset_in": asset_in.upper(),
-                    "amount_in": str(amount_in),
+                    "amount_in": effective_amount,
                 }
         if ctype in {"pool_link", "pool_deposit_v3"}:
             chain = (payload.get("chain") or "").lower()
@@ -2128,12 +2139,13 @@ def _detect_lazy_resume_from_history(
                 _stake = {"lido", "rocket-pool", "ether.fi", "renzo", "kelp", "swell",
                           "frax", "mantle", "stader", "marinade", "jito"}
                 action = "stake" if protocol in _stake else "supply"
+                effective_amount = override_amt if override_amt else amount_str
                 return "build_yield_execution_plan", {
                     "chain": chain,
                     "protocol": protocol,
                     "action": action,
                     "asset_in": asset_in,
-                    "amount_in": amount_str,
+                    "amount_in": effective_amount,
                 }
     return None
 
