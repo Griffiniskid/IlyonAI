@@ -33,6 +33,16 @@ EXPECTED_BLOCKED: list[tuple[str, int, str]] = [
     # H — §7 funding scenarios (Phase E deferred)
     ("H07_S7_dust_mixing", 1, "§7 S7 dust-mixing multi-input detector + composed plan deferred."),
     ("H08_S8_partial_allowance", 1, "§7 S8 partial allowance delta detector + top-up step deferred."),
+    # F01 — by-design BLOCKED turn 1 ('NonExistentProtocol' triggers
+    # UNSUPPORTED_ADAPTER explicitly per chain expect_blockers field)
+    ("F01_unsupported_adapter", 1, "Chain expect_blockers=['UNSUPPORTED_ADAPTER'] — turn 1 message names a non-existent protocol intentionally to surface the recovery posture."),
+    # C14 Meteora DLMM SOL-USDC native deposit — Phase B Solana hand-rolled
+    # adapter deferred (Meteora DAMM v2 / DLMM SDK integration).
+    ("C14_meteora_dlmm", 4, "Phase B Solana hand-rolled deferred — Meteora DLMM open_position via @meteora-ag/dlmm SDK."),
+    # F04 Pendle PENDING_EPOCH_ENTRY — chain expect_blockers covers it
+    ("F04_pendle_pending_epoch", 1, "Chain expect_blockers=['PENDING_EPOCH_ENTRY','NEEDS_FRONTEND_SDK'] — Pendle real ApproxParams Hosted-SDK integration deferred."),
+    # G04 chain expects unsupported_adapter on turn 1 explicitly
+    ("G04_pick_alt_pool_after_blocker", 1, "Chain expect_blockers=['UNSUPPORTED_ADAPTER','ADAPTER_BUILD_FAILED'] — turn 1 'NonExistentVault' surfaces recovery posture intentionally."),
     # I — Phase D on-chain session-key enforcement (broadcast pending)
     # I01-I05 chains expected to surface PENDING or honest stub posture
     # until Phase D ships installModule broadcast + Phantom delegate.
