@@ -118,6 +118,20 @@ class ReceiptWatcher:
             if receipt:
                 result = dict(receipt)
                 result["decoded_logs"] = self._decode_logs(result.get("logs", []))
+                # Phase D: when the tx is a deBridge DLN bridge submission,
+                # extract the orderId from logs so pending_plans can rekey
+                # the placeholder quote_id with the real order_id.
+                try:
+                    from src.agent.debridge_order_extractor import extract_order_id_from_logs
+                    chain_id_raw = result.get("chainId") or result.get("chain_id")
+                    if chain_id_raw is not None:
+                        chain_id = int(chain_id_raw, 16) if isinstance(chain_id_raw, str) else int(chain_id_raw)
+                        order_id = extract_order_id_from_logs(chain_id, result.get("logs", []))
+                        if order_id:
+                            result["debridge_order_id"] = order_id
+                except Exception:
+                    # Best-effort; never block receipt return.
+                    pass
                 return result
             if attempt < max_attempts - 1:
                 await self._sleep_once(delay)
