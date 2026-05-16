@@ -4996,6 +4996,11 @@ def _last_defi_card_constraints(history_cards: list[dict] | None) -> dict:
     """Extract the constraint snapshot (target_apy/apy_band/chains/risk_levels/
     product_types) from the most recent `defi_opportunities` card so a pivot
     or refine can rebuild the search with those + new overrides.
+
+    product_types is derived from items[].product_type when the card payload
+    doesn't carry it directly (default before this fix). Closes v4-A07 /
+    v4-A19 / v4-A20 — 'Spark only' / 'Marinade only' / 'Jito only' refines
+    silently dropped the staking filter, surfacing gmtrade SOL-USDC as #1.
     """
     if not history_cards:
         return {}
@@ -5022,6 +5027,33 @@ def _last_defi_card_constraints(history_cards: list[dict] | None) -> dict:
             out["execution_requested"] = bool(p.get("execution_requested"))
         if p.get("objective"):
             out["ranking_objective"] = str(p.get("objective"))
+        # Derive product_types from the prior card's items so refine keeps
+        # the staking / lending / pool filter that the user originally
+        # asked for. v4-A07 / v4-A19 / v4-A20 caught this losing the
+        # 'liquid_staking' filter on a follow-up refine.
+        _PRODUCT_TYPE_NORM = {
+            "liquid staking": "liquid_staking",
+            "liquid_staking": "liquid_staking",
+            "staking": "staking",
+            "lending": "lending",
+            "vault": "vault",
+            "farm": "farm",
+            "pool": "pool",
+            "yield aggregator": "vault",
+            "money market": "lending",
+        }
+        items = p.get("items") or []
+        if isinstance(items, list) and items:
+            kinds: set[str] = set()
+            for it in items:
+                pt = str((it or {}).get("product_type") or "").lower().strip()
+                norm = _PRODUCT_TYPE_NORM.get(pt)
+                if norm:
+                    kinds.add(norm)
+            if kinds and len(kinds) <= 3:
+                out["product_types"] = sorted(kinds)
+        if p.get("product_types"):
+            out["product_types"] = list(p.get("product_types") or [])
         return out
     return {}
 
