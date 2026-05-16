@@ -250,7 +250,28 @@ class BalancerSingleAssetAdapter:
         extra = request.extra or {}
         action = (extra.get("action") or "deposit_lp").lower()
         pool_hint = extra.get("pool_key") or extra.get("pool_address") or extra.get("poolAddress")
-        resolved = _resolve_pool(chain_norm, pool_hint, request.asset_in)
+        # Native gas-token alias: Balancer pools hold wrapped tokens
+        # (WETH/WMATIC/WAVAX/WBNB), not native ETH/MATIC/AVAX/BNB. When the
+        # user supplies the native symbol we look up the wrapper for pool
+        # resolution. v4-C07 'Use 0.05 ETH' on wstETH-WETH Balancer pool
+        # previously surfaced 'No Balancer pool registered on ethereum
+        # containing ETH'. The downstream encoder still emits the user's
+        # original native amount; the asset_in alias is for pool lookup
+        # only.
+        _NATIVE_TO_WRAPPER = {
+            ("ethereum", "ETH"): "WETH",
+            ("base", "ETH"): "WETH",
+            ("arbitrum", "ETH"): "WETH",
+            ("optimism", "ETH"): "WETH",
+            ("polygon", "MATIC"): "WMATIC",
+            ("polygon", "POL"): "WMATIC",
+            ("avalanche", "AVAX"): "WAVAX",
+            ("bsc", "BNB"): "WBNB",
+        }
+        asset_for_lookup = _NATIVE_TO_WRAPPER.get(
+            (chain_norm, request.asset_in.upper())
+        ) or request.asset_in
+        resolved = _resolve_pool(chain_norm, pool_hint, asset_for_lookup)
         if resolved is None:
             raise ValueError(
                 f"No Balancer pool registered on {chain_norm} containing {request.asset_in}; "
