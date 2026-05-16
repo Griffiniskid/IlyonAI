@@ -2150,6 +2150,22 @@ def _detect_lazy_resume_from_history(
                         rebuilt_extra[k] = step_extra[k]
                     elif payload_extra.get(k) is not None:
                         rebuilt_extra[k] = payload_extra[k]
+                # Recover pool_symbol from range_block.pair when neither
+                # step.extra nor payload.extra carry it. V3 EVM cards
+                # carry the pair at payload.range_block.pair (v3_range
+                # card subtype). v4-H03 caught this — lazy_resume
+                # rebuilt without pool_symbol → V3 NFT adapter refused.
+                if "pool_symbol" not in rebuilt_extra:
+                    range_block = payload.get("range_block") or {}
+                    pair_block = range_block.get("pair") or {}
+                    t0 = (pair_block.get("token0") or {}).get("symbol") or ""
+                    t1 = (pair_block.get("token1") or {}).get("symbol") or ""
+                    if t0 and t1:
+                        rebuilt_extra["pool_symbol"] = f"{t0.upper()}-{t1.upper()}"
+                    if "fee_bps" not in rebuilt_extra and range_block.get("current"):
+                        fee = (range_block.get("current") or {}).get("fee_tier_bps")
+                        if fee is not None:
+                            rebuilt_extra["fee_bps"] = int(fee)
                 result_args: dict = {
                     "chain": chain,
                     "protocol": protocol,
