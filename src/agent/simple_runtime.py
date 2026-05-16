@@ -2494,6 +2494,27 @@ _ADD_LIQ_NOAMT_WITHMY_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Protocol-first LP form: "PROTO PAIR [CHAIN] (deposit|add|...) [qualifier]
+# AMT TOK [+/and AMT TOK] [(qualifier)]". Catches §7 S1 dual-token Slipstream
+# phrasing "Slipstream WETH-USDC Base deposit dual-token 0.05 WETH + 100 USDC"
+# and §7 S2 split-swap phrasing "Slipstream WETH-USDC Base deposit using 200
+# USDC (split half)" that the standard verb-first detectors miss.
+_LP_PROTO_FIRST_RE = re.compile(
+    r"^\s*"
+    rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}\s+"
+    r"(?:(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|bnb|linea|scroll|mantle|blast|zksync|gnosis|celo|sonic|berachain|unichain|solana|sol)\s+)?"
+    r"(?:deposit|add|provide|open|mint|create|lp|stake)\s+"
+    r"(?:(?:liquidity|position|lp|dual[-\s]?token|using|split\s+half|both\s+legs)\s+)*"
+    rf"{_AMOUNT_USD_OR_TOKEN_RE}"
+    r"(?:\s*[+]\s*(?P<amt_b>[\d,]+(?:\.\d+)?)\s+(?P<tok_b>[A-Za-z]{2,10}))?"
+    r"(?:\s+and\s+(?:\$\s*[\d,]+(?:\.\d+)?|[\d,]+(?:\.\d+)?\s+[A-Za-z]{2,10}))?"
+    r"(?:\s+on\s+(?P<chain_after>[A-Za-z]+))?"
+    r"(?:\s*\([^)]*\))?"
+    r"(?:[,\s]+(?:with\s+)?(?:narrow|balanced|wide|full)(?:\s+range)?)?"
+    r"\s*$",
+    re.IGNORECASE,
+)
+
 
 def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     """Match 'Add liquidity to Uniswap V3 USDC/WETH on Ethereum with $100'
@@ -2507,7 +2528,12 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     plan instead of falling through to pool_link.
     """
     text = message.strip()
-    m = _ADD_LIQUIDITY_RE.search(text) or _ADD_LIQUIDITY_INV_RE.search(text) or _OPEN_POSITION_RE.search(text)
+    m = (
+        _ADD_LIQUIDITY_RE.search(text)
+        or _ADD_LIQUIDITY_INV_RE.search(text)
+        or _OPEN_POSITION_RE.search(text)
+        or _LP_PROTO_FIRST_RE.search(text)
+    )
     # §6d no-amount fallback: "with my <SRC>" form without an explicit amount.
     # Synthesises a default amount=100 USD so the plan can build; the user
     # can refine before signing. Surface a captured "src" via a synthetic
@@ -2617,13 +2643,15 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     if amount <= 0:
         return None
 
-    # V2 dual-token capture: 'with X TOKEN_A and Y TOKEN_B'. Optional and only
-    # used when the first amount was native (not USD-denominated). Two halves of
-    # a single regex so we can stretch each side independently.
+    # V2 dual-token capture: 'with X TOKEN_A and Y TOKEN_B' or 'X TOKEN_A + Y
+    # TOKEN_B'. Optional and only used when the first amount was native (not
+    # USD-denominated). Two halves of a single regex so we can stretch each
+    # side independently. The '+' separator (and 'plus') covers §7 S1
+    # dual-token Slipstream phrasing.
     extra: dict = {}
     dual_re = re.compile(
         r"(?P<amt_a>[\d,]+(?:\.\d+)?)\s+(?P<tok_a>[A-Za-z]{2,10})"
-        r"\s+and\s+"
+        r"\s*(?:and|\+|plus)\s*"
         r"(?P<amt_b>[\d,]+(?:\.\d+)?)\s+(?P<tok_b>[A-Za-z]{2,10})",
         re.IGNORECASE,
     )
