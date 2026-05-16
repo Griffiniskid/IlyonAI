@@ -2119,13 +2119,37 @@ def _detect_lazy_resume_from_history(
             action = (target_step.get("action") or "supply").lower()
             if chain and protocol and asset_in and amount_in:
                 effective_amount = override_amt if override_amt else str(amount_in)
-                return "build_yield_execution_plan", {
+                # Preserve V3 NFT / V4 / Solana CLMM critical extras when
+                # rebuilding so the adapter has the same context as the
+                # original build. v4-H03 turn 3/4 caught: lazy_resume
+                # dropped pool_symbol → V3 NFT adapter refused with
+                # 'missing pool_symbol'. Pull pool_symbol / fee_bps /
+                # pool_key / pool_address / token_id / rate_mode /
+                # source_token / source_chain off the step's extra or
+                # transaction metadata.
+                rebuilt_extra: dict = {}
+                step_extra = target_step.get("extra") or {}
+                payload_extra = payload.get("extra") or {}
+                for k in (
+                    "pool_symbol", "fee_bps", "pool_key", "pool_address",
+                    "token_id", "rate_mode", "source_token",
+                    "source_chain", "atoken_address", "exit_token",
+                    "amount_is_usd", "usd_equivalent",
+                ):
+                    if step_extra.get(k) is not None:
+                        rebuilt_extra[k] = step_extra[k]
+                    elif payload_extra.get(k) is not None:
+                        rebuilt_extra[k] = payload_extra[k]
+                result_args: dict = {
                     "chain": chain,
                     "protocol": protocol,
                     "action": action,
                     "asset_in": asset_in.upper(),
                     "amount_in": effective_amount,
                 }
+                if rebuilt_extra:
+                    result_args["extra"] = rebuilt_extra
+                return "build_yield_execution_plan", result_args
         if ctype in {"pool_link", "pool_deposit_v3"}:
             chain = (payload.get("chain") or "").lower()
             protocol = (payload.get("protocol") or "").lower()
