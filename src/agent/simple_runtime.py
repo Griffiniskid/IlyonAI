@@ -3434,6 +3434,38 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
         # 'Exit PROTOCOL PAIR with N TOKEN [on CHAIN]' — Balancer-style.
         # Use a tight protocol head (single word) so the pool tail can carry
         # hyphenated pair names without being consumed by the protocol regex.
+        # 'Close my PROTO V3? position tokenId N' — V3 NFT close-by-tokenId
+        # form. v4-D01 turn 3 'Close my Uniswap V3 position tokenId 12345'
+        # previously fell to search. Route to build_yield_execution_plan
+        # with action=close_position + extra.token_id.
+        m_close = re.match(
+            r"^\s*close\s+(?:my\s+|the\s+)?"
+            r"(?P<protocol>uniswap[\s-]?v[34]|pancakeswap[\s-]?v3|"
+            r"aerodrome[\s-]?slipstream|aerodrome[\s-]?cl|"
+            r"velodrome[\s-]?cl|velodrome[\s-]?slipstream)"
+            r"\s+(?:position|nft|lp)\s+"
+            r"(?:tokenId|token\s*id|#)\s*(?P<token_id>\d+)"
+            r"(?:\s+on\s+(?P<chain_inline>[A-Za-z]+))?\s*$",
+            text, re.IGNORECASE,
+        )
+        if m_close:
+            gd_c = m_close.groupdict()
+            proto = re.sub(r"\s+", "-", (gd_c.get("protocol") or "").strip().lower())
+            chain_c = (gd_c.get("chain_inline") or chain or "ethereum").lower()
+            return (
+                "build_yield_execution_plan",
+                {
+                    "chain": chain_c,
+                    "protocol": proto,
+                    "action": "close_position",
+                    "asset_in": "NFT",
+                    "amount_in": 0,
+                    "extra": {
+                        "action": "close_position",
+                        "token_id": int(gd_c["token_id"]),
+                    },
+                },
+            )
         # 'Exit PROTO PAIR with N TOKEN' OR bare 'Exit PROTO PAIR' (treated as
         # exit-all — adapter substitutes max-uint BPT for full position close).
         m_exit = re.match(
