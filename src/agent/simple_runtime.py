@@ -7031,10 +7031,7 @@ async def run_ephemeral_turn(
                 cleaned, has_real_card=bool(final_card_ids_pre)
             )
             if stripped:
-                logger.warning(
-                    "strip_unbacked_claims: refused unbacked claim in fallback prose (session=%s)",
-                    session_id,
-                )
+                logger.warning("strip_unbacked_claims: refused unbacked claim in contextual-fallback prose")
             final_content = cleaned
 
         # Emit final frame
