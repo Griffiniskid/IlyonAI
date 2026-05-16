@@ -3471,7 +3471,12 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
             r"(?P<pair_tail>[A-Za-z0-9][A-Za-z0-9]{0,9}[-/][A-Za-z0-9][A-Za-z0-9]{0,9})"
             r"|(?P<asset_tail>[A-Za-z0-9][A-Za-z0-9]{0,9})"
             r"))?"
-            r"(?:\s+vault\s+shares)?"
+            # Tolerate trailing receipt-type words ('vault', 'pool',
+            # 'savings', 'shares', 'vault shares', 'sToken', 'aToken').
+            # Closes v4-D07 'Redeem all from Yearn USDC vault' which
+            # previously had the protocol regex consume 'Yearn USDC vault'
+            # greedily (3-word PROTO) → protocol slug 'yearn-usdc-vault'.
+            r"(?:\s+(?:vault(?:\s+shares)?|pool|savings|lending|shares))?"
             r"\s*$",
             text,
             re.IGNORECASE,
@@ -3480,6 +3485,27 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
             return None
         gd = m.groupdict()
         proto = re.sub(r"\s+", "-", (gd.get("protocol") or "").strip().lower())
+        # The greedy _PROTOCOL_NAME_RE (1-3 words) sometimes pulls trailing
+        # asset symbols or receipt words ('vault', 'pool', 'savings') into
+        # the protocol slug. v4-D07 'Redeem all from Yearn USDC vault'
+        # produced protocol='yearn-usdc-vault' which the adapter registry
+        # could not resolve. Strip trailing common token symbols + receipt
+        # words from the slug; the real asset is recovered separately
+        # below from token/asset_tail/all_token groups.
+        _TRAILING_NOISE = {
+            "vault", "pool", "savings", "lending", "shares",
+            "usdc", "usdt", "dai", "weth", "eth", "wbtc", "btc",
+            "frax", "lusd", "susd", "tusd", "busd", "fdusd",
+            "wsteth", "steth", "reth", "weeth", "cbeth",
+            "matic", "wmatic", "avax", "wavax", "bnb", "wbnb",
+            "sol", "wsol", "msol", "jitosol",
+        }
+        while True:
+            parts = proto.split("-")
+            if len(parts) > 1 and parts[-1] in _TRAILING_NOISE:
+                proto = "-".join(parts[:-1])
+                continue
+            break
         pair_tail = (gd.get("pair_tail") or "").upper().replace("/", "-")
         asset = (
             gd.get("token")
