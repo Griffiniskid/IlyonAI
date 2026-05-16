@@ -2575,9 +2575,16 @@ _OPEN_POSITION_RE = re.compile(
     rf"{_PROTOCOL_NAME_RE}\s+{_PAIR_RE}"
     r"(?:\s+(?:DLMM|CLMM|CPMM|AMM|Whirlpool|Whirlpools|Slipstream|Fusion|V\d|v\d))?"
     r"(?:\s+\d+(?:\.\d+)?\s*%)?"
+    # Tolerate 'native' / 'wrapped' qualifier between PAIR and 'position'.
+    # Closes v4-D01 turn 1 'Open a Uniswap V3 ETH-USDC native position with
+    # 0.05 ETH and 100 USDC' which previously fell to _LP_PROTO_FIRST_RE and
+    # captured proto='open-a-uniswap-v3'.
+    r"(?:\s+(?:native|wrapped))?"
     r"\s+(?:position|lp|liquidity)"
     r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?"
     rf"\s+(?:with\s+)?{_AMOUNT_USD_OR_TOKEN_RE}"
+    # Optional second leg for dual-token form: 'and Y TOKEN_B'.
+    r"(?:\s+and\s+(?:\$\s*[\d,]+(?:\.\d+)?|[\d,]+(?:\.\d+)?\s+[A-Za-z]{2,10}))?"
     # Tolerate trailing "on CHAIN" after the amount — common phrasing
     # "Open Uniswap V3 ETH-USDC position with 0.1 ETH on Ethereum".
     r"(?:\s+on\s+(?P<chain_after>[A-Za-z]+))?"
@@ -2848,6 +2855,10 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
             chain_raw = "base"
         elif proto in {"velodrome-cl", "velodrome-slipstream"}:
             chain_raw = "optimism"
+        elif proto in {"uniswap-v3", "uniswap-v4"}:
+            # Multi-chain proto — default to canonical Ethereum mainnet.
+            # User can override via 'on <chain>' suffix.
+            chain_raw = "ethereum"
     # §6d "with my <TOKEN>" silent reassignment: when the user names a source
     # token that isn't one of the pool's legs, snapshot it so the downstream
     # builder can (a) route through Enso multi-input zap and (b) surface an
