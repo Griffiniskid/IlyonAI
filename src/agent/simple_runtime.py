@@ -3360,10 +3360,12 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
         # 'Exit PROTOCOL PAIR with N TOKEN [on CHAIN]' — Balancer-style.
         # Use a tight protocol head (single word) so the pool tail can carry
         # hyphenated pair names without being consumed by the protocol regex.
+        # 'Exit PROTO PAIR with N TOKEN' OR bare 'Exit PROTO PAIR' (treated as
+        # exit-all — adapter substitutes max-uint BPT for full position close).
         m_exit = re.match(
             r"^\s*exit\s+(?P<protocol>balancer(?:[-\s]v\d)?|curve(?:[-\s]dex|[-\s]finance)?|uniswap[-\s]v\d|aerodrome|velodrome)"
             r"(?:\s+(?P<pool>[A-Za-z][A-Za-z0-9]{0,9}(?:[-/][A-Za-z][A-Za-z0-9]{0,9})+))?"
-            r"\s+with\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z][A-Za-z0-9]{0,9})"
+            r"(?:\s+with\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z][A-Za-z0-9]{0,9}))?"
             r"\s*$",
             text,
             re.IGNORECASE,
@@ -3371,14 +3373,16 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
         if m_exit:
             gd2 = m_exit.groupdict()
             proto = re.sub(r"\s+", "-", (gd2.get("protocol") or "").strip().lower())
+            amount_token = (gd2.get("token") or "BPT").upper()
+            amount_val = float((gd2.get("amount") or "0").replace(",", "")) if gd2.get("amount") else 0
             return (
                 "build_yield_execution_plan",
                 {
                     "chain": chain or "ethereum",
                     "protocol": proto,
                     "action": "exit_pool",
-                    "asset_in": gd2["token"].upper(),
-                    "amount_in": float(gd2["amount"].replace(",", "")),
+                    "asset_in": amount_token,
+                    "amount_in": amount_val,
                     "extra": {
                         "action": "exit_pool",
                         "pool_key": (gd2.get("pool") or "").lower(),
@@ -3390,17 +3394,23 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
             )
         m = re.match(
             r"^\s*(?P<verb>withdraw|redeem|claim|repay|borrow|exit|remove)\s+"
-            r"(?:(?P<all>all)(?:\s+(?P<all_token>[A-Za-z][A-Za-z0-9]{0,9}))?|"
-            r"(?:\$\s*(?P<usd>[\d,]+(?:\.\d+)?)|"
-            r"(?P<native>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z][A-Za-z0-9]{0,9})))"
+            # Amount group is now optional — bare 'Remove from PROTO PAIR' /
+            # 'Withdraw from PROTO ASSET' is treated as 'all' (max-uint
+            # sentinel). v4-D04/D05/D06/D07 caught this falling through.
+            r"(?:(?P<all>all)(?:\s+(?P<all_token>[A-Za-z][A-Za-z0-9]{0,9}))?\s+|"
+            r"\$\s*(?P<usd>[\d,]+(?:\.\d+)?)\s+|"
+            r"(?P<native>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z][A-Za-z0-9]{0,9})\s+"
+            r")?"
             # Both "from <PROTO>" (withdraw/claim) and "to <PROTO>" (repay) work.
-            rf"\s+(?:from|to|on|against)\s+{_PROTOCOL_NAME_RE}"
+            rf"(?:from|to|on|against)\s+{_PROTOCOL_NAME_RE}"
             # Tail may be a single token (asset_tail) OR a hyphen-separated pair
             # like "BNB-USDT" / "WETH/USDC" (pair_tail) — V2 LP removeLiquidity.
+            # Tokens starting with a digit are allowed (Curve '3pool' / '4pool').
             r"(?:\s+(?:"
-            r"(?P<pair_tail>[A-Za-z][A-Za-z0-9]{0,9}[-/][A-Za-z][A-Za-z0-9]{0,9})"
-            r"|(?P<asset_tail>[A-Za-z][A-Za-z0-9]{0,9})"
+            r"(?P<pair_tail>[A-Za-z0-9][A-Za-z0-9]{0,9}[-/][A-Za-z0-9][A-Za-z0-9]{0,9})"
+            r"|(?P<asset_tail>[A-Za-z0-9][A-Za-z0-9]{0,9})"
             r"))?"
+            r"(?:\s+vault\s+shares)?"
             r"\s*$",
             text,
             re.IGNORECASE,
@@ -3423,7 +3433,9 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
         elif gd.get("native"):
             amount = float(gd["native"].replace(",", ""))
         else:
-            return None
+            # Bare 'Remove from PROTO PAIR' / 'Withdraw from PROTO ASSET'
+            # — no amount specified, treat as 'all' (max-uint sentinel).
+            amount = 0
         # Default chain: pick first registered chain for the protocol.
         if not chain:
             chain = "ethereum"
