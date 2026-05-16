@@ -1918,15 +1918,22 @@ _PROTO_ASSET_VERB_RE = re.compile(
 
 
 def _detect_lazy_proto_asset_action(
-    message: str, history_cards: list[dict] | None
+    message: str,
+    history_cards: list[dict] | None,
+    history: list[dict] | None = None,
 ) -> tuple[str, dict] | None:
     """Match 'Execute PROTO ASSET supply/deposit/stake [on CHAIN]' where
     the message names protocol + asset + action but lacks an amount;
-    inherit amount from the prior pool_link / execution_plan_v3 in history.
+    inherit amount from the prior pool_link / execution_plan_v3 in history,
+    falling back to a bare 'AMT ASSET' user-message in `history` when no
+    card carries the asset (v4-A07 caught: turn 3 typed '100 DAI' as a
+    bare amount-refinement and the runtime answered with TEXT — no card
+    emitted — so turn 4 'Execute Spark DAI deposit' had no card to
+    inherit amount from).
 
     v4-A07/A09 caught this falling through to pool-search.
     """
-    if not history_cards:
+    if not history_cards and not history:
         return None
     m = _PROTO_ASSET_VERB_RE.search(message.strip())
     if not m:
@@ -1953,7 +1960,7 @@ def _detect_lazy_proto_asset_action(
     # Inherit amount + chain from history
     amount: str | None = None
     inferred_chain: str | None = chain_match if chain_match else None
-    for hc in reversed(history_cards):
+    for hc in reversed(history_cards or []):
         ctype = (hc.get("card_type") or "").lower()
         payload = hc.get("payload") or {}
         if ctype == "execution_plan_v3":
@@ -1975,6 +1982,23 @@ def _detect_lazy_proto_asset_action(
                     inferred_chain = (payload.get("chain") or "").lower() or None
                 if amount:
                     break
+    # Bare-amount user-message fallback: scan prior user turns for an explicit
+    # 'AMT ASSET' tuple where ASSET matches the named asset. Captures the
+    # v4-A07 chain shape where turn 3 was "100 DAI" — bare amount with no
+    # card emitted — and turn 4 is "Execute Spark DAI deposit".
+    if not amount and history:
+        bare_re = re.compile(
+            rf"(?P<amt>[\d,]+(?:\.\d+)?)\s+{re.escape(asset)}\b",
+            re.IGNORECASE,
+        )
+        for h in reversed(history):
+            if (h.get("role") or "").lower() != "user":
+                continue
+            content = str(h.get("content") or "")
+            bm = bare_re.search(content)
+            if bm:
+                amount = bm.group("amt").replace(",", "")
+                break
     if not amount:
         return None
     chain_final = inferred_chain or "ethereum"
@@ -6182,7 +6206,7 @@ async def run_ephemeral_turn(
         if lazy is None:
             # PROTO ASSET deposit/supply/stake without amount → inherit
             # amount from history (v4-A07/A09).
-            lazy = _detect_lazy_proto_asset_action(message, history_cards)
+            lazy = _detect_lazy_proto_asset_action(message, history_cards, history)
         intent = lazy if lazy else detect_intent(message)
 
     try:
