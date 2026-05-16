@@ -5914,6 +5914,19 @@ async def run_ephemeral_turn(
                         except Exception:
                             pass
                         break
+            # H10 t4 / E07 t3 class — if no execution_plan card exists in
+            # history but we still got a replay prose, the prose's "Open
+            # the execution plan card above" reference would mislead the
+            # user. Swap to honest acknowledgement that names the prior
+            # context without claiming a signable card surface exists.
+            if not replay_card_ids:
+                replay = (
+                    "Continuing from the prior allocation / execution plan "
+                    "context. To regenerate the signing card, please repeat "
+                    "the original request (e.g. `Supply 100 USDC to Aave V3 "
+                    "on Base`) — the card frame was not persisted in this "
+                    "session and can't be replayed directly."
+                )
             collector.emit_final(replay, replay_card_ids)
             for frame in collector.drain():
                 yield encode_sse(frame_event_name(frame), frame.model_dump())
