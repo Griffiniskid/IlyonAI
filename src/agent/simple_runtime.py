@@ -2706,6 +2706,35 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     plan instead of falling through to pool_link.
     """
     text = message.strip()
+    # F02 early-exit: when the message names an EVM-only protocol but also
+    # says "on solana" (or vice versa), defer to a later detector that can
+    # surface the typed UNSUPPORTED_CHAIN blocker. Without this, the inverted
+    # form 'Deposit 100 USDC into Aave V3 on Solana' captures pool="aave-v3"
+    # and dispatches execute_pool_position with no chain, silently routing
+    # to ethereum.
+    _F02_EVM_ONLY = re.compile(
+        r"\b(aave|aave-v3|compound|compound-v3|morpho|spark|yearn|lido|"
+        r"rocket[\s-]?pool|ether[\s.\-]?fi|renzo|swell|frax|mantle|kelp|"
+        r"uniswap|pancakeswap|balancer|curve|convex|pendle|stargate|gmx|"
+        r"velodrome|aerodrome|moonwell|stader|sky)\b",
+        re.IGNORECASE,
+    )
+    _F02_SOLANA_ONLY = re.compile(
+        r"\b(raydium|orca|meteora|kamino|marinade|jito|sanctum|jlp|"
+        r"jupiter[\s-]?perps?|drift|phoenix|gmtrade)\b",
+        re.IGNORECASE,
+    )
+    has_solana_word = re.search(r"\bon\s+solana\b", text, re.IGNORECASE)
+    has_evm_word = re.search(
+        r"\bon\s+(ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|bnb|"
+        r"linea|zksync|scroll|mantle|blast|gnosis|celo|sonic|berachain|unichain)\b",
+        text,
+        re.IGNORECASE,
+    )
+    if has_solana_word and _F02_EVM_ONLY.search(text) and not _F02_SOLANA_ONLY.search(text):
+        return None
+    if has_evm_word and _F02_SOLANA_ONLY.search(text) and not _F02_EVM_ONLY.search(text):
+        return None
     m = (
         _ADD_LIQUIDITY_RE.search(text)
         or _ADD_LIQUIDITY_INV_RE.search(text)
