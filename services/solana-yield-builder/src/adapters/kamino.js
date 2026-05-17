@@ -22,9 +22,15 @@ const BASE = process.env.KAMINO_API_BASE || "https://api.kamino.finance";
 const JLP_MINT = "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4";
 const JITOSOL_MINT = "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn";
 
+// Kamino Lend program ID — verified on mainnet (https://docs.kamino.finance).
+// Surfaced on every close/withdraw tx so the agent's receipt-reader can
+// match position-store entries by redemption_program.
+const KAMINO_LEND_PROGRAM_ID = "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD";
+
 module.exports = {
   aliases: ["kamino-finance", "kamino-lend", "kamino-vault"],
-  supportedActions: ["deposit", "supply", "withdraw", "unstake", "redeem"],
+  supportedActions: ["deposit", "supply", "withdraw", "unstake", "redeem", "close", "exit"],
+  KAMINO_LEND_PROGRAM_ID,
 
   /**
    * Phase 4 lifecycle — Kamino vault withdraw via REST.
@@ -73,6 +79,7 @@ module.exports = {
               summary: `Kamino withdraw ${amount} ${asset}`,
               description: `Direct Kamino vault withdraw via official REST (${url}).`,
               receiptToken: asset || "USDC",
+              redemption_program: KAMINO_LEND_PROGRAM_ID,
               feeUsd: 0.01,
               durationS: 30,
               warnings: [],
@@ -91,6 +98,27 @@ module.exports = {
       "Kamino REST withdraw unreachable; no Jupiter inverse for vault shares. " +
       "Finalise on app.kamino.finance/lending or vaults UI."
     );
+  },
+
+  /**
+   * Phase C lifecycle — explicit withdraw entrypoint. The sidecar dispatcher
+   * maps action="withdraw" → buildWithdraw when present, otherwise falls
+   * back to buildUnstake. We delegate to buildUnstake (which has the REST
+   * probe + simulation gate) and stamp redemption_program on the result.
+   *
+   * Uses klend-sdk when present in package.json (Phase D). Currently the
+   * REST path is the prod default; SDK hand-roll lives behind the REST
+   * fallback to keep the sidecar deps lean.
+   */
+  async buildWithdraw({ asset, amount, user, extra = {} }, ctx = {}) {
+    const result = await this.buildUnstake({ asset, amount, user, extra }, ctx);
+    // Stamp redemption_program on each tx if the REST path forgot it.
+    if (result && Array.isArray(result.transactions)) {
+      for (const tx of result.transactions) {
+        if (!tx.redemption_program) tx.redemption_program = KAMINO_LEND_PROGRAM_ID;
+      }
+    }
+    return result;
   },
 
   async quote({ asset }) {

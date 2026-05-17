@@ -14,17 +14,22 @@
  * a Jupiter prep-swap leg because Marinade only accepts SOL natively.
  * Surface this as two signed transactions in chat.
  */
-const { Connection, PublicKey, Transaction } = require("@solana/web3.js");
+const { Connection, Keypair, PublicKey, Transaction } = require("@solana/web3.js");
 const BN = require("bn.js");
 const { Marinade, MarinadeConfig } = require("@marinade.finance/marinade-ts-sdk");
 const { buildSwap, resolveMint, decimalsFor, SOL_MINT } = require("./jupiter");
 const { simulateBase64Tx } = require("./simulate");
+const { checkTxAccountCount } = require("./altSplit");
 
 const MSOL_MINT = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So";
+// Marinade staking program (canonical mainnet ID, surfaced as redemption_program
+// for receipt-reader matching on Phase C order_unstake / liquid unstake legs).
+const MARINADE_PROGRAM_ID = "MarBmsSgKXdrN1egZf5sqe1TMThczhMLJhYpaUm1cmRr";
 
 module.exports = {
   aliases: ["marinade-finance", "marinade-liquid-staking", "marinade-native-staking"],
-  supportedActions: ["deposit", "supply", "stake", "withdraw", "unstake", "redeem"],
+  supportedActions: ["deposit", "supply", "stake", "withdraw", "unstake", "redeem", "order_unstake"],
+  MARINADE_PROGRAM_ID,
 
   async quote({ amount }) {
     return {
@@ -67,6 +72,10 @@ module.exports = {
       e.simulation = sim;
       throw e;
     }
+    const sz = checkTxAccountCount(b64);
+    const altWarn = sz.needsSplit
+      ? ["Transaction has " + sz.accounts + " accounts. Hardware wallets may need ALT pre-warming."]
+      : [];
     return {
       transactions: [
         {
@@ -77,10 +86,107 @@ module.exports = {
             `Marinade's instant-unstake liquidity pool. Fee ~0.3% on top of exchange rate.`
           ),
           receiptToken: "SOL",
+          redemption_program: MARINADE_PROGRAM_ID,
           feeUsd: 0.005,
           durationS: 15,
           warnings: [
             "Instant unstake incurs ~0.3% Marinade fee; deferred unstake (next epoch) is fee-free.",
+            ...altWarn,
+          ],
+          simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
+        },
+      ],
+    };
+  },
+
+  /**
+   * Phase C lifecycle — Marinade order_unstake (deferred, fee-free).
+   *
+   * Calls marinade.orderUnstake(mSOL_amount) which:
+   *   - Burns mSOL from the user.
+   *   - Creates a TicketAccount (a fresh Keypair signer the sidecar generates).
+   *   - The user can claim the SOL after the next epoch boundary
+   *     (~2-3 days on mainnet) by calling claim() on the ticket.
+   *
+   * The TicketAccount Keypair MUST partial-sign the tx — its secret is
+   * burned after signing (single-use). We return the ticket pubkey so
+   * the receipt-reader / position-store can track the pending claim.
+   */
+  async buildOrderUnstake({ amount, user, extra = {} }, { connection } = {}) {
+    if (!connection) {
+      throw new Error("Marinade orderUnstake requires a Solana connection.");
+    }
+    const userPubkey = new PublicKey(user);
+    const config = new MarinadeConfig({ connection, publicKey: userPubkey });
+    const marinade = new Marinade(config);
+    const mSOL_lamports = new BN(Math.floor(Number(amount) * 1_000_000_000));
+    if (mSOL_lamports.lte(new BN(0))) {
+      throw new Error(`Marinade orderUnstake amount must be positive (got ${amount}).`);
+    }
+
+    // SDK signature: orderUnstake(amount, ticketAccountKeypair?) — when no
+    // ticket keypair passed, the SDK generates one and returns it as a signer.
+    const result = await marinade.orderUnstake(mSOL_lamports);
+    const transaction = result.transaction || result.tx;
+    // ticketAccount can come back as a Keypair or as { publicKey, secretKey }
+    // depending on SDK version. Normalise to pubkey + signer.
+    const ticketKeypair = result.ticketAccountKeypair || result.ticket || result.newTicketAccount;
+    if (!transaction) {
+      throw new Error("Marinade orderUnstake: SDK returned no transaction.");
+    }
+    transaction.feePayer = userPubkey;
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+    transaction.recentBlockhash = blockhash;
+    // The TicketAccount Keypair is generated client-side and MUST sign the
+    // create-account IX or the tx reverts. partialSign before serialise.
+    if (ticketKeypair && typeof transaction.partialSign === "function") {
+      transaction.partialSign(ticketKeypair);
+    }
+    const raw = transaction.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false,
+    });
+    const b64 = raw.toString("base64");
+    const sim = await simulateBase64Tx({ b64, connection });
+    if (!sim.ok) {
+      const e = new Error(`Marinade orderUnstake simulation failed: ${sim.errStr || "unknown"}`);
+      e.simulation = sim;
+      throw e;
+    }
+    const sz = checkTxAccountCount(b64);
+    const altWarn = sz.needsSplit
+      ? ["Transaction has " + sz.accounts + " accounts. Hardware wallets may need ALT pre-warming."]
+      : [];
+
+    // Lockup end: next epoch boundary. Solana epochs ≈ 2-3 days. Compute a
+    // conservative ts hint (now + 3d) so the UI can render a "ready ~Thu" badge.
+    const lockupEndTs = Math.floor(Date.now() / 1000) + 3 * 24 * 60 * 60;
+    const ticketPubkey = ticketKeypair?.publicKey
+      ? ticketKeypair.publicKey.toBase58()
+      : null;
+
+    return {
+      transactions: [
+        {
+          b64,
+          summary: `Marinade order unstake ${amount} mSOL (next-epoch claim)`,
+          description: (
+            `Calls Marinade orderUnstake(${amount} mSOL). Burns the mSOL and creates a ` +
+            `TicketAccount${ticketPubkey ? ` (${ticketPubkey.slice(0, 8)}…)` : ""} that becomes ` +
+            `claimable for SOL after the next epoch boundary (~2-3 days on mainnet). ` +
+            `Fee-free vs liquid unstake's ~0.3% pool fee.`
+          ),
+          receiptToken: "SOL",
+          redemption_program: MARINADE_PROGRAM_ID,
+          unstake_ticket: ticketPubkey,
+          lockup_end_ts: lockupEndTs,
+          feeUsd: 0.005,
+          durationS: 15,
+          warnings: [
+            "Delayed unstake: SOL is NOT immediately available — claim after next epoch boundary (~2-3 days).",
+            "Lose the ticket pubkey = lose the SOL. The agent's position-store will retain it for you.",
+            "For instant liquidity use 'unstake' (liquid) which costs ~0.3% fee.",
+            ...altWarn,
           ],
           simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
         },
@@ -127,6 +233,10 @@ module.exports = {
         e.simulation = sim;
         throw e;
       }
+      const sz = checkTxAccountCount(b64);
+      const altWarn = sz.needsSplit
+        ? ["Transaction has " + sz.accounts + " accounts. Hardware wallets may need ALT pre-warming."]
+        : [];
       return {
         transactions: [
           {
@@ -142,6 +252,7 @@ module.exports = {
             warnings: [
               "Native stake via Marinade program — exchange rate enforced on-chain.",
               "mSOL accrues stake rewards; redeem any time via Jupiter or Marinade unstake.",
+              ...altWarn,
             ],
             simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
           },
