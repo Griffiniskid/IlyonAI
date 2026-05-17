@@ -24,6 +24,7 @@ the hashes trivially match and the bind passes.
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 from src.defi.simulator.solana_simulator import simulate_transaction
@@ -36,6 +37,36 @@ if TYPE_CHECKING:
     from src.defi.execution.models import ExecutionPlanV3, ExecutionStepV3
 
 logger = logging.getLogger(__name__)
+
+
+# V7-047 — 30s re-sim freshness window. Any cached simulation older than this
+# (or never simulated) MUST be refreshed before the broadcast path is
+# allowed to flip the step to 'submitted'. Mirrors §11 D.2 in models.py
+# but enforces the gate at the broadcast entry-point so the bind invariant
+# never sees stale calldata.
+SIM_FRESHNESS_THRESHOLD_SEC = 30
+
+
+def _check_sim_freshness(
+    step: "ExecutionStepV3",
+    threshold_sec: int = SIM_FRESHNESS_THRESHOLD_SEC,
+) -> bool:
+    """Return True if the step's cached sim is still fresh (no re-sim needed).
+
+    A step is fresh iff it carries BOTH a `simulated_calldata_hash` and a
+    `simulated_at` timestamp whose age is <= `threshold_sec`. Anything
+    else (never-simulated, missing hash, missing timestamp, or stale) is
+    treated as stale → caller must re-simulate before broadcast.
+    """
+    sim_at = getattr(step, "simulated_at", None)
+    sim_hash = getattr(step, "simulated_calldata_hash", None)
+    if sim_at is None or sim_hash is None:
+        return False
+    try:
+        elapsed = time.time() - float(sim_at)
+    except (TypeError, ValueError):
+        return False
+    return elapsed <= threshold_sec
 
 
 class BroadcastSimulationError(Exception):
@@ -156,6 +187,10 @@ async def simulate_step_before_broadcast(
         # Stamp the simulated hash so the V7-001 bind invariant has
         # something to compare against at submit-flip time.
         step.simulated_calldata_hash = sim.calldata_hash
+        # V7-047 — stamp the freshness timestamp alongside the hash so the
+        # broadcast path can reject (and refresh) stale simulations before
+        # signing. Always overwrite on re-sim so the 30s window restarts.
+        step.simulated_at = time.time()
         # Seed broadcast hash — the wallet adapter MAY overwrite this
         # with a recomputed hash over the final wire-format bytes right
         # before sending. If it doesn't, the bind passes trivially
@@ -192,6 +227,27 @@ async def broadcast_step(
             f"broadcast_step: no step with id={step_id!r} in plan {plan.plan_id}"
         )
 
+    # V7-047 — 30s re-sim freshness gate. If the step has a stale (or
+    # missing) cached simulation, refresh it BEFORE the V7-010 pre-broadcast
+    # sim runs so the bind invariant binds against current pool state /
+    # blockhash, not a quote that has drifted off-chain. Fresh steps skip
+    # the refresh and fall through to the existing V7-010 sim path.
+    if not _check_sim_freshness(step):
+        logger.info(
+            "broadcast_step: sim stale or missing for plan=%s step=%s — re-simulating (threshold=%ds)",
+            plan.plan_id, step_id, SIM_FRESHNESS_THRESHOLD_SEC,
+        )
+        refresh_sim = await simulate_step_before_broadcast(
+            plan, step,
+            tenderly=tenderly,
+            solana_rpc_url=solana_rpc_url,
+            network_id=network_id,
+        )
+        if not refresh_sim.success:
+            raise BroadcastSimulationError(
+                refresh_sim, step_id=step.step_id, plan_id=plan.plan_id,
+            )
+
     sim = await simulate_step_before_broadcast(
         plan, step,
         tenderly=tenderly,
@@ -214,6 +270,8 @@ async def broadcast_step(
 
 __all__ = [
     "BroadcastSimulationError",
+    "SIM_FRESHNESS_THRESHOLD_SEC",
+    "_check_sim_freshness",
     "broadcast_step",
     "simulate_step_before_broadcast",
 ]

@@ -19,6 +19,7 @@ from typing import Any
 
 from src.config import settings
 from src.data.asset_registry import NATIVE_PLACEHOLDER, resolve_any_evm_token
+from src.data.price_oracle import fetch_price_usd
 from src.data.v3_pool_resolver import V3PoolState, resolve_v3_pool
 from src.data.v3_tick_math import (
     optimal_ratio_for_range,
@@ -318,22 +319,17 @@ class UniswapV3NFTAdapter:
             pool.tick, lower_pct, upper_pct, pool.tick_spacing
         )
 
-        # 3) USD price hints — derive from on-chain tick when not supplied.
+        # 3) USD price hints — V7-044: live DefiLlama oracle (60s cache) first,
+        # tick-derived inversion second, last-resort static fallback third.
+        # The static fallback exists only so a transient DefiLlama outage cannot
+        # collapse amount0/amount1 to zero — the previous WETH=$2300 / WBTC=$80k
+        # numbers were stale by months and produced wrong ratios in production.
         # Default of 1.0/1.0 produced garbage ratios for USDC/WETH (WETH at $1
-        # vs $2300 collapsed amount1 to zero). Use a curated symbol→USD map +
-        # tick-derived inversion so the optimal-ratio math sees realistic
-        # token-relative prices.
-        _USD_HINT = {
+        # vs $2300 collapsed amount1 to zero), hence the multi-tier resolution.
+        _USD_FALLBACK = {
             "USDC": 1.0, "USDT": 1.0, "DAI": 1.0, "BUSD": 1.0, "FDUSD": 1.0,
             "TUSD": 1.0, "USDC.E": 1.0, "USDBC": 1.0, "USDE": 1.0, "SUSDE": 1.05,
             "SDAI": 1.04, "USDS": 1.0, "FRAX": 1.0, "LUSD": 1.0,
-            "WETH": 2300.0, "ETH": 2300.0, "STETH": 2300.0, "WSTETH": 2700.0,
-            "RETH": 2550.0, "WEETH": 2400.0, "CBETH": 2400.0,
-            "WBTC": 80000.0, "BTC": 80000.0, "CBBTC": 80000.0,
-            "WBNB": 640.0, "BNB": 640.0, "MATIC": 0.55, "WMATIC": 0.55,
-            "POL": 0.55, "AVAX": 35.0, "WAVAX": 35.0, "ARB": 0.45, "OP": 1.4,
-            "AERO": 0.85, "VELO": 0.07, "CRV": 0.45, "CVX": 2.4,
-            "GMX": 18.0, "PENDLE": 4.0, "AAVE": 200.0, "LDO": 1.0,
         }
 
         def _resolve_usd_hint(token_addr: str) -> float | None:
@@ -370,10 +366,26 @@ class UniswapV3NFTAdapter:
 
         price0 = extra.get("price_token0_usd")
         price1 = extra.get("price_token1_usd")
-        if price0 is None and sym0 and sym0.upper() in _USD_HINT:
-            price0 = _USD_HINT[sym0.upper()]
-        if price1 is None and sym1 and sym1.upper() in _USD_HINT:
-            price1 = _USD_HINT[sym1.upper()]
+        # V7-044: query the live DefiLlama oracle for each side before falling
+        # back to stable-coin = $1.0 hints or tick-derived inversion. Oracle
+        # values are cached 60s in src/data/price_oracle.py so a 2-leg pool
+        # build hits the network at most twice.
+        if price0 is None or price1 is None:
+            oracle = getattr(self, "price_oracle", None) or fetch_price_usd
+            try:
+                import aiohttp  # local import keeps cold-path overhead off hot calls
+                async with aiohttp.ClientSession() as _sess:
+                    if price0 is None:
+                        price0 = await oracle(chain_norm, pool.token0, _sess)
+                    if price1 is None:
+                        price1 = await oracle(chain_norm, pool.token1, _sess)
+            except Exception:
+                # Oracle unreachable → fall through to symbol/tick fallback.
+                pass
+        if price0 is None and sym0 and sym0.upper() in _USD_FALLBACK:
+            price0 = _USD_FALLBACK[sym0.upper()]
+        if price1 is None and sym1 and sym1.upper() in _USD_FALLBACK:
+            price1 = _USD_FALLBACK[sym1.upper()]
         # If only one side known, derive the other from tick price.
         if price0 is None and price1 is not None and tick_price > 0:
             price0 = float(price1) * tick_price

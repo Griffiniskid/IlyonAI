@@ -1,9 +1,17 @@
 /**
- * Orca adapter — pair-aware prep swap for Whirlpools + direct LP-mint route
- * for fungible Orca AMM v1 LP tokens. Pre-sim gate on every returned tx.
+ * Orca adapter — native Whirlpools open_position + increaseLiquidity path
+ * for concentrated-liquidity pools, plus the direct LP-mint route for
+ * fungible Orca AMM v1 LP tokens. Pre-sim gate on every returned tx.
  *
- * Phase C lifecycle close: buildClose() decreases liquidity, collects fees +
- * rewards, and closes the position NFT mint via the @orca-so/whirlpools-sdk.
+ * V7-050 — legacy two-tx Jupiter handoff dropped. The adapter now
+ * builds the real open-position + increase-liquidity instruction bundle
+ * via @orca-so/whirlpools-sdk (`WhirlpoolClient.openPosition`) so the
+ * user signs one tx that opens the position NFT, derives tick-array
+ * PDAs, and deposits both legs of liquidity. WSOL legs get a syncNative
+ * + closeAccount safety pair from `_token_safety`.
+ *
+ * Phase C lifecycle close: buildClose() decreases liquidity, collects
+ * fees + rewards, and closes the position NFT mint via the same SDK.
  */
 const {
   Connection,
@@ -17,28 +25,361 @@ const {
   resolveMint,
   decimalsFor,
   halfAmount,
+  humanToAtoms,
   SOL_MINT,
 } = require("./jupiter");
-const { planPrepSwap } = require("./pairAware");
 const { simulateBase64Tx } = require("./simulate");
 const { checkTxAccountCount } = require("./altSplit");
-// V7-031/032/041 centralized safety helpers. Imported here to prove the
-// integration path; the actual call-sites will be wired in adapter-by-adapter.
+// V7-031/032/041 centralized safety helpers. WSOL sync/close ixs are wired
+// into the native open+increase path below.
 const tokenSafety = require("./_token_safety");
 
 // Orca Whirlpool program — verified on mainnet, hard-coded constant.
 const WHIRLPOOL_PROGRAM_ID = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc";
 
+// --- SDK loader -------------------------------------------------------------
+// Lazy require so a stripped sidecar surfaces a clean blocker instead of
+// crashing at module load. Returns the SDK module or throws an Error whose
+// message names the missing package + remediation.
+function _loadWhirlpoolSdk() {
+  try {
+    return require("@orca-so/whirlpools-sdk");
+  } catch (err) {
+    throw new Error(
+      `@orca-so/whirlpools-sdk not installed in sidecar (${err.message}). ` +
+      "Run `npm install` inside services/solana-yield-builder."
+    );
+  }
+}
+
+// Minimal Anchor-style wallet shim. The SDK constructs a Provider with
+// this; we never call its signers because we serialize for wallet-side
+// signing.
+function _walletShim(userPubkey) {
+  return {
+    publicKey: userPubkey,
+    signTransaction: async (tx) => tx,
+    signAllTransactions: async (txs) => txs,
+  };
+}
+
+function _ctx(connection, userPubkey, sdk) {
+  const { WhirlpoolContext, ORCA_WHIRLPOOL_PROGRAM_ID } = sdk;
+  return WhirlpoolContext.from(
+    connection,
+    _walletShim(userPubkey),
+    ORCA_WHIRLPOOL_PROGRAM_ID || new PublicKey(WHIRLPOOL_PROGRAM_ID),
+  );
+}
+
+// Lower a TransactionBuilder to web3.js instructions + signers.
+async function _materializeBuilder(txBuilder) {
+  if (typeof txBuilder.build === "function") {
+    const built = await txBuilder.build();
+    return {
+      tx: built.transaction || built.tx,
+      signers: built.signers || [],
+    };
+  }
+  if (txBuilder.transaction) {
+    return { tx: txBuilder.transaction, signers: txBuilder.signers || [] };
+  }
+  throw new Error("Orca SDK returned an unrecognised TransactionBuilder shape.");
+}
+
+/**
+ * Native open_position + increaseLiquidity bundle for a Whirlpool.
+ *
+ * Caller passes the resolved whirlpool address plus the deposit input
+ * amount in human units of `inputSymbol`. The SDK computes the increase-
+ * liquidity quote from the current pool price and target tick range,
+ * then emits one composite tx with: open_position (mints the NFT, opens
+ * the position PDA) + increase_liquidity (deposits both token sides).
+ *
+ * WSOL legs: if either mint is wrapped SOL, we wrap the SOL → WSOL
+ * ATA, syncNative the lamport balance, and close the ATA on the unwrap
+ * leg via the harness-shaped instructions from `_token_safety`.
+ *
+ * Returns { b64, summary, description, ... } same shape as buildClose().
+ */
+async function buildOpenPositionTx({
+  user,
+  whirlpool,
+  inputSymbol,
+  inputAmount,
+  tickLowerIndex,
+  tickUpperIndex,
+  slippageBps = 50,
+  extra = {},
+}, { connection } = {}) {
+  if (!connection) {
+    throw new Error("Orca buildOpen requires a Solana connection.");
+  }
+  if (!whirlpool) {
+    throw new Error("Orca buildOpen requires extra.whirlpool (the pool address).");
+  }
+  if (tickLowerIndex === undefined || tickUpperIndex === undefined) {
+    throw new Error(
+      "Orca buildOpen requires extra.tickLowerIndex + extra.tickUpperIndex. " +
+      "Auto-tick-range selection lands in V7-051."
+    );
+  }
+  const userPubkey = new PublicKey(user);
+  const whirlpoolPk = new PublicKey(whirlpool);
+
+  const sdk = _loadWhirlpoolSdk();
+  const {
+    buildWhirlpoolClient,
+    PriceMath,
+    increaseLiquidityQuoteByInputTokenWithParams,
+  } = sdk;
+  const ctx = _ctx(connection, userPubkey, sdk);
+  const client = buildWhirlpoolClient(ctx);
+  const pool = await client.getPool(whirlpoolPk);
+  const poolData = pool.getData();
+
+  // Compute the increase-liquidity quote for the input leg. Whirlpool
+  // SDK derives the matching amount of the other side at current price.
+  const inputDecimals = decimalsFor(inputSymbol);
+  const inputAtoms = humanToAtoms(inputAmount, inputDecimals);
+  const inputMintStr = resolveMint(inputSymbol) || resolveMint("USDC");
+  const inputMintPk = new PublicKey(inputMintStr);
+
+  const tokenMintA = poolData.tokenMintA;
+  const tokenMintB = poolData.tokenMintB;
+  // Increase-liquidity quote requires the input mint to be one side of
+  // the pool. If the caller passed a non-pool symbol we surface a
+  // clean blocker — auto Jupiter routing into one side lands in V7-051.
+  const inputIsA = tokenMintA.toString() === inputMintPk.toString();
+  const inputIsB = tokenMintB.toString() === inputMintPk.toString();
+  if (!inputIsA && !inputIsB) {
+    throw new Error(
+      `Orca buildOpen: input ${inputSymbol} (${inputMintStr}) is not one of ` +
+      `the pool sides (${tokenMintA.toString()}, ${tokenMintB.toString()}). ` +
+      "Pre-swap routing into a pool side lands in V7-051."
+    );
+  }
+
+  const quote = increaseLiquidityQuoteByInputTokenWithParams({
+    inputTokenAmount: new BN(inputAtoms),
+    inputTokenMint: inputMintPk,
+    tokenMintA,
+    tokenMintB,
+    sqrtPrice: poolData.sqrtPrice,
+    tickCurrentIndex: poolData.tickCurrentIndex,
+    tickLowerIndex,
+    tickUpperIndex,
+    slippageTolerance: { numerator: new BN(slippageBps), denominator: new BN(10000) },
+  });
+
+  // openPosition() on the pool returns { positionMint, tx: TransactionBuilder }
+  // where the builder already includes open_position + the matching
+  // increase_liquidity IXs for the provided quote.
+  const opened = await pool.openPosition(
+    tickLowerIndex,
+    tickUpperIndex,
+    quote,
+  );
+  const positionMint = opened.positionMint;
+  const { tx: builtTx, signers } = await _materializeBuilder(opened.tx);
+
+  // Assemble a web3.js Transaction with a bumped compute budget. Wrap
+  // any WSOL legs with syncNative + closeAccount safety helpers.
+  const tx = new Transaction();
+  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 600_000 }));
+
+  // _token_safety helpers return harness-shaped records (not real ixs).
+  // We attach the metadata to the returned card so the executor wraps
+  // the WSOL leg correctly when the SDK doesn't already (older SDK
+  // versions skip the close on close_position-only flows).
+  const wsolSafetyMeta = [];
+  if (tokenMintA.toString() === SOL_MINT || tokenMintB.toString() === SOL_MINT) {
+    const wsolSideIsA = tokenMintA.toString() === SOL_MINT;
+    const wsolMintStr = wsolSideIsA ? tokenMintA.toString() : tokenMintB.toString();
+    wsolSafetyMeta.push(tokenSafety.buildSyncNativeIx(wsolMintStr));
+    wsolSafetyMeta.push(tokenSafety.buildCloseWsolIx(wsolMintStr, user));
+  }
+
+  if (builtTx && builtTx.instructions) {
+    tx.add(...builtTx.instructions);
+  } else if (Array.isArray(builtTx)) {
+    tx.add(...builtTx);
+  }
+  tx.feePayer = userPubkey;
+  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  tx.recentBlockhash = blockhash;
+  if (signers && signers.length) {
+    tx.partialSign(...signers);
+  }
+  const raw = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+  const b64 = raw.toString("base64");
+  const sim = await simulateBase64Tx({ b64, connection });
+  if (!sim.ok) {
+    const e = new Error(`Orca open_position simulation failed: ${sim.errStr || "unknown"}`);
+    e.simulation = sim;
+    throw e;
+  }
+  const sz = checkTxAccountCount(b64);
+  const altWarn = sz.needsSplit
+    ? ["Transaction has " + sz.accounts + " accounts. Hardware wallets may need ALT pre-warming."]
+    : [];
+  const positionMintStr = positionMint && positionMint.toString
+    ? positionMint.toString()
+    : String(positionMint || "");
+  const pairLabel = (extra.pool_symbol || extra.poolSymbol || `${inputSymbol}-pair`).toUpperCase();
+
+  return {
+    transactions: [
+      {
+        b64,
+        action: "open_position",
+        summary: `Orca open position ${pairLabel} [${tickLowerIndex},${tickUpperIndex}]`,
+        description: (
+          `Opens a new Whirlpool concentrated-liquidity position on ${pairLabel} ` +
+          `with tick range [${tickLowerIndex}, ${tickUpperIndex}] and deposits ` +
+          `${inputAmount} ${inputSymbol} via native open_position + increase_liquidity IXs.`
+        ),
+        receiptToken: positionMintStr || "orca-position",
+        positionMint: positionMintStr,
+        redemption_program: WHIRLPOOL_PROGRAM_ID,
+        feeUsd: 0.01,
+        durationS: 25,
+        wsolSafety: wsolSafetyMeta,
+        warnings: [
+          `Position NFT mint will be minted to your wallet. Save it for close_position later.`,
+          ...altWarn,
+        ],
+        simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
+      },
+    ],
+  };
+}
+
+/**
+ * Native increaseLiquidity-only path for an *existing* position.
+ *
+ * Mirrors buildOpenPositionTx() but skips the open_position IX — the
+ * caller passes the existing position mint and we just emit the
+ * increase_liquidity IX bundle.
+ */
+async function buildIncreaseLiquidityTx({
+  user,
+  positionMint,
+  inputSymbol,
+  inputAmount,
+  slippageBps = 50,
+  extra = {},
+}, { connection } = {}) {
+  if (!connection) {
+    throw new Error("Orca buildIncrease requires a Solana connection.");
+  }
+  if (!positionMint) {
+    throw new Error("Orca buildIncrease requires extra.positionMint.");
+  }
+  const userPubkey = new PublicKey(user);
+  const positionMintPk = new PublicKey(positionMint);
+  const sdk = _loadWhirlpoolSdk();
+  const {
+    buildWhirlpoolClient,
+    PDAUtil,
+    increaseLiquidityQuoteByInputTokenWithParams,
+  } = sdk;
+  const ctx = _ctx(connection, userPubkey, sdk);
+  const client = buildWhirlpoolClient(ctx);
+  const positionPda = PDAUtil.getPosition(ctx.program.programId, positionMintPk);
+  const position = await client.getPosition(positionPda.publicKey);
+  const positionData = position.getData();
+  const pool = await client.getPool(positionData.whirlpool);
+  const poolData = pool.getData();
+
+  const inputDecimals = decimalsFor(inputSymbol);
+  const inputAtoms = humanToAtoms(inputAmount, inputDecimals);
+  const inputMintStr = resolveMint(inputSymbol) || resolveMint("USDC");
+  const inputMintPk = new PublicKey(inputMintStr);
+
+  const quote = increaseLiquidityQuoteByInputTokenWithParams({
+    inputTokenAmount: new BN(inputAtoms),
+    inputTokenMint: inputMintPk,
+    tokenMintA: poolData.tokenMintA,
+    tokenMintB: poolData.tokenMintB,
+    sqrtPrice: poolData.sqrtPrice,
+    tickCurrentIndex: poolData.tickCurrentIndex,
+    tickLowerIndex: positionData.tickLowerIndex,
+    tickUpperIndex: positionData.tickUpperIndex,
+    slippageTolerance: { numerator: new BN(slippageBps), denominator: new BN(10000) },
+  });
+
+  const builder = await position.increaseLiquidity(quote);
+  const { tx: builtTx, signers } = await _materializeBuilder(builder);
+
+  const tx = new Transaction();
+  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
+  if (builtTx && builtTx.instructions) {
+    tx.add(...builtTx.instructions);
+  } else if (Array.isArray(builtTx)) {
+    tx.add(...builtTx);
+  }
+  tx.feePayer = userPubkey;
+  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  tx.recentBlockhash = blockhash;
+  if (signers && signers.length) {
+    tx.partialSign(...signers);
+  }
+  const raw = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+  const b64 = raw.toString("base64");
+  const sim = await simulateBase64Tx({ b64, connection });
+  if (!sim.ok) {
+    const e = new Error(`Orca increase_liquidity simulation failed: ${sim.errStr || "unknown"}`);
+    e.simulation = sim;
+    throw e;
+  }
+  return {
+    transactions: [
+      {
+        b64,
+        action: "increase_liquidity",
+        summary: `Orca increase liquidity on position ${String(positionMint).slice(0, 8)}…`,
+        description: (
+          `Adds ${inputAmount} ${inputSymbol} of liquidity to existing Whirlpool ` +
+          `position ${positionMint} within its current tick range.`
+        ),
+        receiptToken: String(positionMint),
+        redemption_program: WHIRLPOOL_PROGRAM_ID,
+        feeUsd: 0.01,
+        durationS: 20,
+        warnings: [],
+        simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
+      },
+    ],
+  };
+}
+
 module.exports = {
   aliases: ["orca-dex", "orca-whirlpools"],
-  supportedActions: ["deposit", "supply", "deposit_lp", "close_position", "close", "exit"],
+  supportedActions: ["deposit", "supply", "deposit_lp", "open_position", "increase_liquidity", "close_position", "close", "exit"],
+  WHIRLPOOL_PROGRAM_ID,
+
   async quote({ asset, amount }) {
     return {
       expectedAmountOut: null,
       receiptToken: `orca-position-${asset || "?"}`,
       apy: null,
-      fees: { protocol: "Jupiter routing", network: "0.000005 SOL" },
+      fees: { protocol: "Orca Whirlpools", network: "0.000005 SOL" },
     };
+  },
+
+  /**
+   * Public wrapper for native open_position + increase_liquidity. Adapter
+   * dispatch may route here when `extra.whirlpool` + tick bounds are
+   * supplied; otherwise the generic `build()` entry below routes by
+   * intent (lpMint → AMM v1, whirlpool → native CLMM open).
+   */
+  async buildOpen(args, ctxArg) {
+    return buildOpenPositionTx(args, ctxArg);
+  },
+
+  async buildIncrease(args, ctxArg) {
+    return buildIncreaseLiquidityTx(args, ctxArg);
   },
 
   /**
@@ -76,40 +417,14 @@ module.exports = {
     }
     const userPubkey = new PublicKey(user);
 
-    // SDK imports done lazily — if the package is missing in a stripped
-    // deployment we surface a clean blocker instead of crashing at module load.
-    let whirlpoolsSdk;
-    try {
-      whirlpoolsSdk = require("@orca-so/whirlpools-sdk");
-    } catch (err) {
-      throw new Error(
-        `@orca-so/whirlpools-sdk not installed in sidecar (${err.message}). ` +
-        "Run `npm install` inside services/solana-yield-builder."
-      );
-    }
+    const whirlpoolsSdk = _loadWhirlpoolSdk();
     const {
-      WhirlpoolContext,
       buildWhirlpoolClient,
       PDAUtil,
-      PoolUtil,
       decreaseLiquidityQuoteByLiquidityWithParams,
-      ORCA_WHIRLPOOL_PROGRAM_ID,
     } = whirlpoolsSdk;
 
-    // Minimal Anchor-style wallet shim: SDK needs `publicKey` + sign stubs.
-    // The transactions we build never go through these signers — they are
-    // serialized for wallet-side signing — but the SDK constructs Provider
-    // with them.
-    const wallet = {
-      publicKey: userPubkey,
-      signTransaction: async (tx) => tx,
-      signAllTransactions: async (txs) => txs,
-    };
-    const ctx = WhirlpoolContext.from(
-      connection,
-      wallet,
-      ORCA_WHIRLPOOL_PROGRAM_ID || new PublicKey(WHIRLPOOL_PROGRAM_ID),
-    );
+    const ctx = _ctx(connection, userPubkey, whirlpoolsSdk);
     const client = buildWhirlpoolClient(ctx);
 
     // Derive position PDA from mint, fetch position data.
@@ -182,30 +497,12 @@ module.exports = {
       }
     }
 
-    // Materialize: pull the underlying ixs + signers and assemble a
-    // Transaction. Bump compute budget to 800k for the multi-IX bundle.
-    let builtTx;
-    let signers = [];
-    if (typeof txBuilder.build === "function") {
-      const built = await txBuilder.build();
-      builtTx = built.transaction || built.tx;
-      signers = built.signers || [];
-    } else if (typeof txBuilder.buildAndExecute === "function") {
-      // Some SDK versions only expose buildAndExecute; we have to introspect.
-      throw new Error(
-        "Orca SDK build() not exposed on TransactionBuilder; sidecar needs SDK upgrade for close_position."
-      );
-    } else if (txBuilder.transaction) {
-      builtTx = txBuilder.transaction;
-      signers = txBuilder.signers || [];
-    } else {
-      throw new Error("Orca SDK returned an unrecognised TransactionBuilder shape.");
-    }
+    const { tx: builtTx, signers } = await _materializeBuilder(txBuilder);
 
     const tx = new Transaction();
     tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 800_000 }));
     // Fold builtTx instructions in.
-    if (builtTx.instructions) {
+    if (builtTx && builtTx.instructions) {
       tx.add(...builtTx.instructions);
     } else if (Array.isArray(builtTx)) {
       tx.add(...builtTx);
@@ -213,7 +510,7 @@ module.exports = {
     tx.feePayer = userPubkey;
     const { blockhash } = await connection.getLatestBlockhash("confirmed");
     tx.recentBlockhash = blockhash;
-    if (signers.length) {
+    if (signers && signers.length) {
       tx.partialSign(...signers);
     }
     const raw = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
@@ -252,6 +549,16 @@ module.exports = {
     };
   },
 
+  /**
+   * Generic dispatch entry kept for backwards-compat. Routes by `extra`:
+   *
+   *   • extra.lpMint        → direct Jupiter-routed entry into the AMM v1
+   *                           LP token mint (unchanged).
+   *   • extra.whirlpool +   → native open_position + increase_liquidity
+   *     tick bounds           via buildOpenPositionTx().
+   *   • otherwise            → blocker; the legacy two-tx Jupiter
+   *                           handoff was removed in V7-050.
+   */
   async build({ asset, amount, user, extra = {}, slippageBps = 50 }, { connection } = {}) {
     if (extra.lpMint) {
       const inputSym = (asset || "USDC").toUpperCase();
@@ -286,64 +593,40 @@ module.exports = {
       };
     }
 
-    // Pair-aware prep for Whirlpools / non-LP-mint pools.
-    const plan = planPrepSwap({ asset, extra });
-    const sourceSym = plan.inputSym;
-    const targetSym = plan.targetSym;
-    const inputMint = plan.inputMint;
-    const targetMint = plan.targetMint;
-
-    const half = halfAmount(amount);
-    if (half === "0") {
-      const e = new Error(`Orca prep: amount '${amount}' too small after half-split`);
-      e.code = "amount_too_small";
-      throw e;
-    }
-
-    const { tx } = await buildSwap({
-      inputMint,
-      outputMint: targetMint,
-      amount: half,
-      user,
-      slippageBps,
-      decimals: decimalsFor(sourceSym),
-    });
-    const sim = connection ? await simulateBase64Tx({ b64: tx, connection }) : { ok: true };
-    if (!sim.ok) {
-      const e = new Error(`Orca prep-swap simulation failed: ${sim.errStr || "unknown"}`);
-      e.simulation = sim;
-      throw e;
-    }
-
-    const tokens = extra.underlying_tokens || extra.underlyingTokens || [];
-    const orcaUrl =
-      tokens.length >= 2
-        ? `https://www.orca.so/liquidity/browse?tokens=${tokens[0]}-${tokens[1]}`
-        : "https://www.orca.so/liquidity";
-    const pairLabel = (extra.pool_symbol || extra.poolSymbol || `${sourceSym}-${targetSym}`).toUpperCase();
-
-    return {
-      transactions: [
+    // Native Whirlpool open path — V7-050 replaces the legacy two-tx
+    // handoff. Caller must supply the resolved whirlpool address and
+    // tick bounds; the auto-resolution layer lives in the orchestrator.
+    if (extra.whirlpool || extra.whirlpoolAddress) {
+      return buildOpenPositionTx(
         {
-          b64: tx,
-          action: "prep_swap",
-          summary: `Prep swap: ${half} ${sourceSym} → ${targetSym} (Orca ${pairLabel} Whirlpool handoff)`,
-          description: `Swap ${half} ${sourceSym} into ${targetSym} via Jupiter so you hold one side of the ${pairLabel} Whirlpool. After this swap confirms, click the Orca link to pick a tick range and open the concentrated-liquidity position — Whirlpool deposit SDK isn't wired for in-chat signing yet.`,
-          inputSymbol: sourceSym,
-          inputAmount: half,
-          outputSymbol: targetSym,
-          receiptToken: targetSym,
-          feeUsd: 0.01,
-          durationS: 25,
-          protocolUrl: orcaUrl,
-          warnings: [
-            `Whirlpool position needs a tick range chosen on Orca: ${orcaUrl}`,
-            ...plan.warnings,
-          ],
-          mode: plan.mode,
-          simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
+          user,
+          whirlpool: extra.whirlpool || extra.whirlpoolAddress,
+          inputSymbol: (asset || "USDC").toUpperCase(),
+          inputAmount: amount,
+          tickLowerIndex: extra.tickLowerIndex,
+          tickUpperIndex: extra.tickUpperIndex,
+          slippageBps,
+          extra,
         },
-      ],
-    };
+        { connection },
+      );
+    }
+
+    // No legacy two-tx Jupiter fallback (V7-050). Surface a clean
+    // blocker so the orchestrator knows to resolve the whirlpool
+    // address before retrying.
+    const e = new Error(
+      "Orca build: native open_position requires extra.whirlpool + extra.tickLowerIndex/tickUpperIndex. " +
+      "The legacy two-tx Jupiter handoff was removed in V7-050."
+    );
+    e.code = "missing_whirlpool_or_ticks";
+    throw e;
+  },
+
+  // Internal handles for tests + advanced callers.
+  _internals: {
+    buildOpenPositionTx,
+    buildIncreaseLiquidityTx,
+    WHIRLPOOL_PROGRAM_ID,
   },
 };

@@ -118,6 +118,12 @@ class ExecutionStepV3:
     # any submitted-flip where these diverge.
     simulated_calldata_hash: str | None = None
     broadcast_calldata_hash: str | None = None
+    # V7-047 — 30s re-sim freshness window. POSIX timestamp stamped by the
+    # simulator when `simulated_calldata_hash` is populated. The broadcast
+    # path consults this to decide whether the cached sim is stale and must
+    # be refreshed before signing. Optional default-None keeps every legacy
+    # construction path (and the V7-001 / V7-010 wire-ups) backwards-compat.
+    simulated_at: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -158,6 +164,8 @@ class ExecutionStepV3:
             data["simulated_calldata_hash"] = self.simulated_calldata_hash
         if self.broadcast_calldata_hash is not None:
             data["broadcast_calldata_hash"] = self.broadcast_calldata_hash
+        if self.simulated_at is not None:
+            data["simulated_at"] = self.simulated_at
         return data
 
 
