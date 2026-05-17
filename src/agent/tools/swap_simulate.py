@@ -38,6 +38,15 @@ _MAJOR_CG_IDS = {
 
 
 async def _get_usd_price(ctx, symbol: str) -> float | None:
+    """Look up live USD price for a token symbol.
+
+    F09 NULL_ROUTE class — return None instead of a fabricated DexScreener
+    single-result quote when the token isn't in our curated registry AND
+    DexScreener returns no source with at least $100k 24h liquidity. Without
+    this gate, swapping the spec's unregistered "XYZ123" through the agent
+    surfaces a confident-looking "1 XYZ ≈ 0.613490 USDC" rate that the user
+    might sign on faith.
+    """
     sym = symbol.upper()
     cg_id = _MAJOR_CG_IDS.get(sym)
     price_client = getattr(ctx.services, "price", None)
@@ -50,16 +59,30 @@ async def _get_usd_price(ctx, symbol: str) -> float | None:
                     return float(p)
         except Exception:
             pass
-    # Fallback to DexScreener for less-known tokens
+    # Fallback to DexScreener for less-known tokens. Require at least one
+    # source with $100k 24h liquidity OR two sources agreeing within 2% so
+    # we never quote an unregistered token from a single thin pool.
     dex = getattr(ctx.services, "dexscreener", None)
     if dex is not None:
         try:
             results = await dex.search_tokens(sym, limit=5)
             if results:
                 results.sort(key=lambda x: float(x.get("liquidity", 0) or 0), reverse=True)
-                p = float(results[0].get("priceUsd", 0) or 0)
-                if p > 0:
+                top = results[0]
+                top_liq = float(top.get("liquidity", 0) or 0)
+                p = float(top.get("priceUsd", 0) or 0)
+                if p <= 0:
+                    return None
+                if top_liq >= 100_000:
                     return p
+                # Single thin source — require corroboration from a second
+                # source priced within 2% before trusting.
+                if len(results) >= 2:
+                    p2 = float(results[1].get("priceUsd", 0) or 0)
+                    if p2 > 0 and abs(p - p2) / max(p, p2) < 0.02:
+                        return p
+                # NULL_ROUTE — token has no credible liquidity source.
+                return None
         except Exception:
             pass
     return None
