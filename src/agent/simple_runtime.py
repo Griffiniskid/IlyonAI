@@ -1642,7 +1642,9 @@ _AAVE_SUPPLY_RE = re.compile(
     r"(?P<amount>[\d,]+(?:\.\d+)?)\s*"
     r"(?P<asset>[A-Za-z]{2,10})"
     r"(?:.*?(?:to|on|via|into)\s+aave(?:\s*v3)?)?"
-    r"(?:.*?on\s+(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche))?",
+    r"(?:.*?on\s+(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche|"
+    r"bsc|bnb|solana|sol|linea|zksync|scroll|mantle|blast|gnosis|celo|sonic|"
+    r"berachain|unichain))?",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -2263,9 +2265,16 @@ def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
         return None
     match = _AAVE_SUPPLY_RE.search(message)
     if not match:
-        # Fallback: 'execute aave (v3) usdc supply 100 on base'
+        # Fallback: 'execute aave (v3) usdc supply 100 on base'.
+        # F02 fix: capture solana/bsc/etc too so unsupported (chain, protocol)
+        # combos reach build_yield_execution_plan's protocol-chain matrix
+        # instead of silently defaulting to ethereum.
         alt = re.search(
-            r"aave(?:\s*v3)?[^\d\n]*?(?P<asset>[A-Za-z]{2,10})\s+(?:supply|deposit|lend)\s+(?P<amount>[\d,]+(?:\.\d+)?)(?:\s+on\s+(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche))?",
+            r"aave(?:\s*v3)?[^\d\n]*?(?P<asset>[A-Za-z]{2,10})\s+"
+            r"(?:supply|deposit|lend)\s+(?P<amount>[\d,]+(?:\.\d+)?)"
+            r"(?:\s+on\s+(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche|"
+            r"bsc|bnb|solana|sol|linea|zksync|scroll|mantle|blast|gnosis|celo|sonic|"
+            r"berachain|unichain))?",
             message,
             re.IGNORECASE | re.DOTALL,
         )

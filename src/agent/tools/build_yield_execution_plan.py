@@ -307,6 +307,86 @@ async def build_yield_execution_plan(
             "missing_wallet",
             "Connect a wallet before requesting an execution plan; the plan needs a destination address.",
         )
+    # F02 protocol-chain support matrix — reject combos like aave-v3 on
+    # solana, marinade on ethereum, lido on bsc before they reach the
+    # adapter layer (which would silently route via Enso fallback or
+    # raise a leaky 422). Emit typed UNSUPPORTED_CHAIN blocker so the
+    # frontend renders a real recovery card.
+    _EVM_ONLY_PROTOS = {
+        "aave-v3", "aave", "compound-v3", "compound", "morpho-blue", "morpho",
+        "spark", "sparklend", "yearn-finance", "yearn", "lido", "rocket-pool",
+        "ether.fi", "etherfi", "renzo", "swell", "frax-ether", "frax",
+        "mantle-staked-ether", "kelp", "uniswap-v3", "uniswap-v2", "uniswap-v4",
+        "uniswap", "pancakeswap-amm-v3", "pancakeswap", "balancer-v3",
+        "balancer", "curve-dex", "curve", "convex", "pendle", "stargate",
+        "gmx", "velodrome", "aerodrome", "aerodrome-slipstream",
+        "moonwell", "stader", "sky-savings-rate", "sky",
+    }
+    _SOLANA_ONLY_PROTOS = {
+        "raydium", "raydium-amm", "raydium-clmm", "raydium-cp",
+        "orca", "orca-dex", "orca-whirlpools",
+        "meteora", "meteora-dlmm", "meteora-vault", "meteora-amm",
+        "kamino", "kamino-liquidity", "kamino-lend", "kamino-vault",
+        "marinade", "marinade-liquid-staking", "marinade-native",
+        "jito", "jito-liquid-staking",
+        "sanctum", "sanctum-infinity", "sanctum-liquid-staking",
+        "jlp", "jupiter-perps", "jupiter-perpetuals", "jupiter-perpetuals-lp",
+        "drift", "phoenix", "openbook", "gmtrade",
+    }
+    proto_lc = (protocol or "").lower()
+    if proto_lc in _EVM_ONLY_PROTOS and is_solana_chain:
+        plan = ExecutionPlanV3.new(
+            title=f"{humanize_protocol(protocol)} {humanize_action(action)}",
+            summary=(f"{humanize_protocol(protocol)} doesn't run on Solana. "
+                     f"{humanize_protocol(protocol)} is an EVM protocol — try Ethereum, "
+                     f"Base, Arbitrum, Optimism, Polygon, BSC, or Avalanche."),
+        )
+        plan.add_blocker(ExecutionBlocker(
+            code="unsupported_chain",
+            severity="blocker",
+            title=f"{humanize_protocol(protocol)} not deployed on Solana",
+            detail=(f"{humanize_protocol(protocol)} is an EVM-only protocol. It does not "
+                    f"exist on Solana. Solana lending equivalents: Kamino Lend, MarginFi. "
+                    f"Solana LP equivalents: Raydium, Orca, Meteora."),
+            affected_step_ids=[],
+            cta=f"Pick an EVM chain (e.g. Ethereum, Base) for {humanize_protocol(protocol)}, "
+                f"or switch to a Solana-native protocol (Kamino, Raydium, Orca, Marinade).",
+        ))
+        plan_dict = plan.to_dict()
+        plan_dict["recovery"] = Recovery(
+            action=RecoveryAction.ASK_USER,
+            posture=f"{humanize_protocol(protocol)} isn't deployed on Solana",
+            buttons=[f"Use Kamino on Solana", f"Use {humanize_protocol(protocol)} on Base",
+                     f"Use {humanize_protocol(protocol)} on Ethereum", "Cancel"],
+            rationale="EVM protocol on Solana chain — no on-chain deployment exists.",
+        ).to_dict()
+        return ok_envelope(data={"plan": plan_dict}, card_type="execution_plan_v3", card_payload=plan_dict)
+    if proto_lc in _SOLANA_ONLY_PROTOS and is_evm_chain:
+        plan = ExecutionPlanV3.new(
+            title=f"{humanize_protocol(protocol)} {humanize_action(action)}",
+            summary=(f"{humanize_protocol(protocol)} doesn't run on {chain.title()}. "
+                     f"{humanize_protocol(protocol)} is a Solana-native protocol."),
+        )
+        plan.add_blocker(ExecutionBlocker(
+            code="unsupported_chain",
+            severity="blocker",
+            title=f"{humanize_protocol(protocol)} not deployed on {chain.title()}",
+            detail=(f"{humanize_protocol(protocol)} is a Solana-only protocol. EVM lending "
+                    f"equivalents: Aave V3, Compound V3, Morpho Blue. EVM LP equivalents: "
+                    f"Uniswap V3, Balancer, Curve."),
+            affected_step_ids=[],
+            cta=f"Switch to Solana for {humanize_protocol(protocol)}, or pick an EVM-native "
+                f"protocol (Aave V3, Compound, Morpho) for {chain.title()}.",
+        ))
+        plan_dict = plan.to_dict()
+        plan_dict["recovery"] = Recovery(
+            action=RecoveryAction.ASK_USER,
+            posture=f"{humanize_protocol(protocol)} is Solana-only",
+            buttons=[f"Use {humanize_protocol(protocol)} on Solana",
+                     f"Use Aave V3 on {chain.title()}", "Cancel"],
+            rationale="Solana-only protocol on EVM chain — no on-chain deployment exists.",
+        ).to_dict()
+        return ok_envelope(data={"plan": plan_dict}, card_type="execution_plan_v3", card_payload=plan_dict)
     # If the user's wallet still doesn't match the target chain, emit a
     # structured blocker instead of running the adapter (which would raise
     # an Enso 422 with a leaky URL in the detail).
