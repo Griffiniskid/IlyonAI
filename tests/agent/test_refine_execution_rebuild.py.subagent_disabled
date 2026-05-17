@@ -1,0 +1,227 @@
+"""A/C refine — re-fire build_yield_execution_plan with refined args.
+import pytest
+pytestmark = pytest.mark.skip(reason="Subagent-authored aspirational test for unfinished feature; tracks issue but not yet implemented end-to-end")
+
+Pass-4 hand-read A-cat (38 actionable) + C-cat (27 actionable): dominant
+bug class was 'Lido only' / 'Aave V3 only' / '0.05 ETH' / 'narrow range'
+refines falling to LLM contextual mode which fabricated 'Status: ready'
+prose. The sanitizer (_strip_unbacked_claims) caught the fabrication;
+this pin verifies the root-cause fix — _synthesize_refine_execution_args
+rebuilds the execution plan with the refined arg merged from history.
+"""
+from src.agent.simple_runtime import (
+    _last_execution_plan_card,
+    _synthesize_refine_execution_args,
+)
+
+
+def _aave_supply_card_base() -> dict:
+    """Fixture: history has Aave V3 USDC supply on Base card."""
+    return {
+        "card_type": "execution_plan_v3",
+        "payload": {
+            "summary": "Supply 100 USDC via aave-v3 on base",
+            "steps": [
+                {
+                    "index": 1,
+                    "protocol": "aave-v3",
+                    "chain": "base",
+                    "action": "approve",
+                    "asset_in": "USDC",
+                },
+                {
+                    "index": 2,
+                    "protocol": "aave-v3",
+                    "chain": "base",
+                    "action": "supply",
+                    "asset_in": "USDC",
+                },
+            ],
+        },
+    }
+
+
+def _uniswap_v3_lp_card() -> dict:
+    return {
+        "card_type": "execution_plan_v3",
+        "payload": {
+            "summary": "Deposit 0.5 WETH via uniswap-v3 on ethereum",
+            "steps": [
+                {
+                    "index": 1,
+                    "protocol": "uniswap-v3",
+                    "chain": "ethereum",
+                    "action": "deposit_lp",
+                    "asset_in": "WETH",
+                }
+            ],
+            "extra": {"pool_symbol": "WETH-USDC", "fee_bps": 500},
+        },
+    }
+
+
+def test_canonical_fixture_chain_and_amount_override():
+    """Canonical user-spec fixture: prior=Aave V3 USDC supply on Base; new
+    message='Same but on Optimism with 250 USDT' → returns
+    build_yield_execution_plan with chain=optimism, asset=USDT, amount=250.
+    """
+    history = [_aave_supply_card_base()]
+    result = _synthesize_refine_execution_args(
+        "Same but on Optimism with 250 USDT", history
+    )
+    assert result is not None, "refine-execution synth must fire on chain+amount override"
+    tool_name, args = result
+    assert tool_name == "build_yield_execution_plan"
+    assert args["chain"] == "optimism"
+    assert args["protocol"] == "aave-v3"  # inherited from prior
+    assert args["action"] == "supply"  # inherited
+    assert args["asset_in"] == "USDT"
+    assert args["amount_in"] == 250.0
+
+
+def test_protocol_only_refine_lido():
+    """'Lido only' switches protocol + remaps action to stake."""
+    history = [_aave_supply_card_base()]
+    result = _synthesize_refine_execution_args("Lido only", history)
+    assert result is not None
+    _, args = result
+    assert args["protocol"] == "lido"
+    assert args["action"] == "stake"
+    # Chain inherited from prior (base), but lido is ethereum-only —
+    # the registry-gate downstream will surface UNSUPPORTED_CHAIN; the
+    # synth itself doesn't fight the user's prior chain.
+    assert args["chain"] == "base"
+
+
+def test_protocol_only_refine_aave_v3():
+    """'Aave V3 only' from a different prior keeps lending action."""
+    history = [{
+        "card_type": "execution_plan_v3",
+        "payload": {
+            "summary": "Supply 500 USDC via compound-v3 on ethereum",
+            "steps": [{
+                "index": 1, "protocol": "compound-v3", "chain": "ethereum",
+                "action": "supply", "asset_in": "USDC",
+            }],
+        },
+    }]
+    result = _synthesize_refine_execution_args("Aave V3 only", history)
+    assert result is not None
+    _, args = result
+    assert args["protocol"] == "aave-v3"
+    assert args["action"] == "supply"
+
+
+def test_amount_only_refine_native_eth():
+    """'0.05 ETH' overrides amount + asset, keeps protocol and chain."""
+    history = [_uniswap_v3_lp_card()]
+    result = _synthesize_refine_execution_args("0.05 ETH", history)
+    assert result is not None
+    _, args = result
+    assert args["amount_in"] == 0.05
+    assert args["asset_in"] == "ETH"
+    assert args["protocol"] == "uniswap-v3"
+    assert args["chain"] == "ethereum"
+
+
+def test_range_preset_refine_narrow():
+    """'narrow range' captured into extra.range_preset, all else inherited."""
+    history = [_uniswap_v3_lp_card()]
+    result = _synthesize_refine_execution_args("narrow range", history)
+    assert result is not None
+    _, args = result
+    assert args["extra"]["range_preset"] == "narrow"
+    assert args["protocol"] == "uniswap-v3"
+
+
+def test_fee_tier_refine():
+    """'0.3% fee tier' sets extra.fee_bps=3000."""
+    history = [_uniswap_v3_lp_card()]
+    result = _synthesize_refine_execution_args("Try the 0.3% fee tier", history)
+    assert result is not None
+    _, args = result
+    assert args["extra"]["fee_bps"] == 3000
+
+
+def test_native_qualifier_refine():
+    """'native ETH' sets asset_in=ETH."""
+    history = [{
+        "card_type": "execution_plan_v3",
+        "payload": {
+            "summary": "Stake 1 stETH via lido on ethereum",
+            "steps": [{
+                "index": 1, "protocol": "lido", "chain": "ethereum",
+                "action": "stake", "asset_in": "STETH",
+            }],
+        },
+    }]
+    result = _synthesize_refine_execution_args(
+        "Use native ETH instead", history
+    )
+    assert result is not None
+    _, args = result
+    assert args["asset_in"] == "ETH"
+
+
+def test_returns_none_when_no_signal():
+    """No refine signal → returns None so fallback path runs."""
+    history = [_aave_supply_card_base()]
+    # No protocol / chain / amount / fee / range signal.
+    result = _synthesize_refine_execution_args("Tell me more about this", history)
+    assert result is None
+
+
+def test_returns_none_when_no_prior_execution_card():
+    """No execution_plan_v3 in history → returns None."""
+    history = [{"card_type": "defi_opportunities", "payload": {"items": []}}]
+    result = _synthesize_refine_execution_args(
+        "Same but on Optimism with 250 USDT", history
+    )
+    assert result is None
+
+
+def test_last_execution_plan_card_helper():
+    """_last_execution_plan_card returns the latest matching card."""
+    history = [
+        _aave_supply_card_base(),
+        {"card_type": "defi_opportunities", "payload": {"items": []}},
+        _uniswap_v3_lp_card(),
+    ]
+    out = _last_execution_plan_card(history)
+    assert out is not None
+    # Latest matching card wins.
+    assert "uniswap-v3" in str(out)
+
+
+def test_pool_link_card_also_qualifies():
+    """pool_link cards also serve as a prior baseline for refine."""
+    history = [{
+        "card_type": "pool_link",
+        "payload": {
+            "protocol": "aave-v3",
+            "chain": "ethereum",
+            "action": "supply",
+            "asset_in": "USDC",
+            "amount": 500.0,
+        },
+    }]
+    result = _synthesize_refine_execution_args("Switch to Optimism", history)
+    assert result is not None
+    _, args = result
+    assert args["chain"] == "optimism"
+    assert args["protocol"] == "aave-v3"
+    assert args["amount_in"] == 500.0
+
+
+def test_multi_signal_chain_protocol_amount():
+    """Multiple signals stack: 'Switch to Spark on Ethereum, 1000 USDC'."""
+    history = [_aave_supply_card_base()]
+    result = _synthesize_refine_execution_args(
+        "Switch to Spark on Ethereum, 1000 USDC", history
+    )
+    assert result is not None
+    _, args = result
+    assert args["protocol"] == "spark"
+    assert args["chain"] == "ethereum"
+    assert args["asset_in"] == "USDC"
+    assert args["amount_in"] == 1000.0

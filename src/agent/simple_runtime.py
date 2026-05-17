@@ -1978,6 +1978,303 @@ def _detect_enso_vault_deposit(message: str) -> tuple[str, dict] | None:
     }
 
 
+# ── §7 S10: pre-deposited LST unwrap chain ─────────────────────────────────
+# "Use my 0.05 stETH to deposit to Aave V3" — Aave V3 doesn't accept stETH
+# directly (only WETH for the ETH market), so we (1) swap stETH→WETH on the
+# Curve stETH-ETH pool, then (2) supply WETH into Aave V3. Emit a multi-step
+# plan via build_yield_execution_plan with extra.prep_swap so the adapter
+# layer builds the Curve calldata and chains it before the Aave supply.
+_LST_UNWRAP_TOKENS = frozenset({
+    "STETH", "RETH", "EETH", "EZETH", "RSETH", "WEETH", "METH",
+    "FRXETH", "SFRXETH",
+})
+_LST_TO_TARGET = {
+    "STETH":  ("WETH", "curve"),
+    "RETH":   ("WETH", "curve"),
+    "EETH":   ("WETH", "curve"),
+    "WEETH":  ("WETH", "curve"),
+    "EZETH":  ("WETH", "balancer"),
+    "RSETH":  ("WETH", "balancer"),
+    "METH":   ("WETH", "curve"),
+    "FRXETH": ("WETH", "curve"),
+    "SFRXETH":("FRXETH", "curve"),  # two-hop: sfrxETH→frxETH→WETH
+}
+_LST_UNWRAP_CHAIN_RE = re.compile(
+    r"^\s*(?:use|take|with)\s+(?:my\s+)?"
+    r"(?P<amount>[\d,]+(?:\.\d+)?)\s+"
+    r"(?P<lst>[A-Za-z]{3,10})\s+"
+    r"(?:to|and|then)\s+"
+    r"(?:deposit|supply|lend|stake|put|provide)\s+"
+    r"(?:it\s+|them\s+)?"
+    r"(?:to|into|on|via|onto|with|in)\s+"
+    r"(?P<rest>.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_lst_unwrap_chain(
+    message: str, history_cards: list[dict] | None = None
+) -> tuple[str, dict] | None:
+    """Match 'Use my 0.05 stETH to deposit to Aave V3' → prep_swap stETH→WETH
+    on Curve, then Aave V3 WETH supply.
+    """
+    m = _LST_UNWRAP_CHAIN_RE.search(message)
+    if not m:
+        return None
+    lst = m.group("lst").upper()
+    if lst not in _LST_UNWRAP_TOKENS:
+        return None
+    rest = m.group("rest")
+    proto_match = _ENSO_PROTOS_RE.search(rest)
+    if not proto_match:
+        return None
+    slug = _enso_normalize_slug(proto_match.group(1))
+    chain_match = _ENSO_CHAINS_RE.search(rest)
+    chain = (chain_match.group(1).lower() if chain_match else "ethereum")
+    if chain == "bnb":
+        chain = "bsc"
+    elif chain == "sol":
+        chain = "solana"
+    target_token, dex = _LST_TO_TARGET[lst]
+    amount = m.group("amount").replace(",", "")
+    return "build_yield_execution_plan", {
+        "chain": chain,
+        "protocol": slug,
+        "action": "supply",
+        "asset_in": target_token,
+        "amount_in": amount,
+        "extra": {
+            "prep_swap": [(lst, target_token, dex)],
+            "source_token": lst,
+            "source_amount": amount,
+        },
+    }
+
+
+# ── §7 S11: NFT-locked LP refinance close+reopen ───────────────────────────
+# "Refinance my Uniswap V3 USDC-WETH position 12345 with tighter range" —
+# (1) decreaseLiquidity(positionId, 100%) + collect + burn the old NFT,
+# (2) mint a new V3 NFT with the refined range.
+_V3_REFINANCE_RE = re.compile(
+    r"^\s*(?:refinance|reposition|reset)\s+"
+    r"(?:my\s+|the\s+)?"
+    r"(?P<proto>uniswap[\s-]?v3|pancake(?:swap)?[\s-]?v3|sushi(?:swap)?[\s-]?v3|"
+    r"aerodrome[\s-]?slipstream|aerodrome[\s-]?cl|velodrome[\s-]?slipstream|"
+    r"velodrome[\s-]?cl)\s+"
+    r"(?P<pair>[A-Za-z][A-Za-z0-9]{1,9}[/-][A-Za-z][A-Za-z0-9]{1,9})\s+"
+    r"position\s+(?P<token_id>\d+)"
+    r"(?:\s+with\s+(?:a\s+)?(?P<range_kind>tighter|wider|narrower|broader|fresh|new)?\s*range)?"
+    r"(?:\s+(?P<range_lower>[\d.]+)\s*(?:-|to)\s*(?P<range_upper>[\d.]+))?"
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_v3_nft_refinance(message: str) -> tuple[str, dict] | None:
+    """Match 'Refinance my Uniswap V3 USDC-WETH position 12345 with tighter
+    range' → close + reopen with refined range."""
+    m = _V3_REFINANCE_RE.search(message)
+    if not m:
+        return None
+    proto_raw = re.sub(r"\s+", "-", m.group("proto").lower())
+    proto_map = {
+        "uniswap-v3": "uniswap-v3", "uniswapv3": "uniswap-v3",
+        "pancake-v3": "pancakeswap-amm-v3", "pancakev3": "pancakeswap-amm-v3",
+        "pancakeswap-v3": "pancakeswap-amm-v3",
+        "sushi-v3": "sushiswap", "sushiswap-v3": "sushiswap",
+        "aerodrome-slipstream": "aerodrome-slipstream",
+        "aerodrome-cl": "aerodrome-slipstream",
+        "velodrome-slipstream": "velodrome-slipstream",
+        "velodrome-cl": "velodrome-slipstream",
+    }
+    slug = proto_map.get(proto_raw, proto_raw)
+    pair = m.group("pair").upper().replace("/", "-")
+    sides = pair.split("-")
+    if len(sides) != 2:
+        return None
+    token_id = m.group("token_id")
+    chain_raw = (m.group("chain") or "").lower()
+    if not chain_raw:
+        chain_raw = {
+            "aerodrome-slipstream": "base",
+            "velodrome-slipstream": "optimism",
+            "pancakeswap-amm-v3": "bsc",
+        }.get(slug, "ethereum")
+    if chain_raw == "bnb":
+        chain_raw = "bsc"
+    range_lower = m.group("range_lower")
+    range_upper = m.group("range_upper")
+    range_kind = (m.group("range_kind") or "").lower() or None
+    extra: dict = {
+        "refinance": True,
+        "token_id": token_id,
+        "pool_symbol": pair,
+        "token_a": sides[0],
+        "token_b": sides[1],
+        "action": "refinance",
+    }
+    if range_lower and range_upper:
+        try:
+            extra["new_range_lower"] = float(range_lower)
+            extra["new_range_upper"] = float(range_upper)
+        except (TypeError, ValueError):
+            pass
+    if range_kind:
+        extra["range_kind"] = range_kind
+    return "build_yield_execution_plan", {
+        "chain": chain_raw,
+        "protocol": slug,
+        "action": "refinance",
+        "asset_in": sides[0],
+        "amount_in": 0,  # full position close; adapter reads on-chain
+        "extra": extra,
+    }
+
+
+# ── §7 S12: claim-and-compound ─────────────────────────────────────────────
+# "Claim my Aave rewards and re-stake into stkAAVE" → (1) Aave Incentives
+# Controller claimRewards, (2) stake the AAVE into stkAAVE staking module.
+_CLAIM_COMPOUND_RE = re.compile(
+    r"^\s*claim\s+(?:my\s+|the\s+)?"
+    r"(?P<proto>[A-Za-z][A-Za-z0-9\s-]{1,40}?)\s+"
+    r"(?:rewards?|incentives?|emissions?|yield)\s+"
+    r"(?:and\s+)?"
+    r"(?P<verb>re-?stake|compound|supply\s+back|restake|deposit\s+back|"
+    r"reinvest|put\s+back|stake\s+back)"
+    r"(?:\s+into\s+(?P<target>[A-Za-z][A-Za-z0-9-]+))?"
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+_CLAIM_COMPOUND_PROTOS = {
+    "aave": ("aave-v3", "AAVE", "stkaave"),
+    "aave v3": ("aave-v3", "AAVE", "stkaave"),
+    "aave-v3": ("aave-v3", "AAVE", "stkaave"),
+    "compound": ("compound-v3", "COMP", "compound-staking"),
+    "compound v3": ("compound-v3", "COMP", "compound-staking"),
+    "curve": ("curve", "CRV", "convex"),
+    "convex": ("convex", "CVX", "convex-staking"),
+    "pendle": ("pendle", "PENDLE", "vependle"),
+    "balancer": ("balancer-v2", "BAL", "aurabal"),
+    "aerodrome": ("aerodrome", "AERO", "aerodrome-veaero"),
+    "velodrome": ("velodrome", "VELO", "velodrome-vevelo"),
+    "gmx": ("gmx", "GMX", "gmx-staking"),
+    "frax": ("frax", "FXS", "vefxs"),
+    "morpho": ("morpho-blue", "MORPHO", "morpho-staking"),
+    "lido": ("lido", "LDO", "lido-staking"),
+    "uniswap": ("uniswap-v3", "UNI", "uniswap-staking"),
+}
+
+
+def _detect_claim_compound(message: str) -> tuple[str, dict] | None:
+    """Match 'Claim my Aave rewards and re-stake into stkAAVE' → 2-step plan."""
+    m = _CLAIM_COMPOUND_RE.search(message)
+    if not m:
+        return None
+    proto_raw = m.group("proto").strip().lower()
+    meta = _CLAIM_COMPOUND_PROTOS.get(proto_raw)
+    if meta is None:
+        first = proto_raw.split()[0]
+        meta = _CLAIM_COMPOUND_PROTOS.get(first)
+    if meta is None:
+        return None
+    proto_slug, reward_token, stake_target_default = meta
+    target_override = (m.group("target") or "").strip().lower() or None
+    stake_target = target_override or stake_target_default
+    chain_raw = (m.group("chain") or "").lower() or "ethereum"
+    if chain_raw == "bnb":
+        chain_raw = "bsc"
+    elif chain_raw == "sol":
+        chain_raw = "solana"
+    return "build_yield_execution_plan", {
+        "chain": chain_raw,
+        "protocol": proto_slug,
+        "action": "claim_compound",
+        "asset_in": reward_token,
+        "amount_in": 0,  # claim-all then compound full claimed amount
+        "extra": {
+            "claim_compound": True,
+            "reward_token": reward_token,
+            "stake_target": stake_target,
+            "verb": (m.group("verb") or "").lower().replace("-", "").replace(" ", ""),
+        },
+    }
+
+
+# ── §7 S14: V2 → V3 migrate ────────────────────────────────────────────────
+# "Migrate my Uniswap V2 USDC-WETH LP to V3 narrow range" — (1) V2
+# removeLiquidity, (2) compute USDC/WETH amounts, (3) V3 mint with range.
+_V2_TO_V3_MIGRATE_RE = re.compile(
+    r"^\s*(?:migrate|move|convert|upgrade|shift)\s+"
+    r"(?:my\s+|the\s+)?"
+    r"(?P<proto>uniswap[\s-]?v2|sushiswap(?:[\s-]?v2)?|pancake(?:swap)?[\s-]?v2)\s+"
+    r"(?P<pair>[A-Za-z][A-Za-z0-9]{1,9}[/-][A-Za-z][A-Za-z0-9]{1,9})\s+"
+    r"(?:lp|position|liquidity|pool)\s+"
+    r"(?:to|into|onto)\s+v3"
+    r"(?:\s+(?P<range_kind>narrow|tight|wide|broad|full)\s*(?:range)?)?"
+    r"(?:\s+(?P<range_lower>[\d.]+)\s*(?:-|to)\s*(?P<range_upper>[\d.]+))?"
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_v2_to_v3_migrate(message: str) -> tuple[str, dict] | None:
+    """Match 'Migrate my Uniswap V2 USDC-WETH LP to V3 narrow range'."""
+    m = _V2_TO_V3_MIGRATE_RE.search(message)
+    if not m:
+        return None
+    proto_raw = re.sub(r"\s+", "-", m.group("proto").lower())
+    v2_to_v3 = {
+        "uniswap-v2": ("uniswap-v2", "uniswap-v3"),
+        "uniswapv2":  ("uniswap-v2", "uniswap-v3"),
+        "sushiswap":  ("sushiswap", "sushiswap"),
+        "sushiswap-v2": ("sushiswap", "sushiswap"),
+        "pancake-v2": ("pancakeswap-amm-v2", "pancakeswap-amm-v3"),
+        "pancakev2":  ("pancakeswap-amm-v2", "pancakeswap-amm-v3"),
+        "pancakeswap-v2": ("pancakeswap-amm-v2", "pancakeswap-amm-v3"),
+    }
+    if proto_raw not in v2_to_v3:
+        return None
+    v2_proto, v3_proto = v2_to_v3[proto_raw]
+    pair = m.group("pair").upper().replace("/", "-")
+    sides = pair.split("-")
+    if len(sides) != 2:
+        return None
+    chain_raw = (m.group("chain") or "").lower()
+    if not chain_raw:
+        chain_raw = "bsc" if "pancake" in proto_raw else "ethereum"
+    if chain_raw == "bnb":
+        chain_raw = "bsc"
+    range_lower = m.group("range_lower")
+    range_upper = m.group("range_upper")
+    range_kind = (m.group("range_kind") or "").lower() or None
+    extra: dict = {
+        "migrate_v2_to_v3": True,
+        "v2_pool": pair,
+        "v2_protocol": v2_proto,
+        "v3_protocol": v3_proto,
+        "pool_symbol": pair,
+        "token_a": sides[0],
+        "token_b": sides[1],
+        "action": "migrate",
+    }
+    if range_lower and range_upper:
+        try:
+            extra["new_range_lower"] = float(range_lower)
+            extra["new_range_upper"] = float(range_upper)
+        except (TypeError, ValueError):
+            pass
+    if range_kind:
+        extra["range_kind"] = range_kind
+    return "build_yield_execution_plan", {
+        "chain": chain_raw,
+        "protocol": v3_proto,
+        "action": "migrate",
+        "asset_in": sides[0],
+        "amount_in": 0,  # full V2 position pull; adapter reads on-chain
+        "extra": extra,
+    }
+
+
 _EXECUTE_NAMED_PROTO_RE = re.compile(
     r"^\s*(?:execute|sign|do|run)\s+"
     r"(?:on\s+|with\s+|the\s+)?"
@@ -2366,6 +2663,115 @@ def _detect_execute_named_proto(message: str) -> tuple[str, dict] | None:
         "action": action,
         "asset_in": asset,
         "amount_in": amount,
+    }
+
+
+# ── S7 dust mixing multi-input LP detector ─────────────────────────────────
+# Matches: 'use 50 USDC + 50 USDT + 50 DAI to deposit to Curve 3pool'
+#          'deposit 30 USDC + 30 USDT into curve 3pool'
+#          '100 USDC + 100 DAI + 100 USDT into 3pool'
+# Captures up to 4 (amount, token) pairs joined by '+' / '&' / ',' / 'and',
+# the optional verb that introduces the pool, and the pool/protocol label.
+_MULTI_INPUT_LP_TOKEN = r"(?:[A-Za-z][A-Za-z0-9]{{1,9}})"
+_MULTI_INPUT_LP_PAIR_TEMPLATE = (
+    r"(?P<amt{i}>[\d,]+(?:\.\d+)?)\s*(?P<tok{i}>" + _MULTI_INPUT_LP_TOKEN + r")"
+)
+_MULTI_INPUT_LP_RE = re.compile(
+    r"(?:^|[\s,;])"
+    r"(?:(?:use|with|using|combine|mix)\s+)?"
+    + _MULTI_INPUT_LP_PAIR_TEMPLATE.format(i=1)
+    + r"\s*(?:\+|and|,|&)\s*"
+    + _MULTI_INPUT_LP_PAIR_TEMPLATE.format(i=2)
+    + r"(?:\s*(?:\+|and|,|&)\s*"
+    + _MULTI_INPUT_LP_PAIR_TEMPLATE.format(i=3)
+    + r")?"
+    + r"(?:\s*(?:\+|and|,|&)\s*"
+    + _MULTI_INPUT_LP_PAIR_TEMPLATE.format(i=4)
+    + r")?"
+    + r"\s+(?:to|into|in)\s+"
+    + r"(?:deposit\s+(?:to|into|in)\s+|add\s+(?:to|liquidity\s+to|into)\s+|"
+    + r"provide\s+(?:to|liquidity\s+to)\s+|supply\s+(?:to|into)\s+)?"
+    + r"(?:the\s+)?"
+    + r"(?P<protocol>(?:curve(?:[\s-]?(?:dex|finance|stable))?|balancer(?:[\s-]?v\d)?|"
+    + r"uniswap(?:[\s-]?v\d)?|aerodrome|velodrome|sushiswap|pancakeswap(?:[\s-]?v\d)?|"
+    + r"sanctum|stargate|3pool|tricrypto|tricrypto3|atricrypto3|2pool|4pool|crvusd[\s-]?\w+))"
+    + r"(?:\s+(?P<pool_extra>[A-Za-z0-9][\w.-]*))?"
+    + r"(?:\s+on\s+(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche|"
+    + r"bsc|bnb|solana|sol|linea|zksync|scroll|mantle|blast|gnosis|celo|sonic|"
+    + r"berachain|unichain))?",
+    re.IGNORECASE,
+)
+
+
+def _detect_multi_input_lp(message: str) -> tuple[str, dict] | None:
+    """S7 — multi-token LP deposit detector.
+
+    Matches 'use 50 USDC + 50 USDT + 50 DAI to deposit to Curve 3pool' and
+    returns a build_yield_execution_plan call with extra.input_tokens set so
+    the adapter (Curve, Balancer, Sanctum, etc.) can split per-coin amounts.
+
+    The primary asset is the first captured token; amount_in is the SUM of
+    all per-token amounts so downstream balance/sizing checks remain coherent.
+    """
+    m = _MULTI_INPUT_LP_RE.search(message)
+    if not m:
+        return None
+    pairs: list[tuple[str, str]] = []
+    for i in (1, 2, 3, 4):
+        amt = m.groupdict().get(f"amt{i}")
+        tok = m.groupdict().get(f"tok{i}")
+        if not amt or not tok:
+            continue
+        tok_u = tok.upper()
+        # Reject common verbs/articles caught as bare tokens by the loose
+        # capture group above. Real token symbols are 2-10 alphanumerics.
+        if tok_u in {
+            "TO", "INTO", "IN", "ON", "OF", "AND", "USE", "WITH", "USING",
+            "DEPOSIT", "ADD", "PROVIDE", "SUPPLY", "MIX", "COMBINE",
+            "THE", "A", "AN", "MY", "ALL", "ANY", "FROM",
+        }:
+            return None
+        pairs.append((tok_u, amt.replace(",", "")))
+    if len(pairs) < 2:
+        return None
+    primary_tok = pairs[0][0]
+    try:
+        total = sum(float(a) for _, a in pairs)
+    except ValueError:
+        return None
+    proto_raw = m.group("protocol").lower()
+    pool_extra = (m.groupdict().get("pool_extra") or "").lower()
+    # Pool-key heuristics — promote bare-pool tokens (3pool/tricrypto/2pool)
+    # to the canonical Curve protocol slug with pool_key set in extra.
+    pool_key: str | None = None
+    proto_out = proto_raw
+    bare_pools = {"3pool", "2pool", "4pool", "tricrypto", "tricrypto3", "atricrypto3"}
+    if proto_raw in bare_pools:
+        pool_key = proto_raw
+        proto_out = "curve"
+    elif pool_extra in bare_pools or pool_extra.startswith("crvusd"):
+        pool_key = pool_extra
+    chain_match = m.groupdict().get("chain")
+    chain = (chain_match or "ethereum").lower()
+    if chain == "avax":
+        chain = "avalanche"
+    elif chain == "bnb":
+        chain = "bsc"
+    elif chain == "sol":
+        chain = "solana"
+    extra: dict = {
+        "input_tokens": [(t, a) for t, a in pairs],
+        "action": "deposit_lp",
+    }
+    if pool_key:
+        extra["pool_key"] = pool_key
+    return "build_yield_execution_plan", {
+        "chain": chain,
+        "protocol": proto_out,
+        "action": "deposit_lp",
+        "asset_in": primary_tok,
+        "amount_in": str(total),
+        "extra": extra,
     }
 
 
@@ -4060,7 +4466,13 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
             },
         )
 
-    for detector in (_detect_cross_chain_then_yield, _detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_slipstream_lp, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_enso_vault_deposit, _detect_execute_named_proto, _detect_aave_supply, _detect_pendle_mint, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    # §7 S10/S11/S12/S14 detectors run BEFORE _detect_enso_vault_deposit so
+    # refinance/migrate/claim-compound/use-LST forms don't get swallowed by
+    # the generic 'deposit X TOKEN into PROTO' Enso path. _detect_lst_unwrap_chain
+    # accepts an optional history_cards arg but the runtime tuple invokes
+    # detectors with just (message); the lambda below normalises the signature.
+    _lst_unwrap = lambda m: _detect_lst_unwrap_chain(m, None)  # noqa: E731
+    for detector in (_detect_cross_chain_then_yield, _detect_v3_nft_refinance, _detect_v2_to_v3_migrate, _detect_claim_compound, _lst_unwrap, _detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_slipstream_lp, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_enso_vault_deposit, _detect_execute_named_proto, _detect_multi_input_lp, _detect_aave_supply, _detect_pendle_mint, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
@@ -5760,6 +6172,325 @@ def _synthesize_refine_search_args(
     return args
 
 
+_PROTO_REFINE_RE = re.compile(
+    r"\b(?:only|just|switch\s+to|use|with|via)\s+"
+    r"(?P<proto>lido|rocket[ -]?pool|rocketpool|ether[\.\-]?fi|etherfi|"
+    r"renzo|swell|frax(?:[ -]?ether)?|stader|mantle|kelp|"
+    r"aave(?:[ -]?v[23])?|compound(?:[ -]?v[23])?|"
+    r"spark(?:[ -]?protocol)?|spark[ -]?lending|"
+    r"morpho(?:[ -]?blue)?|metamorpho|"
+    r"yearn(?:[ -]?finance|[ -]?v[23])?|"
+    r"curve(?:[ -]?dex|[ -]?finance)?|"
+    r"balancer(?:[ -]?v[23])?|"
+    r"uniswap(?:[ -]?v[234])?|"
+    r"pancakeswap(?:[ -]?v[23])?|"
+    r"aerodrome(?:[ -]?slipstream|[ -]?cl)?|"
+    r"velodrome(?:[ -]?slipstream|[ -]?cl)?|"
+    r"sky(?:[ -]?lending)?|makerdao|"
+    r"jito|marinade|sanctum|kamino(?:[ -]?lend)?|"
+    r"raydium(?:[ -]?clmm|[ -]?amm|[ -]?cp)?|"
+    r"orca(?:[ -]?whirlpools|[ -]?clmm)?|"
+    r"meteora(?:[ -]?dlmm)?)"
+    r"(?:\s+only)?\b",
+    re.IGNORECASE,
+)
+_CHAIN_REFINE_RE = re.compile(
+    r"\b(?:on|in|via|switch\s+to|use)\s+"
+    r"(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|bnb|"
+    r"linea|scroll|mantle|blast|zksync|gnosis|celo|sonic|berachain|unichain|"
+    r"solana|sol)"
+    r"(?:\s+only|\s+instead)?\b",
+    re.IGNORECASE,
+)
+_FEE_TIER_REFINE_RE = re.compile(
+    r"\b(?P<pct>\d+(?:\.\d+)?)\s*%\s*(?:fee(?:\s*tier)?)?\b",
+    re.IGNORECASE,
+)
+_RANGE_REFINE_RE = re.compile(
+    r"\b(?P<range>narrow|balanced|wide|full)\s+range\b",
+    re.IGNORECASE,
+)
+_AMOUNT_NATIVE_REFINE_RE = re.compile(
+    r"\b(?P<amt>[\d,]+(?:\.\d+)?)\s+(?P<tok>[A-Za-z]{2,10})\b",
+)
+_AMOUNT_USD_REFINE_RE = re.compile(r"\$\s*(?P<usd>[\d,]+(?:\.\d+)?)")
+_NATIVE_QUALIFIER_RE = re.compile(
+    r"\bnative\s+(?P<tok>ETH|SOL|MATIC|BNB|AVAX|XDAI|CELO|FTM|S|HBAR)\b",
+    re.IGNORECASE,
+)
+
+# Refine-targeted noise tokens — these aren't asset names.
+_REFINE_NOISE_TOKS = {
+    "BPS", "FEE", "FEES", "BASIS", "POINT", "POINTS", "TIER",
+    "PERCENT", "PCT", "APY", "APR", "YIELD",
+    "RANGE", "NARROW", "BALANCED", "WIDE", "FULL",
+    "ONLY", "JUST", "INSTEAD", "AND", "OR", "WITH",
+}
+
+# Map refine-captured protocol slug to canonical form used by
+# build_yield_execution_plan + the capability-registry adapter gate.
+_REFINE_PROTO_NORM = {
+    "lido": "lido",
+    "rocket-pool": "rocket-pool", "rocketpool": "rocket-pool",
+    "ether.fi": "ether-fi", "etherfi": "ether-fi",
+    "renzo": "renzo", "swell": "swell",
+    "frax": "frax-ether", "frax-ether": "frax-ether",
+    "stader": "stader", "mantle": "mantle", "kelp": "kelp",
+    "aave": "aave-v3", "aave-v2": "aave-v2", "aave-v3": "aave-v3",
+    "compound": "compound-v3", "compound-v2": "compound-v2",
+    "compound-v3": "compound-v3",
+    "spark": "spark", "spark-protocol": "spark", "spark-lending": "spark",
+    "morpho": "morpho-blue", "morpho-blue": "morpho-blue",
+    "metamorpho": "metamorpho",
+    "yearn": "yearn-finance", "yearn-finance": "yearn-finance",
+    "yearn-v2": "yearn-v2", "yearn-v3": "yearn-v3",
+    "curve": "curve-dex", "curve-dex": "curve-dex",
+    "curve-finance": "curve-dex",
+    "balancer": "balancer-v2", "balancer-v2": "balancer-v2",
+    "balancer-v3": "balancer-v3",
+    "uniswap": "uniswap-v3", "uniswap-v2": "uniswap-v2",
+    "uniswap-v3": "uniswap-v3", "uniswap-v4": "uniswap-v4",
+    "pancakeswap": "pancakeswap-v3", "pancakeswap-v2": "pancakeswap-v2",
+    "pancakeswap-v3": "pancakeswap-v3",
+    "aerodrome": "aerodrome", "aerodrome-slipstream": "aerodrome-slipstream",
+    "aerodrome-cl": "aerodrome-slipstream",
+    "velodrome": "velodrome", "velodrome-slipstream": "velodrome-cl",
+    "velodrome-cl": "velodrome-cl",
+    "sky": "sky", "sky-lending": "sky", "makerdao": "sky",
+    "jito": "jito", "marinade": "marinade", "sanctum": "sanctum",
+    "kamino": "kamino", "kamino-lend": "kamino-lend",
+    "raydium": "raydium-amm", "raydium-clmm": "raydium-clmm",
+    "raydium-amm": "raydium-amm", "raydium-cp": "raydium-cp",
+    "orca": "orca-whirlpools", "orca-whirlpools": "orca-whirlpools",
+    "orca-clmm": "orca-clmm",
+    "meteora": "meteora-dlmm", "meteora-dlmm": "meteora-dlmm",
+}
+
+
+def _last_execution_plan_card(history_cards: list[dict] | None) -> dict | None:
+    """Return the most recent execution_plan_v3 / pool_link / pool_deposit_v3
+    card from history, or None when no such card exists.
+    """
+    if not history_cards:
+        return None
+    for card in reversed(history_cards):
+        if card.get("card_type") in {"execution_plan_v3", "pool_link", "pool_deposit_v3"}:
+            return card
+    return None
+
+
+def _synthesize_refine_execution_args(
+    message: str, history_cards: list[dict] | None
+) -> tuple[str, dict] | None:
+    """Re-fire build_yield_execution_plan with refined args merged from the
+    prior execution_plan_v3 / pool_link / pool_deposit_v3 card.
+
+    Pass-4 hand-read A-cat (38 actionable) + C-cat (27 actionable): dominant
+    bug class was 'Lido only' / 'Aave V3 only' / '0.05 ETH' / 'narrow range'
+    refines falling to LLM contextual mode which fabricated 'Status: ready'
+    prose. Sanitizer (already shipped) catches the fabrication; this is the
+    root-cause fix — rebuild the execution plan with the refined arg.
+
+    Parses refine signals from message:
+      - Protocol filter: 'Lido only' / 'Aave only' / 'Spark only'
+      - Chain filter: 'on Optimism' / 'Ethereum only'
+      - Fee tier: '0.3% fee tier' → extra.fee_bps=3000
+      - Range preset: 'narrow range' / 'balanced range' → extra.range_preset
+      - Amount override: '0.05 ETH' / '100 USDC' / '1 SOL'
+      - Native qualifier: 'native ETH' / 'native SOL'
+
+    Returns ('build_yield_execution_plan', merged_args) or None when no
+    prior execution card exists or no refine signal parsed.
+    """
+    if not message or not history_cards:
+        return None
+    prior_card = _last_execution_plan_card(history_cards)
+    if not prior_card:
+        return None
+    payload = prior_card.get("payload") or {}
+    if not isinstance(payload, dict):
+        return None
+    # Extract current plan baseline.
+    base_chain = str(payload.get("chain") or "").lower()
+    base_protocol = str(payload.get("protocol") or "").lower()
+    base_action = str(payload.get("action") or "").lower() or "supply"
+    base_asset = (
+        payload.get("asset_in")
+        or (payload.get("input_token") or {}).get("symbol")
+        or ""
+    )
+    base_amount: float = 0.0
+    if payload.get("amount") is not None:
+        try:
+            base_amount = float(payload.get("amount"))
+        except (TypeError, ValueError):
+            pass
+    if base_amount == 0.0 and payload.get("input_amount_usd") is not None:
+        try:
+            base_amount = float(payload.get("input_amount_usd"))
+        except (TypeError, ValueError):
+            pass
+    base_extra = dict(payload.get("extra") or {})
+    # execution_plan_v3 stashes protocol/chain on the first step, not top-level.
+    if prior_card.get("card_type") == "execution_plan_v3":
+        steps = payload.get("steps") or []
+        if steps:
+            first = steps[0] if isinstance(steps[0], dict) else {}
+            if not base_chain:
+                base_chain = str(first.get("chain") or "").lower()
+            if not base_protocol:
+                base_protocol = str(first.get("protocol") or "").lower()
+            if not base_asset:
+                base_asset = str(first.get("asset_in") or "")
+        # Recover human amount from summary line ("Supply 50 USDC via aave-v3").
+        if base_amount == 0.0:
+            summary = str(payload.get("summary") or payload.get("title") or "")
+            am = re.search(
+                r"\b(?:Supply|Deposit|Stake|Add)\s+\$?([\d,]+(?:\.\d+)?)\b",
+                summary, re.IGNORECASE,
+            )
+            if am:
+                try:
+                    base_amount = float(am.group(1).replace(",", ""))
+                except (TypeError, ValueError):
+                    pass
+            if not base_asset:
+                am2 = re.search(
+                    r"\b(?:Supply|Deposit|Stake|Add)\s+\$?[\d,]+(?:\.\d+)?\s+([A-Z]{2,10})\b",
+                    summary,
+                )
+                if am2:
+                    base_asset = am2.group(1).upper()
+    if not base_protocol or not base_chain:
+        return None
+    if not base_asset:
+        base_asset = "USDC"
+    if base_amount <= 0:
+        base_amount = 100.0
+
+    # Track whether ANY refine signal was parsed — otherwise return None so
+    # the dispatch falls through to the existing search-refine / detector path.
+    any_signal = False
+    new_chain = base_chain
+    new_protocol = base_protocol
+    new_action = base_action
+    new_asset = base_asset
+    new_amount = base_amount
+    new_extra = dict(base_extra)
+
+    # Protocol filter — scan and normalise.
+    pm = _PROTO_REFINE_RE.search(message)
+    if pm:
+        proto_raw = pm.group("proto").lower().replace(" ", "-")
+        norm = _REFINE_PROTO_NORM.get(proto_raw, proto_raw)
+        if norm and norm != base_protocol:
+            new_protocol = norm
+            any_signal = True
+            # Action remap by protocol family.
+            _STAKE_PROTOS = {
+                "lido", "rocket-pool", "ether-fi", "renzo", "swell",
+                "frax-ether", "stader", "mantle", "kelp",
+                "jito", "marinade", "sanctum",
+            }
+            _LP_PROTOS = {
+                "curve-dex", "balancer-v2", "balancer-v3",
+                "uniswap-v2", "uniswap-v3", "uniswap-v4",
+                "pancakeswap-v2", "pancakeswap-v3",
+                "aerodrome", "aerodrome-slipstream",
+                "velodrome", "velodrome-cl",
+                "raydium-amm", "raydium-clmm", "raydium-cp",
+                "orca-whirlpools", "orca-clmm",
+                "meteora-dlmm",
+            }
+            if norm in _STAKE_PROTOS:
+                new_action = "stake"
+            elif norm in _LP_PROTOS:
+                new_action = "deposit_lp"
+            else:
+                new_action = "supply"
+
+    # Chain filter.
+    cm = _CHAIN_REFINE_RE.search(message)
+    if cm:
+        chain_raw = cm.group("chain").lower()
+        if chain_raw == "bnb":
+            chain_raw = "bsc"
+        if chain_raw == "sol":
+            chain_raw = "solana"
+        if chain_raw != base_chain:
+            new_chain = chain_raw
+            any_signal = True
+
+    # Fee tier.
+    fm = _FEE_TIER_REFINE_RE.search(message)
+    if fm:
+        try:
+            fee_pct = float(fm.group("pct"))
+            new_extra["fee_bps"] = int(round(fee_pct * 10_000))
+            any_signal = True
+        except (TypeError, ValueError):
+            pass
+
+    # Range preset.
+    rm = _RANGE_REFINE_RE.search(message)
+    if rm:
+        new_extra["range_preset"] = rm.group("range").lower()
+        any_signal = True
+
+    # Native qualifier — "native ETH" / "native SOL".
+    nq = _NATIVE_QUALIFIER_RE.search(message)
+    if nq:
+        new_asset = nq.group("tok").upper()
+        any_signal = True
+
+    # Amount override — prefer native form, fall back to USD.
+    amt_set = False
+    for am in _AMOUNT_NATIVE_REFINE_RE.finditer(message):
+        tok = am.group("tok").upper()
+        if tok in _REFINE_NOISE_TOKS:
+            continue
+        # Skip percent-attached numbers ("3% fee" already handled above).
+        post = message[am.end():am.end() + 4]
+        if re.match(r"\s*%", post):
+            continue
+        try:
+            n = float(am.group("amt").replace(",", ""))
+        except (TypeError, ValueError):
+            continue
+        if n <= 0:
+            continue
+        new_amount = n
+        new_asset = tok
+        amt_set = True
+        any_signal = True
+        break
+    if not amt_set:
+        um = _AMOUNT_USD_REFINE_RE.search(message)
+        if um:
+            try:
+                n = float(um.group("usd").replace(",", ""))
+                if n > 0:
+                    new_amount = n
+                    new_asset = "USDC"
+                    any_signal = True
+            except (TypeError, ValueError):
+                pass
+
+    if not any_signal:
+        return None
+
+    args: dict = {
+        "chain": new_chain,
+        "protocol": new_protocol,
+        "action": new_action,
+        "asset_in": new_asset,
+        "amount_in": new_amount,
+    }
+    if new_extra:
+        args["extra"] = new_extra
+    return ("build_yield_execution_plan", args)
+
+
 def _is_refine_request(message: str, history_cards: list[dict] | None) -> bool:
     """True when user wants to filter / narrow / exclude from the prior result."""
     if not message or not history_cards:
@@ -6868,25 +7599,35 @@ async def run_ephemeral_turn(
     # LLM-only filler reply.
     if prior_intent_override is not None:
         intent = prior_intent_override
-    elif pivot_requested or refine_requested:
-        synth_args = (
-            _synthesize_pivot_search_args(message, history_cards) if pivot_requested
-            else _synthesize_refine_search_args(message, history_cards)
-        )
-        if synth_args:
-            intent = ("search_defi_opportunities", synth_args)
-        else:
-            intent = detect_intent(message)
     else:
-        # Lazy-resume probe: vague final-confirm verbs ('execute',
-        # 'do it', 'confirm') with no protocol/asset/amount detail get
-        # rebuilt from the last execution_plan_v3/pool_link in history.
-        lazy = _detect_lazy_resume_from_history(message, history_cards)
-        if lazy is None:
-            # PROTO ASSET deposit/supply/stake without amount → inherit
-            # amount from history (v4-A07/A09).
-            lazy = _detect_lazy_proto_asset_action(message, history_cards, history)
-        intent = lazy if lazy else detect_intent(message)
+        # A/C refine — re-fire build_yield_execution_plan with the refined
+        # arg merged against the prior execution_plan_v3 / pool_link card.
+        # Pass-4 hand-read: 'Lido only' / 'Aave V3 only' / '0.05 ETH' /
+        # 'narrow range' refines previously fell to LLM contextual mode
+        # which fabricated 'Status: ready' prose. Sanitizer caught the
+        # fabrication; this is the root-cause re-build.
+        refine_exec = _synthesize_refine_execution_args(message, history_cards)
+        if refine_exec is not None:
+            intent = refine_exec
+        elif pivot_requested or refine_requested:
+            synth_args = (
+                _synthesize_pivot_search_args(message, history_cards) if pivot_requested
+                else _synthesize_refine_search_args(message, history_cards)
+            )
+            if synth_args:
+                intent = ("search_defi_opportunities", synth_args)
+            else:
+                intent = detect_intent(message)
+        else:
+            # Lazy-resume probe: vague final-confirm verbs ('execute',
+            # 'do it', 'confirm') with no protocol/asset/amount detail get
+            # rebuilt from the last execution_plan_v3/pool_link in history.
+            lazy = _detect_lazy_resume_from_history(message, history_cards)
+            if lazy is None:
+                # PROTO ASSET deposit/supply/stake without amount → inherit
+                # amount from history (v4-A07/A09).
+                lazy = _detect_lazy_proto_asset_action(message, history_cards, history)
+            intent = lazy if lazy else detect_intent(message)
 
     try:
         final_content = ""
