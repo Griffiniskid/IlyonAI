@@ -27,6 +27,9 @@ import { DefiOpportunitiesCard } from "./DefiOpportunitiesCard";
 import { ExecutionPlanV3Card } from "./ExecutionPlanV3Card";
 import { PoolLinkCard, type PoolLinkPayload } from "./PoolLinkCard";
 import { PoolDepositV3Card, type PoolDepositV3Payload } from "./PoolDepositV3Card";
+import { CompoundCardRenderer, type CompoundCardPayload } from "./CompoundCardRenderer";
+import { RebalanceCardRenderer, type RebalanceCardPayload } from "./RebalanceCardRenderer";
+import { MigrateCardRenderer, type MigrateCardPayload } from "./MigrateCardRenderer";
 import { SentinelBadge } from "./SentinelBadge";
 import { ShieldBadge } from "./ShieldBadge";
 import { SentinelBreakdownCard } from "./SentinelBreakdownCard";
@@ -627,6 +630,12 @@ export function CardRenderer({ card, onStartSigning, onRerunAllocation, onSignSt
       return <PoolLinkCard payload={payload as unknown as PoolLinkPayload} />;
     case "pool_deposit_v3":
       return <PoolDepositV3Card payload={payload as unknown as PoolDepositV3Payload} />;
+    case "compound_card":
+      return <CompoundCardRenderer payload={payload as unknown as CompoundCardPayload} />;
+    case "rebalance_card":
+      return <RebalanceCardRenderer payload={payload as unknown as RebalanceCardPayload} />;
+    case "migrate_card":
+      return <MigrateCardRenderer payload={payload as unknown as MigrateCardPayload} />;
     case "token":
       return <TokenCard payload={payload as unknown as TokenPayload} />;
     case "swap_quote":

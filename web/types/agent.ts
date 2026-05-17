@@ -492,7 +492,48 @@ export type CardType =
   | "defi_opportunities"
   | "sentinel"
   | "sentinel_token_report" | "sentinel_pool_report" | "sentinel_whale_feed"
-  | "sentinel_smart_money_hub" | "sentinel_shield_report" | "sentinel_entity_card";
+  | "sentinel_smart_money_hub" | "sentinel_shield_report" | "sentinel_entity_card"
+  | "compound_card" | "rebalance_card" | "migrate_card";
+
+// ── V7-025 §4 — lifecycle action cards ──
+
+export interface CompoundCard {
+  kind: "compound_card";
+  position_id: string;
+  protocol: string;
+  pending_rewards_usd: number;
+  reward_token: string;
+  reward_amount: number;
+  can_compound: boolean;
+  cta_label: string;
+}
+
+export interface RebalanceCard {
+  kind: "rebalance_card";
+  position_id: string;
+  protocol: string;
+  pair: string;
+  current_range: [number, number];
+  suggested_range: [number, number];
+  current_value_usd: number;
+  time_out_of_range_pct: number;
+  estimated_fee_apr_uplift_pct: number;
+  cta_label: string;
+}
+
+export interface MigrateCard {
+  kind: "migrate_card";
+  position_id: string;
+  from_protocol: string;
+  to_protocol: string;
+  pair: string;
+  current_apr: number;
+  target_apr: number;
+  estimated_gas_usd: number;
+  cta_label: string;
+}
+
+export type LifecycleActionCard = CompoundCard | RebalanceCard | MigrateCard;
 
 export interface SentinelTokenReportPayload {
   address: string;
@@ -626,6 +667,9 @@ export interface SentinelWhaleFeedCard { card_id: string; card_type: "sentinel_w
 export interface SentinelSmartMoneyHubCard { card_id: string; card_type: "sentinel_smart_money_hub"; payload: SentinelSmartMoneyHubPayload; }
 export interface SentinelShieldReportCard { card_id: string; card_type: "sentinel_shield_report"; payload: SentinelShieldReportPayload; }
 export interface SentinelEntityCard { card_id: string; card_type: "sentinel_entity_card"; payload: SentinelEntityCardPayload; }
+export interface CompoundCardFrame { card_id: string; card_type: "compound_card"; payload: CompoundCard; }
+export interface RebalanceCardFrame { card_id: string; card_type: "rebalance_card"; payload: RebalanceCard; }
+export interface MigrateCardFrame { card_id: string; card_type: "migrate_card"; payload: MigrateCard; }
 
 export type AgentCard =
   | AllocationCard | SentinelMatrixCard | ExecutionPlanCard | SwapQuoteCard | PoolCard | TokenCard | PositionCard
@@ -633,7 +677,8 @@ export type AgentCard =
   | DefiOpportunitiesCard | ExecutionPlanV3Card
   | SentinelBreakdownCardFrame
   | SentinelTokenReportCard | SentinelPoolReportCard | SentinelWhaleFeedCard
-  | SentinelSmartMoneyHubCard | SentinelShieldReportCard | SentinelEntityCard;
+  | SentinelSmartMoneyHubCard | SentinelShieldReportCard | SentinelEntityCard
+  | CompoundCardFrame | RebalanceCardFrame | MigrateCardFrame;
 
 export interface ToolError {
   code: string;
