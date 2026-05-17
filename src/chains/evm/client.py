@@ -13,6 +13,7 @@ from datetime import datetime
 import aiohttp
 
 from src.chains.base import ChainClient, ChainConfig, ChainType
+from src.chains.evm.gas_pricing import build_gas_params, detect_supports_1559
 
 logger = logging.getLogger(__name__)
 
@@ -559,6 +560,32 @@ class EVMChainClient(ChainClient):
         elif type == "token":
             return f"{base}/token/{address}"
         return f"{base}/address/{address}"
+
+    async def build_tx_gas_params(self) -> Dict[str, int]:
+        """Return gas-pricing fields for an outbound tx on this chain.
+
+        Delegates to :func:`src.chains.evm.gas_pricing.build_gas_params`
+        which auto-detects EIP-1559 vs legacy pricing per chain id.
+        BSC and classic Polygon are forced to ``gasPrice``; all other
+        EVM chains are probed via ``eth_feeHistory`` once and cached.
+
+        Callers (e.g. swap/approve/transfer tx builders that hand
+        unsigned envelopes to the frontend signer) should spread the
+        returned dict into the tx params alongside ``to``, ``data``,
+        ``value``, ``nonce``, and ``gas``.
+        """
+        chain_id = self.chain_type.chain_id
+        if chain_id is None:
+            # Non-EVM (e.g. Solana wandered through the EVM client).
+            return {}
+        return await build_gas_params(self, chain_id)
+
+    async def supports_eip1559(self) -> bool:
+        """True iff this chain accepts EIP-1559 (type-2) txs."""
+        chain_id = self.chain_type.chain_id
+        if chain_id is None:
+            return False
+        return await detect_supports_1559(self, chain_id)
 
     async def close(self) -> None:
         """Cleanup HTTP session."""

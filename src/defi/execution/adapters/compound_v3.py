@@ -67,7 +67,12 @@ class CompoundV3SupplyAdapter:
     adapter_id: str = "compound-v3-supply"
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base"})
     protocols: frozenset[str] = frozenset({"compound-v3", "compound", "compound v3", "compoundv3", "comet"})
-    actions: frozenset[str] = frozenset({"supply", "deposit", "lend", "withdraw", "claim", "borrow"})
+    actions: frozenset[str] = frozenset({
+        "supply", "deposit", "lend", "withdraw", "claim", "borrow",
+        # V7-002 §7 S12 — claim COMP rewards and re-supply on Comet.
+        # ClaimCompoundComposer emits [claim, supply_back] using this adapter.
+        "claim_compound",
+    })
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
         chain_norm = chain.lower()

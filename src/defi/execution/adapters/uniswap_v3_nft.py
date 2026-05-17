@@ -156,6 +156,13 @@ class UniswapV3NFTAdapter:
     actions: frozenset[str] = frozenset({
         "deposit_lp", "provide_liquidity", "add_liquidity",
         "decrease_liquidity", "collect", "close_position",
+        # V7-002 §7 S11/S14 — refinance (same-protocol range rebalance) and
+        # migrate (cross-protocol V2→V3) ride the V3 NFT mint pathway after
+        # the upstream MulticallBundler composes the unwind legs.
+        "refinance", "migrate",
+        # V7-002 §7 S12 — claim accrued LP fees + re-deposit them; composed
+        # via ClaimCompoundComposer which emits [claim, supply_back].
+        "claim_compound",
     })
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:

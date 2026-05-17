@@ -215,7 +215,13 @@ class AaveV3SupplyAdapter:
     adapter_id: str = "aave-v3-supply"
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base", "avalanche"})
     protocols: frozenset[str] = frozenset({"aave-v3", "aave", "aave v3", "aavev3"})
-    actions: frozenset[str] = frozenset({"supply", "deposit", "lend", "withdraw", "claim", "repay", "borrow"})
+    actions: frozenset[str] = frozenset({
+        "supply", "deposit", "lend", "withdraw", "claim", "repay", "borrow",
+        # V7-002 §7 S12 — claim Aave incentives and re-supply (stkAAVE
+        # compounding loop). Composed by ClaimCompoundComposer into
+        # [claim, supply_back].
+        "claim_compound",
+    })
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
         chain_norm = chain.lower()

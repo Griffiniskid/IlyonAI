@@ -21,6 +21,17 @@ class WalletInventory:
     native_gas: dict[str, Decimal] = field(default_factory=dict)
     allowances: dict[tuple[str, str, str], Decimal] = field(default_factory=dict)
     existing_positions: list[dict[str, Any]] = field(default_factory=list)
+    # Spec §13 Row 17 — optional JitMonitor handle. When None, the
+    # check_jit_adjacency detector returns None silently (fail-soft).
+    # Type is `Any` to avoid pulling in src.shield.jit_monitor at module
+    # import time — the detector branch lazy-imports the type.
+    jit_monitor: Any = None
+    # Spec §13 Row 17 — per-LP-step pool overrides. Adapters that resolve
+    # the target pool address can stash it on `step.transaction.lp_pool_addr`
+    # or `step.receipt["lp_pool_addr"]`; this dict is a runtime escape
+    # hatch keyed by step_id for composed plans where the pool is known
+    # at preflight time but the transaction isn't yet built.
+    lp_pool_addrs: dict[str, str] = field(default_factory=dict)
 
     def balance_of(self, chain: str, asset: str) -> Decimal:
         return self.balances.get((chain.lower(), asset.upper()), Decimal(0))
@@ -164,6 +175,20 @@ def evaluate_preflight(
     except Exception as exc:  # never let a §13 detector crash preflight
         logger.debug("self-trade detector raised: %s", exc)
 
+    # Spec §13 Row 17 — JIT_ATTACK_ADJACENCY. Only runs on EVM LP add/
+    # increase steps when a JitMonitor instance is attached to inventory
+    # via the `_jit_monitor` sidecar attribute. Sibling to the self-trade
+    # block above: fail-soft — if the monitor is None / not started,
+    # nothing fires.
+    try:
+        _jit_blockers = _check_jit_adjacency_blockers(steps, inventory)
+        for b in _jit_blockers:
+            if b.code not in seen_codes:
+                blockers.append(b)
+                seen_codes.add(b.code)
+    except Exception as exc:  # never let a §13 detector crash preflight
+        logger.debug("jit-adjacency detector raised: %s", exc)
+
     return blockers
 
 
@@ -261,6 +286,96 @@ def _check_self_trade(
             cta="Pick a different fee tier or pool, then re-quote.",
         ))
     return out
+
+
+def _check_jit_adjacency_blockers(
+    steps: Iterable[ExecutionStepV3],
+    inventory: WalletInventory,
+) -> list[ExecutionBlocker]:
+    """Run the §13 Row 17 JIT-attack adjacency detector against any LP
+    add/increase steps on EVM chains in the plan.
+
+    Fail-soft: if no JitMonitor is attached, or it hasn't started, this
+    returns an empty list — never a false positive.
+    """
+    monitor = inventory.jit_monitor
+    if monitor is None:
+        return []
+    # Lazy import to avoid pulling shield.jit_monitor into the preflight
+    # import graph for callers that don't need it.
+    try:
+        from src.shield.jit_monitor import (
+            JIT_BLOCKER_CODE,
+            check_jit_adjacency_sync,
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.debug("jit_monitor import failed: %s", exc)
+        return []
+
+    # Only LP add/increase actions on EVM chains are eligible. Solana JIT
+    # adjacency is handled by the Solana-specific preflight (V7-007).
+    lp_actions = {"deposit_lp", "add_liquidity", "provide_liquidity", "increase_liquidity"}
+    lp_steps = [
+        s for s in steps
+        if (s.action or "").lower() in lp_actions and _chain_kind(s.chain) == "evm"
+    ]
+    if not lp_steps:
+        return []
+
+    blocked_step_ids: list[str] = []
+    for step in lp_steps:
+        pool = _extract_lp_step_pool(step, inventory)
+        if not pool:
+            continue
+        code = check_jit_adjacency_sync(pool, monitor=monitor)
+        if code:
+            blocked_step_ids.append(step.step_id)
+
+    if not blocked_step_ids:
+        return []
+
+    return [ExecutionBlocker(
+        code=JIT_BLOCKER_CODE,
+        severity="blocker",
+        title="JIT attack adjacency detected",
+        detail=(
+            "A pending mempool swap above the $100k threshold is queued "
+            "against the same pool you're about to add liquidity to. "
+            "Signing now risks being sandwiched by a JIT-liquidity "
+            "searcher. Shield is requesting a 1-block delay and "
+            "re-simulation; retry once the adjacent swap has landed."
+        ),
+        affected_step_ids=blocked_step_ids,
+        cta="Wait 1 block and re-quote, or pick a different fee tier.",
+    )]
+
+
+def _extract_lp_step_pool(
+    step: ExecutionStepV3,
+    inventory: WalletInventory,
+) -> str | None:
+    """Pull the LP target pool address. Honors (in order):
+      1. inventory.lp_pool_addrs[step_id] — explicit caller override
+      2. step.transaction.lp_pool_addr — adapter-stamped
+      3. step.transaction.swap_pool_addr — fallback for adapters that
+         only stamp the canonical pool key
+      4. step.receipt["lp_pool_addr" | "pool_address"] — sidecar/runtime
+    """
+    override = inventory.lp_pool_addrs.get(step.step_id)
+    if override:
+        return str(override)
+    tx = step.transaction
+    if tx is not None:
+        for attr in ("lp_pool_addr", "swap_pool_addr", "pool_address"):
+            pool = getattr(tx, attr, None)
+            if pool:
+                return str(pool)
+    if step.receipt and isinstance(step.receipt, dict):
+        for key in ("lp_pool_addr", "pool_address", "swap_pool_addr"):
+            pool = step.receipt.get(key)
+            if pool:
+                return str(pool)
+    return None
 
 
 def _extract_step_pool(step: ExecutionStepV3) -> str | None:

@@ -213,6 +213,10 @@ class UniswapV2DualTokenAdapter:
     actions: frozenset[str] = frozenset({
         "deposit_lp", "add_liquidity", "provide_liquidity",
         "remove_liquidity", "withdraw",
+        # V7-002 §7 S14 — V2 leg of a V2→V3 migrate. The V2 adapter
+        # handles the `remove_liquidity` half that the MulticallBundler
+        # then hands off to the V3 NFT mint side.
+        "migrate",
     })
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
