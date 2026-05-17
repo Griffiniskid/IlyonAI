@@ -39,6 +39,154 @@ def to_canonical_flow_event(raw_event: Dict[str, Any]) -> CanonicalFlowEvent:
     return normalize_event(canonical_raw)
 
 
+# SPL token-program addresses (both Token and Token-2022 emit identical
+# AccountState layout — byte 108 of the 165-byte SPL token account is the
+# state discriminant). Kept module-level so `check_account_frozen` doesn't
+# allocate per call.
+_SPL_TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+_SPL_TOKEN_2022_PROGRAM = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+
+
+async def check_account_frozen(
+    mint: str,
+    owner: str,
+    rpc_url: str,
+    *,
+    session: Optional[aiohttp.ClientSession] = None,
+    timeout_s: float = 8.0,
+) -> bool:
+    """V7-007 — Spec §13 row 5 frozen-account preflight.
+
+    Returns True when `owner` holds an SPL token account for `mint` whose
+    AccountState discriminant equals 2 (Frozen). The freeze authority on
+    SPL-Token (and Token-2022) lets an issuer permanently disable transfers
+    out of a holder's ATA — signing a swap/supply/stake on a frozen account
+    burns gas and surfaces a confusing 0x11 (AccountFrozen) program error.
+    Shield emits a FROZEN_ACCOUNT blocker so the user can route around it.
+
+    Implementation:
+      1. `getTokenAccountsByOwner({owner}, {mint, programId=Token})` — returns
+         the user's token account(s) for that mint. We accept both legacy
+         Token and Token-2022 (parallel JSON-RPC fan-out so a Token-2022 mint
+         doesn't get false-negatived by the legacy programId filter).
+      2. For each returned token account, decode the SPL token account data
+         (Account layout, 165 bytes). Byte offset 108 is the AccountState
+         u8: 0=Uninitialized, 1=Initialized, 2=Frozen. The RPC `jsonParsed`
+         encoding hands us the state as `state: "frozen"` so we honor that
+         path first, then fall back to raw base64 byte-decode.
+      3. ANY token account in state=Frozen → return True. The caller treats
+         the (mint, owner) pair as blocked.
+
+    Fail-soft: network errors / malformed responses return False. The
+    preflight's job is to surface a known-true blocker; it must never
+    fabricate one from a transport flake.
+    """
+    if not mint or not owner or not rpc_url:
+        return False
+
+    owns_session = session is None
+    if owns_session:
+        session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout_s))
+
+    try:
+        async def _accounts_for_program(program_id: str) -> List[Dict[str, Any]]:
+            payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountsByOwner",
+                "params": [
+                    owner,
+                    {"mint": mint, "programId": program_id},
+                    {"encoding": "jsonParsed", "commitment": "confirmed"},
+                ],
+            }
+            try:
+                async with session.post(rpc_url, json=payload,
+                                        timeout=aiohttp.ClientTimeout(total=timeout_s)) as resp:
+                    if resp.status != 200:
+                        return []
+                    body = await resp.json()
+            except Exception as exc:
+                logger.debug("getTokenAccountsByOwner failed for %s/%s: %s",
+                             mint[:8], owner[:8], exc)
+                return []
+            if not isinstance(body, dict) or body.get("error"):
+                return []
+            result = body.get("result") or {}
+            value = result.get("value")
+            return value if isinstance(value, list) else []
+
+        # Fan out both SPL Token and Token-2022 programs in parallel so a
+        # Token-2022 mint isn't missed by a legacy-only filter.
+        legacy_accounts, token22_accounts = await asyncio.gather(
+            _accounts_for_program(_SPL_TOKEN_PROGRAM),
+            _accounts_for_program(_SPL_TOKEN_2022_PROGRAM),
+            return_exceptions=False,
+        )
+        accounts = (legacy_accounts or []) + (token22_accounts or [])
+        if not accounts:
+            return False
+
+        async def _account_is_frozen(entry: Dict[str, Any]) -> bool:
+            # 1) jsonParsed fast-path. RPC hands us
+            # {account: {data: {parsed: {info: {state: "frozen"|"initialized"|"uninitialized"}}}}}
+            pubkey = entry.get("pubkey") or ""
+            acct = entry.get("account") or {}
+            data = acct.get("data")
+            if isinstance(data, dict):
+                parsed = data.get("parsed") or {}
+                info = parsed.get("info") if isinstance(parsed, dict) else None
+                if isinstance(info, dict):
+                    state = str(info.get("state") or "").lower()
+                    if state == "frozen":
+                        return True
+                    if state in {"initialized", "uninitialized"}:
+                        return False
+
+            # 2) Fallback — re-fetch with base64 encoding and byte-decode the
+            # SPL token account. AccountState is at offset 108 (1 byte u8).
+            if not pubkey:
+                return False
+            info_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getAccountInfo",
+                "params": [pubkey, {"encoding": "base64", "commitment": "confirmed"}],
+            }
+            try:
+                async with session.post(rpc_url, json=info_payload,
+                                        timeout=aiohttp.ClientTimeout(total=timeout_s)) as ar:
+                    if ar.status != 200:
+                        return False
+                    abody = await ar.json()
+            except Exception as exc:
+                logger.debug("getAccountInfo fallback failed for %s: %s",
+                             pubkey[:8], exc)
+                return False
+            if not isinstance(abody, dict) or abody.get("error"):
+                return False
+            avalue = (abody.get("result") or {}).get("value") or {}
+            adata = avalue.get("data")
+            if isinstance(adata, list) and len(adata) >= 2 and adata[1] == "base64":
+                try:
+                    raw = base64.b64decode(adata[0])
+                except Exception:
+                    return False
+                # SPL Account layout — state at offset 108.
+                if len(raw) >= 109:
+                    return raw[108] == 2
+            return False
+
+        flags = await asyncio.gather(
+            *(_account_is_frozen(a) for a in accounts),
+            return_exceptions=False,
+        )
+        return any(bool(f) for f in flags)
+    finally:
+        if owns_session and session is not None:
+            await session.close()
+
+
 @dataclass
 class SimulationResult:
     """Result of transaction simulation."""

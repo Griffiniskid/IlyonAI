@@ -16,6 +16,7 @@
     "@meteora-ag/cp-amm-sdk": "^1.0.0",
     "@meteora-ag/vault-sdk": "^3.0.0",
     "@marinade.finance/marinade-ts-sdk": "^5.0.10",
+    "@kamino-finance/klend-sdk": "^7.3.22",
     "@raydium-io/raydium-sdk-v2": "0.2.45-alpha",
     "bn.js": "^5.2.1",
     "decimal.js": "^10.4.3",

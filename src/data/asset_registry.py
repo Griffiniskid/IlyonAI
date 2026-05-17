@@ -120,6 +120,26 @@ _REGISTRY: dict[tuple[str, str], tuple[str, int]] = {
     ("bsc", "BUSD"): ("0xe9e7cea3dedca5984780bafc599bd69add087d56", 18),
     ("bsc", "BTCB"): ("0x7130d2a12b9bcbfae4f2634d864a1ee1ce3ead9c", 18),
     ("bsc", "ETH"): ("0x2170ed0880ac9a755fd29b2688956bd959f933f8", 18),
+    # --- Phase 6 expansion (V7-003): native gas token aliases ---
+    ("linea", "ETH"): (NATIVE_PLACEHOLDER, 18),
+    ("linea", "WETH"): ("0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f", 18),
+    ("scroll", "ETH"): (NATIVE_PLACEHOLDER, 18),
+    ("scroll", "WETH"): ("0x5300000000000000000000000000000000000004", 18),
+    ("mantle", "MNT"): (NATIVE_PLACEHOLDER, 18),
+    ("mantle", "WMNT"): ("0x78c1b0c915c4faa5fffa6cabf0219da63d7f4cb8", 18),
+    ("blast", "ETH"): (NATIVE_PLACEHOLDER, 18),
+    ("blast", "WETH"): ("0x4300000000000000000000000000000000000004", 18),
+    ("zksync", "ETH"): (NATIVE_PLACEHOLDER, 18),
+    ("zksync", "WETH"): ("0x5aea5775959fbc2557cc8789bc1bf90a239d9a91", 18),
+    ("gnosis", "XDAI"): (NATIVE_PLACEHOLDER, 18),
+    ("gnosis", "WXDAI"): ("0xe91d153e0b41518a2ce8dd3d7944fa863463a97d", 18),
+    ("celo", "CELO"): (NATIVE_PLACEHOLDER, 18),
+    ("sonic", "S"): (NATIVE_PLACEHOLDER, 18),
+    ("sonic", "WS"): ("0x039e2fb66102314ce7b64ce5ce3e5183bc94ad38", 18),
+    ("berachain", "BERA"): (NATIVE_PLACEHOLDER, 18),
+    ("berachain", "WBERA"): ("0x6969696969696969696969696969696969696969", 18),
+    ("unichain", "ETH"): (NATIVE_PLACEHOLDER, 18),
+    ("unichain", "WETH"): ("0x4200000000000000000000000000000000000006", 18),
 }
 
 
@@ -138,6 +158,17 @@ _RPC_BY_CHAIN: dict[str, str] = {
     "base": "https://mainnet.base.org",
     "avalanche": "https://api.avax.network/ext/bc/C/rpc",
     "bsc": "https://bsc-dataseed.binance.org",
+    # Phase 6 expansion (V7-003)
+    "linea": "https://rpc.linea.build",
+    "scroll": "https://rpc.scroll.io",
+    "mantle": "https://rpc.mantle.xyz",
+    "blast": "https://rpc.blast.io",
+    "zksync": "https://mainnet.era.zksync.io",
+    "gnosis": "https://rpc.gnosischain.com",
+    "celo": "https://forno.celo.org",
+    "sonic": "https://rpc.soniclabs.com",
+    "berachain": "https://rpc.berachain.com",
+    "unichain": "https://mainnet.unichain.org",
 }
 
 # Backup RPC pool — tried in order when the primary returns rate-limit /
@@ -185,6 +216,57 @@ RPC_FALLBACKS: dict[str, list[str]] = {
         "https://api.avax.network/ext/bc/C/rpc",
         "https://avalanche-c-chain-rpc.publicnode.com",
         "https://1rpc.io/avax/c",
+    ],
+    # ── Phase 6 expansion (V7-003): public, no-auth RPC pools ──────────────
+    "linea": [
+        "https://rpc.linea.build",
+        "https://linea-rpc.publicnode.com",
+        "https://1rpc.io/linea",
+    ],
+    "scroll": [
+        "https://rpc.scroll.io",
+        "https://scroll-mainnet.public.blastapi.io",
+        "https://scroll.drpc.org",
+    ],
+    "mantle": [
+        "https://rpc.mantle.xyz",
+        "https://mantle-rpc.publicnode.com",
+        "https://1rpc.io/mantle",
+    ],
+    "blast": [
+        "https://rpc.blast.io",
+        "https://blast-rpc.publicnode.com",
+        "https://blast.drpc.org",
+    ],
+    "zksync": [
+        "https://mainnet.era.zksync.io",
+        "https://zksync.drpc.org",
+        "https://1rpc.io/zksync2-era",
+    ],
+    "gnosis": [
+        "https://rpc.gnosischain.com",
+        "https://gnosis-rpc.publicnode.com",
+        "https://1rpc.io/gnosis",
+    ],
+    "celo": [
+        "https://forno.celo.org",
+        "https://celo-rpc.publicnode.com",
+        "https://1rpc.io/celo",
+    ],
+    "sonic": [
+        "https://rpc.soniclabs.com",
+        "https://sonic-rpc.publicnode.com",
+        "https://sonic.drpc.org",
+    ],
+    "berachain": [
+        "https://rpc.berachain.com",
+        "https://berachain-rpc.publicnode.com",
+        "https://berachain.drpc.org",
+    ],
+    "unichain": [
+        "https://mainnet.unichain.org",
+        "https://unichain-rpc.publicnode.com",
+        "https://unichain.drpc.org",
     ],
 }
 

@@ -41,6 +41,15 @@ class UserPosition:
     closed_at: datetime | None = None
     status: str = "open"
     metadata: dict[str, Any] | None = None
+    # Solana lifecycle state (V7-004 / agent_010). Stamped onto
+    # step.transaction at build time by services/solana-yield-builder
+    # adapters; persisted here so close/unstake/withdraw flows can
+    # resume after restart without re-deriving from on-chain state.
+    redemption_program: str | None = None
+    receipt_mint: str | None = None
+    lockup_end_ts: int | None = None
+    underlying_custody: str | None = None
+    position_nft: str | None = None
 
     @classmethod
     def new(
@@ -90,6 +99,11 @@ class UserPosition:
             "block_number": self.block_number,
             "status": self.status,
             "metadata_json": json.dumps(self.metadata) if self.metadata is not None else None,
+            "redemption_program": self.redemption_program,
+            "receipt_mint": self.receipt_mint,
+            "lockup_end_ts": self.lockup_end_ts,
+            "underlying_custody": self.underlying_custody,
+            "position_nft": self.position_nft,
         }
 
 

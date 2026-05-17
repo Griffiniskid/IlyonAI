@@ -111,6 +111,13 @@ class ExecutionStepV3:
     snapshot: dict[str, Any] | None = None
     fill_resolved: dict[str, Any] | None = None
     recovery_hook: dict[str, Any] | None = None
+    # V7-001 — Confirm-button binding. `simulated_calldata_hash` is
+    # stamped at simulation time over the canonical unsigned-tx blob;
+    # `broadcast_calldata_hash` is recomputed at the broadcast boundary
+    # over what the wallet is about to sign. The state machine refuses
+    # any submitted-flip where these diverge.
+    simulated_calldata_hash: str | None = None
+    broadcast_calldata_hash: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -144,6 +151,13 @@ class ExecutionStepV3:
             data["fill_resolved"] = self.fill_resolved
         if self.recovery_hook is not None:
             data["recovery_hook"] = self.recovery_hook
+        # V7-001 — surface calldata-hash binding so the frontend can
+        # display the artifact hash next to the Confirm button and the
+        # audit-log can prove signing was hash-bound.
+        if self.simulated_calldata_hash is not None:
+            data["simulated_calldata_hash"] = self.simulated_calldata_hash
+        if self.broadcast_calldata_hash is not None:
+            data["broadcast_calldata_hash"] = self.broadcast_calldata_hash
         return data
 
 
@@ -288,6 +302,29 @@ class ExecutionPlanV3:
         # `simulated_at` (POSIX ts) in metadata for the check to fire; absent
         # metadata is a soft-pass so legacy flows keep working.
         if status == "submitted":
+            # V7-001 — calldata-hash invariant. Run the bind check first
+            # so a tampered/divergent broadcast is hard-blocked before
+            # any freshness or drift gates. The target step must carry
+            # both `simulated_calldata_hash` and `broadcast_calldata_hash`
+            # for the check to fire; absent either side is a hard refusal
+            # because we never sign calldata that wasn't bound to a
+            # simulation.
+            for _step in self.steps:
+                if _step.step_id != step_id:
+                    continue
+                sim_h = _step.simulated_calldata_hash
+                bc_h = _step.broadcast_calldata_hash
+                if sim_h is not None or bc_h is not None:
+                    from src.defi.execution.state_machine import (
+                        assert_calldata_match,
+                    )
+                    assert_calldata_match(
+                        sim_h or "",
+                        bc_h or "",
+                        step_id=step_id,
+                        context={"plan_id": self.plan_id},
+                    )
+                break
             sim_at = getattr(self, "simulated_at", None) or (
                 self.totals.assets_required.get("__sim_at__") if self.totals else None
             )

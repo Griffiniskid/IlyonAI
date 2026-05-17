@@ -1169,6 +1169,77 @@ async def build_yield_execution_plan(
         # is preserved when balance lookup throws or wallet is unset.
         pass
 
+    # V7-007 — Spec §13 row 5 frozen-account preflight (Solana only).
+    # For each Solana step that moves an SPL asset out of the user's wallet,
+    # check the ATA AccountState via getTokenAccountsByOwner+getAccountInfo.
+    # A frozen account causes signing to revert with 0x11 (AccountFrozen)
+    # and burn the Phantom prep-swap gas, so we refuse to expose Confirm.
+    try:
+        if (chain or "").lower() in {"solana", "sol"} and user_address:
+            # Symbol → SPL mint registry. Keep this in sync with the larger
+            # _TOKEN_ADDRS table above (V7-007 only needs the assets the
+            # plan actually moves on Solana, so a small inline registry is
+            # fine; the validation harness pins this list).
+            _SPL_MINTS: dict[str, str] = {
+                "USDC":     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                "USDT":     "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+                "SOL":      "So11111111111111111111111111111111111111112",
+                "WSOL":     "So11111111111111111111111111111111111111112",
+                "MSOL":     "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",
+                "JITOSOL":  "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+                "BSOL":     "bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1",
+                "BNSOL":    "BNso1VUJnh4zcfpZa6986Ea66P6TCp59hvtNJ8b1X85",
+                "JUPSOL":   "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v",
+                "INF":      "5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm",
+                "JLP":      "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4",
+                "JSOL":     "7Q2afV64in6N6SeZsAAB81TJzwDoD6zpqmHkzi9Dcavn",
+                "BONK":     "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+                "PYTH":     "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+                "JTO":      "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL",
+                "RAY":      "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+                "ORCA":     "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE",
+                "USDS":     "USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA",
+                "PYUSD":    "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo",
+            }
+            pairs: list[tuple[str, str]] = []
+            tagged_steps: list[str] = []
+            for _step in plan.steps:
+                if str(_step.chain or "").lower() not in {"solana", "sol"}:
+                    continue
+                if _step.action not in {"swap", "supply", "stake", "deposit_lp",
+                                        "bridge", "withdraw"}:
+                    continue
+                _sym = (_step.asset_in or "").upper()
+                if not _sym:
+                    continue
+                _mint = _SPL_MINTS.get(_sym)
+                # Caller might already have an explicit mint address in
+                # asset_in (base58 ≥32 chars). Use it as-is.
+                if not _mint and len(_sym) >= 32 and not _sym.startswith("0X"):
+                    _mint = _sym
+                if not _mint:
+                    continue
+                pairs.append((_mint, str(user_address)))
+                tagged_steps.append(_step.step_id)
+
+            if pairs:
+                from src.config import settings as _settings
+                from src.shield.preflight_solana import evaluate_solana_frozen_preflight
+                _rpc_url = getattr(_settings, "solana_rpc_url", None) or \
+                           "https://api.mainnet-beta.solana.com"
+                _frozen_blockers = await evaluate_solana_frozen_preflight(
+                    pairs=pairs,
+                    rpc_url=str(_rpc_url),
+                    affected_step_ids=tagged_steps,
+                )
+                for _blocker in _frozen_blockers:
+                    plan.add_blocker(_blocker)
+                if _frozen_blockers:
+                    plan_dict = plan.to_dict()
+    except Exception:
+        # Fail-soft: never let the frozen preflight crash the planner.
+        pass
+
     return ok_envelope(
         data={"plan": plan_dict, "adapter_id": capability.adapter_id},
         card_type="execution_plan_v3",

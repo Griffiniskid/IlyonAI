@@ -88,6 +88,59 @@ class Settings(BaseSettings):
         description="Avalanche C-Chain RPC endpoint"
     )
 
+    # Phase 6 expansion (V7-003): 10 additional EVM chains.
+    # All optional — adapters fall back to public RPC in RPC_FALLBACKS when None.
+    linea_rpc_url: Optional[str] = Field(
+        None,
+        env="LINEA_RPC_URL",
+        description="Linea mainnet RPC endpoint (chain id 59144)"
+    )
+    scroll_rpc_url: Optional[str] = Field(
+        None,
+        env="SCROLL_RPC_URL",
+        description="Scroll mainnet RPC endpoint (chain id 534352)"
+    )
+    mantle_rpc_url: Optional[str] = Field(
+        None,
+        env="MANTLE_RPC_URL",
+        description="Mantle mainnet RPC endpoint (chain id 5000)"
+    )
+    blast_rpc_url: Optional[str] = Field(
+        None,
+        env="BLAST_RPC_URL",
+        description="Blast mainnet RPC endpoint (chain id 81457)"
+    )
+    zksync_rpc_url: Optional[str] = Field(
+        None,
+        env="ZKSYNC_RPC_URL",
+        description="zkSync Era mainnet RPC endpoint (chain id 324)"
+    )
+    gnosis_rpc_url: Optional[str] = Field(
+        None,
+        env="GNOSIS_RPC_URL",
+        description="Gnosis Chain mainnet RPC endpoint (chain id 100)"
+    )
+    celo_rpc_url: Optional[str] = Field(
+        None,
+        env="CELO_RPC_URL",
+        description="Celo mainnet RPC endpoint (chain id 42220)"
+    )
+    sonic_rpc_url: Optional[str] = Field(
+        None,
+        env="SONIC_RPC_URL",
+        description="Sonic mainnet RPC endpoint (chain id 146)"
+    )
+    berachain_rpc_url: Optional[str] = Field(
+        None,
+        env="BERACHAIN_RPC_URL",
+        description="Berachain mainnet RPC endpoint (chain id 80094)"
+    )
+    unichain_rpc_url: Optional[str] = Field(
+        None,
+        env="UNICHAIN_RPC_URL",
+        description="Unichain mainnet RPC endpoint (chain id 130)"
+    )
+
     # Block Explorer API Keys (Etherscan family)
     etherscan_api_key: Optional[str] = Field(None, env="ETHERSCAN_API_KEY")
     bscscan_api_key: Optional[str] = Field(None, env="BSCSCAN_API_KEY")
