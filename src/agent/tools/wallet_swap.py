@@ -45,7 +45,7 @@ def _get_build_swap_tx():
 
 
 async def build_swap_tx(
-    ctx, *, chain_id, token_in, token_out, amount_in, from_addr=""
+    ctx, *, chain_id, token_in, token_out, amount_in, from_addr="", extra=None
 ):
     """Build a swap transaction via the wallet assistant.
 
@@ -63,6 +63,10 @@ async def build_swap_tx(
         Input amount in base units (wei for EVM, lamports for Solana).
     from_addr : str
         Sender wallet address.
+    extra : dict | None
+        Optional overrides. `extra.confirm_megaswap=True` bypasses the
+        F10 AGGREGATOR_CIRCUIT $500K USD-notional size cap (mega-swaps
+        otherwise require explicit user confirmation).
 
     Returns
     -------
@@ -296,6 +300,80 @@ async def build_swap_tx(
                 code="swap_failed",
                 message="Connect an EVM wallet (MetaMask) and retry the swap.",
             )
+
+    # F10 AGGREGATOR_CIRCUIT size cap. Refuse to build mega-swap calldata
+    # over $500K USD notional unless the caller passed extra.confirm_megaswap.
+    # Mirrors swap_simulate._get_usd_price's curated registry; tokens outside
+    # the registry let through with no notional check (can't compute safely
+    # without a credible price source).
+    _MEGASWAP_USD_CAP = 500_000.0
+    _extra = extra or {}
+    _confirm_mega = bool(_extra.get("confirm_megaswap"))
+    if not _confirm_mega:
+        # Same major-token registry the simulator uses for live USD lookups.
+        _CG_IDS_LOCAL = {
+            "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana",
+            "USDC": "usd-coin", "USDT": "tether", "DAI": "dai",
+            "BNB": "binancecoin", "XRP": "ripple", "ADA": "cardano",
+            "DOGE": "dogecoin", "TRON": "tron", "LINK": "chainlink",
+            "MATIC": "matic-network", "AVAX": "avalanche-2", "ATOM": "cosmos",
+            "WETH": "weth", "WBTC": "wrapped-bitcoin",
+            "JUP": "jupiter-exchange-solana", "PYTH": "pyth-network",
+            "RAY": "raydium", "ORCA": "orca",
+            "JITO": "jito-governance-token", "JITOSOL": "jito-staked-sol",
+            "STETH": "staked-ether", "RETH": "rocket-pool-eth",
+        }
+        # Decimals fallback for converting base units → human amount.
+        _DEC_BY_SYM = {
+            "USDC": 6, "USDT": 6, "DAI": 18, "BUSD": 18, "FDUSD": 18, "TUSD": 18,
+            "ETH": 18, "WETH": 18, "BTC": 8, "WBTC": 8, "BNB": 18, "WBNB": 18,
+            "MATIC": 18, "AVAX": 18, "SOL": 9, "WSOL": 9, "JITOSOL": 9,
+            "MSOL": 9, "STSOL": 9, "JUP": 6, "PYTH": 6, "RAY": 6, "ORCA": 6,
+            "LINK": 18, "ADA": 6, "DOGE": 8, "XRP": 6, "TRON": 6, "ATOM": 6,
+            "STETH": 18, "RETH": 18,
+        }
+        _in_sym_upper = str(token_in).upper() if isinstance(token_in, str) else ""
+        _cg_id = _CG_IDS_LOCAL.get(_in_sym_upper)
+        _price_client = getattr(getattr(ctx, "services", None), "price", None)
+        _usd_price = None
+        if _cg_id and _price_client is not None:
+            try:
+                _data = await _price_client.get_token_price([_cg_id], vs_currencies="usd")
+                if _data and _cg_id in _data:
+                    _p = _data[_cg_id].get("usd")
+                    if _p:
+                        _usd_price = float(_p)
+            except Exception:
+                _usd_price = None
+        # Stable fallback so the cap fires even when the price service is
+        # unreachable — stables are pegged at $1 and missing them would silently
+        # bypass the cap on the most common mega-swap shape (USDC→ETH).
+        if _usd_price is None and _in_sym_upper in {"USDC", "USDT", "DAI", "BUSD", "FDUSD", "TUSD"}:
+            _usd_price = 1.0
+        if _usd_price is not None and _usd_price > 0:
+            _decimals = _DEC_BY_SYM.get(_in_sym_upper)
+            # BSC USDC/USDT live as BEP-20 with 18 decimals, not 6. Override
+            # when chain_id=56 to avoid the well-known stablecoin-decimals
+            # gotcha that would inflate notional 1e12x.
+            if chain_id == 56 and _in_sym_upper in {"USDC", "USDT"}:
+                _decimals = 18
+            if _decimals is None:
+                # Heuristic fallback — most ERC-20s are 18, Solana SPLs 6/9.
+                _decimals = 9 if chain == "solana" else 18
+            try:
+                _human_amount = float(amount_in) / (10 ** _decimals)
+            except (TypeError, ValueError):
+                _human_amount = 0.0
+            _notional_usd = _human_amount * _usd_price
+            if _notional_usd > _MEGASWAP_USD_CAP:
+                return err_envelope(
+                    code="aggregator_circuit",
+                    message=(
+                        f"Swap exceeds $500K size cap (${_notional_usd:,.0f}). "
+                        f"Pass extra.confirm_megaswap=true to override, or "
+                        f"split into smaller chunks. Mega-swaps require manual review."
+                    ),
+                )
 
     params = {
         "chain": chain,

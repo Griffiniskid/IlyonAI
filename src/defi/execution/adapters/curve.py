@@ -255,6 +255,142 @@ class CurveSingleSidedAdapter:
         if selector is None:
             raise ValueError(f"Curve pool with {n_coins} coins not yet supported (selector missing).")
 
+        # S7 multi-input — if extra.input_tokens is set, distribute per-coin
+        # amounts into the matching coin_index slots instead of the single
+        # asset_in path. This lets 'use 50 USDC + 50 USDT + 50 DAI to deposit
+        # to Curve 3pool' build one signed add_liquidity tx with all three
+        # amounts populated.
+        input_tokens_raw = extra.get("input_tokens") or extra.get("inputTokens") or []
+        multi_inputs: list[tuple[int, int]] = []  # (coin_index, units)
+        approve_specs: list[tuple[str, str, int]] = []  # (symbol, token_address, units)
+        if input_tokens_raw:
+            for entry in input_tokens_raw:
+                if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                    sym_in, amt_in = entry[0], entry[1]
+                elif isinstance(entry, dict):
+                    sym_in = entry.get("symbol") or entry.get("token") or entry.get("sym")
+                    amt_in = entry.get("amount") or entry.get("amt")
+                else:
+                    continue
+                if not sym_in or amt_in is None:
+                    continue
+                sym_u = str(sym_in).upper()
+                # Locate the coin index for this symbol.
+                ci = None
+                tok_addr = None
+                tok_dec = None
+                for idx, (csym, caddr, cdec) in enumerate(coins):
+                    if csym.upper() == sym_u:
+                        ci = idx
+                        tok_addr = caddr
+                        tok_dec = cdec
+                        break
+                if ci is None:
+                    raise ValueError(
+                        f"Curve pool {pool_key} on {chain_norm} does not contain "
+                        f"input-token {sym_u}; coins = {[s for s, _, _ in coins]}."
+                    )
+                try:
+                    units = _to_unit(Decimal(str(amt_in)), tok_dec)
+                except Exception as exc:  # noqa: BLE001
+                    raise ValueError(
+                        f"Curve multi-input: bad amount {amt_in!r} for {sym_u}: {exc}"
+                    ) from exc
+                if units <= 0:
+                    continue
+                multi_inputs.append((ci, units))
+                approve_specs.append((sym_u, tok_addr, units))
+
+        if multi_inputs:
+            # Build amount slots array.
+            amount_slots: list[int] = [0] * n_coins
+            for ci, units in multi_inputs:
+                amount_slots[ci] = units
+            encoded_amounts = "".join(_encode_uint256(a) for a in amount_slots)
+            # Conservative min-mint: sum of all inputs scaled to 18 dec minus slip.
+            slippage_bps = max(int(request.slippage_bps or 50), 10)
+            total_scaled = 0
+            for ci, units in multi_inputs:
+                dec_i = coins[ci][2]
+                scale_to_18 = 10 ** (18 - dec_i) if dec_i < 18 else 1
+                scale_down_18 = 10 ** (dec_i - 18) if dec_i > 18 else 1
+                total_scaled += units * scale_to_18 // scale_down_18
+            min_mint = (total_scaled * (10_000 - slippage_bps)) // 10_000
+            add_calldata = selector + encoded_amounts + _encode_uint256(min_mint)
+
+            steps: list[ExecutionStepV3] = []
+            approve_step_ids: list[str] = []
+            for i, (sym_u, tok_addr, units) in enumerate(approve_specs):
+                approve_calldata = (
+                    "0x095ea7b3" + _encode_address(pool_address) + _encode_uint256(units)
+                )
+                approve_step = make_step(
+                    index=i + 1,
+                    action="approve",
+                    title=f"Approve {sym_u} for Curve {pool_key}",
+                    description=(
+                        f"Approve {sym_u} (slot {next((ci for ci, u in multi_inputs if u == units), '?')}) "
+                        f"so the Curve {pool_key} pool can pull the per-coin amount for the multi-input "
+                        f"add_liquidity call."
+                    ),
+                    chain=request.chain,
+                    wallet="MetaMask",
+                    protocol="curve",
+                    asset_in=sym_u,
+                    amount_in=str(Decimal(units) / (Decimal(10) ** coins[next((ci for ci, u in multi_inputs if u == units), 0)][2])),
+                    slippage_bps=0,
+                    gas_estimate_usd=1.4,
+                    duration_estimate_s=15,
+                    transaction=UnsignedStepTransaction(
+                        chain_kind="evm",
+                        chain_id=chain_id,
+                        to=tok_addr,
+                        data=approve_calldata,
+                        value="0x0",
+                        spender=pool_address,
+                    ),
+                    risk_warnings=[
+                        f"Multi-input deposit — separate approve per input coin ({sym_u}).",
+                    ],
+                )
+                steps.append(approve_step)
+                approve_step_ids.append(approve_step.step_id)
+            add_step = make_step(
+                index=len(steps) + 1,
+                action="add_liquidity",
+                title=f"Add liquidity (multi-input) to Curve {pool_key}",
+                description=(
+                    f"Multi-token deposit of {len(multi_inputs)} coins into Curve {pool_key} "
+                    f"({n_coins}-coin stable pool). Slots = {amount_slots}. Pool mints "
+                    f"crv{pool_key.upper()} LP scaled to total USD value with "
+                    f"≤{slippage_bps / 100:.2f}% slippage cap."
+                ),
+                chain=request.chain,
+                wallet="MetaMask",
+                protocol="curve",
+                asset_in=request.asset_in,
+                amount_in=str(request.amount_in),
+                asset_out=f"crv{pool_key.upper()}",
+                slippage_bps=slippage_bps,
+                gas_estimate_usd=4.5,
+                duration_estimate_s=25,
+                depends_on=approve_step_ids,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm",
+                    chain_id=chain_id,
+                    to=pool_address,
+                    data=add_calldata,
+                    value="0x0",
+                    spender=pool_address,
+                ),
+                risk_warnings=[
+                    "Multi-input add_liquidity — each coin amount lands in its matching pool slot.",
+                    "LP token represents pooled balance — withdraw via remove_liquidity_one_coin or balanced exit.",
+                ],
+            )
+            steps.append(add_step)
+            return steps
+
         # Locate the input coin's slot.
         asset_u = request.asset_in.upper()
         coin_index = None

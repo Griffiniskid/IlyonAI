@@ -4,16 +4,27 @@ import { useEffect, useState } from "react";
 import { GlassCard } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Key, Zap } from "lucide-react";
+import { Key, Zap, ExternalLink } from "lucide-react";
+import {
+  sendTransaction as evmSendTx,
+  signMessage as evmSignMessage,
+  waitForReceipt as evmWaitReceipt,
+  getChainId as evmGetChainId,
+} from "@/lib/wallets/metamask";
+import { getEvmExplorerTxUrlByChainId } from "@/lib/utils";
 
 /**
- * Phase 7 smart-account opt-in panel.
+ * §11 D.1 — Phase 7 smart-account opt-in panel.
  *
- * Hits POST /api/v1/eip7702/prepare to fetch the signing digest,
- * then prompts MetaMask via window.ethereum.request to sign, then
- * POSTs to /api/v1/eip7702/authorize.
- *
- * Renders active authorizations via GET /api/v1/eip7702/{wallet}.
+ * Flow:
+ *   1. POST /api/v1/eip7702/prepare         → { digest, chain_id, nonce, impl }
+ *   2. wallet personal_sign(digest)          → 65-byte sig
+ *   3. POST /api/v1/eip7702/authorize        → persists auth row, returns { auth_id, impl_addr }
+ *   4. POST /api/v1/eip7702/install-module-calldata → { calldata }
+ *   5. wallet eth_sendTransaction({ to: impl_addr, data: calldata, value: 0 })
+ *   6. waitForReceipt(txHash) — poll until confirmed
+ *   7. POST /api/v1/eip7702/broadcast        → registers tx_hash on the auth row
+ *   8. UI updates to "Authorized" with explorer link
  */
 interface Eip7702Authorization {
   auth_id?: string;
@@ -23,17 +34,37 @@ interface Eip7702Authorization {
   created_at?: string;
   revoked_at?: string | null;
   expired_at?: string | null;
+  broadcast_tx_hash?: string | null;
 }
 
 interface Eip7702OptInPanelProps {
   userWallet: string;
+  /** ERC-7579 validator-module address that backs the session-key policy.
+   *  Defaults to the Biconomy SessionKeyManager validator (`0x000000…`).
+   *  Pass an override for tenant-specific deployments. */
+  validatorModule?: string;
+  /** Override the EVM chain id used for the auth (defaults to whatever the
+   *  wallet currently reports via eth_chainId, falling back to 1). */
+  chainIdOverride?: number;
 }
 
-export default function Eip7702OptInPanel({ userWallet }: Eip7702OptInPanelProps) {
+// Canonical Biconomy SessionKeyManager validator module (ERC-7579 type 1)
+// — same address across every chain Biconomy supports per their docs.
+const DEFAULT_VALIDATOR_MODULE =
+  "0x0000000000F8c1deDD7D60ce4e2B1b9D7f78f3a6";
+
+export default function Eip7702OptInPanel({
+  userWallet,
+  validatorModule = DEFAULT_VALIDATOR_MODULE,
+  chainIdOverride,
+}: Eip7702OptInPanelProps) {
   const [auths, setAuths] = useState<Eip7702Authorization[]>([]);
   const [impl, setImpl] = useState<"nexus" | "kernel">("nexus");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string>("");
+  const [lastTxHash, setLastTxHash] = useState<string | null>(null);
+  const [lastChainId, setLastChainId] = useState<number | null>(null);
 
   const reload = async () => {
     try {
@@ -42,8 +73,9 @@ export default function Eip7702OptInPanel({ userWallet }: Eip7702OptInPanelProps
       const data = await r.json();
       setAuths((data.authorizations ?? []) as Eip7702Authorization[]);
       setError(null);
-    } catch (e: any) {
-      setError(e?.message || "Failed to load authorizations");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to load authorizations";
+      setError(msg);
     }
   };
 
@@ -54,30 +86,42 @@ export default function Eip7702OptInPanel({ userWallet }: Eip7702OptInPanelProps
   const optIn = async () => {
     setLoading(true);
     setError(null);
+    setStatus("");
+    setLastTxHash(null);
     try {
+      // Resolve chain id from the wallet (so e.g. Base / Arbitrum auths
+      // don't get force-pinned to mainnet by a stale literal).
+      let chainId = chainIdOverride ?? null;
+      if (chainId === null) {
+        try {
+          chainId = await evmGetChainId();
+        } catch {
+          chainId = 1;
+        }
+      }
+      setLastChainId(chainId);
+
       // 1. fetch digest
+      setStatus("Preparing authorization digest…");
       const prepResp = await fetch("/api/v1/eip7702/prepare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           wallet: userWallet,
-          chain_id: 1,
-          nonce: auths.length, // simple: next slot
+          chain_id: chainId,
+          nonce: auths.length, // next slot
           impl,
         }),
       });
       const prep = await prepResp.json();
       if (!prep.ok) throw new Error(prep.error || "prepare failed");
 
-      // 2. user signs digest in MetaMask
-      const ethereum = (window as any).ethereum;
-      if (!ethereum) throw new Error("MetaMask not detected");
-      const sig: string = await ethereum.request({
-        method: "personal_sign",
-        params: [prep.digest, userWallet],
-      });
+      // 2. user signs digest in MetaMask / Phantom-EVM
+      setStatus("Awaiting authorization signature…");
+      const sig = await evmSignMessage(prep.digest);
 
-      // 3. send signature back to server
+      // 3. send signature back to server → persists auth row
+      setStatus("Persisting authorization…");
       const authResp = await fetch("/api/v1/eip7702/authorize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -89,11 +133,62 @@ export default function Eip7702OptInPanel({ userWallet }: Eip7702OptInPanelProps
           signature_hex: sig,
         }),
       });
-      const out = await authResp.json();
-      if (!out.ok) throw new Error(out.error || "authorize failed");
+      const auth = await authResp.json();
+      if (!auth.ok) throw new Error(auth.error || "authorize failed");
+
+      // 4. fetch installModule calldata for the validator module that
+      // enforces session-key spend caps / selector allowlists.
+      // Spend cap + allowlist + expiry are placeholder defaults; the
+      // SessionKeyPanel pipeline will refine these per-policy.
+      setStatus("Fetching installModule calldata…");
+      const expiryUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
+      const cdResp = await fetch("/api/v1/eip7702/install-module-calldata", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          validator_module: validatorModule,
+          session_signer: userWallet,
+          // 1e21 wei (1000 ETH) — bounded later by policy-framework hooks.
+          spend_cap_wei: "1000000000000000000000",
+          selector_allowlist: ["0xa9059cbb"], // ERC-20 transfer as a safe default
+          expiry_unix: expiryUnix,
+        }),
+      });
+      const cd = await cdResp.json();
+      if (!cd.ok) throw new Error(cd.error || "calldata fetch failed");
+
+      // 5. broadcast installModule via eth_sendTransaction
+      setStatus("Broadcasting installModule…");
+      const txHash = await evmSendTx({
+        to: auth.impl_addr,
+        data: cd.calldata,
+        value: "0x0",
+        from: userWallet,
+      });
+      setLastTxHash(txHash);
+
+      // 6. poll receipt
+      setStatus(`Waiting for receipt ${txHash.slice(0, 10)}…`);
+      await evmWaitReceipt(txHash, { intervalMs: 2500, timeoutMs: 180_000 });
+
+      // 7. register broadcast tx_hash with backend
+      setStatus("Registering broadcast…");
+      await fetch("/api/v1/eip7702/broadcast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          auth_id: auth.auth_id,
+          tx_hash: txHash,
+          chain_id: prep.chain_id,
+        }),
+      });
+
+      setStatus("Authorized.");
       await reload();
-    } catch (e: any) {
-      setError(e?.message || "Authorization failed");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Authorization failed";
+      setError(msg);
+      setStatus("");
     } finally {
       setLoading(false);
     }
@@ -108,8 +203,8 @@ export default function Eip7702OptInPanel({ userWallet }: Eip7702OptInPanelProps
 
       <p className="text-sm text-muted-foreground mb-3">
         Upgrade your EOA into a smart account via Biconomy Nexus or ZeroDev
-        Kernel. One signature unlocks autonomous flows guarded by your
-        session-key policies above.
+        Kernel. One signature + one broadcast tx installs the session-key
+        validator module that enforces your policies on-chain.
       </p>
 
       <div className="flex gap-2 mb-3">
@@ -131,11 +226,26 @@ export default function Eip7702OptInPanel({ userWallet }: Eip7702OptInPanelProps
 
       <Button onClick={optIn} disabled={loading} className="w-full">
         <Zap className="h-4 w-4 mr-2" />
-        {loading ? "Awaiting signature…" : `Sign ${impl === "nexus" ? "Nexus" : "Kernel"} authorization`}
+        {loading
+          ? status || "Working…"
+          : `Sign + install ${impl === "nexus" ? "Nexus" : "Kernel"} validator`}
       </Button>
 
       {error ? (
         <div className="mt-3 text-sm text-red-500">{error}</div>
+      ) : null}
+
+      {lastTxHash && lastChainId ? (
+        <div className="mt-3 text-xs">
+          <a
+            href={getEvmExplorerTxUrlByChainId(lastChainId, lastTxHash) ?? "#"}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-emerald-500 underline"
+          >
+            {lastTxHash.slice(0, 12)}…<ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
       ) : null}
 
       <div className="mt-4">
@@ -159,8 +269,24 @@ export default function Eip7702OptInPanel({ userWallet }: Eip7702OptInPanelProps
                 <span className="text-muted-foreground">
                   {a.impl_addr.slice(0, 8)}…
                 </span>
+                {a.broadcast_tx_hash ? (
+                  <a
+                    href={
+                      getEvmExplorerTxUrlByChainId(a.chain_id, a.broadcast_tx_hash) ?? "#"
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-500 underline"
+                  >
+                    tx
+                  </a>
+                ) : null}
                 <Badge variant={a.revoked_at ? "destructive" : "safe"}>
-                  {a.revoked_at ? "revoked" : "active"}
+                  {a.revoked_at
+                    ? "revoked"
+                    : a.broadcast_tx_hash
+                      ? "authorized"
+                      : "signed"}
                 </Badge>
               </li>
             ))}

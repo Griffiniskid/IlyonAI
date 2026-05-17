@@ -179,6 +179,35 @@ export function getEvmExplorerAddressUrl(chain: string, address: string): string
 }
 
 /**
+ * Resolve the explorer tx URL for a given EVM chain_id. Used by
+ * Eip7702OptInPanel + SessionKeyPanel to render a link to the broadcast
+ * installModule / uninstallModule receipt.
+ */
+export function getEvmExplorerTxUrlByChainId(
+  chainId: number,
+  txHash: string,
+): string | null {
+  const byId: Record<number, string> = {
+    1: "https://etherscan.io/tx",
+    10: "https://optimistic.etherscan.io/tx",
+    56: "https://bscscan.com/tx",
+    137: "https://polygonscan.com/tx",
+    8453: "https://basescan.org/tx",
+    42161: "https://arbiscan.io/tx",
+    43114: "https://snowtrace.io/tx",
+    59144: "https://lineascan.build/tx",
+    81457: "https://blastscan.io/tx",
+    5000: "https://explorer.mantle.xyz/tx",
+    100: "https://gnosisscan.io/tx",
+    324: "https://explorer.zksync.io/tx",
+    534352: "https://scrollscan.com/tx",
+    42220: "https://celoscan.io/tx",
+  };
+  const base = byId[chainId];
+  return base ? `${base}/${txHash}` : null;
+}
+
+/**
  * Copy text to clipboard
  */
 export async function copyToClipboard(text: string): Promise<boolean> {

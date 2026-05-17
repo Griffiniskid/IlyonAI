@@ -17,6 +17,7 @@ const { Connection, PublicKey, Transaction, ComputeBudgetProgram } = require("@s
 const { depositSol, withdrawSol } = require("@solana/spl-stake-pool");
 const { buildSwap, resolveMint, decimalsFor, SOL_MINT } = require("./jupiter");
 const { simulateBase64Tx } = require("./simulate");
+const { checkTxAccountCount } = require("./altSplit");
 
 const JITO_STAKE_POOL = new PublicKey("Jito4APyf642JPZPx3hGc6WXJ8p9BNS5d5XtyZdW8VR");
 const JITOSOL_MINT = "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn";
@@ -64,6 +65,10 @@ module.exports = {
       e.simulation = sim;
       throw e;
     }
+    const sz = checkTxAccountCount(b64);
+    const altWarn = sz.needsSplit
+      ? ["Transaction has " + sz.accounts + " accounts. Hardware wallets may need ALT pre-warming."]
+      : [];
     return {
       transactions: [
         {
@@ -80,6 +85,7 @@ module.exports = {
           durationS: 18,
           warnings: [
             "Instant unstake uses pool's SOL reserve; deep amounts may need deferred withdrawStake.",
+            ...altWarn,
           ],
           simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
         },
@@ -136,6 +142,10 @@ module.exports = {
         e.simulation = sim;
         throw e;
       }
+      const sz = checkTxAccountCount(b64);
+      const altWarn = sz.needsSplit
+        ? ["Transaction has " + sz.accounts + " accounts. Hardware wallets may need ALT pre-warming."]
+        : [];
       return {
         transactions: [
           {
@@ -153,6 +163,7 @@ module.exports = {
             warnings: [
               "Native SPL Stake Pool deposit — exchange rate enforced on-chain.",
               "JitoSOL accrues MEV-boosted stake rewards; redeem any time via Jupiter or SPL Stake Pool withdraw.",
+              ...altWarn,
             ],
             simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
           },

@@ -10,9 +10,13 @@ from aiohttp import web
 
 from src.api.routes.eip7702_auth import (
     authorize,
+    install_module_calldata,
     list_authorizations,
     prepare_authorization,
+    register_broadcast,
+    register_solana_session_signer,
     setup_eip7702_routes,
+    uninstall_module_calldata,
 )
 
 
@@ -166,6 +170,122 @@ def test_routes_register_under_eip7702_prefix():
     assert "/api/v1/eip7702/authorize" in paths
     # auth-prefixed paths must NOT be registered.
     assert "/api/v1/auth/eip7702/prepare" not in paths
+
+
+# ─────────────────────────────────────────────────────────────────────
+# D.1/D.2 — install/uninstall module calldata + broadcast register
+# ─────────────────────────────────────────────────────────────────────
+
+_VALIDATOR = "0x0000000000F8c1deDD7D60ce4e2B1b9D7f78f3a6"
+
+
+def test_install_module_calldata_returns_selector_and_hex():
+    r = _mock_request({
+        "validator_module": _VALIDATOR,
+        "session_signer": "0x" + "11" * 20,
+        "spend_cap_wei": "1000000000000000000",
+        "selector_allowlist": ["0xa9059cbb"],
+        "expiry_unix": 9_999_999_999,
+    })
+    resp = _run(install_module_calldata(r))
+    assert resp.status == 200
+    data = _resp_json(resp)
+    assert data["ok"] is True
+    assert data["selector"] == "0x9517e29f"
+    assert data["calldata"].startswith("0x9517e29f")
+
+
+def test_install_module_calldata_rejects_missing_allowlist():
+    r = _mock_request({
+        "validator_module": _VALIDATOR,
+        "session_signer": "0x" + "11" * 20,
+        "spend_cap_wei": "1",
+        "selector_allowlist": [],
+        "expiry_unix": 0,
+    })
+    resp = _run(install_module_calldata(r))
+    assert resp.status == 400
+
+
+def test_uninstall_module_calldata_returns_selector_a71763a8():
+    r = _mock_request({"validator_module": _VALIDATOR})
+    resp = _run(uninstall_module_calldata(r))
+    assert resp.status == 200
+    data = _resp_json(resp)
+    assert data["selector"] == "0xa71763a8"
+    assert data["calldata"].startswith("0xa71763a8")
+
+
+def test_uninstall_module_calldata_rejects_invalid_address():
+    r = _mock_request({"validator_module": "not-an-address"})
+    resp = _run(uninstall_module_calldata(r))
+    assert resp.status == 400
+
+
+def test_register_broadcast_dev_mode_caches_tx_hash():
+    app = {"_eip7702_auths": {"auth-1": {"user_wallet": "0x" + "aa" * 20}}}
+    req = MagicMock()
+    req.json = AsyncMock(return_value={
+        "auth_id": "auth-1",
+        "tx_hash": "0x" + "cd" * 32,
+        "chain_id": 1,
+    })
+    req.app = app
+    resp = _run(register_broadcast(req))
+    assert resp.status == 200
+    data = _resp_json(resp)
+    assert data["ok"] is True
+    assert data["tx_hash"] == "0x" + "cd" * 32
+    assert app["_eip7702_auths"]["auth-1"]["broadcast_tx_hash"] == "0x" + "cd" * 32
+
+
+def test_register_broadcast_rejects_short_tx_hash():
+    req = MagicMock()
+    req.json = AsyncMock(return_value={
+        "auth_id": "a", "tx_hash": "0xshort", "chain_id": 1,
+    })
+    req.app = {}
+    resp = _run(register_broadcast(req))
+    assert resp.status == 400
+
+
+def test_register_solana_signer_caches_record():
+    app: dict = {}
+    req = MagicMock()
+    req.json = AsyncMock(return_value={
+        "user_wallet": "11111111111111111111111111111111",
+        "signer_pubkey": "22222222222222222222222222222222",
+        "expires_at": "2026-06-01T00:00:00Z",
+    })
+    req.app = app
+    resp = _run(register_solana_session_signer(req))
+    assert resp.status == 200
+    data = _resp_json(resp)
+    assert data["ok"] is True
+    assert data["signer_pubkey"] == "22222222222222222222222222222222"
+    assert "11111111111111111111111111111111" in app["_solana_session_signers"]
+
+
+def test_register_solana_signer_rejects_short_pubkey():
+    req = MagicMock()
+    req.json = AsyncMock(return_value={
+        "user_wallet": "11111111111111111111111111111111",
+        "signer_pubkey": "short",
+    })
+    req.app = {}
+    resp = _run(register_solana_session_signer(req))
+    assert resp.status == 400
+
+
+def test_setup_eip7702_routes_registers_new_endpoints():
+    from aiohttp import web
+    app = web.Application()
+    setup_eip7702_routes(app)
+    paths = {r.resource.canonical for r in app.router.routes()}
+    assert "/api/v1/eip7702/install-module-calldata" in paths
+    assert "/api/v1/eip7702/uninstall-module-calldata" in paths
+    assert "/api/v1/eip7702/broadcast" in paths
+    assert "/api/v1/eip7702/solana-signer" in paths
 
 
 def test_prepare_handles_bad_json():

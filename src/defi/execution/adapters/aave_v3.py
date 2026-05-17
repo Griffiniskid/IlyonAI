@@ -136,6 +136,80 @@ def _to_unit(amount: Decimal, decimals: int) -> int:
     return int((amount * quant).to_integral_value())
 
 
+def _read_current_allowance(
+    *,
+    extra: dict,
+    chain: str,
+    token_address: str,
+    owner: str,
+    spender: str,
+) -> int | None:
+    """Spec §7 S8 — fetch existing allowance (fail-soft).
+
+    Reads in priority order:
+      1. extra['current_allowance']         → raw int (pre-fetched by caller)
+      2. extra['allowance_reader']          → callable(chain, token, owner, spender) -> int
+      3. extra['web3_client'] / extra['evm_client'] with .allowance(...)
+    Returns None on any error or when no reader is supplied — callers must
+    treat that as "unknown → emit full approve" so behaviour is unchanged
+    when the read path is unavailable.
+    """
+    try:
+        ca = extra.get("current_allowance")
+        if ca is not None:
+            return int(ca)
+        reader = extra.get("allowance_reader")
+        if callable(reader):
+            val = reader(chain, token_address, owner, spender)
+            if val is None:
+                return None
+            return int(val)
+        client = extra.get("web3_client") or extra.get("evm_client")
+        if client is not None:
+            fn = getattr(client, "allowance", None) or getattr(client, "get_allowance", None)
+            if callable(fn):
+                val = fn(chain, token_address, owner, spender)
+                if val is None:
+                    return None
+                return int(val)
+    except Exception:
+        return None
+    return None
+
+
+def _resolve_approve_amount(
+    requested_units: int,
+    *,
+    current_allowance: int | None,
+) -> tuple[int | None, str | None]:
+    """Decide approve amount per spec §7 S8 partial-allowance ladder.
+
+    Returns (approve_units, warning):
+      - approve_units = None      → SKIP the approve step entirely
+      - approve_units = delta     → top-up approve for (requested - current)
+      - approve_units = requested → full approve (current allowance is 0 or
+                                    we couldn't read it — fail-soft)
+      - warning                   → a string to attach to the supply step's
+                                    risk_warnings (or None)
+    """
+    if requested_units <= 0:
+        return requested_units, None
+    if current_allowance is None:
+        return requested_units, None  # fail-soft: full approve
+    if current_allowance >= requested_units:
+        return None, (
+            f"Existing allowance sufficient — no approve needed "
+            f"(current={current_allowance}, needed={requested_units})."
+        )
+    if current_allowance > 0:
+        delta = requested_units - current_allowance
+        return delta, (
+            f"Topping up existing {current_allowance} allowance to {requested_units} "
+            f"(delta approve = {delta})."
+        )
+    return requested_units, None  # current_allowance == 0 → full approve
+
+
 @dataclass
 class AaveV3SupplyAdapter:
     adapter_id: str = "aave-v3-supply"
@@ -619,8 +693,20 @@ class AaveV3SupplyAdapter:
         if amount_units <= 0:
             raise ValueError("amount_in must be > 0")
 
-        # ERC20 approve(spender, amount) -> 0x095ea7b3
-        approve_calldata = "0x095ea7b3" + _encode_address(pool_address) + _encode_uint256(amount_units)
+        # Spec §7 S8 — partial allowance ladder. Skip approve when existing
+        # allowance is sufficient, top-up the delta when partially funded,
+        # full approve otherwise (or when read fails — fail-soft).
+        current_allowance = _read_current_allowance(
+            extra=extra,
+            chain=chain_norm,
+            token_address=token_address,
+            owner=request.user_address,
+            spender=pool_address,
+        )
+        approve_units, allowance_note = _resolve_approve_amount(
+            amount_units, current_allowance=current_allowance,
+        )
+
         # Aave Pool supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) -> 0x617ba037
         supply_calldata = (
             "0x617ba037"
@@ -630,33 +716,65 @@ class AaveV3SupplyAdapter:
             + _encode_uint256(0)
         )
 
-        approve_step = make_step(
-            index=1,
-            action="approve",
-            title=f"Approve {request.asset_in} for Aave V3 Pool",
-            description=f"Approve {request.amount_in} {request.asset_in} so Aave V3 Pool can pull funds.",
-            chain=request.chain,
-            wallet="MetaMask",
-            protocol="aave-v3",
-            asset_in=request.asset_in,
-            amount_in=str(request.amount_in),
-            slippage_bps=0,
-            gas_estimate_usd=1.4,
-            duration_estimate_s=15,
-            transaction=UnsignedStepTransaction(
-                chain_kind="evm",
-                chain_id=chain_id,
-                to=token_address,
-                data=approve_calldata,
-                value="0x0",
-                spender=pool_address,
-            ),
-            risk_warnings=[
-                "Approval allows Aave V3 Pool to pull the exact amount you authorize.",
-            ],
-        )
+        steps: list[ExecutionStepV3] = []
+        supply_index = 1
+        depends_on: list[str] = []
+        if approve_units is not None:
+            approve_calldata = (
+                "0x095ea7b3"
+                + _encode_address(pool_address)
+                + _encode_uint256(approve_units)
+            )
+            approve_title = (
+                f"Approve {request.asset_in} for Aave V3 Pool"
+                if approve_units == amount_units
+                else f"Top up {request.asset_in} allowance for Aave V3 Pool"
+            )
+            approve_desc = (
+                f"Approve {request.amount_in} {request.asset_in} so Aave V3 Pool can pull funds."
+                if approve_units == amount_units
+                else (
+                    f"Top-up approve: current allowance {current_allowance} is below the "
+                    f"requested {amount_units}. Adding delta of {approve_units} so Aave V3 "
+                    f"Pool can pull the full requested amount."
+                )
+            )
+            approve_warnings = ["Approval allows Aave V3 Pool to pull the exact amount you authorize."]
+            if allowance_note:
+                approve_warnings.append(allowance_note)
+            approve_step = make_step(
+                index=1,
+                action="approve",
+                title=approve_title,
+                description=approve_desc,
+                chain=request.chain,
+                wallet="MetaMask",
+                protocol="aave-v3",
+                asset_in=request.asset_in,
+                amount_in=str(Decimal(approve_units) / (Decimal(10) ** decimals)),
+                slippage_bps=0,
+                gas_estimate_usd=1.4,
+                duration_estimate_s=15,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm",
+                    chain_id=chain_id,
+                    to=token_address,
+                    data=approve_calldata,
+                    value="0x0",
+                    spender=pool_address,
+                ),
+                risk_warnings=approve_warnings,
+            )
+            steps.append(approve_step)
+            depends_on = [approve_step.step_id]
+            supply_index = 2
+
+        supply_warnings = ["Aave supply APY varies with utilization; treat headline APY as an estimate."]
+        if allowance_note and approve_units is None:
+            # Approve skipped entirely — surface the reason on the supply step.
+            supply_warnings.append(allowance_note)
         supply_step = make_step(
-            index=2,
+            index=supply_index,
             action="supply",
             title=f"Supply {request.asset_in} to Aave V3",
             description=f"Deposit {request.amount_in} {request.asset_in} into Aave V3 Pool. You receive a{request.asset_in} receipt token.",
@@ -669,7 +787,7 @@ class AaveV3SupplyAdapter:
             slippage_bps=0,
             gas_estimate_usd=2.8,
             duration_estimate_s=15,
-            depends_on=[approve_step.step_id],
+            depends_on=depends_on,
             transaction=UnsignedStepTransaction(
                 chain_kind="evm",
                 chain_id=chain_id,
@@ -678,11 +796,10 @@ class AaveV3SupplyAdapter:
                 value="0x0",
                 spender=pool_address,
             ),
-            risk_warnings=[
-                "Aave supply APY varies with utilization; treat headline APY as an estimate.",
-            ],
+            risk_warnings=supply_warnings,
         )
-        return [approve_step, supply_step]
+        steps.append(supply_step)
+        return steps
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
         return VerifyResult(confirmed=False, detail="Aave V3 verification requires on-chain balance read; wired in V2.")

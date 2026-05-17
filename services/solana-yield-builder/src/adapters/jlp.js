@@ -61,6 +61,7 @@ const {
 const BN = require("bn.js");
 const crypto = require("crypto");
 const { simulateBase64Tx } = require("./simulate");
+const { checkTxAccountCount } = require("./altSplit");
 
 // ── Program-level constants ─────────────────────────────────────────────────
 const PROGRAM_ID = new PublicKey("PERPHjGBqRHArX4DySjwM6UJHiR3sWAatqfdBS2qQJu");
@@ -355,6 +356,10 @@ module.exports = {
       e.simulation = sim;
       throw e;
     }
+    const sz = checkTxAccountCount(b64);
+    const altWarn = sz.needsSplit
+      ? ["Transaction has " + sz.accounts + " accounts. Hardware wallets may need ALT pre-warming."]
+      : [];
 
     // Lockup ends 1h after the deposit is included. We surface a wall-clock
     // estimate (now + 3600s) for the runtime to gate any unstake attempt;
@@ -382,6 +387,7 @@ module.exports = {
             "Native JLP mint via Jupiter Perpetuals add_liquidity2 — bypasses Jupiter swap.",
             "1-hour withdraw lockup begins at deposit confirmation; unstake retries before that revert.",
             "min_lp_out=0 for Phase A — protocol enforces NAV but does not cap slippage.",
+            ...altWarn,
           ],
           simulation: {
             ok: true,

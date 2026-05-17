@@ -1020,6 +1020,155 @@ async def build_yield_execution_plan(
     except Exception:
         pass
 
+    # F03/F08 wallet preflight — fail-soft balance + native gas check.
+    # The plan thought-stream advertises "Running wallet preflight (balance /
+    # gas / allowance) before exposing any signing button" but earlier passes
+    # never actually ran a balance lookup. Empty wallet + 100k USDC supply
+    # would silently emit a `ready` plan. Wire the real check here so
+    # frontends gate the signing CTA on visible blockers.
+    try:
+        from IlyonAi_Wallet_assistant_main.server.app.agents.crypto_agent import (
+            get_smart_wallet_balance,
+        )
+        import asyncio as _asyncio
+        import json as _json
+        _raw_bal = await _asyncio.to_thread(
+            get_smart_wallet_balance,
+            str(user_address or ""),
+            str(user_address or ""),
+            str(user_address or ""),
+        )
+        try:
+            _bal_doc = _json.loads(_raw_bal) if isinstance(_raw_bal, str) else (_raw_bal or {})
+        except Exception:
+            _bal_doc = {}
+        # Build symbol → human balance map across all chains the scanner
+        # returned. Caller's chain context drives the gas check, but token
+        # presence is checked symbolically (Aave V3 USDC on Ethereum vs.
+        # Polygon is still USDC for shortfall purposes).
+        _wallet_balances: dict[str, float] = {}
+        _native_gas_by_chain: dict[str, float] = {}
+        _CHAIN_NAME_TO_KEY = {
+            "Ethereum": "ethereum", "BNB Chain": "bsc", "BSC": "bsc",
+            "Polygon": "polygon", "Arbitrum": "arbitrum", "Optimism": "optimism",
+            "Base": "base", "Avalanche": "avalanche", "Solana": "solana",
+            "Linea": "linea", "Mantle": "mantle", "Scroll": "scroll",
+            "zkSync": "zksync",
+        }
+        for _entry in (_bal_doc.get("balances") or []):
+            _chain_name = str(_entry.get("chain") or "")
+            _chain_key = _CHAIN_NAME_TO_KEY.get(_chain_name, _chain_name.lower())
+            _native_sym = str(_entry.get("native_symbol") or "").upper()
+            try:
+                _native_amt = float(_entry.get("native_balance") or 0)
+            except (TypeError, ValueError):
+                _native_amt = 0.0
+            if _native_sym:
+                _wallet_balances[_native_sym] = max(
+                    _wallet_balances.get(_native_sym, 0.0), _native_amt
+                )
+                _native_gas_by_chain[_chain_key] = max(
+                    _native_gas_by_chain.get(_chain_key, 0.0), _native_amt
+                )
+            for _tok in (_entry.get("tokens") or []):
+                _sym = str(_tok.get("symbol") or "").upper()
+                try:
+                    _amt = float(_tok.get("balance") or 0)
+                except (TypeError, ValueError):
+                    _amt = 0.0
+                if _sym:
+                    _wallet_balances[_sym] = max(_wallet_balances.get(_sym, 0.0), _amt)
+
+        # 1) Per-asset shortfall — emit one INSUFFICIENT_BALANCE blocker per
+        #    short symbol so the recovery card can route bridge/swap source.
+        _shortfall_emitted: set[str] = set()
+        for _sym, _required_text in (plan.totals.assets_required or {}).items():
+            _sym_up = str(_sym).upper()
+            if not _sym_up or _sym_up.startswith("0X") or "+" in _sym_up:
+                continue
+            try:
+                _required = float(_required_text)
+            except (TypeError, ValueError):
+                _required = 0.0
+            if _required <= 0:
+                continue
+            _have = float(_wallet_balances.get(_sym_up, 0.0))
+            if _have < _required and _sym_up not in _shortfall_emitted:
+                _shortfall_emitted.add(_sym_up)
+                plan.add_blocker(ExecutionBlocker(
+                    code="INSUFFICIENT_BALANCE",
+                    severity="blocker",
+                    title=f"Not enough {_sym_up}",
+                    detail=(
+                        f"Need {_required:g} {_sym_up}, wallet has "
+                        f"{_have:g} {_sym_up}."
+                    ),
+                    affected_step_ids=[],
+                    cta=(
+                        f"Bridge or swap into {_sym_up} on {chain} before "
+                        f"signing this plan."
+                    ),
+                ))
+
+        # 2) Native gas top-up — sum step.gas_estimate_usd, convert to native
+        #    via _TOKEN_USD_HINT, require ≥ 1.5× headroom. Skip if no hint or
+        #    no estimate (can't fail-loud without a credible number).
+        _TOKEN_USD_HINT_LOCAL: dict[str, float] = {
+            "SOL": 90.0, "WSOL": 90.0,
+            "ETH": 2300.0, "WETH": 2300.0,
+            "BNB": 640.0, "WBNB": 640.0,
+            "MATIC": 0.13, "WMATIC": 0.13, "POL": 0.13,
+            "AVAX": 18.0, "WAVAX": 18.0,
+            "BTC": 80000.0, "WBTC": 80000.0,
+        }
+        _NATIVE_BY_CHAIN = {
+            "ethereum": "ETH", "base": "ETH", "arbitrum": "ETH",
+            "optimism": "ETH", "linea": "ETH", "scroll": "ETH",
+            "zksync": "ETH", "bsc": "BNB", "polygon": "MATIC",
+            "avalanche": "AVAX", "solana": "SOL", "mantle": "MNT",
+        }
+        _chain_key = (chain or "").lower()
+        _native_sym = _NATIVE_BY_CHAIN.get(_chain_key)
+        _est_gas_usd = 0.0
+        for _step in plan.steps:
+            try:
+                _est_gas_usd += float(getattr(_step, "gas_estimate_usd", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+        if _native_sym and _est_gas_usd > 0:
+            _native_usd = _TOKEN_USD_HINT_LOCAL.get(_native_sym)
+            if _native_usd and _native_usd > 0:
+                _native_needed = (_est_gas_usd * 1.5) / _native_usd
+                _native_have = float(_native_gas_by_chain.get(_chain_key, 0.0))
+                if _native_have <= 0:
+                    # Cross-fallback: chain-keyed lookup missed, fall back to
+                    # symbol-keyed lookup so single-chain wallets still match.
+                    _native_have = float(_wallet_balances.get(_native_sym, 0.0))
+                if _native_have < _native_needed:
+                    plan.add_blocker(ExecutionBlocker(
+                        code="GAS_TOP_UP",
+                        severity="blocker",
+                        title=f"Not enough {_native_sym} for gas",
+                        detail=(
+                            f"Need ~{_native_needed:.6f} {_native_sym} "
+                            f"(~${_est_gas_usd * 1.5:,.2f} at 1.5× headroom), "
+                            f"wallet has {_native_have:.6f} {_native_sym}."
+                        ),
+                        affected_step_ids=[],
+                        cta=(
+                            f"Top up {_native_sym} on {chain} before signing "
+                            f"(bridge from another chain or fund the wallet)."
+                        ),
+                    ))
+        # Re-serialise after late blockers so the frontend sees them.
+        plan_dict = plan.to_dict()
+    except Exception:
+        # Fail-soft: any failure in the preflight (import error, wallet
+        # unreachable, scanner timeout, malformed response) keeps the
+        # original `ready` plan path. The spec is explicit — current behaviour
+        # is preserved when balance lookup throws or wallet is unset.
+        pass
+
     return ok_envelope(
         data={"plan": plan_dict, "adapter_id": capability.adapter_id},
         card_type="execution_plan_v3",

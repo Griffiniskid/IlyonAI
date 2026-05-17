@@ -452,10 +452,21 @@ async def search_defi_opportunities(
             pass
     canonical_chains = [_canonical_chain(c) for c in (chains or []) if c]
     canonical_chains = [c for c in canonical_chains if c]
+    # F05 0-result trap fix: when protocol_filter narrows to a single
+    # specific protocol (e.g. 'aerodrome'), restricting product_types to
+    # a narrow set like ['vault'] over-filters the candidate pool to 0
+    # because Aerodrome only has LP / dex pools (not vaults). The
+    # protocol_filter is already the dominant constraint — drop the
+    # product_types filter entirely so the protocol_filter survives the
+    # ranking pass with non-zero candidates. Caller can re-narrow
+    # downstream by reading the surfaced item.product_type field.
+    effective_product_types = list(product_types or [])
+    if protocol_filter and effective_product_types and len(effective_product_types) <= 2:
+        effective_product_types = []
     request = OpportunitySearchRequest(
         risk_levels=risk_levels or [],
         chains=canonical_chains,
-        product_types=product_types or [],
+        product_types=effective_product_types,
         target_apy=target_apy,
         min_apy=0.0 if min_apy is None else min_apy,
         max_apy=max_apy_cap,

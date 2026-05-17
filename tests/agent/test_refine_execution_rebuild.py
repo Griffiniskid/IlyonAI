@@ -1,6 +1,4 @@
 """A/C refine — re-fire build_yield_execution_plan with refined args.
-import pytest
-pytestmark = pytest.mark.skip(reason="Subagent-authored aspirational test for unfinished feature; tracks issue but not yet implemented end-to-end")
 
 Pass-4 hand-read A-cat (38 actionable) + C-cat (27 actionable): dominant
 bug class was 'Lido only' / 'Aave V3 only' / '0.05 ETH' / 'narrow range'
@@ -87,9 +85,8 @@ def test_protocol_only_refine_lido():
     _, args = result
     assert args["protocol"] == "lido"
     assert args["action"] == "stake"
-    # Chain inherited from prior (base), but lido is ethereum-only —
-    # the registry-gate downstream will surface UNSUPPORTED_CHAIN; the
-    # synth itself doesn't fight the user's prior chain.
+    # Chain inherited from prior (base) — registry-gate downstream
+    # surfaces UNSUPPORTED_CHAIN; the synth itself doesn't fight prior.
     assert args["chain"] == "base"
 
 
@@ -166,7 +163,6 @@ def test_native_qualifier_refine():
 def test_returns_none_when_no_signal():
     """No refine signal → returns None so fallback path runs."""
     history = [_aave_supply_card_base()]
-    # No protocol / chain / amount / fee / range signal.
     result = _synthesize_refine_execution_args("Tell me more about this", history)
     assert result is None
 

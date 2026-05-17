@@ -21,6 +21,7 @@ const {
 } = require("./jupiter");
 const { planPrepSwap } = require("./pairAware");
 const { simulateBase64Tx } = require("./simulate");
+const { checkTxAccountCount } = require("./altSplit");
 
 // Orca Whirlpool program — verified on mainnet, hard-coded constant.
 const WHIRLPOOL_PROGRAM_ID = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc";
@@ -220,6 +221,10 @@ module.exports = {
       e.simulation = sim;
       throw e;
     }
+    const sz = checkTxAccountCount(b64);
+    const altWarn = sz.needsSplit
+      ? ["Transaction has " + sz.accounts + " accounts. Hardware wallets may need ALT pre-warming."]
+      : [];
     return {
       transactions: [
         {
@@ -236,6 +241,7 @@ module.exports = {
           warnings: [
             "Closes the entire position — any in-range liquidity exits to your wallet at current pool price.",
             "Position NFT is burned; rewards/fees credited to your ATAs.",
+            ...altWarn,
           ],
           simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
         },

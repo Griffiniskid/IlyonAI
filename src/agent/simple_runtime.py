@@ -6172,9 +6172,9 @@ def _synthesize_refine_search_args(
     return args
 
 
-_PROTO_REFINE_RE = re.compile(
-    r"\b(?:only|just|switch\s+to|use|with|via)\s+"
-    r"(?P<proto>lido|rocket[ -]?pool|rocketpool|ether[\.\-]?fi|etherfi|"
+# Protocol-name alternation reused by both leading and trailing forms.
+_REFINE_PROTO_ALT = (
+    r"lido|rocket[ -]?pool|rocketpool|ether[\.\-]?fi|etherfi|"
     r"renzo|swell|frax(?:[ -]?ether)?|stader|mantle|kelp|"
     r"aave(?:[ -]?v[23])?|compound(?:[ -]?v[23])?|"
     r"spark(?:[ -]?protocol)?|spark[ -]?lending|"
@@ -6190,10 +6190,24 @@ _PROTO_REFINE_RE = re.compile(
     r"jito|marinade|sanctum|kamino(?:[ -]?lend)?|"
     r"raydium(?:[ -]?clmm|[ -]?amm|[ -]?cp)?|"
     r"orca(?:[ -]?whirlpools|[ -]?clmm)?|"
-    r"meteora(?:[ -]?dlmm)?)"
-    r"(?:\s+only)?\b",
+    r"meteora(?:[ -]?dlmm)?"
+)
+# Leading-verb form: "only Lido" / "switch to Aave V3" / "use Spark".
+_PROTO_REFINE_LEAD_RE = re.compile(
+    r"\b(?:only|just|switch\s+to|use|with|via)\s+"
+    rf"(?P<proto>{_REFINE_PROTO_ALT})\b",
     re.IGNORECASE,
 )
+# Trailing-only form: "Lido only" / "Aave V3 only" / "Spark only".
+# Pass-4 caught dominant A/C refines as "<Proto> only" — must match
+# both word orders so the synth fires regardless of phrasing.
+_PROTO_REFINE_TRAIL_RE = re.compile(
+    rf"(?P<proto>{_REFINE_PROTO_ALT})\s+only\b",
+    re.IGNORECASE,
+)
+# Backward-compat alias — keep the original symbol for any future call sites
+# that import it directly.
+_PROTO_REFINE_RE = _PROTO_REFINE_LEAD_RE
 _CHAIN_REFINE_RE = re.compile(
     r"\b(?:on|in|via|switch\s+to|use)\s+"
     r"(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|bnb|"
@@ -6378,8 +6392,10 @@ def _synthesize_refine_execution_args(
     new_amount = base_amount
     new_extra = dict(base_extra)
 
-    # Protocol filter — scan and normalise.
-    pm = _PROTO_REFINE_RE.search(message)
+    # Protocol filter — try leading-verb form first ("only Lido"), then
+    # trailing-only form ("Lido only") which dominates the A/C refine
+    # phrasings hand-read in Pass-4.
+    pm = _PROTO_REFINE_LEAD_RE.search(message) or _PROTO_REFINE_TRAIL_RE.search(message)
     if pm:
         proto_raw = pm.group("proto").lower().replace(" ", "-")
         norm = _REFINE_PROTO_NORM.get(proto_raw, proto_raw)

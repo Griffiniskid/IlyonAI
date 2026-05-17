@@ -51,6 +51,7 @@ const {
 } = require("@solana/spl-token");
 const { humanToAtoms } = require("./jupiter");
 const { simulateBase64Tx } = require("./simulate");
+const { checkTxAccountCount } = require("./altSplit");
 
 const PROGRAM_ID = new PublicKey("5ocnV1qiCgaQR8Jb8xWnVbApfaygJ8tNoZfgPwsgx9kx");
 const INF_MINT = new PublicKey("5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm");
@@ -311,6 +312,10 @@ module.exports = {
       e.simulation = sim;
       throw e;
     }
+    const sz = checkTxAccountCount(b64);
+    const altWarn = sz.needsSplit
+      ? ["Transaction has " + sz.accounts + " accounts. Hardware wallets may need ALT pre-warming."]
+      : [];
 
     return {
       transactions: [
@@ -334,6 +339,7 @@ module.exports = {
             calcAccsRaw.length === 0
               ? `extra.calcAccs was empty — sim will fail unless ${lst.sym}'s SOL-value calc accounts are provided.`
               : `Using ${calcAccsRaw.length} caller-supplied calc account(s) for ${lst.sym}.`,
+            ...altWarn,
           ],
           simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
         },

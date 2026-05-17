@@ -41,11 +41,70 @@ export async function signMessage(message: string): Promise<string> {
   return sig;
 }
 
-export async function sendTransaction(tx: { to: string; value?: string; data?: string }): Promise<string> {
+export async function sendTransaction(tx: { to: string; value?: string; data?: string; from?: string }): Promise<string> {
   const eth = getEvmProvider();
   if (!eth) throw new Error("No EVM provider");
-  const hash = await eth.request({ method: "eth_sendTransaction", params: [tx] }) as string;
+  let from = tx.from;
+  if (!from) {
+    const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+    from = accounts[0];
+  }
+  const params: Record<string, string> = { to: tx.to, from };
+  if (tx.value !== undefined) params.value = tx.value;
+  if (tx.data !== undefined) params.data = tx.data;
+  const hash = (await eth.request({
+    method: "eth_sendTransaction",
+    params: [params],
+  })) as string;
   return hash;
+}
+
+/** Read the wallet's currently selected chain id as a decimal number. */
+export async function getChainId(): Promise<number> {
+  const eth = getEvmProvider();
+  if (!eth) throw new Error("No EVM provider");
+  const hex = (await eth.request({ method: "eth_chainId" })) as string;
+  return parseInt(hex, 16);
+}
+
+interface EthTxReceipt {
+  status?: string | null;     // "0x1" success, "0x0" reverted
+  blockNumber?: string | null;
+  transactionHash?: string;
+}
+
+/**
+ * Poll eth_getTransactionReceipt every `intervalMs` until non-null or
+ * timeout. Returns the receipt object. Throws if the receipt status is
+ * 0x0 (reverted) or the poll times out.
+ *
+ * Used by Eip7702OptInPanel + SessionKeyPanel to confirm the broadcast
+ * before registering the tx hash with the backend audit table.
+ */
+export async function waitForReceipt(
+  txHash: string,
+  { intervalMs = 2500, timeoutMs = 180_000 }: { intervalMs?: number; timeoutMs?: number } = {},
+): Promise<EthTxReceipt> {
+  const eth = getEvmProvider();
+  if (!eth) throw new Error("No EVM provider");
+  const start = Date.now();
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const r = (await eth.request({
+      method: "eth_getTransactionReceipt",
+      params: [txHash],
+    })) as EthTxReceipt | null;
+    if (r && r.blockNumber) {
+      if (r.status === "0x0") {
+        throw new Error(`tx reverted on-chain: ${txHash}`);
+      }
+      return r;
+    }
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`receipt poll timed out after ${timeoutMs}ms: ${txHash}`);
+    }
+    await new Promise((res) => setTimeout(res, intervalMs));
+  }
 }
 
 /**
