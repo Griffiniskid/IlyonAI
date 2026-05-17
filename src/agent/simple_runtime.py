@@ -8152,8 +8152,19 @@ async def run_ephemeral_turn(
             # fabricated Curve calldata, "auto-compound is confirmed" without
             # any Phase-D broadcast.
             final_card_ids_pre = locals().get("card_ids_for_final", []) or []
+            # Also count any CardFrame anywhere in the collector queue as a
+            # real card — search/balance/swap-quote/exec-blocked formatters
+            # emit CardFrames without populating card_ids_for_final, so the
+            # sanitizer was incorrectly firing on legit unsupported_adapter
+            # responses. Treat presence of intent (deterministic tool ran)
+            # as additional signal that the response is backed by tool data.
+            has_queued_card = any(
+                isinstance(f, CardFrame) for f in getattr(collector, "_queue", [])
+            )
+            had_intent = bool(intent and intent[0])
             cleaned, stripped = _strip_unbacked_claims(
-                cleaned, has_real_card=bool(final_card_ids_pre)
+                cleaned,
+                has_real_card=bool(final_card_ids_pre) or has_queued_card or had_intent,
             )
             if stripped:
                 logger.warning("strip_unbacked_claims: refused unbacked claim in contextual-fallback prose")
@@ -8295,7 +8306,14 @@ _UNBACKED_FAKE_CARD_RE = re.compile(
     r'|(?:▶|▷|\\u25b6)\s*Step\s*\d+'
     r'|Execution\s+Plan\s+card\s+above'
     r'|card\s+above\s+to\s+(?:begin|sign|proceed)'
-    r'|Open\s+the\s+(?:Updated\s+)?Execution\s+Plan',
+    r'|Open\s+the\s+(?:Updated\s+)?Execution\s+Plan'
+    # A16 t2 hand-read: "Sign step 1 in the Execution Plan above" — card-less
+    # impersonation. Narrow to phrases that REQUIRE a card surface to be true.
+    # Bare "Sign step N" alone is too broad — could appear in legit refusal
+    # like "Direct execution is not supported yet — when supported, you'll
+    # sign step 1...". Require the "Execution Plan above" anchor.
+    r'|Sign\s+step\s+\d+\s+in\s+(?:the\s+)?Execution\s+Plan'
+    r'|in\s+(?:the\s+)?Execution\s+Plan\s+above\s+to\s+(?:begin|sign|proceed)',
     re.IGNORECASE,
 )
 _UNBACKED_FAKE_TX_RE = re.compile(
@@ -8305,17 +8323,67 @@ _UNBACKED_FAKE_TX_RE = re.compile(
     re.IGNORECASE,
 )
 _UNBACKED_FAKE_CALLDATA_RE = re.compile(r'\b0x[0-9a-fA-F]{120,}', re.IGNORECASE)
+# H08 t2/t3 + H14 t2-4 hand-read: contextual fallback fabricates ERC-20 spender
+# addresses (e.g. "approve 0x794a61358D6845594F94dc1DB02A252b5b4814aD") presented
+# as the Aave V3 Pool on Base when it's actually the Ethereum pool — cross-chain
+# address leak. Bare 40-hex addresses paired with approval/spender/router/contract/
+# pool keywords are forbidden in contextual prose.
+_UNBACKED_FAKE_ADDRESS_RE = re.compile(
+    r'(?:approve|spender|router|pool|contract|delegate|target|to|vault|nfp[\s_-]?manager|factory)'
+    r'(?:\s+\w+){0,4}\s*[\(:]?\s*0x[0-9a-fA-F]{40}\b'
+    r'|0x[0-9a-fA-F]{40}\b\W+(?:as|is|the)\s+(?:spender|router|pool|contract|target|vault)'
+    r'|address\W+0x[0-9a-fA-F]{40}\b',
+    re.IGNORECASE,
+)
+# H12 t2/t4 + H14 t2-4 hand-read: contextual prose emits ERC-20 selector +
+# padded args framed as exec recipe ("Calldata: 0x095ea7b3 00...spender 00...amount").
+# Catch the selector+padded-args sequence even when total length < 120.
+_UNBACKED_FAKE_SELECTOR_RE = re.compile(
+    r'(?:Calldata|calldata|data)\s*[:=]\s*0x[0-9a-fA-F]{8}'
+    r'|0x[0-9a-fA-F]{8}\s+0x[0-9a-fA-F]{40,}',
+    re.IGNORECASE,
+)
 _UNBACKED_STATE_ASSERT_RE = re.compile(
     r'(?:auto[- ]?compound|session\s+key|spend\s+cap|policy|delegation|rebalanc(?:e|ing)|approval)'
     r'.{0,140}?'
-    r'(?:is\s+confirmed|is\s+active|already\s+(?:revoked|active|withdrawn|removed)'
-    r'|\bconfirmed\b|\brevoked\b|\bset\s+up\b|\benabled\b)',
+    # Allow up to 3 adverb tokens between "is" and the state verb so
+    # "is now active" / "is currently set up" / "is fully enabled" all hit.
+    # I02-T3 hand-read caught this: "is **now** active" defeated `\s+`.
+    r'(?:is\s+(?:\w+\s+){0,3}(?:confirmed|active|enabled|set\s+up|live|running|in\s+effect)'
+    r'|already\s+(?:revoked|active|withdrawn|removed)'
+    r'|\bconfirmed\b|\brevoked\b|\bset\s+up\b|\benabled\b'
+    r'|\bnow\s+active\b|\bnow\s+live\b|\bin\s+effect\b)',
     re.IGNORECASE | re.DOTALL,
 )
 _UNBACKED_FAKE_FEE_RE = re.compile(
     r'(?:bridge\s+fee\s+(?:for|is|of)|fee\s+(?:for|is|of|≈|~)\s+\d+(?:\.\d+)?\s*ETH'
     r'|fee\s+for\s+0?\.?\d+\s*ETH\s+via\s+deBridge'
     r'|cost\s+(?:is|of)\s+≈\s*\$\d)',
+    re.IGNORECASE,
+)
+# C05 t1 hand-read: contextual fabricates Enso execute URLs like
+# `https://app.enso.finance/execute?action=add_liquidity&pool=velodrome_cl_weth_usdc_optimism`
+# These URLs do NOT match real Enso schema. Refuse any contextual prose that
+# emits Enso/DefiLlama exec-style URLs without a real backing card.
+_UNBACKED_FAKE_URL_RE = re.compile(
+    r'https?://app\.enso\.finance/execute\?'
+    r'|https?://(?:defillama\.com/yields/pool/|app\.morpho\.org/[\w-]+/vault/)',
+    re.IGNORECASE,
+)
+# C05 t3 / D12 t4 hand-read: contextual prose fabricates APY/TVL numerics
+# like "APY ≈ 12.5%" or "TVL ≈ $25M" for protocols absent from any backing
+# card. Without a defi_opportunities card emitted in this turn, such numerics
+# are LLM-confabulated and forbidden.
+_UNBACKED_FAKE_METRICS_RE = re.compile(
+    # APY value: bare, range, or ranged with ≈/~
+    r'\bAPY\s*[≈~:]?\s*\d+(?:[.,]\d+)?\s*[-–—]\s*\d+(?:[.,]\d+)?\s*[%‰]'
+    r'|\bAPY\s*[≈~:]?\s*\d+(?:[.,]\d+)?\s*[%‰]'
+    r'|\bTVL\s*[≈~:]?\s*\$?\d+(?:[.,]\d+)?\s*[KMB]?\b'
+    # Phantom allocation table row: "| N | Protocol · Asset | XX.X% | $YY"
+    # Multi-pipe row with % and $ in adjacent cells indicates fabricated alloc.
+    r"|\|\s*\d+\s*\|[^|]+\|\s*\d+(?:\.\d+)?\s*%\s*\|\s*\$\d"
+    # Generic claim of position counts
+    r'|you\s+(?:currently\s+)?hold\s+\d+\s+\w+\s+positions?',
     re.IGNORECASE,
 )
 
@@ -8346,10 +8414,18 @@ def _strip_unbacked_claims(content: str, *, has_real_card: bool) -> tuple[str, b
         hits.append("fake_tx_hash")
     if _UNBACKED_FAKE_CALLDATA_RE.search(content):
         hits.append("fabricated_calldata")
+    if _UNBACKED_FAKE_ADDRESS_RE.search(content):
+        hits.append("fabricated_address")
+    if _UNBACKED_FAKE_SELECTOR_RE.search(content):
+        hits.append("fabricated_selector")
     if _UNBACKED_STATE_ASSERT_RE.search(content):
         hits.append("unbacked_state_assertion")
     if _UNBACKED_FAKE_FEE_RE.search(content):
         hits.append("fabricated_fee")
+    if _UNBACKED_FAKE_URL_RE.search(content):
+        hits.append("fabricated_exec_url")
+    if _UNBACKED_FAKE_METRICS_RE.search(content):
+        hits.append("fabricated_metrics")
     if not hits:
         return content, False
     refusal = (
