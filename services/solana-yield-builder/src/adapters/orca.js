@@ -22,6 +22,9 @@ const {
 const { planPrepSwap } = require("./pairAware");
 const { simulateBase64Tx } = require("./simulate");
 const { checkTxAccountCount } = require("./altSplit");
+// V7-031/032/041 centralized safety helpers. Imported here to prove the
+// integration path; the actual call-sites will be wired in adapter-by-adapter.
+const tokenSafety = require("./_token_safety");
 
 // Orca Whirlpool program — verified on mainnet, hard-coded constant.
 const WHIRLPOOL_PROGRAM_ID = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc";
