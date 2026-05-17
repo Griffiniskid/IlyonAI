@@ -2519,14 +2519,30 @@ def _detect_direct_pool_deposit(message: str) -> tuple[str, dict] | None:
         usd_amount = float(amount_value) * price
     if usd_amount <= 0:
         return None
-    return (
-        "execute_pool_position",
-        {
-            "pool": pool_ref,
-            "amount": usd_amount,
-            "asset_in": token,
-        },
+    # F02 chain extraction — capture "on CHAIN" from the message so
+    # execute_pool_position can flag protocol-chain mismatches instead of
+    # silently defaulting to ethereum (which let "Aave V3 on Solana"
+    # surface a ready Ethereum supply card).
+    chain_match = re.search(
+        r"\bon\s+(ethereum|polygon|arbitrum|optimism|base|avalanche|"
+        r"bsc|bnb|solana|sol|linea|zksync|scroll|mantle|blast|gnosis|"
+        r"celo|sonic|berachain|unichain)\b",
+        message,
+        re.IGNORECASE,
     )
+    args: dict[str, Any] = {
+        "pool": pool_ref,
+        "amount": usd_amount,
+        "asset_in": token,
+    }
+    if chain_match:
+        chain_word = chain_match.group(1).lower()
+        if chain_word == "sol":
+            chain_word = "solana"
+        elif chain_word == "bnb":
+            chain_word = "bsc"
+        args["chain"] = chain_word
+    return ("execute_pool_position", args)
 
 
 # "Add liquidity to PROTOCOL PAIR (FEE)? (on CHAIN)? (with)? $AMOUNT (TOKEN)?"

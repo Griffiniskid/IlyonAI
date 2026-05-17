@@ -352,6 +352,48 @@ async def execute_pool_position(
             "Connect a wallet before requesting a pool deposit; the plan needs a destination address.",
         )
 
+    # F02 protocol-chain matrix — reject combos like aave-v3 on solana,
+    # marinade on ethereum at the execute_pool_position entry too (mirrors
+    # the matrix in build_yield_execution_plan; this tool is sometimes
+    # dispatched ahead of it by _detect_direct_pool_deposit).
+    _EVM_ONLY_PROTOS_LC = {
+        "aave-v3", "aave", "compound-v3", "compound", "morpho-blue", "morpho",
+        "spark", "sparklend", "yearn-finance", "yearn", "lido", "rocket-pool",
+        "ether.fi", "etherfi", "renzo", "swell", "frax-ether", "frax",
+        "mantle-staked-ether", "kelp", "uniswap-v3", "uniswap-v2", "uniswap-v4",
+        "uniswap", "pancakeswap-amm-v3", "pancakeswap", "balancer-v3", "balancer",
+        "curve-dex", "curve", "convex", "pendle", "stargate", "gmx", "velodrome",
+        "aerodrome", "aerodrome-slipstream", "moonwell", "stader",
+        "sky-savings-rate", "sky",
+    }
+    _SOLANA_ONLY_PROTOS_LC = {
+        "raydium", "raydium-amm", "raydium-clmm", "raydium-cp",
+        "orca", "orca-dex", "orca-whirlpools",
+        "meteora", "meteora-dlmm", "meteora-vault", "meteora-amm",
+        "kamino", "kamino-liquidity", "kamino-lend", "kamino-vault",
+        "marinade", "marinade-liquid-staking", "marinade-native",
+        "jito", "jito-liquid-staking",
+        "sanctum", "sanctum-infinity", "sanctum-liquid-staking",
+        "jlp", "jupiter-perps", "jupiter-perpetuals",
+        "drift", "phoenix", "openbook", "gmtrade",
+    }
+    pool_head_lc = str(pool).strip().split()[0].lower() if pool else ""
+    chain_lc = (chain or "").lower()
+    if chain_lc in {"solana", "sol"} and pool_head_lc in _EVM_ONLY_PROTOS_LC:
+        return err_envelope(
+            "unsupported_chain",
+            f"{pool_head_lc} is an EVM-only protocol — it does not exist on Solana. "
+            f"Use Kamino Lend or MarginFi for Solana lending, or switch to Ethereum / "
+            f"Base / Arbitrum / Optimism for {pool_head_lc}.",
+        )
+    if chain_lc and chain_lc not in {"solana", "sol"} and pool_head_lc in _SOLANA_ONLY_PROTOS_LC:
+        return err_envelope(
+            "unsupported_chain",
+            f"{pool_head_lc} is a Solana-only protocol — it does not exist on "
+            f"{chain_lc.title()}. Use Aave V3 / Compound / Morpho for {chain_lc.title()} lending, "
+            f"or switch to Solana for {pool_head_lc}.",
+        )
+
     pool_arg = str(pool).strip()
     meta: Optional[dict[str, Any]] = None
 
