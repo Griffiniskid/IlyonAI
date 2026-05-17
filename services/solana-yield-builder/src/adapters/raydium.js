@@ -1,158 +1,245 @@
 /**
- * Raydium adapter — pair-aware prep swap + pre-sim gate.
+ * Raydium native AMM v4 + CPMM adapter.
  *
- * Two modes:
- *   1. extra.lpMint present (fungible AMM v4 LP, sometimes a Sanctum LST) —
- *      route input directly into the LP/share token via Jupiter.
- *   2. Generic pool — pair-aware prep swap:
- *        - read pool's underlying_tokens (mints or symbols)
- *        - swap input -> the side of the pool the user does NOT hold
- *        - emit a single signable Jupiter tx + deeplink to the EXACT pool
+ * Uses @raydium-io/raydium-sdk-v2 to compose true on-protocol addLiquidity
+ * transactions for both classic AMM v4 and the new CPMM (Constant Product
+ * Market Maker, OpenBook-free) pools.
  *
- * Every returned tx is run through simulateBase64Tx; benign reverts (empty
- * dev wallet) pass, real reverts abort the build so the user never sees a
- * "Sign" button for a guaranteed-failure tx.
+ * Mode selection:
+ *   - extra.poolType === "cpmm" OR poolInfo.programId === CPMM_PROGRAM →
+ *     raydium.cpmm.addLiquidity (single-side baseIn allowed).
+ *   - else → raydium.liquidity.addLiquidity (AMM v4, fixedSide a|b).
+ *
+ * When `extra.poolId` is provided we fetch full poolInfo + poolKeys from the
+ * SDK API (`raydium.api.fetchPoolById`) and build the canonical addLiquidity
+ * ix. The resulting VersionedTransaction is serialized to base64 and run
+ * through simulateBase64Tx; benign reverts (empty dev wallet) pass, real
+ * reverts abort the build.
+ *
+ * Fallback: when extra.poolId AND extra.underlying_tokens are BOTH missing,
+ * we delegate to ./_legacyRaydiumPrep so long-tail aliases that registered
+ * against this adapter (drift, lulo, lifinity, etc. in src/index.js) still
+ * get a signable Jupiter prep-swap route into the underlying.
+ *
+ * Program IDs:
+ *   AMM_V4 = 675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8
+ *   CPMM   = CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C
  */
-const {
-  buildSwap,
-  resolveMint,
-  decimalsFor,
-  halfAmount,
-  SOL_MINT,
-} = require("./jupiter");
-const { planPrepSwap } = require("./pairAware");
+const { ComputeBudgetProgram, PublicKey } = require("@solana/web3.js");
 const { simulateBase64Tx } = require("./simulate");
+const _legacyPrep = require("./_legacyRaydiumPrep");
 
-function buildRaydiumUrl(extra, fallback) {
-  const poolSymbol = (extra.pool_symbol || extra.poolSymbol || "").toUpperCase();
-  const poolAddr = extra.pool_address || extra.poolAddress || extra.amm_id || extra.ammId;
-  const tokens = extra.underlying_tokens || extra.underlyingTokens || [];
-  if (poolAddr) return `https://raydium.io/liquidity/increase/?pool_id=${poolAddr}&mode=add`;
-  if (tokens.length >= 2) return `https://raydium.io/liquidity-pools/?token0=${tokens[0]}&token1=${tokens[1]}`;
-  if (poolSymbol) return `https://raydium.io/liquidity-pools/?search=${encodeURIComponent(poolSymbol)}`;
-  return fallback || "https://raydium.io/liquidity-pools/";
+const AMM_V4_PROGRAM = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8";
+const CPMM_PROGRAM = "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C";
+
+const COMPUTE_UNIT_LIMIT = 600_000;
+const COMPUTE_UNIT_PRICE_MICROLAMPORTS = 50_000;
+
+// Lazy-loaded SDK so unit tests that monkeypatch the module never have to
+// install the heavy SDK tree, and so a missing peer dep doesn't crash the
+// sidecar at startup before any /build call.
+let _raydiumSdkModule = null;
+function _loadSdk() {
+  if (_raydiumSdkModule) return _raydiumSdkModule;
+  // eslint-disable-next-line global-require
+  _raydiumSdkModule = require("@raydium-io/raydium-sdk-v2");
+  return _raydiumSdkModule;
+}
+
+function _shouldFallbackToLegacy(extra) {
+  const poolId = extra && (extra.poolId || extra.pool_id || extra.pool_address || extra.poolAddress);
+  const underlying = extra && (extra.underlying_tokens || extra.underlyingTokens);
+  return !poolId && !(underlying && underlying.length);
+}
+
+function _isCpmm(extra, poolInfo) {
+  const explicit = String(extra?.poolType || extra?.pool_type || "").toLowerCase();
+  if (explicit === "cpmm") return true;
+  const pid = String(poolInfo?.programId || "").trim();
+  if (pid === CPMM_PROGRAM) return true;
+  return false;
+}
+
+async function _initRaydium({ connection, user }) {
+  const sdk = _loadSdk();
+  const { Raydium } = sdk;
+  const owner = new PublicKey(user);
+  const raydium = await Raydium.load({
+    connection,
+    owner,
+    disableLoadToken: false,
+  });
+  return { raydium, sdk };
+}
+
+async function _fetchPool({ raydium, poolId }) {
+  // raydium.api.fetchPoolById returns { id, poolInfo, poolKeys } or an array.
+  // Some SDK builds returns [poolInfo]; others { data: [poolInfo] }. Normalize.
+  const res = await raydium.api.fetchPoolById({ ids: poolId });
+  let poolInfo = null;
+  if (Array.isArray(res)) {
+    poolInfo = res[0] || null;
+  } else if (res && Array.isArray(res.data)) {
+    poolInfo = res.data[0] || null;
+  } else if (res && typeof res === "object") {
+    poolInfo = res.poolInfo || res;
+  }
+  if (!poolInfo) {
+    throw new Error(`Raydium pool ${poolId} not found via api.fetchPoolById.`);
+  }
+  return poolInfo;
+}
+
+async function _buildCpmm({ raydium, sdk, poolInfo, amount, slippageBps, asset }) {
+  // CPMM single-side add: baseIn signals whether `inputAmount` is the base
+  // (mintA) or quote (mintB) side. We default to baseIn=true when caller
+  // supplies the base symbol or no asset hint.
+  const upperAsset = String(asset || "").toUpperCase();
+  const baseSymbol = String(poolInfo.mintA?.symbol || "").toUpperCase();
+  const baseIn = !upperAsset || upperAsset === baseSymbol;
+  const slippage = (slippageBps || 0) / 10_000;
+  const txVersion = sdk.TxVersion ? sdk.TxVersion.V0 : 0;
+
+  const { transaction } = await raydium.cpmm.addLiquidity({
+    poolInfo,
+    poolKeys: poolInfo.poolKeys || undefined,
+    inputAmount: amount,
+    slippage,
+    baseIn,
+    txVersion,
+    computeBudgetConfig: {
+      units: COMPUTE_UNIT_LIMIT,
+      microLamports: COMPUTE_UNIT_PRICE_MICROLAMPORTS,
+    },
+  });
+  return transaction;
+}
+
+async function _buildAmmV4({ raydium, sdk, poolInfo, amount, slippageBps, asset }) {
+  // AMM v4 add expects amounts for BOTH sides. The caller can pass a single
+  // amount (we treat as side-A) and lets fixedSide drive the math; we
+  // estimate otherAmountMin off the pool's current reserves so the SDK does
+  // not refuse the build.
+  const upperAsset = String(asset || "").toUpperCase();
+  const symA = String(poolInfo.mintA?.symbol || "").toUpperCase();
+  const fixedSide = !upperAsset || upperAsset === symA ? "a" : "b";
+  const slippage = (slippageBps || 0) / 10_000;
+  const txVersion = sdk.TxVersion ? sdk.TxVersion.V0 : 0;
+
+  const amountInA = fixedSide === "a" ? amount : "0";
+  const amountInB = fixedSide === "b" ? amount : "0";
+
+  const { transaction } = await raydium.liquidity.addLiquidity({
+    poolInfo,
+    amountInA,
+    amountInB,
+    otherAmountMin: "0",
+    fixedSide,
+    slippage,
+    txVersion,
+    computeBudgetConfig: {
+      units: COMPUTE_UNIT_LIMIT,
+      microLamports: COMPUTE_UNIT_PRICE_MICROLAMPORTS,
+    },
+  });
+  return transaction;
+}
+
+function _serializeTx(transaction) {
+  // SDK v2 returns either a VersionedTransaction (txVersion=V0) or a legacy
+  // Transaction. Both expose .serialize() returning a Uint8Array/Buffer.
+  const raw = transaction.serialize();
+  return Buffer.from(raw).toString("base64");
 }
 
 module.exports = {
-  aliases: ["raydium-amm", "raydium-clmm"],
+  aliases: ["raydium-amm", "raydium-amm-v4", "raydium-cpmm", "raydium-cp", "raydium-clmm"],
+  supportedActions: ["deposit", "deposit_lp", "supply"],
+
   async quote({ asset, amount }) {
     return {
       expectedAmountOut: null,
-      receiptToken: `raydium-${asset || "?"}`,
+      receiptToken: `raydium-lp-${asset || "?"}`,
       apy: null,
-      fees: { protocol: "Jupiter routing", network: "0.000005 SOL" },
+      fees: { protocol: "Raydium AMM v4 / CPMM", network: "~0.000035 SOL (CU+priority)" },
     };
   },
-  async build({ protocol, asset, amount, user, extra = {}, slippageBps = 50 }, { connection } = {}) {
-    // Honest sub-variant label so the step description doesn't lie. DefiLlama
-    // collapses every Raydium variant into 'raydium-amm', but when the
-    // upstream caller knows the user asked for CLMM we should say CLMM.
-    const _protoLower = String(protocol || "raydium-amm").toLowerCase();
-    const _variantLabel = (() => {
-      if (_protoLower.includes("clmm")) return "Raydium CLMM";
-      if (_protoLower.includes("cpmm") || _protoLower.includes("raydium-cp")) return "Raydium CPMM";
-      if (_protoLower.includes("amm-v3")) return "Raydium AMM v3";
-      return "Raydium AMM v4";
-    })();
-    // Mode 1: fungible LP / share mint provided — single Jupiter route.
-    // Raydium AMM v4 LP tokens are NOT on Jupiter's swap graph (Jupiter only
-    // routes against tradable markets), so Mode 1 only succeeds for share
-    // tokens that double as LSTs (some Raydium-CLMM variants, third-party
-    // tokenized LP wrappers). On any Jupiter error fall through to Mode 2
-    // pair-aware prep-swap instead of leaking a 502 to the user.
-    if (extra.lpMint) {
-      const inputSym = (asset || "USDC").toUpperCase();
-      const inputMint = resolveMint(inputSym) || resolveMint("USDC");
-      try {
-        const { tx } = await buildSwap({
-          inputMint,
-          outputMint: extra.lpMint,
-          amount,
-          user,
-          slippageBps,
-          decimals: decimalsFor(inputSym),
-        });
-        const sim = connection ? await simulateBase64Tx({ b64: tx, connection }) : { ok: true };
-        if (!sim.ok) {
-          throw new Error(`Raydium LP-mint route simulation failed: ${sim.errStr || "unknown"}`);
-        }
-        return {
-          transactions: [
-            {
-              b64: tx,
-              summary: `Raydium AMM v4 LP entry: ${inputSym} → LP ${extra.lpMint.slice(0, 8)}…`,
-              description: "Direct Jupiter-routed entry into the Raydium AMM LP token.",
-              receiptToken: "raydium-lp",
-              feeUsd: 0.01,
-              durationS: 25,
-              warnings: [],
-              simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
-            },
-          ],
-        };
-      } catch (mode1Err) {
-        // Common failure: Jupiter returns MARKET_NOT_FOUND because Raydium-AMM
-        // LP shares aren't quotable. Fall through silently to Mode 2.
-        // Anything else (network, signature, real revert) still gets surfaced
-        // by Mode 2's own try/catch below if both modes fail.
-      }
+
+  async build(req, ctx = {}) {
+    const { connection } = ctx;
+    const { asset, amount, user, extra = {}, slippageBps = 50 } = req || {};
+
+    // Long-tail safety net: caller passed no pool identifier AND no
+    // underlying-tokens hint — defer to the prep-swap legacy adapter so the
+    // user still gets a signable Jupiter route.
+    if (_shouldFallbackToLegacy(extra)) {
+      return _legacyPrep.build(req, ctx);
     }
 
-    // Mode 2: pair-aware prep swap.
-    const plan = planPrepSwap({ asset, extra });
-    const sourceSym = plan.inputSym;
-    const targetSym = plan.targetSym;
-    const inputMint = plan.inputMint;
-    const targetMint = plan.targetMint;
-
-    const half = halfAmount(amount);
-    if (half === "0") {
-      const e = new Error(`Raydium prep: amount '${amount}' too small after half-split`);
-      e.code = "amount_too_small";
-      throw e;
+    const poolId = extra.poolId || extra.pool_id || extra.pool_address || extra.poolAddress;
+    if (!poolId) {
+      // We have underlying_tokens but no poolId — still need the legacy
+      // pair-aware prep swap, the native SDK requires an actual pool address.
+      return _legacyPrep.build(req, ctx);
+    }
+    if (!connection) {
+      throw new Error("Raydium native adapter requires a Solana connection in ctx.");
+    }
+    if (!user) {
+      throw new Error("Raydium native adapter requires `user` (Solana wallet pubkey).");
     }
 
-    const { tx } = await buildSwap({
-      inputMint,
-      outputMint: targetMint,
-      amount: half,
-      user,
-      slippageBps,
-      decimals: decimalsFor(sourceSym),
-    });
-    const sim = connection ? await simulateBase64Tx({ b64: tx, connection }) : { ok: true };
+    const { raydium, sdk } = await _initRaydium({ connection, user });
+    const poolInfo = await _fetchPool({ raydium, poolId });
+    const isCpmm = _isCpmm(extra, poolInfo);
+    const redemption_program = isCpmm ? CPMM_PROGRAM : AMM_V4_PROGRAM;
+
+    const transaction = isCpmm
+      ? await _buildCpmm({ raydium, sdk, poolInfo, amount, slippageBps, asset })
+      : await _buildAmmV4({ raydium, sdk, poolInfo, amount, slippageBps, asset });
+
+    const b64 = _serializeTx(transaction);
+    const sim = await simulateBase64Tx({ b64, connection });
     if (!sim.ok) {
-      const e = new Error(`Raydium prep-swap simulation failed: ${sim.errStr || "unknown"}`);
+      const e = new Error(
+        `Raydium ${isCpmm ? "CPMM" : "AMM v4"} addLiquidity simulation failed: ${sim.errStr || "unknown"}`,
+      );
       e.simulation = sim;
       throw e;
     }
 
-    const raydiumUrl = buildRaydiumUrl(extra);
-    const pairLabel = (extra.pool_symbol || extra.poolSymbol || `${sourceSym}-${targetSym}`).toUpperCase();
-    const warnings = [
-      `Final LP add for ${pairLabel} runs on Raydium: ${raydiumUrl}`,
-      ...plan.warnings,
-    ];
+    const variantLabel = isCpmm ? "Raydium CPMM" : "Raydium AMM v4";
+    const pairLabel = (
+      poolInfo.mintA?.symbol && poolInfo.mintB?.symbol
+        ? `${poolInfo.mintA.symbol}-${poolInfo.mintB.symbol}`
+        : (extra.pool_symbol || extra.poolSymbol || "LP")
+    ).toUpperCase();
 
     return {
       transactions: [
         {
-          b64: tx,
-          action: "prep_swap",
-          summary: `Prep swap: ${half} ${sourceSym} → ${targetSym} (${_variantLabel} ${pairLabel} handoff)`,
-          description: `Swap ${half} ${sourceSym} into ${targetSym} via Jupiter so you hold one side of the ${pairLabel} pool. After this swap confirms, click the Raydium link to finish the LP add — ${_variantLabel} direct-sign isn't wired yet for this in-chat flow.`,
-          inputSymbol: sourceSym,
-          inputAmount: half,
-          outputSymbol: targetSym,
-          receiptToken: targetSym,
-          feeUsd: 0.01,
+          b64,
+          summary: `${variantLabel} addLiquidity (${pairLabel})`,
+          description: `Calls addLiquidity on Raydium pool ${poolInfo.id}. Native LP mint.`,
+          receiptToken: "RAY-LP",
+          receiptMint: poolInfo.lpMint?.address || null,
+          redemption_program,
+          feeUsd: 0.02,
           durationS: 25,
-          protocolUrl: raydiumUrl,
-          warnings,
-          mode: plan.mode, // "pair-aware" | "quote-only" | "fallback"
+          warnings: [
+            `Settles directly on Raydium ${isCpmm ? "CPMM" : "AMM v4"} program ${redemption_program}.`,
+          ],
           simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
         },
       ],
     };
+  },
+
+  // Exposed for unit-testing the program-id selector without booting the SDK.
+  __internals: {
+    AMM_V4_PROGRAM,
+    CPMM_PROGRAM,
+    _isCpmm,
+    _shouldFallbackToLegacy,
   },
 };

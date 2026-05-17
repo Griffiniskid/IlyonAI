@@ -135,6 +135,14 @@ _SUPPORTED_PROTOCOLS = frozenset({
     "pancakeswap-v3", "pancake-v3",
     "aerodrome-slipstream", "aerodrome-cl",
     "velodrome-cl", "velodrome-slipstream",
+    # Berachain Kodiak V3 — canonical Uniswap V3 fork, same fee-keyed factory
+    # + NFP ABI. Routes through the existing uniswap_v3 family code path.
+    "kodiak-v3", "kodiak",
+    # Sonic SwapX V4 — Algebra Integral. NFP mint ABI omits fixed-fee tuple
+    # and factory.getPool(token0, token1) has NO fee param. Listed here so
+    # `supports()` returns True; mint encoding still needs branch-on-family
+    # before SwapX deposit_lp will succeed end-to-end.
+    "swapx-v4", "swapx", "algebra-integral",
 })
 
 _SUPPORTED_CHAINS = frozenset(_CHAIN_IDS.keys())

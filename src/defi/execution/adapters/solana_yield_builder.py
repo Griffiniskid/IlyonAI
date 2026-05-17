@@ -85,7 +85,8 @@ class SolanaYieldBuilderAdapter:
         "kamino", "kamino-lend", "kamino-finance", "kamino-vault", "kamino-liquidity",
         "orca", "orca-dex", "orca-whirlpools", "orca-clmm",
         "meteora", "meteora-dlmm", "meteora-vault", "meteora-amm",
-        "raydium", "raydium-amm", "raydium-clmm", "raydium-amm-v3", "raydium-cp",
+        "raydium", "raydium-amm", "raydium-amm-v4", "raydium-clmm", "raydium-amm-v3",
+        "raydium-cp", "raydium-cpmm",
         "marinade", "marinade-finance", "marinade-native", "marinade-liquid-staking",
         "jito", "jito-liquid-staking",
         "sanctum", "sanctum-infinity", "sanctum-liquid-staking",
@@ -100,6 +101,8 @@ class SolanaYieldBuilderAdapter:
         "fluxbeam", "dexlab", "stepn", "openbook", "openbook-v2", "invariant",
         "symmetry", "symmetry-baskets", "marginfi", "marginfi-lst",
         "jupiter", "jupiter-lend", "jupiter-staked-sol",
+        # Phase B.1 — Jupiter Perpetuals LP native add_liquidity2 adapter.
+        "jlp", "jupiter-perps", "jupiter-perpetuals", "jupiter-perpetuals-lp",
         "hastra", "onre", "bybit-staked-sol", "binance-staked-sol",
         "doublezero-staked-sol", "phantom-sol", "helius-staked-sol",
         "dfdv-staked-sol", "the-vault-liquid-staking", "hylo-lsts",
@@ -108,6 +111,10 @@ class SolanaYieldBuilderAdapter:
     })
     actions: frozenset[str] = frozenset({
         "supply", "deposit", "stake", "deposit_lp",
+        # Phase 4 + Phase C lifecycle close paths.
+        "withdraw", "unstake", "redeem", "exit",
+        "close_position", "close", "exit_position",
+        "order_unstake", "delayed_unstake",
     })
     base_url: str = _DEFAULT_URL
 
@@ -154,14 +161,32 @@ class SolanaYieldBuilderAdapter:
             )
 
     async def build(self, request: YieldBuildRequest) -> list[ExecutionStepV3]:
+        # Phase C lifecycle: the action verb (close_position, withdraw,
+        # order_unstake, unstake, deposit, …) is required by the sidecar's
+        # /build dispatcher to route to buildClose / buildWithdraw /
+        # buildOrderUnstake / buildUnstake. YieldBuildRequest historically
+        # didn't carry an action; prefer extra.action, then request.action
+        # if a subclass added one, else default to "deposit" (legacy build()).
+        extra = dict(request.extra or {})
+        action = (
+            extra.pop("action", None)
+            or getattr(request, "action", None)
+            or "deposit"
+        )
         payload = {
             "protocol": request.protocol,
             "asset": request.asset_in,
             "amount": str(request.amount_in),
             "user": request.user_address,
+            "action": action,
             "slippageBps": request.slippage_bps,
-            "extra": request.extra or {},
+            "extra": extra,
         }
+        # Surface common close-time hints at the top level so the sidecar
+        # adapters can read them without spelunking into extra. Position-mint
+        # is needed for Orca close_position; explicit None means lookup-by-owner.
+        if extra.get("positionMint") or extra.get("position_mint"):
+            payload["positionMint"] = extra.get("positionMint") or extra.get("position_mint")
         # Convert raw network/timeout errors into the ValueError shape that
         # build_yield_execution_plan catches, so the user sees a typed
         # adapter_build_failed blocker card instead of a bare TimeoutError.
@@ -237,6 +262,27 @@ class SolanaYieldBuilderAdapter:
                 # visible.
                 if step.transaction:
                     setattr(step.transaction, "protocol_url", proto_url)
+            # Native-redemption program id (Raydium AMM v4 / CPMM, Orca,
+            # Meteora, etc.) — surface on transaction so post-confirm verify
+            # and the receipt-table can attribute the receipt to the correct
+            # on-chain program rather than guessing from protocol slug.
+            redemption_program = raw.get("redemption_program") or raw.get("redemptionProgram")
+            if redemption_program and step.transaction:
+                setattr(step.transaction, "redemption_program", redemption_program)
+            receipt_mint = raw.get("receiptMint") or raw.get("receipt_mint")
+            if receipt_mint and step.transaction:
+                setattr(step.transaction, "receipt_mint", receipt_mint)
+            # Phase B.1 — JLP native add_liquidity2 surfaces a 1-hour withdraw
+            # lockup. The runtime gates unstake retries on lockup_end_ts so
+            # users don't pay gas to revert. underlying_custody pins which
+            # per-asset custody account holds the deposit (SOL/ETH/BTC/USDC/USDT)
+            # so receipt audit can confirm the exact asset path.
+            lockup_end_ts = raw.get("lockup_end_ts") or raw.get("lockupEndTs")
+            if lockup_end_ts is not None and step.transaction:
+                setattr(step.transaction, "lockup_end_ts", lockup_end_ts)
+            underlying_custody = raw.get("underlying_custody") or raw.get("underlyingCustody")
+            if underlying_custody and step.transaction:
+                setattr(step.transaction, "underlying_custody", underlying_custody)
             steps.append(step)
             depends_on = [step.step_id]
         return steps

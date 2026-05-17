@@ -125,9 +125,25 @@ V3_FACTORIES: dict[tuple[str, str], dict[str, str]] = {
         "nfp_manager": "0x943e6e07a7E8E791dAFC44083e54041D743C46E9",
     },
     # Berachain V3 not yet deployed by Uniswap at time of writing — BEX uses
-    # its own concentrated-liquidity AMM. Placeholder factory left out so
-    # the resolver falls back cleanly when builds target ('berachain','uniswap-v3').
-    # Sonic V3 — SwapX is the dominant CL DEX, not Uniswap. Placeholder out.
+    # its own concentrated-liquidity AMM. Kodiak ships a Uniswap V3 fork with
+    # the canonical fee-keyed factory ABI, so it slots in here.
+    ("berachain", "kodiak-v3"): {
+        "factory": "0xD84CBf0B02636E7f53dB9E5e45A616E05d710990",
+        "nfp_manager": "0xFE5E8C83FFE4d9627A75EaA7Fee864768dB989bD",
+        "swap_router": "0xEd158C4b336A6FCb5B193A5570e3a571f6cbe690",
+        "family": "uniswap_v3",
+    },
+    # Sonic V3 — SwapX runs Algebra Integral V4, NOT a Uniswap V3 fork.
+    # Algebra Integral has a plugin-driven dynamic-fee factory, so the
+    # `getPool(token0, token1)` selector takes NO fee param and the NFP
+    # `mint(...)` ABI omits the fixed-fee tuple. Tagged `algebra_integral`
+    # so downstream adapters branch on factory ABI shape.
+    ("sonic", "swapx-v4"): {
+        "factory": "0x8121a3F8c4176E9765deEa0B95FA2BDfD3016794",
+        "nfp_manager": "0xd82Fe82244ad01AaD671576202F9b46b76fAdFE2",
+        "swap_router": "0xE6E9F79e551Dd3FAeF8aBe035896fc65A9eEB26c",
+        "family": "algebra_integral",
+    },
 }
 
 # Default tick spacing by fee tier (Uniswap V3 + PancakeSwap V3).

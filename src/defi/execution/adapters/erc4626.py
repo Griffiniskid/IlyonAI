@@ -68,6 +68,32 @@ _VAULT_REGISTRY: dict[tuple[str, str, str], tuple[str, str, int]] = {
         "0xdc035d45d973e3ec169d2276ddab16f1e407384f",
         18,
     ),
+    # Morpho MetaMorpho USDC vaults on Arbitrum (chain 42161).
+    # Underlying is native USDC: 0xaf88d065e77c8cC2239327C5EDb3A432268e5831 (6 dec).
+    # Primary entry (Gauntlet USDC Prime, highest TVL) registered under the
+    # protocol slug; alias-style sub-keys appended via _ARB_MORPHO_USDC_VAULTS
+    # so callers can target a specific curator.
+    ("arbitrum", "morpho-blue", "USDC"): (
+        "0x7c574174DA4b2be3f705c6244B4BfA0815a8B3Ed",  # Gauntlet USDC Prime
+        "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        6,
+    ),
+    ("arbitrum", "metamorpho", "USDC"): (
+        "0x7c574174DA4b2be3f705c6244B4BfA0815a8B3Ed",
+        "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        6,
+    ),
+}
+
+# Per-curator MetaMorpho vault registry — Arbitrum USDC. Caller passes
+# extra={"vault_curator": "<key>"} to target a specific vault instead of
+# the default Gauntlet USDC Prime entry above.
+_ARB_MORPHO_USDC_VAULTS: dict[str, str] = {
+    "gauntlet-prime":    "0x7c574174DA4b2be3f705c6244B4BfA0815a8B3Ed",
+    "gauntlet-core":     "0x7e97fa6893871A2751B5fE961978DCCb2c201E65",
+    "steakhouse-prime":  "0x250CF7c82bAc7cB6cf899b6052979d4B5BA1f9ca",
+    "steakhouse-high":   "0x5c0C306Aaa9F877de636f4d5822cA9F2E81563BA",
+    "kpk-yield":         "0x5837e4189819637853a357aF36650902347F5e73",
 }
 
 
@@ -132,6 +158,25 @@ class ERC4626VaultAdapter:
         vault_address, underlying_address, decimals = vault_meta
         if chain_id is None:
             raise ValueError(f"Unknown chain id for {request.chain}.")
+
+        # Per-curator override — Arbitrum Morpho USDC (5 verified vaults).
+        # extra={"vault_curator": "steakhouse-prime"} routes the deposit to
+        # the Steakhouse vault instead of default Gauntlet Prime. Decimals
+        # + underlying USDC address are identical across all five entries.
+        curator_hint = (request.extra or {}).get("vault_curator")
+        if (
+            curator_hint
+            and chain_norm == "arbitrum"
+            and protocol_norm in {"morpho-blue", "morpho", "metamorpho"}
+            and asset_norm == "USDC"
+        ):
+            curated = _ARB_MORPHO_USDC_VAULTS.get(curator_hint.lower())
+            if curated is None:
+                raise ValueError(
+                    f"Unknown Morpho Arb USDC curator '{curator_hint}'. "
+                    f"Known: {sorted(_ARB_MORPHO_USDC_VAULTS)}."
+                )
+            vault_address = curated
 
         # Phase 4 lifecycle — withdraw(uint256 assets, address receiver, address owner)
         # selector 0xb460af94 / redeem(uint256 shares, address receiver, address owner)

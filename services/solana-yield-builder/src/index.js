@@ -45,6 +45,7 @@ const jito = require("./adapters/jito");
 const sanctum = require("./adapters/sanctum");
 const meteora = require("./adapters/meteora");
 const raydium = require("./adapters/raydium");
+const jlp = require("./adapters/jlp");
 
 registerAdapter("kamino", kamino);
 registerAdapter("kamino-liquidity", kamino);
@@ -62,6 +63,10 @@ registerAdapter("meteora-amm", meteora);
 registerAdapter("raydium", raydium);
 registerAdapter("raydium-amm-v3", raydium);
 registerAdapter("raydium-cp", raydium);
+registerAdapter("jlp", jlp);
+registerAdapter("jupiter-perps", jlp);
+registerAdapter("jupiter-perpetuals", jlp);
+registerAdapter("jupiter-perpetuals-lp", jlp);
 // Generic Solana-DEX fallback: when DefiLlama returns a project name we
 // don't have a dedicated SDK for (drift, lulo, save, lifinity, etc.) use
 // the Raydium adapter's prep-swap path so the user still gets a signable
@@ -151,19 +156,38 @@ app.post("/build", async (req, res) => {
   if (!adapter) {
     return res.status(404).json({ error: `No build adapter for protocol '${protocol}'.` });
   }
-  // Phase 4 lifecycle dispatch — withdraw/unstake/redeem routes to the
-  // adapter's buildUnstake() helper when present; deposit/supply/stake
-  // and missing action fall back to build().
+  // Phase 4 + Phase C lifecycle dispatch:
+  //   - close_position / close / exit_position → buildClose()
+  //   - order_unstake / delayed_unstake        → buildOrderUnstake()
+  //   - withdraw                                → buildWithdraw() else buildUnstake()
+  //   - unstake / redeem / exit                 → buildUnstake()
+  //   - deposit / supply / stake / *missing*    → build()
   const actionNorm = String(action || "").toLowerCase();
-  const isUnstake = ["withdraw", "unstake", "redeem", "exit"].includes(actionNorm);
+  const isClose = ["close_position", "close", "exit_position"].includes(actionNorm);
+  const isOrderUnstake = ["order_unstake", "delayed_unstake", "order-unstake"].includes(actionNorm);
+  const isWithdraw = actionNorm === "withdraw";
+  const isUnstake = ["unstake", "redeem", "exit"].includes(actionNorm);
   try {
     let result;
-    if (isUnstake && typeof adapter.buildUnstake === "function") {
+    if (isClose && typeof adapter.buildClose === "function") {
+      result = await adapter.buildClose(req.body || {}, { connection, rpcUrl: RPC_URL });
+    } else if (isOrderUnstake && typeof adapter.buildOrderUnstake === "function") {
+      result = await adapter.buildOrderUnstake(req.body || {}, { connection, rpcUrl: RPC_URL });
+    } else if (isWithdraw && typeof adapter.buildWithdraw === "function") {
+      result = await adapter.buildWithdraw(req.body || {}, { connection, rpcUrl: RPC_URL });
+    } else if ((isWithdraw || isUnstake) && typeof adapter.buildUnstake === "function") {
       result = await adapter.buildUnstake(req.body || {}, { connection, rpcUrl: RPC_URL });
     } else if (typeof adapter.build === "function") {
       result = await adapter.build(req.body || {}, { connection, rpcUrl: RPC_URL });
     } else {
-      return res.status(404).json({ error: `Adapter '${protocol}' missing build/${isUnstake ? "buildUnstake" : "build"}.` });
+      const wanted = isClose
+        ? "buildClose"
+        : isOrderUnstake
+          ? "buildOrderUnstake"
+          : (isWithdraw || isUnstake)
+            ? "buildUnstake"
+            : "build";
+      return res.status(404).json({ error: `Adapter '${protocol}' missing ${wanted}.` });
     }
     res.json(result);
   } catch (err) {
