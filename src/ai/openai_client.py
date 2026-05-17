@@ -852,8 +852,16 @@ If asked about a specific token, suggest sending the address for analysis."""
         system_prompt: str = "",
         max_tokens: int = 900,
         temperature: float = 0.1,
+        response_format: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Structured JSON chat helper for deterministic integrations."""
+        """Structured JSON chat helper for deterministic integrations.
+
+        ``response_format`` defaults to ``{"type": "json_object"}`` for
+        backwards-compat. Callers (e.g. the LP intent extractor) may pass
+        a full ``{"type": "json_schema", "json_schema": {...}}`` envelope
+        to constrain the model to a specific pydantic-derived schema.
+        Spec ref: DevPlan P1.4 (structured outputs).
+        """
         try:
             session = await self._ensure_session()
 
@@ -874,7 +882,7 @@ If asked about a specific token, suggest sending the address for analysis."""
                 ],
                 "temperature": temperature,
                 "max_tokens": max_tokens,
-                "response_format": {"type": "json_object"},
+                "response_format": response_format or {"type": "json_object"},
             }
 
             async with session.post(

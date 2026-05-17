@@ -31,6 +31,7 @@ from src.defi.execution.adapters.base import (
     YieldVerifyRequest,
 )
 from src.defi.execution.models import ExecutionStepV3, UnsignedStepTransaction, make_step
+from src.defi.resolver import EntityResolver
 
 
 _VAULT_ADDRESS = "0xBA12222222228d8Ba445958a75a0704d566BF2C8"  # all EVM chains
@@ -38,15 +39,8 @@ _JOINPOOL_SELECTOR = "0xb95cac28"
 _EXITPOOL_SELECTOR = "0x8bdb3913"
 _APPROVE_SELECTOR = "0x095ea7b3"
 
-_CHAIN_IDS: dict[str, int] = {
-    "ethereum": 1,
-    "polygon": 137,
-    "arbitrum": 42161,
-    "optimism": 10,
-    "base": 8453,
-    "avalanche": 43114,
-    "gnosis": 100,
-}
+# V7-015: chain id resolution centralized — no more adapter-local _CHAIN_IDS.
+_RESOLVER = EntityResolver()
 
 # (chain, pool_key) -> {poolId, assets[(addr, decimals, symbol)]}
 # poolId is the 32-byte ID Balancer uses internally; it embeds the pool
@@ -244,9 +238,12 @@ class BalancerSingleAssetAdapter:
 
     async def build(self, request: YieldBuildRequest) -> list[ExecutionStepV3]:
         chain_norm = request.chain.lower()
-        chain_id = _CHAIN_IDS.get(chain_norm)
-        if chain_id is None:
+        # V7-015: chain id via EntityResolver. Non-EVM sentinel (<=0) is
+        # rejected — Balancer V2 is EVM-only.
+        chain_info = _RESOLVER.resolve_chain(chain_norm)
+        if chain_info is None or chain_info.chain_id <= 0:
             raise ValueError(f"Balancer adapter cannot build on chain {request.chain}.")
+        chain_id = chain_info.chain_id
 
         extra = request.extra or {}
         action = (extra.get("action") or "deposit_lp").lower()

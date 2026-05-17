@@ -24,16 +24,12 @@ from src.defi.execution.adapters.base import (
     YieldVerifyRequest,
 )
 from src.defi.execution.models import ExecutionStepV3, UnsignedStepTransaction, make_step
+from src.defi.resolver import EntityResolver
 
 
-_CHAIN_IDS: dict[str, int] = {
-    "ethereum": 1,
-    "polygon": 137,
-    "arbitrum": 42161,
-    "optimism": 10,
-    "base": 8453,
-    "avalanche": 43114,
-}
+# V7-015: centralized entity resolution. The adapter no longer maintains its
+# own `_CHAIN_IDS` dict — EntityResolver owns the canonical chain map.
+_RESOLVER = EntityResolver()
 
 # (chain, pool_key) -> {address, coins[(symbol, address, decimals)]}
 # Pool keys are lower-cased canonical labels. Resolution accepts: explicit
@@ -174,9 +170,12 @@ class CurveSingleSidedAdapter:
 
     async def build(self, request: YieldBuildRequest) -> list[ExecutionStepV3]:
         chain_norm = request.chain.lower()
-        chain_id = _CHAIN_IDS.get(chain_norm)
-        if chain_id is None:
+        # V7-015: chain id comes from EntityResolver. -1 (Solana sentinel) is
+        # rejected as non-EVM since Curve has no Solana deploys.
+        chain_info = _RESOLVER.resolve_chain(chain_norm)
+        if chain_info is None or chain_info.chain_id <= 0:
             raise ValueError(f"Curve adapter cannot build on chain {request.chain}.")
+        chain_id = chain_info.chain_id
 
         extra = request.extra or {}
         pool_hint = extra.get("pool_key") or extra.get("pool_address") or extra.get("poolAddress")
