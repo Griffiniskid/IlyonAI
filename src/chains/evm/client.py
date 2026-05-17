@@ -14,6 +14,7 @@ import aiohttp
 
 from src.chains.base import ChainClient, ChainConfig, ChainType
 from src.chains.evm.gas_pricing import build_gas_params, detect_supports_1559
+from src.chains.evm.nonce_manager import get_next_nonce
 
 logger = logging.getLogger(__name__)
 
@@ -586,6 +587,20 @@ class EVMChainClient(ChainClient):
         if chain_id is None:
             return False
         return await detect_supports_1559(self, chain_id)
+
+    async def next_nonce(self, address: str) -> int:
+        """Return the pending-tag nonce for ``address``.
+
+        Thin instance-method wrapper around
+        :func:`src.chains.evm.nonce_manager.get_next_nonce` so callers
+        that already hold an :class:`EVMChainClient` do not need to
+        import the helper module directly.
+
+        Uses the ``pending`` block tag so any unmined tx the signer
+        already broadcast is counted, avoiding ``nonce too low``
+        rejections on rapid successive sends.
+        """
+        return await get_next_nonce(self, address)
 
     async def close(self) -> None:
         """Cleanup HTTP session."""

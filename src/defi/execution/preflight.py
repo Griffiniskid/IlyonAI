@@ -32,6 +32,11 @@ class WalletInventory:
     # hatch keyed by step_id for composed plans where the pool is known
     # at preflight time but the transaction isn't yet built.
     lp_pool_addrs: dict[str, str] = field(default_factory=dict)
+    # Spec §13 Row 1 — pre-resolved oracle staleness findings. Populated
+    # by the async sidecar via :func:`src.shield.feed_age.evaluate_feed_age_preflight`
+    # before the sync preflight runs. Each entry is a dict carrying
+    # ``{"code": "STALE_PRICE_FEED", "feed": ..., "source": ..., "age_seconds": ...}``.
+    feed_age_blockers: list[dict[str, Any]] = field(default_factory=list)
 
     def balance_of(self, chain: str, asset: str) -> Decimal:
         return self.balances.get((chain.lower(), asset.upper()), Decimal(0))
@@ -189,7 +194,77 @@ def evaluate_preflight(
     except Exception as exc:  # never let a §13 detector crash preflight
         logger.debug("jit-adjacency detector raised: %s", exc)
 
+    # Spec §13 Row 1 — STALE_PRICE_FEED. Synchronous fan-out happens via
+    # `evaluate_feed_age_preflight` in the async sidecar; this hook
+    # collects any pre-resolved feed-age blocker codes stamped onto
+    # inventory.feed_age_blockers by the upstream orchestrator. Keeping
+    # the sync entry stub here lets every preflight caller pick up the
+    # blocker without forcing an event loop on the sync path.
+    try:
+        _feed_blockers = _check_feed_age_blockers(inventory, steps)
+        for b in _feed_blockers:
+            if b.code not in seen_codes:
+                blockers.append(b)
+                seen_codes.add(b.code)
+    except Exception as exc:  # never let a §13 detector crash preflight
+        logger.debug("feed-age detector raised: %s", exc)
+
     return blockers
+
+
+def _check_feed_age_blockers(
+    inventory: WalletInventory,
+    steps: Iterable[ExecutionStepV3],
+) -> list[ExecutionBlocker]:
+    """Convert pre-resolved feed-staleness findings into ExecutionBlocker
+    rows. The async fan-out lives in :mod:`src.shield.feed_age` so the
+    sync preflight path stays event-loop-free; the orchestrator stamps
+    ``inventory.feed_age_blockers`` with the list returned by
+    ``evaluate_feed_age_preflight`` before invoking ``evaluate_preflight``.
+
+    Each finding has shape ``{"code": "STALE_PRICE_FEED", "feed": ...,
+    "source": "pyth"|"chainlink", "age_seconds": int}``.
+    """
+    raw = getattr(inventory, "feed_age_blockers", None)
+    if not raw:
+        return []
+    # Lazy import to avoid pulling shield.feed_age into the import graph
+    # of callers that never touch oracle-priced steps.
+    try:
+        from src.shield.feed_age import STALE_PRICE_FEED_BLOCKER_CODE
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.debug("feed_age import failed: %s", exc)
+        return []
+
+    all_step_ids = [s.step_id for s in steps]
+    out: list[ExecutionBlocker] = []
+    for finding in raw:
+        if not isinstance(finding, dict):
+            continue
+        if finding.get("code") != STALE_PRICE_FEED_BLOCKER_CODE:
+            continue
+        feed = finding.get("feed", "<unknown>")
+        source = finding.get("source", "oracle")
+        age = finding.get("age_seconds", "?")
+        out.append(ExecutionBlocker(
+            code=STALE_PRICE_FEED_BLOCKER_CODE,
+            severity="blocker",
+            title=f"{source.title()} price feed is stale",
+            detail=(
+                f"The {source} feed {feed} was last updated {age}s ago, "
+                f"above the 60s staleness ceiling. Signing now risks "
+                f"executing against a mark that the next on-chain push "
+                f"will jump past — fees, slippage, and liquidations "
+                f"would all hit a stale price. Wait for a fresh push "
+                f"and re-quote."
+            ),
+            affected_step_ids=list(all_step_ids),
+            cta="Wait ~1 block for the next oracle push, then re-quote.",
+        ))
+        # Only emit one blocker row even when multiple feeds are stale —
+        # the detail line above can be aggregated in the UI later.
+        break
+    return out
 
 
 def _check_self_trade(
