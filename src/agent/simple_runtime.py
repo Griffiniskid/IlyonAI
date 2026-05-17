@@ -1666,6 +1666,110 @@ _GENERIC_SUPPLY_RE = re.compile(
 )
 
 
+# F04 — Pendle PT/YT mint + market-add detector.
+#
+# Pass-4 hand-read caught: "Pendle mint PT-USDe with 100 USDC" silently routed
+# to morpho-blue via _detect_generic_supply (Pendle is in the generic supply
+# alternation and 'mint' was treated like 'supply'). Pendle mint/swap-to-PT
+# semantics are NOT a generic lending supply; they require a Pendle market
+# (SY/PT/YT split) which build_yield_execution_plan handles via the
+# pendle-v2 protocol slug.
+#
+# This detector MUST run before _detect_generic_supply to shadow the morpho
+# misroute. Detection: requires both "pendle" AND one of
+# {"PT-", "YT-", "mint", "market"} so generic Pendle questions don't trip it.
+_PENDLE_MINT_PT_RE = re.compile(
+    r"\bpendle\s+(?:mint|swap\s+(?:to|for)|add\s+liquidity\s+to)\s+"
+    r"(?P<market>(?:PT|YT)[ -][A-Za-z][A-Za-z0-9.]{0,9})"
+    r"(?:\s+(?:with|using|of)\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10}))?"
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?",
+    re.IGNORECASE,
+)
+_MINT_PT_PENDLE_RE = re.compile(
+    r"\bmint\s+(?P<market>(?:PT|YT)[ -][A-Za-z][A-Za-z0-9.]{0,9})\s+on\s+pendle"
+    r"(?:\s+with\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10}))?"
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?",
+    re.IGNORECASE,
+)
+_PENDLE_ADD_LIQ_RE = re.compile(
+    r"\bpendle\s+add\s+liquidity\s+to\s+(?P<market>[A-Za-z][A-Za-z0-9.\-]{1,30})"
+    r"(?:\s+with\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10}))?"
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?",
+    re.IGNORECASE,
+)
+
+
+def _detect_pendle_mint(message: str) -> tuple[str, dict] | None:
+    """Pendle PT/YT mint, swap-for-PT, and market-add-liquidity detector.
+
+    Patterns:
+      - 'Pendle mint PT-USDe with 100 USDC'
+      - 'Mint PT-USDe on Pendle with 100 USDC'
+      - 'Pendle swap to PT-USDe with 50 USDC on ethereum'
+      - 'Pendle add liquidity to <market>'
+
+    Routes to build_yield_execution_plan with protocol=pendle-v2 and an action
+    derived from the verb so the adapter constructs the SY/PT/YT split instead
+    of letting the generic morpho-blue catch-all swallow it.
+    """
+    text = message.strip()
+    # Gate: both 'pendle' AND one of {PT-, YT-, mint, market} must be present.
+    has_pendle = re.search(r"\bpendle\b", text, re.IGNORECASE) is not None
+    if not has_pendle:
+        return None
+    has_signal = re.search(r"(?:\bPT[ -]|\bYT[ -]|\bmint\b|\bmarket\b)", text, re.IGNORECASE) is not None
+    if not has_signal:
+        return None
+
+    m = _PENDLE_MINT_PT_RE.search(text) or _MINT_PT_PENDLE_RE.search(text) or _PENDLE_ADD_LIQ_RE.search(text)
+    if not m:
+        return None
+
+    market_raw = (m.group("market") or "").strip()
+    # Canonicalize 'PT USDe' / 'YT USDe' → 'PT-USDe'.
+    market = re.sub(r"\s+", "-", market_raw)
+    # Verb → action mapping.
+    lower = text.lower()
+    if "add liquidity" in lower:
+        action = "add_liquidity"
+    elif re.search(r"\bswap\b", lower):
+        action = "swap_for_pt"
+    else:
+        action = "mint_py"
+
+    gd = m.groupdict()
+    amount_raw = gd.get("amount")
+    token = (gd.get("token") or "").upper() or None
+    chain_raw = (gd.get("chain") or "").lower() or None
+
+    # Chain inference: explicit "on CHAIN" wins; otherwise default ethereum.
+    _CHAIN_ALIAS = {
+        "eth": "ethereum", "ethereum": "ethereum", "mainnet": "ethereum",
+        "arb": "arbitrum", "arbitrum": "arbitrum",
+        "op": "optimism", "optimism": "optimism",
+        "bsc": "bsc", "bnb": "bsc",
+        "polygon": "polygon", "matic": "polygon",
+        "base": "base",
+        "avax": "avalanche", "avalanche": "avalanche",
+    }
+    chain = _CHAIN_ALIAS.get(chain_raw, chain_raw) if chain_raw else "ethereum"
+    # Pendle is EVM-only; if user said solana, defer to LLM fallback.
+    if chain_raw in {"sol", "solana"}:
+        return None
+
+    amount = float(amount_raw.replace(",", "")) if amount_raw else 0.0
+
+    args: dict[str, Any] = {
+        "chain": chain,
+        "protocol": "pendle-v2",
+        "action": action,
+        "asset_in": token,
+        "amount_in": amount,
+        "extra": {"market_symbol": market},
+    }
+    return ("build_yield_execution_plan", args)
+
+
 def _detect_generic_supply(message: str) -> tuple[str, dict] | None:
     """Generic 'supply N TOKEN on/via PROTOCOL on CHAIN' detector.
 
@@ -1750,7 +1854,11 @@ _ENSO_PROTOS_RE = re.compile(
 
 _ENSO_CHAINS_RE = re.compile(
     r"\b(?i:(ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|bnb|"
-    r"linea|zksync|scroll|gnosis|sonic|soneium|plasma|ink))\b"
+    r"linea|zksync|scroll|gnosis|sonic|soneium|plasma|ink|"
+    # F02 fix: include solana/sol so 'Deposit X TOKEN into Aave V3 on Solana'
+    # surfaces the unsupported_chain blocker from build_yield_execution_plan's
+    # protocol-chain matrix instead of silently defaulting to ethereum.
+    r"solana|sol))\b"
 )
 
 _ENSO_PROTO_TO_SLUG = {
@@ -1851,6 +1959,8 @@ def _detect_enso_vault_deposit(message: str) -> tuple[str, dict] | None:
     chain = (chain_match.group(1).lower() if chain_match else "ethereum")
     if chain == "bnb":
         chain = "bsc"
+    elif chain == "sol":
+        chain = "solana"
     amount = m.group("amount").replace(",", "")
     verb = m.group(0).split()[0].lower()
     if slug in _ENSO_STAKE_PROTOS or verb == "stake":
@@ -2694,6 +2804,180 @@ _LP_PROTO_FIRST_RE = re.compile(
 )
 
 
+# F05 — Aerodrome Slipstream / Velodrome CL concentrated-LP short-circuit.
+# Pass-4 hand-read: 'Deposit to Aerodrome Slipstream WETH-USDC on Base with
+# 0.05 ETH and 100 USDC' fell to text 'couldn't find pools' when the
+# `search_defi_opportunities` over-filter trap (stablecoin_only=true +
+# product_types=['vault'] + protocol_filter='aerodrome') zeroed candidates.
+# This detector catches verb-light / verbless mentions of Slipstream + a
+# named pair + chain, routing direct to build_yield_execution_plan with
+# the CL adapter's expected protocol slug so the pool resolver finds the
+# actual CL pool instead of the search-filter dead-end.
+_SLIPSTREAM_PROTO_RE = re.compile(
+    r"\b(?P<proto>aerodrome[\s-]?slipstream|aerodrome[\s-]?cl|"
+    r"velodrome[\s-]?slipstream|velodrome[\s-]?cl|slipstream)\b",
+    re.IGNORECASE,
+)
+_SLIPSTREAM_PAIR_RE = re.compile(
+    r"\b(?P<pair>[A-Za-z][A-Za-z0-9.]{1,9}\s*[/\-_]\s*[A-Za-z][A-Za-z0-9.]{1,9})\b",
+)
+_SLIPSTREAM_CHAIN_RE = re.compile(
+    r"\bon\s+(?P<chain>base|optimism|op|ethereum)\b", re.IGNORECASE,
+)
+_SLIPSTREAM_AMT_NATIVE_RE = re.compile(
+    r"(?P<amt>[\d,]+(?:\.\d+)?)\s+(?P<tok>[A-Za-z]{2,10})",
+)
+_SLIPSTREAM_AMT_USD_RE = re.compile(
+    r"\$\s*(?P<usd>[\d,]+(?:\.\d+)?)",
+)
+_SLIPSTREAM_FEE_RE = re.compile(r"(?P<pct>\d+(?:\.\d+)?)\s*%")
+_SLIPSTREAM_RANGE_RE = re.compile(
+    r"\b(?P<range>narrow|balanced|wide|full)(?:\s+range)?\b", re.IGNORECASE,
+)
+
+
+def _detect_slipstream_lp(message: str) -> tuple[str, dict] | None:
+    """Slipstream / Aerodrome-CL / Velodrome-CL LP intent short-circuit.
+
+    Catches phrasings that the standard _detect_add_liquidity misses:
+      - 'aerodrome slipstream WETH-USDC on base with 0.05 ETH'
+      - 'slipstream WETH-USDC on base with 0.05 ETH'
+      - 'Open aerodrome-cl WETH/USDC on base, 0.05 ETH'
+    Routes to build_yield_execution_plan so the V3 NFT adapter builds a
+    real mint plan rather than falling to the search-filter zero-result
+    contextual reply ('couldn't find pools').
+    """
+    if not message:
+        return None
+    text = message.strip()
+    proto_m = _SLIPSTREAM_PROTO_RE.search(text)
+    if not proto_m:
+        return None
+    proto_raw = proto_m.group("proto").lower().replace(" ", "-")
+    # Normalise to canonical capability-registry slugs the V3 NFT adapter
+    # gate recognises.
+    if proto_raw in {"aerodrome-slipstream", "aerodrome-cl", "slipstream"}:
+        proto = "aerodrome-slipstream"
+    elif proto_raw in {"velodrome-slipstream", "velodrome-cl"}:
+        proto = "velodrome-cl"
+    else:
+        proto = proto_raw
+    pair_m = _SLIPSTREAM_PAIR_RE.search(text[proto_m.end():])
+    if not pair_m:
+        return None
+    pair = pair_m.group("pair").upper().replace("/", "-").replace("_", "-").replace(" ", "")
+    if "-" not in pair:
+        return None
+    # Reject pair tokens that look like noise verbs / chain words.
+    parts = pair.split("-")
+    if len(parts) != 2 or any(p in {"ON", "WITH", "AND", "BASE", "OPTIMISM", "ETHEREUM"} for p in parts):
+        return None
+    chain_m = _SLIPSTREAM_CHAIN_RE.search(text)
+    if chain_m:
+        chain = chain_m.group("chain").lower()
+        if chain == "op":
+            chain = "optimism"
+    else:
+        # Default by protocol family.
+        chain = "base" if proto.startswith("aerodrome") else "optimism"
+    # Bare "slipstream" without "aerodrome"/"velodrome" — infer family from chain.
+    if proto_raw == "slipstream":
+        proto = "aerodrome-slipstream" if chain == "base" else "velodrome-cl"
+    # Amount parsing: prefer native amount form ("0.05 ETH"); fall back to USD.
+    amount: float | None = None
+    asset_in: str = ""
+    amount_is_usd = False
+    usd_equivalent: float | None = None
+    # Scan all native-amount matches and pick the first whose token isn't a
+    # noise word (protocol, pair leg).
+    _noise = {"BPS", "FEE", "FEES", "BASIS", "POINT", "POINTS"}
+    for nm in _SLIPSTREAM_AMT_NATIVE_RE.finditer(text):
+        tok = nm.group("tok").upper()
+        if tok in _noise:
+            continue
+        if tok in {"PERCENT", "PCT", "APY", "APR"}:
+            continue
+        try:
+            amt_val = float(nm.group("amt").replace(",", ""))
+        except (TypeError, ValueError):
+            continue
+        if amt_val <= 0:
+            continue
+        amount = amt_val
+        asset_in = tok
+        price = _TOKEN_USD_HINT.get(tok, 1.0)
+        usd_equivalent = amt_val * price
+        break
+    if amount is None:
+        um = _SLIPSTREAM_AMT_USD_RE.search(text)
+        if um:
+            try:
+                amount = float(um.group("usd").replace(",", ""))
+                asset_in = "USDC"
+                amount_is_usd = True
+                usd_equivalent = amount
+            except (TypeError, ValueError):
+                pass
+    if amount is None or amount <= 0:
+        return None
+    # Dual-token capture: 'with X TOK_A and Y TOK_B' — same shape as the
+    # _detect_add_liquidity dual-token leg. Records token_a/amount_a/
+    # token_b/amount_b for the V3 NFT adapter.
+    extra: dict = {"pool_symbol": pair, "amount_is_usd": amount_is_usd}
+    if usd_equivalent is not None:
+        extra["usd_equivalent"] = usd_equivalent
+    dual_re = re.compile(
+        r"(?P<amt_a>[\d,]+(?:\.\d+)?)\s+(?P<tok_a>[A-Za-z]{2,10})"
+        r"\s*(?:and|\+|plus)\s*"
+        r"(?P<amt_b>[\d,]+(?:\.\d+)?)\s+(?P<tok_b>[A-Za-z]{2,10})",
+        re.IGNORECASE,
+    )
+    dm = dual_re.search(text)
+    if dm:
+        try:
+            amt_a = float(dm.group("amt_a").replace(",", ""))
+            amt_b = float(dm.group("amt_b").replace(",", ""))
+        except (TypeError, ValueError):
+            amt_a = amt_b = 0.0
+        tok_a = dm.group("tok_a").upper()
+        tok_b = dm.group("tok_b").upper()
+        if amt_a > 0 and amt_b > 0 and tok_a and tok_b:
+            extra.update({
+                "token_a": tok_a,
+                "amount_a": amt_a,
+                "token_b": tok_b,
+                "amount_b": amt_b,
+                "dual_token": True,
+            })
+            asset_in = tok_a
+            amount = amt_a
+    # Fee tier: default 0.05% for Slipstream / CL.
+    fee_m = _SLIPSTREAM_FEE_RE.search(text)
+    if fee_m:
+        try:
+            fee_pct = float(fee_m.group("pct"))
+            extra["fee_bps"] = int(round(fee_pct * 10_000))
+        except (TypeError, ValueError):
+            extra["fee_bps"] = 500
+    else:
+        extra["fee_bps"] = 500
+    # Range preset hint.
+    range_m = _SLIPSTREAM_RANGE_RE.search(text)
+    if range_m:
+        extra["range_preset"] = range_m.group("range").lower()
+    return (
+        "build_yield_execution_plan",
+        {
+            "chain": chain,
+            "protocol": proto,
+            "action": "deposit_lp",
+            "asset_in": asset_in,
+            "amount_in": amount,
+            "extra": extra,
+        },
+    )
+
+
 def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     """Match 'Add liquidity to Uniswap V3 USDC/WETH on Ethereum with $100'
     and the inverted 'Deposit $100 into PancakeSwap V3 USDT-BNB on BSC' form,
@@ -2734,6 +3018,23 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
     if has_solana_word and _F02_EVM_ONLY.search(text) and not _F02_SOLANA_ONLY.search(text):
         return None
     if has_evm_word and _F02_SOLANA_ONLY.search(text) and not _F02_EVM_ONLY.search(text):
+        return None
+    # F06 early-exit: "curve-volatile-pool" / "Curve tri-crypto" silently
+    # routed to 3pool stable because the protocol-pair regex matched only the
+    # 'curve' head and lost the volatile/tricrypto qualifier. Curve V2
+    # (volatile / tricrypto / crypto-pool) is NOT yet adapter-supported, and
+    # 3pool (stable) is the wrong pool — so when the message explicitly names
+    # a curve-volatile family pool, defer to the LLM contextual fallback
+    # (which the sanitizer guards against fabrication). The downstream
+    # build_yield_execution_plan path will then surface the proper
+    # ADAPTER_BUILD_FAILED blocker for curve-v2 instead of silently picking
+    # a stable 3pool plan.
+    _F06_CURVE_VOLATILE = re.compile(
+        r"\bcurve(?:[-\s]?(?:v2|finance|dex))?\b.*?"
+        r"\b(volatile|tri[-\s]?crypto|tricrypto|crypto[-\s]?pool)\b",
+        re.IGNORECASE | re.DOTALL,
+    )
+    if _F06_CURVE_VOLATILE.search(text):
         return None
     m = (
         _ADD_LIQUIDITY_RE.search(text)
@@ -3759,7 +4060,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
             },
         )
 
-    for detector in (_detect_cross_chain_then_yield, _detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_enso_vault_deposit, _detect_execute_named_proto, _detect_aave_supply, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_cross_chain_then_yield, _detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_slipstream_lp, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_enso_vault_deposit, _detect_execute_named_proto, _detect_aave_supply, _detect_pendle_mint, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
