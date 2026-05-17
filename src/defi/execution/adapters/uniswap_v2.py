@@ -24,6 +24,7 @@ import time
 from dataclasses import dataclass
 from decimal import Decimal
 
+from src.defi.defaults import DEFAULT_SLIPPAGE_BPS
 from src.defi.execution.adapters.base import (
     CapabilityResult,
     VerifyResult,
@@ -300,7 +301,7 @@ class UniswapV2DualTokenAdapter:
 
         amount_a_units = _to_unit(amount_a_dec, dec_a)
         amount_b_units = _to_unit(amount_b_dec, dec_b)
-        slippage_bps = max(int(request.slippage_bps or 100), 10)
+        slippage_bps = max(int(request.slippage_bps or DEFAULT_SLIPPAGE_BPS), 10)
         min_a_units = (amount_a_units * (10_000 - slippage_bps)) // 10_000
         min_b_units = (amount_b_units * (10_000 - slippage_bps)) // 10_000
         deadline = int(time.time()) + 30 * 60  # 30 min
@@ -537,7 +538,7 @@ class UniswapV2DualTokenAdapter:
             asset_in=f"LP-{symbol_a}-{symbol_b}",
             amount_in=str(request.amount_in),
             asset_out=f"{symbol_a}+{symbol_b}",
-            slippage_bps=int(request.slippage_bps or 100),
+            slippage_bps=int(request.slippage_bps or DEFAULT_SLIPPAGE_BPS),
             gas_estimate_usd=3.5,
             duration_estimate_s=20,
             depends_on=[approve_step.step_id],
