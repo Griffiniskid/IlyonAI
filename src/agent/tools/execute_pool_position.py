@@ -479,7 +479,7 @@ async def execute_pool_position(
             title="Pool not found",
             summary=f"Couldn't match `{pool_arg}` to a DefiLlama pool.",
         )
-        plan.add_blocker(ExecutionBlocker(
+        _blocker = ExecutionBlocker(
             code="pool_not_found",
             severity="blocker",
             title="No matching pool",
@@ -491,7 +491,16 @@ async def execute_pool_position(
             affected_step_ids=[],
             recoverable=True,
             cta="Re-send with a recognized protocol + pair.",
-        ))
+        )
+        # V7-066 — enrich with structured recovery posture before adding to plan.
+        from src.defi.recovery import FailureKind, enrich_blocker_with_recovery
+        enrich_blocker_with_recovery(
+            _blocker,
+            FailureKind.POOL_REMOVED,
+            step_kind="deposit",
+            pool_id=str(pool_arg),
+        )
+        plan.add_blocker(_blocker)
         return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
 
     chain = str(meta.get("chain", "")).lower()
@@ -578,7 +587,7 @@ async def execute_pool_position(
             title=f"{humanize_protocol(protocol)} Deposit",
             summary=f"{humanize_protocol(protocol)} {pool_symbol} requires a Solana wallet.",
         )
-        plan.add_blocker(ExecutionBlocker(
+        _blocker = ExecutionBlocker(
             code="WALLET_CHAIN_MISMATCH",
             severity="blocker",
             title="Wrong wallet for this pool",
@@ -589,7 +598,16 @@ async def execute_pool_position(
             ),
             affected_step_ids=[],
             cta="Connect a Solana wallet (Phantom) to sign this deposit.",
-        ))
+        )
+        # V7-066 — wire decide_recovery with the typed WALLET_CHAIN_MISMATCH kind.
+        from src.defi.recovery import FailureKind, enrich_blocker_with_recovery
+        enrich_blocker_with_recovery(
+            _blocker,
+            FailureKind.WALLET_CHAIN_MISMATCH,
+            step_kind="deposit",
+            pool_id=str(meta.get("pool", "")),
+        )
+        plan.add_blocker(_blocker)
         return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
     if is_evm_pool and not user_is_evm:
         from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
@@ -598,7 +616,7 @@ async def execute_pool_position(
             title=f"{humanize_protocol(protocol)} Deposit",
             summary=f"{humanize_protocol(protocol)} {pool_symbol} on {chain[:1].upper()+chain[1:]} requires an EVM wallet.",
         )
-        plan.add_blocker(ExecutionBlocker(
+        _blocker = ExecutionBlocker(
             code="WALLET_CHAIN_MISMATCH",
             severity="blocker",
             title="Wrong wallet for this pool",
@@ -609,7 +627,16 @@ async def execute_pool_position(
             ),
             affected_step_ids=[],
             cta="Connect an EVM wallet (MetaMask) to sign this deposit.",
-        ))
+        )
+        # V7-066 — wire decide_recovery with the typed WALLET_CHAIN_MISMATCH kind.
+        from src.defi.recovery import FailureKind, enrich_blocker_with_recovery
+        enrich_blocker_with_recovery(
+            _blocker,
+            FailureKind.WALLET_CHAIN_MISMATCH,
+            step_kind="deposit",
+            pool_id=str(meta.get("pool", "")),
+        )
+        plan.add_blocker(_blocker)
         return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
 
     # Solana non-LP / non-Jupiter-tradable protocols. We have NO native sign
@@ -652,7 +679,7 @@ async def execute_pool_position(
                 "execution from IlyonAI."
             ),
         )
-        plan.add_blocker(ExecutionBlocker(
+        _blocker = ExecutionBlocker(
             code="pool_kind_unsupported",
             severity="blocker",
             title="Pool not supported for one-click deposit",
@@ -664,7 +691,16 @@ async def execute_pool_position(
             affected_step_ids=[],
             recoverable=True,
             cta=f"Open {humanize_protocol(protocol)} to deposit there: {link}",
-        ))
+        )
+        # V7-066 — surface a recovery posture even when we cannot one-click.
+        from src.defi.recovery import FailureKind, enrich_blocker_with_recovery
+        enrich_blocker_with_recovery(
+            _blocker,
+            FailureKind.POOL_REMOVED,
+            step_kind="deposit",
+            pool_id=str(meta.get("pool", "")),
+        )
+        plan.add_blocker(_blocker)
         return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
 
     is_lp = "-" in pool_symbol or "/" in pool_symbol

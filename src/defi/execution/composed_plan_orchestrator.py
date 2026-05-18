@@ -184,12 +184,21 @@ class ComposedPlanOrchestrator:
             })
         else:
             # cancelled / failed / timeout — keep the blocker, emit one final.
+            # V7-066 — route through decide_recovery so the SSE payload carries
+            # the structured recovery posture (auto-rebuild wider / ASK_USER /
+            # NOTIFY) for the frontend to render the recovery card.
+            from src.defi.recovery import FailureKind, decide_recovery
+            _recovery = decide_recovery(
+                FailureKind.BRIDGE_SUBMISSION_FAILED,
+                step_kind="bridge",
+            )
             await self._emit(plan_id, {
                 "kind": "bridge_resolution",
                 "state": resolution.state,
                 "actual_dst_amount": resolution.actual_dst_amount,
                 "step_id": deposit_step.step_id,
                 "step_status": deposit_step.status,
+                "recovery": _recovery.to_dict(),
             })
         # Drop the watch entry once the task finishes.
         async with self._lock:

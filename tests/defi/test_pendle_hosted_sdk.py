@@ -246,7 +246,8 @@ def test_build_sdk_success_returns_signable_step():
     assert s.transaction.value == "0"
     assert s.snapshot is not None
     assert s.snapshot["source"] == "pendle_hosted_sdk"
-    assert s.snapshot["pendle_mode"] == "swapTokenForPt"
+    # V7-057 — canonical Pendle V4 router method name.
+    assert s.snapshot["pendle_mode"] == "swapExactTokenForPt"
 
 
 def test_build_sdk_failure_falls_back_to_blocker():

@@ -120,6 +120,8 @@ function anchorDisc(name) {
   return crypto.createHash("sha256").update(`global:${name}`).digest().subarray(0, 8);
 }
 const ADD_LIQUIDITY2_DISC = anchorDisc("add_liquidity2");
+// V7-061 — withdraw uses the symmetric `remove_liquidity2` IX on the same program.
+const REMOVE_LIQUIDITY2_DISC = anchorDisc("remove_liquidity2");
 
 // ── PDA derivation (deterministic; no guess on addresses) ──────────────────
 function findPda(seeds, programId) {
@@ -200,9 +202,170 @@ function _toAtoms(amount, decimals) {
   return new BN(combined);
 }
 
+/**
+ * V7-061 — JLP native withdraw (remove_liquidity2) with 1h lockup gating.
+ *
+ * Gates by V7-004's `lockup_end_ts` column on the position-store record. If the
+ * lockup window has not elapsed, we emit a structured `JLP_LOCKED` blocker that
+ * the runtime surfaces back to the user instead of building a doomed-to-revert
+ * IX. Past-lockup callers get a hand-rolled `remove_liquidity2` IX wrapped in
+ * a serialized base64 Transaction, matching the deposit-side packaging.
+ *
+ * remove_liquidity2 args layout (mirrors add_liquidity2 with sides flipped):
+ *   8 disc | 8 lpAmountIn (u64 LE) | 8 minTokenAmountOut (u64 LE) | 1 opt-tag
+ */
+function encodeRemoveLiquidity2Args(lpAmountIn, minTokenOut) {
+  const buf = Buffer.alloc(8 + 8 + 8 + 1);
+  REMOVE_LIQUIDITY2_DISC.copy(buf, 0);
+  buf.writeBigUInt64LE(BigInt(lpAmountIn.toString()), 8);
+  buf.writeBigUInt64LE(BigInt(minTokenOut.toString()), 16);
+  buf.writeUInt8(0, 24); // Option::None for tokenAmountPreSwap
+  return buf;
+}
+
+async function buildWithdraw(req, ctx = {}) {
+  const { asset = "USDC", amount, user, lockup_end_ts, extra = {} } = req || {};
+  const effectiveLockup = (lockup_end_ts != null ? lockup_end_ts : (extra && extra.lockup_end_ts));
+  const nowSec = Math.floor(Date.now() / 1000);
+
+  // V7-004 lockup gate — emit structured blocker, do NOT build a doomed IX.
+  if (effectiveLockup != null) {
+    const lockupTs = Number(effectiveLockup);
+    if (Number.isFinite(lockupTs) && nowSec < lockupTs) {
+      const remainingSec = lockupTs - nowSec;
+      return {
+        blocker: "JLP_LOCKED",
+        error: "JLP_LOCKED",
+        code: "JLP_LOCKED",
+        message:
+          `JLP withdraw blocked: position is still within the 1h post-deposit lockup ` +
+          `(${remainingSec}s remaining, lockup ends at unix ${lockupTs}).`,
+        lockup_end_ts: lockupTs,
+        remaining_seconds: remainingSec,
+        retry_after_ts: lockupTs,
+        transactions: [],
+      };
+    }
+  }
+
+  // Past lockup — build the native remove_liquidity2 IX.
+  const { connection } = ctx;
+  if (!connection) {
+    throw new Error("JLP buildWithdraw requires a Solana connection.");
+  }
+  if (!user) {
+    throw new Error("JLP buildWithdraw requires `user` (Solana wallet pubkey).");
+  }
+  const inputSym = String(asset).toUpperCase();
+  const custodyCfg = CUSTODIES[inputSym];
+  if (!custodyCfg) {
+    throw new Error(
+      `JLP buildWithdraw: unsupported output asset '${inputSym}'. ` +
+      `Supported: ${Object.keys(CUSTODIES).join(", ")}.`,
+    );
+  }
+  const userPubkey = new PublicKey(user);
+  // For withdraw, `amount` is LP atoms to burn (JLP has 6 decimals on-chain).
+  const lpAtomsIn = _toAtoms(amount, 6);
+  if (lpAtomsIn.lte(new BN(0))) {
+    throw new Error(`JLP withdraw amount must be positive (got ${amount}).`);
+  }
+
+  // Resolve oracle feeds + custody token account from on-chain state.
+  const { dovesPrice, pythnetPrice } = await _loadDovesAndPythnetFeeds(
+    connection,
+    custodyCfg.custody,
+  );
+  const custodyAcct = await connection.getAccountInfo(custodyCfg.custody);
+  if (!custodyAcct || !custodyAcct.data || custodyAcct.data.length < 72 + 32) {
+    throw new Error(`JLP custody token-account read failed for ${inputSym}.`);
+  }
+  const custodyTokenAccount = new PublicKey(custodyAcct.data.slice(72, 72 + 32));
+
+  const receiveAta = await getAssociatedTokenAddress(custodyCfg.mint, userPubkey);
+  const lpTokenAta = await getAssociatedTokenAddress(LP_MINT, userPubkey);
+
+  const tx = new Transaction();
+  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
+  tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50_000 }));
+
+  // Ensure receive ATA exists.
+  const receiveInfo = await connection.getAccountInfo(receiveAta);
+  if (!receiveInfo) {
+    tx.add(
+      createAssociatedTokenAccountInstruction(
+        userPubkey,
+        receiveAta,
+        userPubkey,
+        custodyCfg.mint,
+      ),
+    );
+  }
+
+  const minTokenOut = new BN(0); // Phase A — no slippage cap on output
+  const ixData = encodeRemoveLiquidity2Args(lpAtomsIn, minTokenOut);
+  const keys = [
+    { pubkey: userPubkey,             isSigner: true,  isWritable: true  }, // 0 owner
+    { pubkey: receiveAta,             isSigner: false, isWritable: true  }, // 1 receivingAccount
+    { pubkey: lpTokenAta,             isSigner: false, isWritable: true  }, // 2 lpTokenAccount (burn from)
+    { pubkey: TRANSFER_AUTHORITY_PDA, isSigner: false, isWritable: false }, // 3 transferAuthority
+    { pubkey: PERPETUALS_PDA,         isSigner: false, isWritable: false }, // 4 perpetuals
+    { pubkey: POOL,                   isSigner: false, isWritable: true  }, // 5 pool
+    { pubkey: custodyCfg.custody,     isSigner: false, isWritable: true  }, // 6 custody
+    { pubkey: dovesPrice,             isSigner: false, isWritable: false }, // 7 dovesPrice
+    { pubkey: pythnetPrice,           isSigner: false, isWritable: false }, // 8 pythnetPrice
+    { pubkey: custodyTokenAccount,    isSigner: false, isWritable: true  }, // 9 custodyTokenAccount
+    { pubkey: LP_MINT,                isSigner: false, isWritable: true  }, // 10 lpTokenMint
+    { pubkey: TOKEN_PROGRAM_ID,       isSigner: false, isWritable: false }, // 11 tokenProgram
+    { pubkey: EVENT_AUTHORITY,        isSigner: false, isWritable: false }, // 12 eventAuthority
+    { pubkey: PROGRAM_ID,             isSigner: false, isWritable: false }, // 13 programId (self)
+  ];
+  tx.add(new TransactionInstruction({ programId: PROGRAM_ID, keys, data: ixData }));
+
+  tx.feePayer = userPubkey;
+  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  tx.recentBlockhash = blockhash;
+  const raw = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+  const b64 = raw.toString("base64");
+  const sim = await simulateBase64Tx({ b64, connection });
+  if (!sim.ok) {
+    const e = new Error(`JLP native remove_liquidity2 simulation failed: ${sim.errStr || "unknown"}`);
+    e.simulation = sim;
+    throw e;
+  }
+  return {
+    transactions: [
+      {
+        b64,
+        summary: `JLP native remove_liquidity2: burn ${amount} JLP → ${inputSym}`,
+        description:
+          `Calls Jupiter Perpetuals remove_liquidity2 on program ${PROGRAM_ID.toBase58()} ` +
+          `against the ${inputSym} custody. Lockup check passed (now ${nowSec} ≥ end_ts ${effectiveLockup || "n/a"}).`,
+        receiptToken: inputSym,
+        redemption_program: PROGRAM_ID.toBase58(),
+        feeUsd: 0.01,
+        durationS: 20,
+        warnings: [
+          "Native JLP withdraw via Jupiter Perpetuals remove_liquidity2.",
+          "min_token_out=0 for Phase A — protocol NAV enforced; no aggregator slippage cap.",
+        ],
+        simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
+      },
+    ],
+  };
+}
+
 module.exports = {
   aliases: ["jupiter-perps", "jupiter-perpetuals", "jupiter-perpetuals-lp"],
-  supportedActions: ["deposit", "supply", "stake", "deposit_lp"],
+  supportedActions: ["deposit", "supply", "stake", "deposit_lp", "withdraw", "unstake", "redeem"],
+
+  // V7-061 exports
+  buildWithdraw,
+  _internals: {
+    REMOVE_LIQUIDITY2_DISC,
+    encodeRemoveLiquidity2Args,
+    buildWithdraw,
+  },
 
   async quote({ asset, amount }) {
     const sym = (asset || "USDC").toUpperCase();

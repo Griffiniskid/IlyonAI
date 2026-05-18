@@ -4,9 +4,10 @@
  *   extra.vaultMint or extra.vaultTokenMint → VaultImpl.deposit
  *   extra.poolId → CpAmm.createPositionAndAddLiquidity
  */
-const { PublicKey, Keypair, ComputeBudgetProgram, Transaction, TransactionMessage, VersionedTransaction } = require("@solana/web3.js");
+const { PublicKey, Keypair, ComputeBudgetProgram, Transaction, TransactionInstruction, TransactionMessage, VersionedTransaction } = require("@solana/web3.js");
 const { getMint, getEpochInfo, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } = require("@solana/spl-token");
 const BN = require("bn.js");
+const crypto = require("crypto");
 let CpAmm;
 let VaultImpl;
 try { CpAmm = require("@meteora-ag/cp-amm-sdk").CpAmm; } catch (e) { CpAmm = null; }
@@ -16,6 +17,101 @@ const { simulateBase64Tx } = require("./simulate");
 
 const DAMM_V2_PROGRAM = new PublicKey("cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG");
 const VAULT_PROGRAM   = new PublicKey("24Uqj9JCLxUeoC3hGfh5W3s9FM9uCHDS2SG3LYwBpyTi");
+
+// V7-060 — Meteora DLMM (Dynamic Liquidity Market Maker).
+// Program ID per https://docs.meteora.ag/dlmm/dlmm-overview / on-chain mainnet.
+const DLMM_PROGRAM = new PublicKey("LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo");
+
+function _anchorDiscMet(name) {
+  return crypto.createHash("sha256").update(`global:${name}`).digest().slice(0, 8);
+}
+const REMOVE_LIQUIDITY_BY_RANGE_DISC = _anchorDiscMet("remove_liquidity_by_range");
+
+/**
+ * V7-060 — Meteora DLMM remove_liquidity_by_range IX builder.
+ *
+ * Hand-rolled Anchor IX for the on-chain `remove_liquidity_by_range` entrypoint.
+ * Encodes binIdFrom/binIdTo as i32 LE + bps_to_remove (u16 LE, defaults 10000 = 100%)
+ * in the instruction data payload.
+ *
+ * Layout: 8 disc | 4 binIdFrom (i32 LE) | 4 binIdTo (i32 LE) | 2 bpsToRemove (u16 LE)
+ *
+ * Account order (per DLMM IDL):
+ *   0. position           [mut]    — the LB position pubkey
+ *   1. lbPair             [mut]
+ *   2. binArrayBitmapExt  [optional, mut]
+ *   3. userTokenX         [mut]
+ *   4. userTokenY         [mut]
+ *   5. reserveX           [mut]
+ *   6. reserveY           [mut]
+ *   7. tokenXMint         [readonly]
+ *   8. tokenYMint         [readonly]
+ *   9. binArrayLower      [mut]
+ *  10. binArrayUpper      [mut]
+ *  11. sender             [signer]
+ *  12. tokenXProgram      [readonly]
+ *  13. tokenYProgram      [readonly]
+ *  14. eventAuthority     [readonly]
+ *  15. program            [readonly] — self-ref for CPI events
+ *
+ * Caller passes a `position` pubkey plus the rest via `opts.accounts.*`.
+ * For the dependency-light hand-roll, this returns the minimal IX with
+ * only the position + sender + program-self accounts wired up when opts.accounts
+ * is absent — sim will catch missing accounts at simulation time.
+ */
+function buildRemoveByRange(positionPubkey, binIdFrom, binIdTo, opts = {}) {
+  const position = positionPubkey instanceof PublicKey
+    ? positionPubkey
+    : new PublicKey(positionPubkey);
+  const from = parseInt(binIdFrom, 10);
+  const to = parseInt(binIdTo, 10);
+  if (!Number.isInteger(from) || !Number.isInteger(to)) {
+    throw new Error(`Meteora DLMM removeByRange: binIdFrom/binIdTo must be integers (got ${binIdFrom}/${binIdTo}).`);
+  }
+  if (to < from) {
+    throw new Error(`Meteora DLMM removeByRange: binIdTo (${to}) must be >= binIdFrom (${from}).`);
+  }
+  const bpsToRemove = Number.isFinite(opts.bpsToRemove) ? Math.max(0, Math.min(10000, opts.bpsToRemove | 0)) : 10000;
+
+  // Encode IX data: disc(8) || binIdFrom(i32 LE) || binIdTo(i32 LE) || bpsToRemove(u16 LE)
+  const data = Buffer.alloc(8 + 4 + 4 + 2);
+  REMOVE_LIQUIDITY_BY_RANGE_DISC.copy(data, 0);
+  data.writeInt32LE(from, 8);
+  data.writeInt32LE(to, 12);
+  data.writeUInt16LE(bpsToRemove, 16);
+
+  const accounts = opts.accounts || {};
+  const sender = opts.sender
+    ? (opts.sender instanceof PublicKey ? opts.sender : new PublicKey(opts.sender))
+    : position; // sim will reject if caller forgot; never silently fake-sign
+  // Account-meta list — fields callers don't supply default to the position
+  // pubkey as a deterministic placeholder so the data-encoding test can
+  // exercise IX structure without a full account dictionary.
+  const acctOr = (k) => (accounts[k] ? new PublicKey(accounts[k]) : position);
+  const keys = [
+    { pubkey: position,                     isSigner: false, isWritable: true  }, // 0 position
+    { pubkey: acctOr("lbPair"),             isSigner: false, isWritable: true  }, // 1 lbPair
+    { pubkey: acctOr("binArrayBitmapExt"),  isSigner: false, isWritable: true  }, // 2 binArrayBitmapExt
+    { pubkey: acctOr("userTokenX"),         isSigner: false, isWritable: true  }, // 3 userTokenX
+    { pubkey: acctOr("userTokenY"),         isSigner: false, isWritable: true  }, // 4 userTokenY
+    { pubkey: acctOr("reserveX"),           isSigner: false, isWritable: true  }, // 5 reserveX
+    { pubkey: acctOr("reserveY"),           isSigner: false, isWritable: true  }, // 6 reserveY
+    { pubkey: acctOr("tokenXMint"),         isSigner: false, isWritable: false }, // 7 tokenXMint
+    { pubkey: acctOr("tokenYMint"),         isSigner: false, isWritable: false }, // 8 tokenYMint
+    { pubkey: acctOr("binArrayLower"),      isSigner: false, isWritable: true  }, // 9 binArrayLower
+    { pubkey: acctOr("binArrayUpper"),      isSigner: false, isWritable: true  }, // 10 binArrayUpper
+    { pubkey: sender,                       isSigner: true,  isWritable: true  }, // 11 sender
+    { pubkey: TOKEN_PROGRAM_ID,             isSigner: false, isWritable: false }, // 12 tokenXProgram
+    { pubkey: TOKEN_PROGRAM_ID,             isSigner: false, isWritable: false }, // 13 tokenYProgram
+    { pubkey: acctOr("eventAuthority"),     isSigner: false, isWritable: false }, // 14 eventAuthority
+    { pubkey: DLMM_PROGRAM,                 isSigner: false, isWritable: false }, // 15 program (self)
+  ];
+  return new TransactionInstruction({
+    programId: DLMM_PROGRAM,
+    keys,
+    data,
+  });
+}
 
 async function serializeTx(tx, signers, owner, connection) {
   const { blockhash } = await connection.getLatestBlockhash("confirmed");
@@ -36,6 +132,15 @@ async function serializeTx(tx, signers, owner, connection) {
 module.exports = {
   aliases: ["meteora-damm","meteora-damm-v2","meteora-cp-amm","meteora-vault","meteora-dynamic-vault","meteora-dlmm"],
   supportedActions: ["deposit","deposit_lp","supply"],
+
+  // V7-060 exports — Meteora DLMM remove_liquidity_by_range.
+  DLMM_PROGRAM: DLMM_PROGRAM.toBase58(),
+  buildRemoveByRange,
+  _internals: {
+    DLMM_PROGRAM,
+    REMOVE_LIQUIDITY_BY_RANGE_DISC,
+    buildRemoveByRange,
+  },
 
   async quote({ asset }) {
     return { expectedAmountOut: null, receiptToken: "meteora-position-nft", apy: null,

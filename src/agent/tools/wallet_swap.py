@@ -366,7 +366,7 @@ async def build_swap_tx(
                 _human_amount = 0.0
             _notional_usd = _human_amount * _usd_price
             if _notional_usd > _MEGASWAP_USD_CAP:
-                return err_envelope(
+                _env = err_envelope(
                     code="AGGREGATOR_CIRCUIT_BREAKER",
                     message=(
                         f"Swap exceeds $500K size cap (${_notional_usd:,.0f}). "
@@ -374,6 +374,16 @@ async def build_swap_tx(
                         f"split into smaller chunks. Mega-swaps require manual review."
                     ),
                 )
+                # V7-066 — route through decide_recovery so the chat surfaces
+                # the typed recovery posture (ASK_USER + buttons) instead of
+                # just a flat error code.
+                from src.defi.recovery import FailureKind, enrich_err_envelope_with_recovery
+                enrich_err_envelope_with_recovery(
+                    _env,
+                    FailureKind.AGGREGATOR_CIRCUIT_BREAKER,
+                    step_kind="swap",
+                )
+                return _env
 
     params = {
         "chain": chain,
@@ -389,10 +399,19 @@ async def build_swap_tx(
     try:
         result_str = await asyncio.to_thread(_build_swap_tx, raw_input, from_addr, chain_id)
     except Exception as exc:
-        return err_envelope(
+        _env = err_envelope(
             code="swap_failed",
             message=translate_aggregator_error(str(exc)),
         )
+        # V7-066 — aggregator-side failure: route through decide_recovery so
+        # the user sees the structured posture (retry / leave-in-wallet / etc).
+        from src.defi.recovery import FailureKind, enrich_err_envelope_with_recovery
+        enrich_err_envelope_with_recovery(
+            _env,
+            FailureKind.EXEC_REVERT,
+            step_kind="swap",
+        )
+        return _env
 
     try:
         parsed = parse_assistant_json(result_str)
@@ -484,7 +503,7 @@ async def build_swap_tx(
     except (TypeError, ValueError):
         in_num, out_num = 0.0, 0.0
     if in_num <= 0 or out_num <= 0:
-        return err_envelope(
+        _env = err_envelope(
             code="zero_quote",
             message=(
                 "The aggregator returned a non-positive output amount, so we can't "
@@ -492,6 +511,14 @@ async def build_swap_tx(
                 "Try a larger amount or a more liquid pair."
             ),
         )
+        # V7-066 — thin liquidity / null route: surface a NULL_ROUTE recovery.
+        from src.defi.recovery import FailureKind, enrich_err_envelope_with_recovery
+        enrich_err_envelope_with_recovery(
+            _env,
+            FailureKind.NULL_ROUTE,
+            step_kind="swap",
+        )
+        return _env
     # Enso/Jupiter both return amount_in_display / dst_amount_display as
     # human-readable strings ("0.1") to keep float drift out of the JSON, so
     # `dst_amount_display / amount_in_display` would be `str / str` here.

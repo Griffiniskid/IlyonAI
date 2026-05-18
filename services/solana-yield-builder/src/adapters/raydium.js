@@ -25,12 +25,24 @@
  *   AMM_V4 = 675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8
  *   CPMM   = CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C
  */
-const { ComputeBudgetProgram, PublicKey } = require("@solana/web3.js");
+const { ComputeBudgetProgram, PublicKey, TransactionInstruction } = require("@solana/web3.js");
+const crypto = require("crypto");
 const { simulateBase64Tx } = require("./simulate");
 const _legacyPrep = require("./_legacyRaydiumPrep");
 
 const AMM_V4_PROGRAM = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8";
 const CPMM_PROGRAM = "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C";
+
+// V7-059 — Raydium CLMM (Concentrated Liquidity Market Maker).
+// Program ID verified on mainnet: https://docs.raydium.io/raydium/protocol/developers/addresses
+const CLMM_PROGRAM = "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK";
+const CLMM_PROGRAM_PK = new PublicKey(CLMM_PROGRAM);
+
+// Anchor discriminator = sha256(`global:${snake_case_ix_name}`).slice(0, 8)
+function _anchorDisc(name) {
+  return crypto.createHash("sha256").update(`global:${name}`).digest().slice(0, 8);
+}
+const CLOSE_POSITION_DISC = _anchorDisc("close_position");
 
 const COMPUTE_UNIT_LIMIT = 600_000;
 const COMPUTE_UNIT_PRICE_MICROLAMPORTS = 50_000;
@@ -152,9 +164,64 @@ function _serializeTx(transaction) {
   return Buffer.from(raw).toString("base64");
 }
 
+/**
+ * V7-059 — Raydium CLMM close_position IX builder.
+ *
+ * Closes a CLMM position NFT after liquidity has been withdrawn. The on-chain
+ * `close_position` IX in the Raydium CLMM program (CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK)
+ * burns the position NFT and reclaims rent. The IX takes ZERO args (Anchor disc only).
+ *
+ * Account order (from Raydium CLMM IDL):
+ *   0. nftOwner                 [signer, mut]
+ *   1. positionNftMint          [mut]   — the position NFT mint
+ *   2. positionNftAccount       [mut]   — owner's ATA holding the NFT (will be closed)
+ *   3. personalPosition         [mut]   — PDA ["position", positionNftMint]
+ *   4. systemProgram            [readonly]
+ *   5. tokenProgram             [readonly]
+ *
+ * For the dependency-light hand-roll we use the most stable subset. The
+ * raydium-sdk-v2 `Clmm.closePosition` typed helper is wired via package.json
+ * for future drop-in upgrades.
+ */
+const _SYSTEM_PROGRAM = new PublicKey("11111111111111111111111111111111");
+const _TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+
+function buildClose(positionNft, opts = {}) {
+  // Caller passes either a PublicKey or base58 string for the position NFT mint.
+  const nftMint = positionNft instanceof PublicKey ? positionNft : new PublicKey(positionNft);
+  const owner = opts.owner
+    ? (opts.owner instanceof PublicKey ? opts.owner : new PublicKey(opts.owner))
+    : nftMint; // fallback for callers that haven't wired owner yet — sim will catch
+  const nftAccount = opts.positionNftAccount
+    ? new PublicKey(opts.positionNftAccount)
+    : nftMint;
+  // PDA: ["position", nftMint]
+  const [personalPosition] = PublicKey.findProgramAddressSync(
+    [Buffer.from("position"), nftMint.toBuffer()],
+    CLMM_PROGRAM_PK,
+  );
+  const keys = [
+    { pubkey: owner,             isSigner: true,  isWritable: true },
+    { pubkey: nftMint,           isSigner: false, isWritable: true },
+    { pubkey: nftAccount,        isSigner: false, isWritable: true },
+    { pubkey: personalPosition,  isSigner: false, isWritable: true },
+    { pubkey: _SYSTEM_PROGRAM,   isSigner: false, isWritable: false },
+    { pubkey: _TOKEN_PROGRAM,    isSigner: false, isWritable: false },
+  ];
+  return new TransactionInstruction({
+    programId: CLMM_PROGRAM_PK,
+    keys,
+    data: Buffer.from(CLOSE_POSITION_DISC), // close_position takes zero args
+  });
+}
+
 module.exports = {
   aliases: ["raydium-amm", "raydium-amm-v4", "raydium-cpmm", "raydium-cp", "raydium-clmm"],
   supportedActions: ["deposit", "deposit_lp", "supply"],
+
+  // V7-059 exports
+  CLMM_PROGRAM,
+  buildClose,
 
   async quote({ asset, amount }) {
     return {
@@ -239,7 +306,10 @@ module.exports = {
   __internals: {
     AMM_V4_PROGRAM,
     CPMM_PROGRAM,
+    CLMM_PROGRAM,
+    CLOSE_POSITION_DISC,
     _isCpmm,
     _shouldFallbackToLegacy,
+    buildClose,
   },
 };

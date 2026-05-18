@@ -66,6 +66,7 @@ def build_default_registry() -> AdapterRegistry:
     from src.defi.execution.adapters.pendle_v2 import PendleV2Adapter
     from src.defi.execution.adapters.solana_yield_builder import SolanaYieldBuilderAdapter
     from src.defi.execution.adapters.uniswap_v2 import UniswapV2DualTokenAdapter
+    from src.defi.execution.adapters.uniswap_v2_zap import UniswapV2ZapAdapter
     from src.defi.execution.adapters.uniswap_v3_nft import UniswapV3NFTAdapter
     from src.defi.execution.adapters.uniswap_v4 import UniswapV4NativeAdapter
     from src.defi.execution.adapters.wallet_assistant import WalletAssistantAdapter
@@ -76,6 +77,9 @@ def build_default_registry() -> AdapterRegistry:
             UniswapV4NativeAdapter(),
             UniswapV3NFTAdapter(),
             UniswapV2DualTokenAdapter(),
+            # V7-056 — single-sided zap-in (ETH or ERC-20). Sits next to the
+            # dual-token V2 adapter; capability resolver dispatches on action.
+            UniswapV2ZapAdapter(),
             # Protocol-native withdraw paths precede Enso so lifecycle actions
             # land on the on-chain encoders instead of a generic Enso route.
             AaveV3SupplyAdapter(),

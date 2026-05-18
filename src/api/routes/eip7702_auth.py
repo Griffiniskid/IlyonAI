@@ -27,6 +27,12 @@ from src.auth.biconomy_nexus import (
     build_uninstall_session_key_module_calldata,
     prepare_nexus_authorization,
 )
+from src.auth.solana_session import (
+    SolanaSessionKeypair,
+    decrypt_with_wallet_sig,
+    encrypt_with_wallet_sig,
+    generate_session_keypair,
+)
 from src.auth.zerodev_kernel import (
     assemble_kernel_authorization,
     prepare_kernel_authorization,
@@ -329,6 +335,11 @@ async def register_solana_session_signer(request: web.Request) -> web.Response:
     flows are a later phase).
 
     body: { user_wallet: <base58>, signer_pubkey: <base58>, expires_at?: iso }
+
+    Crypto primitives (ed25519 keypair generation, Phantom XOR seal) live in
+    `src.auth.solana_session` — see V7-058. This handler only registers the
+    *public* half so the off-chain policy gate can verify autonomous-rebalance
+    signatures; the encrypted private half stays in the user's browser.
     """
     try:
         body = await request.json()
@@ -369,6 +380,18 @@ async def register_solana_session_signer(request: web.Request) -> web.Response:
             logger.info("solana signer persist soft-fail: %s", exc)
             return web.json_response({"ok": True, **record, "persisted": False})
     return web.json_response({"ok": True, **record, "persisted": True})
+
+
+# Re-export the V7-058 `src.auth.solana_session` primitives so existing
+# call sites that imported them from this route module keep working after
+# the extraction. New code should import from `src.auth.solana_session`
+# directly.
+__all_solana_session_reexports__ = (
+    SolanaSessionKeypair,
+    generate_session_keypair,
+    encrypt_with_wallet_sig,
+    decrypt_with_wallet_sig,
+)
 
 
 def setup_eip7702_routes(app: web.Application) -> None:

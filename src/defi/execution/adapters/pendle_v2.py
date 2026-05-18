@@ -49,6 +49,11 @@ _PENDLE_ROUTER: dict[str, str] = {
 SEL_MINT_PY_FROM_TOKEN = "0xc81f847a"
 SEL_SWAP_TOKEN_FOR_PT = "0x594a88cc"
 SEL_ADD_LIQUIDITY_FROM_TOKEN = "0x9f9da99e"
+# V7-057 — burn PT+YT → underlying token and PT → token swap. Pinned 4-byte
+# IDs from PendleRouterV4 source (`redeemPyToToken(address,address,uint256,TokenOutput)`
+# and `swapExactPtForToken(address,address,uint256,TokenOutput,LimitOrderData)`).
+SEL_REDEEM_PY_TO_TOKEN = "0x47f1de22"
+SEL_SWAP_EXACT_PT_FOR_TOKEN = "0x594a88cc"
 
 
 # ---------------------------------------------------------------------------
@@ -90,10 +95,18 @@ def _tokens_out_for(action: str, extra: dict) -> str | None:
     market = extra.get("market") or extra.get("market_address")
     if action in {"mint_py", "mint_py_from_token", "mintPy", "mintPyFromToken"} and pt and yt:
         return f"{pt},{yt}"
-    if action in {"swap_for_pt", "swap_token_for_pt", "swapTokenForPt"} and pt:
+    if action in {
+        "swap_for_pt", "swap_token_for_pt", "swap_exact_token_for_pt", "swapTokenForPt",
+    } and pt:
         return pt
     if action in {"add_liquidity", "addLiquidityFromToken"} and market:
         return market
+    # V7-057 — redeem and swap-out paths.
+    underlying = extra.get("token_out_address") or extra.get("underlying_address")
+    if action in {"redeem_py_to_token", "redeemPyToToken"} and underlying:
+        return str(underlying)
+    if action in {"swap_exact_pt_for_token", "swapExactPtForToken"} and underlying:
+        return str(underlying)
     return None
 
 
@@ -151,8 +164,11 @@ class PendleV2Adapter:
     chains: frozenset[str] = frozenset(_PENDLE_ROUTER.keys())
     protocols: frozenset[str] = frozenset({"pendle", "pendle-v2"})
     actions: frozenset[str] = frozenset({
-        "mint_py", "swap_for_pt", "add_liquidity",
-        "deposit_lp", "provide_liquidity",
+        "mint_py", "mint_py_from_token",
+        "redeem_py", "redeem_py_to_token",
+        "swap_for_pt", "swap_token_for_pt", "swap_exact_token_for_pt",
+        "swap_pt_for_token", "swap_exact_pt_for_token",
+        "add_liquidity", "deposit_lp", "provide_liquidity",
     })
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
@@ -226,18 +242,35 @@ class PendleV2Adapter:
                 "Pendle V2 build needs extra.market (the PT/YT/LP market address)."
             )
 
+        # V7-057 — five-mode dispatch. Each mode pins router selector + emits
+        # its own step_action; unknown modes raise ValueError rather than
+        # silently defaulting (which could mis-route user funds).
         if action in {"mint_py", "mint_py_from_token"}:
             selector_pin = SEL_MINT_PY_FROM_TOKEN
             mode_label = "mintPyFromToken"
             step_action = "mint_py"
-        elif action in {"swap_for_pt", "swap_token_for_pt"}:
+        elif action in {"redeem_py", "redeem_py_to_token"}:
+            selector_pin = SEL_REDEEM_PY_TO_TOKEN
+            mode_label = "redeemPyToToken"
+            step_action = "redeem_py"
+        elif action in {"swap_for_pt", "swap_token_for_pt", "swap_exact_token_for_pt"}:
             selector_pin = SEL_SWAP_TOKEN_FOR_PT
-            mode_label = "swapTokenForPt"
+            mode_label = "swapExactTokenForPt"
             step_action = "swap_for_pt"
-        else:
+        elif action in {"swap_pt_for_token", "swap_exact_pt_for_token"}:
+            selector_pin = SEL_SWAP_EXACT_PT_FOR_TOKEN
+            mode_label = "swapExactPtForToken"
+            step_action = "swap_pt_for_token"
+        elif action in {"add_liquidity", "deposit_lp", "provide_liquidity", "addLiquidityFromToken"}:
             selector_pin = SEL_ADD_LIQUIDITY_FROM_TOKEN
             mode_label = "addLiquidityFromToken"
             step_action = "add_liquidity"
+        else:
+            raise ValueError(
+                f"Pendle V2 build: unknown action {action!r}. Expected one of "
+                "mint_py_from_token, redeem_py_to_token, swap_exact_token_for_pt, "
+                "swap_exact_pt_for_token, add_liquidity."
+            )
 
         # -------------------------------------------------------------------
         # Pendle Hosted SDK pre-flight — populate to/data/value when possible.

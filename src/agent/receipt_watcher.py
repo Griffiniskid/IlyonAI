@@ -71,7 +71,9 @@ _RECEIPT_KIND_BY_PROTOCOL_ACTION: dict[tuple[str, str], str] = {
     ("jupiter-perps", "deposit_lp"): "JLP",
     ("pendle-v2", "add_liquidity"): "PENDLE_PT_YT",
     ("pendle-v2", "mint_py"): "PENDLE_PT_YT",
+    ("pendle-v2", "redeem_py"): "PENDLE_PT_YT",
     ("pendle-v2", "swap_for_pt"): "PENDLE_PT_YT",
+    ("pendle-v2", "swap_pt_for_token"): "PENDLE_PT_YT",
     ("stargate", "deposit_lp"): "STARGATE_SHARE",
 }
 

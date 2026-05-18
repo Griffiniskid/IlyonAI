@@ -20,7 +20,18 @@ StepAction = Literal[
     "claim_rewards",
     "compound_rewards",
     "withdraw",
+    # V7-074 — One-click revoke action. Emitted by the nexus_revoke
+    # adapter and consumed by the policy-revoke verifier (which calls
+    # `assert_session_key_revoked` from src/auth/session_key_mirror.py
+    # to mirror-check the on-chain registry before promoting the step).
+    "revoke_session_key",
 ]
+
+# V7-074 — Public StepAction constants so the rest of the codebase
+# can import a single canonical symbol without re-typing string
+# literals (the Literal[...] above is the type, not a value namespace).
+# Add new constants here when new actions land in the Literal above.
+REVOKE_SESSION_KEY = "revoke_session_key"
 StepStatus = Literal[
     "blocked", "pending", "ready", "signing", "submitted", "confirmed", "failed", "skipped"
 ]

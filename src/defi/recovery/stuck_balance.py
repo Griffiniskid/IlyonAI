@@ -221,3 +221,117 @@ def decide_recovery(
             f"options. Hard rule: never auto-refund-swap-back."
         ),
     )
+
+
+# ── V7-066 — recovery enrichment wiring for blocker callsites ────────────────
+#
+# Blocker emit sites across the codebase (pool executor, wallet_swap,
+# execute_pool_position, composed_plan_orchestrator) historically surfaced an
+# `ExecutionBlocker` (or `err_envelope`) with only a static `code` + `detail`.
+# That left the frontend without the structured recovery posture the user
+# needs ("auto-rebuild with wider slippage", "swap-back forbidden", "pick an
+# alternative pool"). V7-066 wires every blocker callsite through
+# `enrich_blocker_with_recovery` so the recovery dict is always attached.
+#
+# The helper is intentionally non-invasive: it never mutates the blocker's
+# `code` or `title`, it only appends a `Recovery: <posture> — <rationale>`
+# line to `detail` and attaches the full Recovery.to_dict() under a
+# `_recovery` attribute (frontend can pick it up via the to_dict roundtrip
+# the orchestrator already does). Callers that emit an `err_envelope`
+# instead of a blocker can use `enrich_err_envelope_with_recovery` which
+# stitches the recovery dict into the envelope's payload.
+
+def enrich_blocker_with_recovery(
+    blocker,
+    failure_kind: FailureKind | str,
+    *,
+    step_kind: str = "deposit",
+    pool_id: str | None = None,
+    proposed_action: str | None = None,
+    current_slippage_bps: int = 50,
+    user_slippage_cap_bps: int = 500,
+    elapsed_since_fail_s: int = 0,
+    alternatives_lookup: Callable[[str], list[dict]] | None = None,
+) -> "Recovery":
+    """Attach a Recovery posture to an in-flight ExecutionBlocker.
+
+    Mutates the blocker's `detail` in place (appends a one-line recovery
+    summary) and stashes the full recovery payload on `blocker._recovery`
+    for the SSE / plan serializer to pick up.
+
+    Returns the Recovery so callers can also surface it directly (e.g. in
+    an SSE plan_update event from the composed_plan orchestrator).
+    """
+    recovery = decide_recovery(
+        failure_kind,
+        step_kind=step_kind,
+        elapsed_since_fail_s=elapsed_since_fail_s,
+        current_slippage_bps=current_slippage_bps,
+        user_slippage_cap_bps=user_slippage_cap_bps,
+        alternatives_lookup=alternatives_lookup,
+        pool_id=pool_id,
+        proposed_action=proposed_action,
+    )
+    # Append a recovery summary line so the existing frontend that only
+    # reads `detail` still shows the recovery posture to the user.
+    summary_line = f"Recovery: {recovery.posture} — {recovery.rationale}"
+    try:
+        existing = getattr(blocker, "detail", "") or ""
+        if summary_line not in existing:
+            blocker.detail = (existing + ("\n\n" if existing else "") + summary_line).strip()
+    except Exception:  # noqa: BLE001 — blocker may be a frozen dataclass in some paths
+        pass
+    # Stash the full structured dict so richer UIs can render alternatives,
+    # buttons, channels, new_slippage_bps, etc.
+    try:
+        setattr(blocker, "_recovery", recovery.to_dict())
+    except Exception:  # noqa: BLE001
+        pass
+    return recovery
+
+
+def enrich_err_envelope_with_recovery(
+    envelope,
+    failure_kind: FailureKind | str,
+    *,
+    step_kind: str = "swap",
+    pool_id: str | None = None,
+    proposed_action: str | None = None,
+    current_slippage_bps: int = 50,
+    user_slippage_cap_bps: int = 500,
+    elapsed_since_fail_s: int = 0,
+) -> "Recovery":
+    """Attach a Recovery posture to a ToolEnvelope returned from a tool.
+
+    Mutates the envelope's `error.message` in place (appends a one-line
+    recovery summary) and stashes the full recovery payload under
+    `envelope.card_payload["_recovery"]` (creating the dict if needed).
+    Returns the Recovery so callers can route on it.
+    """
+    recovery = decide_recovery(
+        failure_kind,
+        step_kind=step_kind,
+        elapsed_since_fail_s=elapsed_since_fail_s,
+        current_slippage_bps=current_slippage_bps,
+        user_slippage_cap_bps=user_slippage_cap_bps,
+        pool_id=pool_id,
+        proposed_action=proposed_action,
+    )
+    summary_line = f"Recovery: {recovery.posture} — {recovery.rationale}"
+    try:
+        err = getattr(envelope, "error", None)
+        if err is not None:
+            msg = getattr(err, "message", "") or ""
+            if summary_line not in msg:
+                err.message = (msg + ("\n\n" if msg else "") + summary_line).strip()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        payload = getattr(envelope, "card_payload", None)
+        if payload is None:
+            envelope.card_payload = {"_recovery": recovery.to_dict()}
+        elif isinstance(payload, dict):
+            payload["_recovery"] = recovery.to_dict()
+    except Exception:  # noqa: BLE001
+        pass
+    return recovery

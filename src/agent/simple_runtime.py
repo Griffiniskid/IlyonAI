@@ -8462,6 +8462,13 @@ _UNBACKED_FAKE_TX_RE = re.compile(
     re.IGNORECASE,
 )
 _UNBACKED_FAKE_CALLDATA_RE = re.compile(r'\b0x[0-9a-fA-F]{120,}', re.IGNORECASE)
+# V7-072 — Global "LLM never emits calldata" runtime gate. Tighter than the
+# 120-char heuristic above: any 0x-prefixed hex blob ≥80 chars in contextual
+# prose (no backing card) is by definition LLM-fabricated calldata. An ERC-20
+# transfer's encoded args are 64 hex chars + a 4-byte selector → 72 hex total;
+# anything 80+ outside a card is fabricated (real calldata only ships inside
+# the deterministic UnsignedStepTransaction.data field, never in prose).
+_UNBACKED_LLM_CALLDATA_GATE_RE = re.compile(r'\b0x[0-9a-fA-F]{80,}', re.IGNORECASE)
 # H08 t2/t3 + H14 t2-4 hand-read: contextual fallback fabricates ERC-20 spender
 # addresses (e.g. "approve 0x794a61358D6845594F94dc1DB02A252b5b4814aD") presented
 # as the Aave V3 Pool on Base when it's actually the Ethereum pool — cross-chain
@@ -8553,6 +8560,11 @@ def _strip_unbacked_claims(content: str, *, has_real_card: bool) -> tuple[str, b
         hits.append("fake_tx_hash")
     if _UNBACKED_FAKE_CALLDATA_RE.search(content):
         hits.append("fabricated_calldata")
+    # V7-072 — Global LLM-calldata gate. Catches the medium-length blobs
+    # (80-119 hex chars) the legacy 120+ rule lets through. Logs the
+    # violation separately so we can track gate-hits in metrics.
+    elif _UNBACKED_LLM_CALLDATA_GATE_RE.search(content):
+        hits.append("llm_calldata_gate_v7_072")
     if _UNBACKED_FAKE_ADDRESS_RE.search(content):
         hits.append("fabricated_address")
     if _UNBACKED_FAKE_SELECTOR_RE.search(content):
