@@ -188,31 +188,132 @@ async function checkTransferHook(connection, mint) {
 
 // V7-032 WSOL sync+close helper builders -------------------------------------
 //
-// Both functions return harness-shaped instruction records (NOT real
-// web3.js TransactionInstruction objects). The adapter layer that
-// actually assembles a Transaction is responsible for converting these
-// records into the SDK calls (createSyncNativeInstruction +
-// createCloseAccountInstruction from @solana/spl-token). Keeping the
-// builders dependency-free here means this module loads cleanly in test
-// environments that don't have spl-token installed.
+// Both helpers return REAL web3.js `TransactionInstruction` objects built
+// via `@solana/spl-token` (`createSyncNativeInstruction` +
+// `createCloseAccountInstruction`). The previous harness-shaped record
+// shape was retained as a fallback so unit tests that don't have
+// `@solana/spl-token` installed (the in-repo node-test runs without
+// `node_modules` present) keep loading the module. Lazy require + a
+// dependency-injection hook (`__setSplTokenImpl`) keeps both runtimes
+// happy:
+//
+//   • Production (`npm install` in the sidecar): the real spl-token
+//     bindings are loaded the first time a builder runs, the returned
+//     value is a true `TransactionInstruction` that can be added to a
+//     web3.js `Transaction` via `tx.add(ix)`.
+//
+//   • Tests / dependency-free harness: `__setSplTokenImpl({ ... })` may
+//     be called to inject a fake spl-token surface; if the real module
+//     is missing AND no fake has been injected, the builders fall back
+//     to the legacy harness record shape so existing call sites that
+//     only stash the result as metadata still work.
+//
+// The fallback record is annotated with `__placeholder: true` so callers
+// can detect it and surface a clean blocker when real ixs are required.
 
 const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 
-function buildSyncNativeIx(wsolAtaPubkey) {
+// Lazily resolved `@solana/spl-token` module. `null` means "not yet
+// attempted"; `false` means "attempted and unavailable". The DI hook
+// `__setSplTokenImpl` overrides resolution entirely (used by tests).
+let _splTokenModule = null;
+let _splTokenInjected = false;
+
+function __setSplTokenImpl(impl) {
+  _splTokenModule = impl || false;
+  _splTokenInjected = !!impl;
+}
+
+function _resolveSplToken() {
+  if (_splTokenInjected) return _splTokenModule;
+  if (_splTokenModule !== null) return _splTokenModule;
+  try {
+    _splTokenModule = require("@solana/spl-token");
+  } catch (_err) {
+    _splTokenModule = false;
+  }
+  return _splTokenModule;
+}
+
+// Normalise an ATA argument that may already be a `PublicKey` (production)
+// or a plain string (legacy callers / tests). Returns whatever the
+// downstream spl-token call expects (it accepts both, but normalising
+// keeps the placeholder records consistent).
+function _toPubkeyArg(maybePubkey) {
+  if (!maybePubkey) return maybePubkey;
+  if (typeof maybePubkey === "string") return maybePubkey;
+  if (typeof maybePubkey.toBase58 === "function") return maybePubkey;
+  if (typeof maybePubkey.toString === "function") return maybePubkey.toString();
+  return maybePubkey;
+}
+
+/**
+ * Build a real `syncNative` instruction for a WSOL associated token
+ * account. The token program does not update the WSOL ATA's balance
+ * when lamports are transferred in — callers MUST emit a `syncNative`
+ * after funding the ATA so the SPL accounting layer sees the new
+ * balance.
+ *
+ * @param {string|PublicKey} wsolAtaPubkey - the WSOL ATA to sync.
+ * @param {string|PublicKey} [programId]   - override the token program
+ *        (defaults to the legacy SPL token program).
+ * @returns {TransactionInstruction|object} real ix when spl-token is
+ *        available; otherwise an annotated placeholder record.
+ */
+function buildSyncNativeIx(wsolAtaPubkey, programId) {
+  const spl = _resolveSplToken();
+  const ataArg = _toPubkeyArg(wsolAtaPubkey);
+  if (spl && typeof spl.createSyncNativeInstruction === "function") {
+    return spl.createSyncNativeInstruction(
+      ataArg,
+      programId ? _toPubkeyArg(programId) : undefined,
+    );
+  }
   return {
+    __placeholder: true,
     kind: "sync_native",
-    account: wsolAtaPubkey,
-    programId: TOKEN_PROGRAM_ID,
+    account: ataArg,
+    programId: programId || TOKEN_PROGRAM_ID,
   };
 }
 
-function buildCloseWsolIx(wsolAtaPubkey, ownerPubkey) {
+/**
+ * Build a real `closeAccount` instruction that closes a WSOL ATA back
+ * to its owner, returning the lamports held by the ATA to `destination`.
+ *
+ * @param {string|PublicKey} wsolAtaPubkey - the WSOL ATA to close.
+ * @param {string|PublicKey} ownerPubkey   - the ATA owner (also default
+ *        destination when none is provided).
+ * @param {object} [opts]                  - optional overrides:
+ *        - destination: where the reclaimed lamports go (defaults to owner)
+ *        - multiSigners: list of multisig signers (defaults to [])
+ *        - programId: token program override.
+ * @returns {TransactionInstruction|object} real ix when spl-token is
+ *        available; otherwise an annotated placeholder record.
+ */
+function buildCloseWsolIx(wsolAtaPubkey, ownerPubkey, opts = {}) {
+  const spl = _resolveSplToken();
+  const ataArg = _toPubkeyArg(wsolAtaPubkey);
+  const ownerArg = _toPubkeyArg(ownerPubkey);
+  const destArg = opts.destination ? _toPubkeyArg(opts.destination) : ownerArg;
+  const multiSigners = opts.multiSigners || [];
+  const programId = opts.programId ? _toPubkeyArg(opts.programId) : undefined;
+  if (spl && typeof spl.createCloseAccountInstruction === "function") {
+    return spl.createCloseAccountInstruction(
+      ataArg,
+      destArg,
+      ownerArg,
+      multiSigners,
+      programId,
+    );
+  }
   return {
+    __placeholder: true,
     kind: "close_account",
-    account: wsolAtaPubkey,
-    destination: ownerPubkey,
-    owner: ownerPubkey,
-    programId: TOKEN_PROGRAM_ID,
+    account: ataArg,
+    destination: destArg,
+    owner: ownerArg,
+    programId: programId || TOKEN_PROGRAM_ID,
   };
 }
 
@@ -263,6 +364,7 @@ module.exports = {
   TOKEN_PROGRAM_ID,
   buildSyncNativeIx,
   buildCloseWsolIx,
+  __setSplTokenImpl,
   // V7-041
   WHIRLPOOL_PROGRAM_ID,
   RAYDIUM_CLMM_PROGRAM_ID,

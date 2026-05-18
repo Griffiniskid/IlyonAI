@@ -157,10 +157,76 @@ def test_row_14_wrong_wallet_for_chain():
     assert v.supported is False
 
 
-# Row 15 — Hardware wallet outer-instruction limit.
-@pytest.mark.skip(reason="ALT splitting pending in sidecar Phase 2.3")
-def test_row_15_hardware_wallet_split():
-    pass
+# Row 15 — Hardware wallet outer-instruction limit / Solana v0 ALT.
+def test_row_15_hardware_wallet_alt_blocker_code():
+    """Canonical blocker code is registered in KNOWN_BLOCKER_CODES so the
+    recovery dispatcher and audit pipeline can match it case-sensitively.
+    """
+    from src.defi.execution.models import KNOWN_BLOCKER_CODES
+    assert "LEDGER_NO_ALT_SUPPORT" in KNOWN_BLOCKER_CODES
+
+
+def test_row_15_hardware_wallet_alt_emits_blocker():
+    """Ledger wallet + a Solana step needing ALT compression → preflight
+    surfaces LEDGER_NO_ALT_SUPPORT before any sign attempt.
+    """
+    from src.defi.execution.models import (
+        UnsignedStepTransaction,
+        make_step,
+    )
+    from src.defi.execution.preflight import WalletInventory, evaluate_preflight
+
+    step = make_step(
+        index=1, action="swap", title="Jupiter v0 swap",
+        description="USDC -> SOL via Jupiter v6 with ALT compression",
+        chain="solana", wallet="Phantom", protocol="jupiter",
+    )
+    step.transaction = UnsignedStepTransaction(
+        chain_kind="solana", serialized="0xdeadbeef", requires_alt=True,
+    )
+    inv = WalletInventory(
+        solana_address="So1aNa1111111111111111111111111111111111111",
+        wallet_meta={"kind": "ledger"},
+    )
+    blockers = evaluate_preflight(
+        steps=[step], inventory=inv,
+        min_native_gas={"solana": 0.0},  # bypass gas-balance noise
+    )
+    codes = {b.code for b in blockers}
+    assert "LEDGER_NO_ALT_SUPPORT" in codes
+    hit = next(b for b in blockers if b.code == "LEDGER_NO_ALT_SUPPORT")
+    assert step.step_id in hit.affected_step_ids
+    assert hit.severity == "blocker"
+
+
+def test_row_15_hardware_wallet_alt_software_wallet_passes():
+    """Phantom (software wallet) on the same plan does NOT trip the
+    LEDGER_NO_ALT_SUPPORT blocker — v0 ALT works fine on software wallets.
+    """
+    from src.defi.execution.models import (
+        UnsignedStepTransaction,
+        make_step,
+    )
+    from src.defi.execution.preflight import WalletInventory, evaluate_preflight
+
+    step = make_step(
+        index=1, action="swap", title="Jupiter v0 swap",
+        description="USDC -> SOL via Jupiter v6 with ALT compression",
+        chain="solana", wallet="Phantom", protocol="jupiter",
+    )
+    step.transaction = UnsignedStepTransaction(
+        chain_kind="solana", serialized="0xdeadbeef", requires_alt=True,
+    )
+    inv = WalletInventory(
+        solana_address="So1aNa1111111111111111111111111111111111111",
+        wallet_meta={"kind": "phantom"},
+    )
+    blockers = evaluate_preflight(
+        steps=[step], inventory=inv,
+        min_native_gas={"solana": 0.0},
+    )
+    codes = {b.code for b in blockers}
+    assert "LEDGER_NO_ALT_SUPPORT" not in codes
 
 
 # Row 16 — Sandwich / MEV exposure > 30bps → force MEVBlocker/Jito bundle.

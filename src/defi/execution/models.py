@@ -59,6 +59,11 @@ class UnsignedStepTransaction:
     gas: str | None = None
     serialized: str | None = None
     spender: str | None = None
+    # §13 Row 15 — flag set by Solana adapters when the unsigned tx is a
+    # v0 (versioned) message that references one or more Address Lookup
+    # Tables. The hardware-wallet preflight check refuses to surface such
+    # plans to Ledger/Trezor/Keystone wallets that can't parse v0 messages.
+    requires_alt: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in asdict(self).items() if v is not None}
@@ -100,6 +105,7 @@ KNOWN_BLOCKER_CODES: frozenset[str] = frozenset({
     "INSUFFICIENT_BALANCE",        # Wallet shortfall vs requested amount_in
     "NULL_ROUTE",                  # F09 — DexScreener / aggregator returned no credible route
     "FORBIDDEN_REFUND_SWAP_BACK",  # V7-068 — shield refused an auto-swap-back-of-refund recovery
+    "LEDGER_NO_ALT_SUPPORT",       # §13 Row 15 — Ledger/hw wallet can't sign Solana v0 ALT tx
 })
 
 

@@ -4,8 +4,10 @@
  *   extra.vaultMint or extra.vaultTokenMint → VaultImpl.deposit
  *   extra.poolId → CpAmm.createPositionAndAddLiquidity
  */
-const { PublicKey, Keypair, ComputeBudgetProgram, Transaction, TransactionInstruction, TransactionMessage, VersionedTransaction } = require("@solana/web3.js");
+const { PublicKey, Keypair, SystemProgram, SYSVAR_RENT_PUBKEY, ComputeBudgetProgram, Transaction, TransactionInstruction, TransactionMessage, VersionedTransaction } = require("@solana/web3.js");
 const { getMint, getEpochInfo, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } = require("@solana/spl-token");
+let DlmmSdk;
+try { DlmmSdk = require("@meteora-ag/dlmm"); } catch (e) { DlmmSdk = null; }
 const BN = require("bn.js");
 const crypto = require("crypto");
 let CpAmm;
@@ -44,6 +46,96 @@ function _anchorDiscMet(name) {
   return crypto.createHash("sha256").update(`global:${name}`).digest().slice(0, 8);
 }
 const REMOVE_LIQUIDITY_BY_RANGE_DISC = _anchorDiscMet("remove_liquidity_by_range");
+
+// V7-061 — Meteora DLMM `initialize_position` Anchor discriminator.
+// Verified against the on-chain IDL at MeteoraAg/dlmm-sdk/idls/dlmm.json:
+//   instructions[].name = "initialize_position"
+//   discriminator       = [219, 192, 234, 71, 190, 191, 102, 80]
+// which equals sha256("global:initialize_position").slice(0, 8).
+const INITIALIZE_POSITION_DISC = _anchorDiscMet("initialize_position");
+// Event-authority PDA: PublicKey.findProgramAddressSync([Buffer.from("__event_authority")], DLMM_PROGRAM)[0]
+const DLMM_EVENT_AUTHORITY = PublicKey.findProgramAddressSync(
+  [Buffer.from("__event_authority")],
+  DLMM_PROGRAM,
+)[0];
+
+/**
+ * V7-061 — Native (SDK-free) Meteora DLMM `initialize_position` IX builder.
+ *
+ * Allocates a fixed-width liquidity position on an LB pair. Mirrors the
+ * Anchor instruction defined in MeteoraAg/dlmm-sdk/idls/dlmm.json
+ * (instruction name: "initialize_position"). The position keypair is
+ * created on-chain via this IX — caller must include the `position`
+ * keypair as an additional signer at send time.
+ *
+ * Layout: 8 disc | 4 lowerBinId (i32 LE) | 4 width (i32 LE)
+ *
+ * Account order (IDL-canonical for `initialize_position`):
+ *   0. payer            [signer, mut]      — pays rent for the new position acct
+ *   1. position         [signer, mut]      — newly-allocated position keypair
+ *   2. lbPair           [readonly]         — the LB pair this position belongs to
+ *   3. owner            [signer, readonly] — position owner (often == payer)
+ *   4. systemProgram    [readonly]
+ *   5. rent             [readonly]         — Rent sysvar
+ *   6. eventAuthority   [readonly]         — DLMM event-authority PDA
+ *   7. program          [readonly]         — self-ref for CPI events
+ *
+ * Note: the IDL's `width` field is i32, but only positive widths
+ * (1..=POSITION_MAX_LENGTH) are valid on-chain. We accept a JS number
+ * and reject < 1 or > 1400 (DLMM POSITION_MAX_LENGTH is 70, but we
+ * gate generously and let the program reject invalid widths). The
+ * encoding remains a strict i32 LE for IDL parity.
+ */
+function buildOpenPosition({ lbPair, owner, lowerBinId, width, payer, position }) {
+  if (!lbPair) throw new Error("Meteora DLMM openPosition: lbPair required.");
+  if (!owner) throw new Error("Meteora DLMM openPosition: owner required.");
+  // Reject floats / non-numeric strings up front — parseInt silently truncates 1.5 → 1.
+  const isIntLike = (v) => (typeof v === "number" ? Number.isInteger(v)
+    : typeof v === "string" ? /^-?\d+$/.test(v.trim())
+    : false);
+  if (!isIntLike(lowerBinId)) {
+    throw new Error(`Meteora DLMM openPosition: lowerBinId must be an integer (got ${lowerBinId}).`);
+  }
+  if (!isIntLike(width)) {
+    throw new Error(`Meteora DLMM openPosition: width must be a positive integer (got ${width}).`);
+  }
+  const lower = parseInt(lowerBinId, 10);
+  const w = parseInt(width, 10);
+  if (w < 1) {
+    throw new Error(`Meteora DLMM openPosition: width must be a positive integer (got ${width}).`);
+  }
+
+  const lbPairPk = lbPair instanceof PublicKey ? lbPair : new PublicKey(lbPair);
+  const ownerPk = owner instanceof PublicKey ? owner : new PublicKey(owner);
+  const payerPk = payer
+    ? (payer instanceof PublicKey ? payer : new PublicKey(payer))
+    : ownerPk;
+  const positionPk = position
+    ? (position instanceof PublicKey ? position : new PublicKey(position))
+    : (() => { throw new Error("Meteora DLMM openPosition: position keypair pubkey required (must co-sign)."); })();
+
+  // Encode IX data: disc(8) || lowerBinId(i32 LE) || width(i32 LE)
+  const data = Buffer.alloc(8 + 4 + 4);
+  INITIALIZE_POSITION_DISC.copy(data, 0);
+  data.writeInt32LE(lower, 8);
+  data.writeInt32LE(w, 12);
+
+  const keys = [
+    { pubkey: payerPk,               isSigner: true,  isWritable: true  }, // 0 payer
+    { pubkey: positionPk,            isSigner: true,  isWritable: true  }, // 1 position
+    { pubkey: lbPairPk,              isSigner: false, isWritable: false }, // 2 lbPair
+    { pubkey: ownerPk,               isSigner: true,  isWritable: false }, // 3 owner
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // 4 systemProgram
+    { pubkey: SYSVAR_RENT_PUBKEY,    isSigner: false, isWritable: false }, // 5 rent
+    { pubkey: DLMM_EVENT_AUTHORITY,  isSigner: false, isWritable: false }, // 6 eventAuthority
+    { pubkey: DLMM_PROGRAM,          isSigner: false, isWritable: false }, // 7 program (self)
+  ];
+  return new TransactionInstruction({
+    programId: DLMM_PROGRAM,
+    keys,
+    data,
+  });
+}
 
 /**
  * V7-060 — Meteora DLMM remove_liquidity_by_range IX builder.
@@ -151,13 +243,17 @@ module.exports = {
   aliases: ["meteora-damm","meteora-damm-v2","meteora-cp-amm","meteora-vault","meteora-dynamic-vault","meteora-dlmm"],
   supportedActions: ["deposit","deposit_lp","supply"],
 
-  // V7-060 exports — Meteora DLMM remove_liquidity_by_range.
+  // V7-060/061 exports — Meteora DLMM native IX builders.
   DLMM_PROGRAM: DLMM_PROGRAM.toBase58(),
   buildRemoveByRange,
+  buildOpenPosition,
   _internals: {
     DLMM_PROGRAM,
+    DLMM_EVENT_AUTHORITY,
     REMOVE_LIQUIDITY_BY_RANGE_DISC,
+    INITIALIZE_POSITION_DISC,
     buildRemoveByRange,
+    buildOpenPosition,
   },
 
   async quote({ asset }) {
@@ -191,6 +287,44 @@ module.exports = {
         receiptMint: vault.vaultState?.lpMint?.toBase58() || null,
         redemption_program: VAULT_PROGRAM.toBase58(),
         feeUsd: 0.01, durationS: 20, warnings: [],
+        simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
+      }] };
+    }
+
+    // Mode C: DLMM open_position (native fallback when @meteora-ag/dlmm absent).
+    // Triggered when caller passes extra.dlmmLbPair (or extra.lbPair with
+    // extra.mode === "open_position"). Returns a Transaction wrapping the
+    // hand-rolled initialize_position IX. Position keypair co-signs.
+    const dlmmLbPair = extra.dlmmLbPair || (extra.mode === "open_position" ? extra.lbPair : null);
+    if (dlmmLbPair) {
+      const lowerBinId = extra.lowerBinId;
+      const width = extra.width;
+      if (lowerBinId === undefined || width === undefined) {
+        throw new Error("Meteora DLMM open_position: extra.lowerBinId and extra.width required.");
+      }
+      const positionKp = Keypair.generate();
+      const ix = buildOpenPosition({
+        lbPair: dlmmLbPair,
+        owner,
+        lowerBinId,
+        width,
+        payer: owner,
+        position: positionKp.publicKey,
+      });
+      const tx = new Transaction().add(ix);
+      const b64 = await serializeTx(tx, [positionKp], owner, connection);
+      const sim = await simulateBase64Tx({ b64, connection });
+      if (!sim.ok) { const e = new Error(`Meteora DLMM open_position sim failed: ${sim.errStr || "unknown"}`); e.simulation = sim; throw e; }
+      return { transactions: [{
+        b64,
+        summary: `Meteora DLMM initialize_position (lbPair ${String(dlmmLbPair).slice(0,8)}…, lower=${lowerBinId}, width=${width})`,
+        description: `Native DLMM initialize_position IX (program ${DLMM_PROGRAM.toBase58()}). Position acct ${positionKp.publicKey.toBase58()}.`,
+        receiptToken: "meteora-dlmm-position",
+        receiptMint: positionKp.publicKey.toBase58(),
+        position_account: positionKp.publicKey.toBase58(),
+        redemption_program: DLMM_PROGRAM.toBase58(),
+        feeUsd: 0.01, durationS: 20,
+        warnings: DlmmSdk ? [] : ["@meteora-ag/dlmm SDK unavailable — used native IX fallback."],
         simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
       }] };
     }

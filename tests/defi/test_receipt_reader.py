@@ -36,10 +36,13 @@ def test_nfp_positions_selector():
 
 
 def test_verify_receipt_solana_kind_returns_delegated(monkeypatch):
-    # MSOL is chain_family=solana per receipt_table — verify_receipt must
-    # short-circuit with the delegation message instead of attempting an RPC.
+    # OBLIGATION_STATE has no synchronous RPC path — it still delegates to
+    # the sidecar `/verify` endpoint because decoding the klend obligation
+    # account requires a full borsh-schema decode lives sidecar-side. The
+    # MSOL/JITOSOL/JLP/POSITION_PDA kinds now have inline RPC verifiers
+    # (see test_receipt_reader_spl.py).
     r = _run(verify_receipt(
-        kind=ReceiptKind.MSOL, chain="solana", owner="0xabc", expected={},
+        kind=ReceiptKind.OBLIGATION_STATE, chain="solana", owner="0xabc", expected={},
     ))
     assert isinstance(r, ReadResult)
     assert r.confirmed is False

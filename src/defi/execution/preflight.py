@@ -37,6 +37,12 @@ class WalletInventory:
     # before the sync preflight runs. Each entry is a dict carrying
     # ``{"code": "STALE_PRICE_FEED", "feed": ..., "source": ..., "age_seconds": ...}``.
     feed_age_blockers: list[dict[str, Any]] = field(default_factory=list)
+    # Spec §13 Row 15 — wallet-capability meta for hw-wallet ALT detection.
+    # Frontend probes ``window.solana.isLedger`` (or the WalletConnect
+    # ``hardware`` flag) and forwards the result as
+    # ``{"kind": "ledger" | "trezor" | "phantom" | ...}``. None means the
+    # capability is unknown — the §13 Row 15 detector fails-soft to clean.
+    wallet_meta: dict[str, Any] | None = None
 
     def balance_of(self, chain: str, asset: str) -> Decimal:
         return self.balances.get((chain.lower(), asset.upper()), Decimal(0))
@@ -209,6 +215,19 @@ def evaluate_preflight(
     except Exception as exc:  # never let a §13 detector crash preflight
         logger.debug("feed-age detector raised: %s", exc)
 
+    # Spec §13 Row 15 — LEDGER_NO_ALT_SUPPORT. Refuses to surface a v0+ALT
+    # Solana plan to a hardware wallet that can't parse versioned-tx
+    # messages. The detector silently passes when wallet_meta is missing
+    # or the wallet kind is software (Phantom/Solflare/Backpack).
+    try:
+        _hw_alt_blockers = _check_hardware_wallet_alt_blockers(steps, inventory)
+        for b in _hw_alt_blockers:
+            if b.code not in seen_codes:
+                blockers.append(b)
+                seen_codes.add(b.code)
+    except Exception as exc:  # never let a §13 detector crash preflight
+        logger.debug("hw-wallet-alt detector raised: %s", exc)
+
     # Spec §13 Row 10 — PERMISSIONED_POOL_KYC. Refuses to sign any
     # supply/deposit/stake/deposit_lp/lend step that lands in a pool
     # we know is gated by an off-platform KYC / whitelist contract
@@ -225,6 +244,29 @@ def evaluate_preflight(
         logger.debug("kyc-pool detector raised: %s", exc)
 
     return blockers
+
+
+def _check_hardware_wallet_alt_blockers(
+    steps: Iterable[ExecutionStepV3],
+    inventory: WalletInventory,
+) -> list[ExecutionBlocker]:
+    """Run the §13 Row 15 LEDGER_NO_ALT_SUPPORT detector. Fail-soft when
+    ``inventory.wallet_meta`` is missing — Ledger / Trezor / Keystone are
+    the only kinds that trip; software wallets pass through clean.
+    """
+    meta = getattr(inventory, "wallet_meta", None)
+    if not meta:
+        return []
+    # Lazy import to keep the shield import graph cold for plans that
+    # never touch a Solana step.
+    try:
+        from src.shield.hardware_wallet_alt import (
+            evaluate_hardware_wallet_alt_preflight,
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.debug("hardware_wallet_alt import failed: %s", exc)
+        return []
+    return evaluate_hardware_wallet_alt_preflight(steps, meta)
 
 
 def _check_kyc_pool_blockers(

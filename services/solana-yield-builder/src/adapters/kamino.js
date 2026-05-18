@@ -95,6 +95,10 @@ function anchorSighash(ixName) {
 const DISC_DEPOSIT = anchorSighash("deposit_reserve_liquidity_and_obligation_collateral");
 const DISC_WITHDRAW = anchorSighash("withdraw_obligation_collateral_and_redeem_reserve_liquidity");
 const DISC_INIT_OBLIGATION = anchorSighash("init_obligation");
+// Bare reserve deposit — mints kToken to user wallet without parking it in an
+// obligation. Used by direct-supply flows that don't involve borrowing.
+// IDL: klend `deposit_reserve_liquidity` (programs/klend/src/lib.rs:134).
+const DISC_DEPOSIT_RESERVE = anchorSighash("deposit_reserve_liquidity");
 
 /**
  * Encode the deposit IX data: 8-byte discriminator || u64 LE liquidity_amount.
@@ -248,6 +252,120 @@ function buildKaminoDepositIx({ owner, amountLamports, accounts }) {
 }
 
 /**
+ * Encode the bare `deposit_reserve_liquidity` IX data:
+ * 8-byte discriminator || u64 LE liquidity_amount.
+ *
+ * Klend's bare deposit_reserve_liquidity (DISC_DEPOSIT_RESERVE) takes a single
+ * `liquidity_amount: u64` arg — identical wire format to the obligation
+ * variant, just a different discriminator and account map.
+ */
+function encodeDepositReserveData(liquidityAmountBN) {
+  const buf = Buffer.alloc(8);
+  liquidityAmountBN.toArrayLike(Buffer, "le", 8).copy(buf, 0);
+  return Buffer.concat([DISC_DEPOSIT_RESERVE, buf]);
+}
+
+/**
+ * Build the account-meta list for the bare klend `deposit_reserve_liquidity`
+ * instruction. Order MUST match the canonical IDL exactly (see
+ * programs/klend/src/handlers/handler_deposit_reserve_liquidity.rs
+ * `#[derive(Accounts)] struct DepositReserveLiquidity`):
+ *
+ *   0. owner                       [signer]              — payer
+ *   1. reserve                     [writable]            — Reserve state PDA
+ *   2. lending_market              [readonly]            — LendingMarket
+ *   3. lending_market_authority    [readonly]            — PDA
+ *   4. reserve_liquidity_mint      [readonly]            — Token / Token-2022
+ *   5. reserve_liquidity_supply    [writable]            — supply vault
+ *   6. reserve_collateral_mint     [writable]            — kToken mint
+ *   7. user_source_liquidity       [writable]            — user's input ATA
+ *   8. user_destination_collateral [writable]            — user's kToken ATA
+ *   9. collateral_token_program    [readonly]            — SPL Token (classic)
+ *  10. liquidity_token_program     [readonly]            — Token interface
+ *  11. instruction_sysvar_account  [readonly]            — Sysvar
+ */
+function buildDepositReserveAccounts({ owner, accounts }) {
+  const need = [
+    "reserve",
+    "lendingMarket",
+    "lendingMarketAuthority",
+    "reserveLiquidityMint",
+    "reserveLiquiditySupply",
+    "reserveCollateralMint",
+    "userSourceLiquidity",
+    "userDestinationCollateral",
+  ];
+  for (const k of need) {
+    if (!accounts[k]) {
+      throw new Error(
+        `Kamino klend_reserve deposit: missing required account "${k}". Caller must ` +
+        `pass reserve+market+mints+user ATAs through extra.accounts.`
+      );
+    }
+  }
+  // Liquidity-side token program may be Token-2022 for some reserves. Caller
+  // can override via accounts.liquidityTokenProgram; otherwise default to
+  // classic SPL Token (the common case).
+  const liquidityTokenProgram = accounts.liquidityTokenProgram
+    ? new PublicKey(accounts.liquidityTokenProgram)
+    : TOKEN_PROGRAM_ID;
+  return [
+    { pubkey: owner,                                            isSigner: true,  isWritable: false },
+    { pubkey: new PublicKey(accounts.reserve),                  isSigner: false, isWritable: true  },
+    { pubkey: new PublicKey(accounts.lendingMarket),            isSigner: false, isWritable: false },
+    { pubkey: new PublicKey(accounts.lendingMarketAuthority),   isSigner: false, isWritable: false },
+    { pubkey: new PublicKey(accounts.reserveLiquidityMint),     isSigner: false, isWritable: false },
+    { pubkey: new PublicKey(accounts.reserveLiquiditySupply),   isSigner: false, isWritable: true  },
+    { pubkey: new PublicKey(accounts.reserveCollateralMint),    isSigner: false, isWritable: true  },
+    { pubkey: new PublicKey(accounts.userSourceLiquidity),      isSigner: false, isWritable: true  },
+    { pubkey: new PublicKey(accounts.userDestinationCollateral), isSigner: false, isWritable: true },
+    { pubkey: TOKEN_PROGRAM_ID,                                 isSigner: false, isWritable: false },
+    { pubkey: liquidityTokenProgram,                            isSigner: false, isWritable: false },
+    { pubkey: SYSVAR_INSTRUCTIONS_PUBKEY,                       isSigner: false, isWritable: false },
+  ];
+}
+
+/**
+ * Build a bare klend `deposit_reserve_liquidity` IX (no SDK). Mints reserve
+ * collateral (kToken) directly to the user's destination ATA — does NOT
+ * deposit it into an obligation. Use when the caller wants the kToken in
+ * their wallet, not as obligation collateral.
+ */
+function buildDepositReserveLiquidity({
+  connection,        // accepted for symmetry; unused inside the IX builder
+  market,            // optional convenience: shorthand for accounts.lendingMarket
+  reserve,           // optional convenience: shorthand for accounts.reserve
+  owner,
+  obligation,        // accepted for caller symmetry; ignored (no obligation in bare deposit)
+  liquidityAmount,
+  userSource,        // optional convenience: shorthand for accounts.userSourceLiquidity
+  userDestination,   // optional convenience: shorthand for accounts.userDestinationCollateral
+  accounts = {},
+} = {}) {
+  const ownerPk = owner instanceof PublicKey ? owner : new PublicKey(owner);
+  // Merge shorthand args into accounts map so callers can pass either shape.
+  const merged = {
+    ...accounts,
+    reserve:                  accounts.reserve                  || reserve,
+    lendingMarket:            accounts.lendingMarket            || market,
+    userSourceLiquidity:      accounts.userSourceLiquidity      || userSource,
+    userDestinationCollateral: accounts.userDestinationCollateral || userDestination,
+  };
+  const amountBN = BN.isBN(liquidityAmount)
+    ? liquidityAmount
+    : new BN(liquidityAmount.toString());
+  // obligation arg is intentionally unused — bare deposit has no obligation
+  // account. Reference it so linters don't flag the unused param.
+  void obligation;
+  void connection;
+  return new TransactionInstruction({
+    programId: KAMINO_LEND_PROGRAM_PK,
+    keys: buildDepositReserveAccounts({ owner: ownerPk, accounts: merged }),
+    data: encodeDepositReserveData(amountBN),
+  });
+}
+
+/**
  * Build a Kamino Lend native withdraw IX (no SDK).
  */
 function buildKaminoWithdrawIx({ owner, collateralAmount, accounts }) {
@@ -288,11 +406,15 @@ module.exports = {
     DISC_DEPOSIT,
     DISC_WITHDRAW,
     DISC_INIT_OBLIGATION,
+    DISC_DEPOSIT_RESERVE,
     anchorSighash,
     encodeDepositData,
     encodeWithdrawData,
+    encodeDepositReserveData,
     buildKaminoDepositIx,
     buildKaminoWithdrawIx,
+    buildDepositReserveLiquidity,
+    buildDepositReserveAccounts,
     packIxs,
   },
 
@@ -445,6 +567,63 @@ module.exports = {
     // server-side; transfer-hook checking only fires when extra.* carries one).
     const hookBlocker = await _kaminoCheckHook(connection, extra);
     if (hookBlocker) return hookBlocker;
+
+    // Direct klend reserve supply path — bare deposit_reserve_liquidity.
+    // Triggered when the caller explicitly wants the kToken minted to their
+    // wallet (NOT parked in an obligation). This is the "supply, don't
+    // collateralize" entrypoint that the obligation variant + Kamino REST
+    // both bypass. SPEC_COVERAGE: closes the klend.deposit_reserve_liquidity
+    // gap.
+    if (extra && (extra.kind === "klend_reserve" || extra.kind === "klend_deposit_reserve")) {
+      if (!connection) {
+        throw new Error("Kamino klend_reserve deposit requires a Solana connection.");
+      }
+      if (!extra.accounts) {
+        throw new Error(
+          "Kamino klend_reserve deposit: pass reserve/lendingMarket/lendingMarketAuthority/" +
+          "reserveLiquidityMint/reserveLiquiditySupply/reserveCollateralMint/" +
+          "userSourceLiquidity/userDestinationCollateral via extra.accounts."
+        );
+      }
+      const ownerPk = new PublicKey(user);
+      const liquidityLamports = new BN(
+        (extra.liquidityAmountLamports ?? amount).toString()
+      );
+      const depositIx = buildDepositReserveLiquidity({
+        connection,
+        owner: ownerPk,
+        liquidityAmount: liquidityLamports,
+        accounts: extra.accounts,
+      });
+      const b64 = await packIxs({ owner: ownerPk, ixs: [depositIx], connection });
+      const sim = await simulateBase64Tx({ b64, connection });
+      if (!sim.ok) {
+        const e = new Error(`Kamino klend_reserve deposit simulation failed: ${sim.errStr || "unknown"}`);
+        e.simulation = sim;
+        throw e;
+      }
+      return {
+        transactions: [
+          {
+            b64,
+            summary: `Kamino klend reserve supply ${amount} ${asset || "USDC"}`,
+            description: (
+              `Calls Kamino Lend deposit_reserve_liquidity (bare reserve supply) ` +
+              `directly on ${KAMINO_LEND_PROGRAM_ID}. Mints kToken to your wallet — ` +
+              `no obligation parking, no Jupiter proxy.`
+            ),
+            receiptToken: `k${(asset || "USDC").toUpperCase()}`,
+            redemption_program: KAMINO_LEND_PROGRAM_ID,
+            feeUsd: 0.005,
+            durationS: 30,
+            warnings: [],
+            source: "kamino-native-reserve",
+            simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
+          },
+        ],
+      };
+    }
+
     // Primary path: real Kamino REST. Tries a couple of endpoint shapes
     // because Kamino has shipped both /transactions/deposit and
     // /v2/transactions/deposit at different points.

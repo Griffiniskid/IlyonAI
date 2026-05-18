@@ -188,22 +188,54 @@ async function buildOpenPositionTx({
   const tx = new Transaction();
   tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 600_000 }));
 
-  // _token_safety helpers return harness-shaped records (not real ixs).
-  // We attach the metadata to the returned card so the executor wraps
-  // the WSOL leg correctly when the SDK doesn't already (older SDK
-  // versions skip the close on close_position-only flows).
+  // V7-032: real `syncNative` + `closeAccount` instructions on either
+  // side of the SDK's increase-liquidity bundle. The SDK funds the
+  // WSOL ATA but, on older versions, does not always emit the matching
+  // syncNative/close pair, so we insert them defensively. The ATA is
+  // derived from the WSOL mint + user pubkey via spl-token's canonical
+  // ATA derivation; `wsolSafetyMeta` keeps a record of what we wired
+  // in for downstream debugging.
   const wsolSafetyMeta = [];
-  if (tokenMintA.toString() === SOL_MINT || tokenMintB.toString() === SOL_MINT) {
-    const wsolSideIsA = tokenMintA.toString() === SOL_MINT;
-    const wsolMintStr = wsolSideIsA ? tokenMintA.toString() : tokenMintB.toString();
-    wsolSafetyMeta.push(tokenSafety.buildSyncNativeIx(wsolMintStr));
-    wsolSafetyMeta.push(tokenSafety.buildCloseWsolIx(wsolMintStr, user));
+  const wsolMintPk = (tokenMintA.toString() === SOL_MINT)
+    ? tokenMintA
+    : (tokenMintB.toString() === SOL_MINT ? tokenMintB : null);
+  let wsolPreIx = null;
+  let wsolPostIx = null;
+  if (wsolMintPk) {
+    let splToken;
+    try {
+      splToken = require("@solana/spl-token");
+    } catch (_err) {
+      splToken = null;
+    }
+    let wsolAta;
+    if (splToken && typeof splToken.getAssociatedTokenAddressSync === "function") {
+      wsolAta = splToken.getAssociatedTokenAddressSync(wsolMintPk, userPubkey, true);
+    } else {
+      // Fallback for dependency-free harness: pass mint string through
+      // so the builder still emits a placeholder record callers can log.
+      wsolAta = wsolMintPk.toString();
+    }
+    wsolPreIx = tokenSafety.buildSyncNativeIx(wsolAta);
+    wsolPostIx = tokenSafety.buildCloseWsolIx(wsolAta, userPubkey);
+    wsolSafetyMeta.push(wsolPreIx, wsolPostIx);
   }
 
+  // syncNative must run BEFORE the SDK's deposit IXs so the SPL
+  // accounting layer sees the wrapped lamports.
+  if (wsolPreIx && !wsolPreIx.__placeholder) {
+    tx.add(wsolPreIx);
+  }
   if (builtTx && builtTx.instructions) {
     tx.add(...builtTx.instructions);
   } else if (Array.isArray(builtTx)) {
     tx.add(...builtTx);
+  }
+  // closeAccount runs AFTER the deposit so any residual WSOL lamports
+  // (slippage dust on the unwrap leg) flow back to the owner as native
+  // SOL when the ATA is closed.
+  if (wsolPostIx && !wsolPostIx.__placeholder) {
+    tx.add(wsolPostIx);
   }
   tx.feePayer = userPubkey;
   const { blockhash } = await connection.getLatestBlockhash("confirmed");
