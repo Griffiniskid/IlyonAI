@@ -1115,19 +1115,10 @@ async def build_yield_execution_plan(
                 ))
 
         # 2) Native gas top-up — sum step.gas_estimate_usd, convert to native
-        #    via _TOKEN_USD_HINT, require ≥ 1.5× headroom. Skip if no hint or
-        #    no estimate (can't fail-loud without a credible number).
-        _TOKEN_USD_HINT_LOCAL: dict[str, float] = {
-            "SOL": 90.0, "WSOL": 90.0,
-            "ETH": 2300.0, "WETH": 2300.0,
-            "BNB": 640.0, "WBNB": 640.0,
-            "MATIC": 0.13, "WMATIC": 0.13, "POL": 0.13,
-            "AVAX": 18.0, "WAVAX": 18.0,
-            "BTC": 80000.0, "WBTC": 80000.0,
-            # V7-069 — Sonic native gas. Conservative hint ~$0.30 so the
-            # 1.5× headroom math still produces a credible top-up amount.
-            "S": 0.30, "WS": 0.30,
-        }
+        #    via the live DefiLlama price_oracle (V7-044). No hardcoded USD
+        #    fallback: when the oracle has no price for the native symbol the
+        #    plan emits a STALE_PRICE_FEED blocker rather than silently pricing
+        #    gas at a stale baked-in number.
         _NATIVE_BY_CHAIN = {
             "ethereum": "ETH", "base": "ETH", "arbitrum": "ETH",
             "optimism": "ETH", "linea": "ETH", "scroll": "ETH",
@@ -1138,6 +1129,18 @@ async def build_yield_execution_plan(
             # preflight silently skips Sonic plans.
             "sonic": "S",
         }
+        # DefiLlama oracle keys: (chain_slug, token_address). Native gas
+        # priced via the canonical wrapped ERC-20 on each chain (oracle
+        # has no "ETH" entry — it expects WETH9).
+        _NATIVE_PRICE_LOOKUP: dict[str, tuple[str, str]] = {
+            "ETH":   ("ethereum",  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+            "BNB":   ("bsc",       "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"),
+            "MATIC": ("polygon",   "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270"),
+            "AVAX":  ("avalanche", "0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7"),
+            "SOL":   ("solana",    "So11111111111111111111111111111111111111112"),
+            "MNT":   ("mantle",    "0x78c1b0c915c4faa5fffa6cabf0219da63d7f4cb8"),
+            "S":     ("sonic",     "0x039e2fb66102314ce7b64ce5ce3e5183bc94ad38"),
+        }
         _chain_key = (chain or "").lower()
         _native_sym = _NATIVE_BY_CHAIN.get(_chain_key)
         _est_gas_usd = 0.0
@@ -1147,8 +1150,38 @@ async def build_yield_execution_plan(
             except (TypeError, ValueError):
                 pass
         if _native_sym and _est_gas_usd > 0:
-            _native_usd = _TOKEN_USD_HINT_LOCAL.get(_native_sym)
-            if _native_usd and _native_usd > 0:
+            from src.data.price_oracle import fetch_price_usd as _fetch_price_usd
+            import aiohttp as _aiohttp_oracle
+            _native_usd: float | None = None
+            _lookup = _NATIVE_PRICE_LOOKUP.get(_native_sym)
+            if _lookup is not None:
+                _llchain, _lladdr = _lookup
+                try:
+                    async with _aiohttp_oracle.ClientSession(
+                        timeout=_aiohttp_oracle.ClientTimeout(total=5)
+                    ) as _osess:
+                        _native_usd = await _fetch_price_usd(_llchain, _lladdr, _osess)
+                except Exception:
+                    _native_usd = None
+            if _native_usd is None or _native_usd <= 0:
+                # V7-044 — no hardcoded fallback. Surface STALE_PRICE_FEED so
+                # the recovery card can re-quote or warn the user before sign.
+                plan.add_blocker(ExecutionBlocker(
+                    code="STALE_PRICE_FEED",
+                    severity="blocker",
+                    title=f"Price feed unavailable for {_native_sym}",
+                    detail=(
+                        f"Live price oracle returned no USD for {_native_sym} "
+                        f"on {chain}; gas-topup math cannot be confirmed. "
+                        f"Plan held until the oracle recovers."
+                    ),
+                    affected_step_ids=[],
+                    cta=(
+                        f"Wait for the price feed to recover or refresh the "
+                        f"plan to re-query the oracle."
+                    ),
+                ))
+            else:
                 _native_needed = (_est_gas_usd * 1.5) / _native_usd
                 _native_have = float(_native_gas_by_chain.get(_chain_key, 0.0))
                 if _native_have <= 0:

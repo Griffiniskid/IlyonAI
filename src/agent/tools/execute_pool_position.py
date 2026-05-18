@@ -298,18 +298,10 @@ def _pick_asset_in(meta: dict[str, Any]) -> str:
     return "USDC"
 
 
-_TOKEN_USD_HINT_LOCAL: dict[str, float] = {
-    "SOL": 90.0, "WSOL": 90.0,
-    "ETH": 2300.0, "WETH": 2300.0, "STETH": 2300.0, "WSTETH": 2400.0, "WEETH": 2400.0,
-    "BNB": 640.0, "WBNB": 640.0,
-    "MATIC": 0.13, "WMATIC": 0.13, "POL": 0.13,
-    "AVAX": 18.0, "WAVAX": 18.0,
-    "BTC": 80000.0, "WBTC": 80000.0, "CBBTC": 80000.0, "BTC.B": 80000.0,
-    "ARB": 0.13, "OP": 0.15, "AERO": 0.95, "VELO": 0.05,
-    "USDC": 1.0, "USDT": 1.0, "DAI": 1.0, "FRAX": 1.0, "USDE": 1.0, "SUSDE": 1.05,
-    "GHO": 1.0, "PYUSD": 1.0, "TUSD": 1.0, "BUSD": 1.0, "FDUSD": 1.0,
-    "MIM": 1.0, "MKUSD": 1.0, "CRVUSD": 1.0, "USDS": 1.0, "SUSDS": 1.05,
-}
+# V7-044: The hardcoded ``_TOKEN_USD_HINT_LOCAL`` dict (WETH=2300 / WBTC=80000)
+# was removed. USD→native conversion now reads the live oracle cache via
+# ``get_cached_price_usd_sync``. On cache miss the conversion is skipped
+# (native amount preserved) — the downstream async adapter re-prices.
 
 _STABLE_TICKERS = {"USDC", "USDT", "USD", "DAI", "FRAX", "USDE", "GHO", "PYUSD",
                    "TUSD", "BUSD", "FDUSD", "MIM", "MKUSD", "CRVUSD", "USDS", "SUSDS",
@@ -554,7 +546,8 @@ async def execute_pool_position(
     # (~$9,400) and the wallet popup shows "Not enough SOL".
     final_asset_upper = (final_asset_in or "").upper()
     if amount_is_usd and final_asset_upper not in _STABLE_TICKERS:
-        usd_price = _TOKEN_USD_HINT_LOCAL.get(final_asset_upper)
+        from src.data.price_oracle import get_cached_price_usd_sync
+        usd_price = get_cached_price_usd_sync(final_asset_upper)
         if usd_price and usd_price > 0:
             from decimal import Decimal
             amt_float = float(amt) if not isinstance(amt, float) else amt

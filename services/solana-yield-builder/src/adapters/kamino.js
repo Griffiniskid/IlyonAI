@@ -30,6 +30,42 @@ const {
 } = require("@solana/web3.js");
 const BN = require("bn.js");
 const { simulateBase64Tx } = require("./simulate");
+// V7-031 Token-2022 transfer-hook allowlist enforcement.
+const { checkTransferHook } = require("./_token_safety");
+
+function _kaminoHookBlocker(mintStr, hookProgramId) {
+  return {
+    kind: "blocker",
+    code: "TRANSFER_HOOK_NOT_ALLOWED",
+    blocker: "TRANSFER_HOOK_NOT_ALLOWED",
+    error: "TRANSFER_HOOK_NOT_ALLOWED",
+    message:
+      `Kamino build blocked: reserve liquidity mint ${mintStr} declares a Token-2022 ` +
+      `transfer hook (${hookProgramId}) that is not in the sidecar allowlist.`,
+    mint: mintStr,
+    hookProgramId,
+    transactions: [],
+  };
+}
+
+async function _kaminoCheckHook(connection, extra) {
+  if (!connection || !extra) return null;
+  const candidates = [
+    extra.reserveLiquidityMint,
+    extra.reserve_liquidity_mint,
+    extra.inputMint,
+    extra.input_mint,
+    extra.accounts && (extra.accounts.reserveLiquidityMint || extra.accounts.reserve_liquidity_mint),
+  ].filter(Boolean);
+  for (const m of candidates) {
+    const mintPk = m instanceof PublicKey ? m : new PublicKey(String(m));
+    const hookCheck = await checkTransferHook(connection, mintPk);
+    if (!hookCheck.ok) {
+      return _kaminoHookBlocker(mintPk.toBase58(), hookCheck.hookProgramId);
+    }
+  }
+  return null;
+}
 
 // Default to Kamino's public REST so production gets the real vault deposit
 // path without needing extra env setup. Override KAMINO_API_BASE to point
@@ -265,6 +301,9 @@ module.exports = {
    * REST primary; native hand-rolled IX fallback when REST unreachable.
    */
   async buildUnstake({ asset, amount, user, extra = {} }, { connection } = {}) {
+    // V7-031 — gate the reserve liquidity mint on the transfer-hook allowlist.
+    const hookBlocker = await _kaminoCheckHook(connection, extra);
+    if (hookBlocker) return hookBlocker;
     const tryUrls = [
       `${BASE}/v2/transactions/withdraw`,
       `${BASE}/transactions/withdraw`,
@@ -400,6 +439,12 @@ module.exports = {
   },
 
   async build({ asset, amount, user, extra = {} }, { connection } = {}) {
+    // V7-031 — gate the reserve liquidity mint on the transfer-hook allowlist
+    // before we touch REST or the native fallback. Skipped silently when no
+    // mint is resolvable (most Kamino paths derive it from `asset` symbol
+    // server-side; transfer-hook checking only fires when extra.* carries one).
+    const hookBlocker = await _kaminoCheckHook(connection, extra);
+    if (hookBlocker) return hookBlocker;
     // Primary path: real Kamino REST. Tries a couple of endpoint shapes
     // because Kamino has shipped both /transactions/deposit and
     // /v2/transactions/deposit at different points.

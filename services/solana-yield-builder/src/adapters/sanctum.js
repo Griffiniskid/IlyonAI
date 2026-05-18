@@ -52,6 +52,8 @@ const {
 const { humanToAtoms } = require("./jupiter");
 const { simulateBase64Tx } = require("./simulate");
 const { checkTxAccountCount } = require("./altSplit");
+// V7-031 Token-2022 transfer-hook allowlist enforcement.
+const { checkTransferHook } = require("./_token_safety");
 
 const PROGRAM_ID = new PublicKey("5ocnV1qiCgaQR8Jb8xWnVbApfaygJ8tNoZfgPwsgx9kx");
 const INF_MINT = new PublicKey("5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm");
@@ -177,6 +179,26 @@ module.exports = {
     const lstAmount = humanToAtoms(amount, lst.decimals);
     if (lstAmount <= 0n) {
       throw new Error(`Sanctum AddLiquidity amount must be > 0 (got ${amount}).`);
+    }
+
+    // V7-031 — gate the LST input mint AND the INF receipt mint on the
+    // Token-2022 transfer-hook allowlist before we touch on-chain state.
+    for (const m of [lst.mint, INF_MINT]) {
+      const hookCheck = await checkTransferHook(connection, m);
+      if (!hookCheck.ok) {
+        return {
+          kind: "blocker",
+          code: "TRANSFER_HOOK_NOT_ALLOWED",
+          blocker: "TRANSFER_HOOK_NOT_ALLOWED",
+          error: "TRANSFER_HOOK_NOT_ALLOWED",
+          message:
+            `Sanctum build blocked: mint ${m.toBase58()} declares a Token-2022 ` +
+            `transfer hook (${hookCheck.hookProgramId}) that is not in the sidecar allowlist.`,
+          mint: m.toBase58(),
+          hookProgramId: hookCheck.hookProgramId,
+          transactions: [],
+        };
+      }
     }
 
     // Derive PDAs + reserve/fee ATAs.

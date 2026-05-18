@@ -209,7 +209,125 @@ def evaluate_preflight(
     except Exception as exc:  # never let a §13 detector crash preflight
         logger.debug("feed-age detector raised: %s", exc)
 
+    # Spec §13 Row 10 — PERMISSIONED_POOL_KYC. Refuses to sign any
+    # supply/deposit/stake/deposit_lp/lend step that lands in a pool
+    # we know is gated by an off-platform KYC / whitelist contract
+    # (Aave Arc, Maple Syrup, Goldfinch Senior Pool, Hashnote USYC,
+    # Centrifuge, etc.). Wallet-side balance/gas checks are useless
+    # for these pools — the gated function would revert on-chain even
+    # with a fully-funded wallet — so we surface the blocker pre-sign.
+    try:
+        _kyc_blockers = _check_kyc_pool_blockers(steps, inventory)
+        for b in _kyc_blockers:
+            blockers.append(b)
+            seen_codes.add(b.code)
+    except Exception as exc:  # never let a §13 detector crash preflight
+        logger.debug("kyc-pool detector raised: %s", exc)
+
     return blockers
+
+
+def _check_kyc_pool_blockers(
+    steps: Iterable[ExecutionStepV3],
+    inventory: WalletInventory,
+) -> list[ExecutionBlocker]:
+    """Run the §13 Row 10 PERMISSIONED_POOL_KYC detector against any
+    supply / deposit / stake / lend / deposit_lp step in the plan.
+
+    Pool address resolution order (per-step):
+      1. inventory.lp_pool_addrs[step_id] — explicit caller override
+      2. step.transaction.lp_pool_addr / swap_pool_addr / pool_address /
+         to — adapter-stamped or direct call destination
+      3. step.receipt["lp_pool_addr" | "pool_address"] — sidecar/runtime
+
+    `to` is included because supply/deposit calls land directly on the
+    pool contract — adapters that don't separately stash a pool key still
+    surface the gated contract via the unsigned-tx `to` field.
+    """
+    # Only actions that can land *into* a pool are eligible. Swaps and
+    # approvals are excluded — swap-leg routing through a KYC pool is
+    # covered by the aggregator's own quote filtering, and approves are
+    # not deposits.
+    gated_actions = {
+        "supply",
+        "deposit",
+        "deposit_lp",
+        "add_liquidity",
+        "provide_liquidity",
+        "stake",
+        "lend",
+    }
+    candidates: list[tuple[str, str]] = []  # (step_id, pool_addr)
+    for step in steps:
+        if (step.action or "").lower() not in gated_actions:
+            continue
+        pool = _extract_kyc_step_pool(step, inventory)
+        if not pool:
+            continue
+        candidates.append((step.step_id, pool))
+
+    if not candidates:
+        return []
+
+    # Lazy import to keep the shield import graph cold for plans that
+    # never touch a permissioned-pool-class action.
+    try:
+        from src.shield.kyc_pool import (
+            evaluate_kyc_pool_preflight,
+            is_kyc_gated,
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.debug("kyc_pool import failed: %s", exc)
+        return []
+
+    # Group affected step_ids per-pool-address so the blocker carries every
+    # offending step in a single row (matches the dedupe contract of
+    # evaluate_kyc_pool_preflight which collapses repeats).
+    pool_to_steps: dict[str, list[str]] = {}
+    for step_id, pool in candidates:
+        if not is_kyc_gated(pool):
+            continue
+        pool_to_steps.setdefault(pool.lower(), []).append(step_id)
+
+    if not pool_to_steps:
+        return []
+
+    out: list[ExecutionBlocker] = []
+    for pool_lower, step_ids in pool_to_steps.items():
+        out.extend(
+            evaluate_kyc_pool_preflight(
+                [pool_lower],
+                affected_step_ids=step_ids,
+            )
+        )
+    return out
+
+
+def _extract_kyc_step_pool(
+    step: ExecutionStepV3,
+    inventory: WalletInventory,
+) -> str | None:
+    """Resolve the candidate pool address a supply/deposit/lend step would
+    land in. Mirrors `_extract_lp_step_pool` but also falls back to
+    `step.transaction.to` (direct call destination) because supply/deposit
+    adapters typically don't separately stash a pool key — the gated
+    contract *is* the destination of the unsigned tx.
+    """
+    override = inventory.lp_pool_addrs.get(step.step_id)
+    if override:
+        return str(override)
+    tx = step.transaction
+    if tx is not None:
+        for attr in ("lp_pool_addr", "swap_pool_addr", "pool_address", "to"):
+            pool = getattr(tx, attr, None)
+            if pool:
+                return str(pool)
+    if step.receipt and isinstance(step.receipt, dict):
+        for key in ("lp_pool_addr", "pool_address", "swap_pool_addr"):
+            pool = step.receipt.get(key)
+            if pool:
+                return str(pool)
+    return None
 
 
 def _check_feed_age_blockers(

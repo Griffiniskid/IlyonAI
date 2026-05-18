@@ -62,6 +62,23 @@ const BN = require("bn.js");
 const crypto = require("crypto");
 const { simulateBase64Tx } = require("./simulate");
 const { checkTxAccountCount } = require("./altSplit");
+// V7-031 Token-2022 transfer-hook allowlist enforcement.
+const { checkTransferHook } = require("./_token_safety");
+
+function _jlpHookBlocker(mintStr, hookProgramId) {
+  return {
+    kind: "blocker",
+    code: "TRANSFER_HOOK_NOT_ALLOWED",
+    blocker: "TRANSFER_HOOK_NOT_ALLOWED",
+    error: "TRANSFER_HOOK_NOT_ALLOWED",
+    message:
+      `JLP build blocked: custody mint ${mintStr} declares a Token-2022 transfer ` +
+      `hook (${hookProgramId}) that is not in the sidecar allowlist.`,
+    mint: mintStr,
+    hookProgramId,
+    transactions: [],
+  };
+}
 
 // ── Program-level constants ─────────────────────────────────────────────────
 const PROGRAM_ID = new PublicKey("PERPHjGBqRHArX4DySjwM6UJHiR3sWAatqfdBS2qQJu");
@@ -271,6 +288,12 @@ async function buildWithdraw(req, ctx = {}) {
     throw new Error(`JLP withdraw amount must be positive (got ${amount}).`);
   }
 
+  // V7-031 — gate the receive (custody) mint on the transfer-hook allowlist.
+  const custodyHook = await checkTransferHook(connection, custodyCfg.mint);
+  if (!custodyHook.ok) {
+    return _jlpHookBlocker(custodyCfg.mint.toBase58(), custodyHook.hookProgramId);
+  }
+
   // Resolve oracle feeds + custody token account from on-chain state.
   const { dovesPrice, pythnetPrice } = await _loadDovesAndPythnetFeeds(
     connection,
@@ -397,6 +420,15 @@ module.exports = {
     const atomsIn = _toAtoms(amount, custodyCfg.decimals);
     if (atomsIn.lte(new BN(0))) {
       throw new Error(`JLP deposit amount must be positive (got ${amount}).`);
+    }
+
+    // V7-031 — gate the custody input mint on the transfer-hook allowlist.
+    // JLP custody mints today are NATIVE_MINT / wormhole-wrapped BTC/ETH /
+    // USDC / USDT (no hooks), but enforcing here keeps any future custody
+    // addition safe by default.
+    const custodyHook = await checkTransferHook(connection, custodyCfg.mint);
+    if (!custodyHook.ok) {
+      return _jlpHookBlocker(custodyCfg.mint.toBase58(), custodyHook.hookProgramId);
     }
 
     // Resolve oracle feeds from on-chain custody bytes (never guessed).

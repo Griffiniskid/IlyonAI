@@ -36,15 +36,43 @@ PERMISSIONED_POOL_KYC_BLOCKER_CODE = "PERMISSIONED_POOL_KYC"
 
 # Known KYC-gated pool addresses (Aave Arc, Compound III KYC variants, Maple,
 # Goldfinch, Hashnote). All entries normalised to lowercase at lookup time.
-# Real addresses are added as integrations land; the placeholder below keeps
-# the registry non-empty so the `is_kyc_gated` short-circuit has a hit to
-# regression-test against.
+# Each address has been independently verified on Etherscan against the
+# protocol's published canonical deployment list; the source URL is quoted
+# in the comment beside each entry. Addresses are stored lowercase so the
+# `is_kyc_gated` short-circuit can do a direct `.lower()` lookup without
+# allocating a fresh set on the hot path.
 KYC_GATED_POOLS: set[str] = {
-    # Aave Arc (deprecated but historical) — none currently active on mainnet,
-    # leave placeholder slot for when a future permissioned-pool variant ships.
-    # Maple lending pools (require KYC) — example placeholder; real addrs
-    # added when Maple adapter integrates.
-    "0x6f6c388e0ad0f7a17775ea8a4baa9bbe8b3a4ad7",
+    # ---- Maple Finance — Syrup permissioned lending pools (Ethereum) ----
+    # Both pools route every deposit/withdraw through the
+    # MaplePoolPermissionManager (proxy at 0xBe10aDcE...8b3), which gates
+    # function calls behind an off-platform KYC allowlist.
+    # syrupUSDC PoolV2 token. Verified Etherscan name "MaplePool", symbol
+    # "syrupUSDC". Source: https://docs.maple.finance/llms-full.txt and
+    # https://etherscan.io/address/0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b
+    "0x80ac24aa929eaf5013f6436cda2a7ba190f5cc0b",
+    # syrupUSDT PoolV2 token. Verified Etherscan name "MaplePool", symbol
+    # "syrupUSDT". Source: https://docs.maple.finance/llms-full.txt and
+    # https://etherscan.io/address/0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D
+    "0x356b8d89c1e1239cbbb9de4815c39a1474d5ba7d",
+    # Maple PoolPermissionManager (NonTransparentProxy → MaplePoolPermissionManager
+    # impl). Any direct interaction with this contract is gated; surfaced so
+    # the preflight refuses plans that route through the manager directly.
+    # Source: https://etherscan.io/address/0xBe10aDcE8B6E3E02Db384E7FaDA5395DD113D8b3
+    "0xbe10adce8b6e3e02db384e7fada5395dd113d8b3",
+    # ---- Goldfinch — Senior Pool (Ethereum) ----
+    # EIP-173 proxy "Goldfinch Protocol: Senior Pool". Requires a Unique
+    # Identity (UID) ERC-1155 NFT — explicitly described in the Goldfinch
+    # docs as "a non-transferrable NFT representing Know-Your-Customer (KYC)"
+    # — before deposit/withdraw functions will execute.
+    # Source: https://docs.goldfinch.finance/goldfinch/llms-full.txt and
+    # https://etherscan.io/address/0x8481a6EbAf5c7DABc3F7e09e44A89531fd31F822
+    "0x8481a6ebaf5c7dabc3f7e09e44a89531fd31f822",
+    # ---- Hashnote — USYC (US Yield Coin) ----
+    # SEC-regulated tokenised short-duration US Treasury yield fund. Mint /
+    # burn requires off-platform KYC + accredited-investor onboarding via
+    # Hashnote. Verified Etherscan name "US Yield Coin", symbol "USYC".
+    # Source: https://etherscan.io/token/0x136471a34f6ef19fE571EFFC1CA711fdb8E49f2b
+    "0x136471a34f6ef19fe571effc1ca711fdb8e49f2b",
 }
 
 # Marker prefix for Maple-style pool addresses surfaced by upstream

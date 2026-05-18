@@ -14,6 +14,24 @@ try { CpAmm = require("@meteora-ag/cp-amm-sdk").CpAmm; } catch (e) { CpAmm = nul
 try { const m = require("@meteora-ag/vault-sdk"); VaultImpl = m.default || m.VaultImpl || m; } catch (e) { VaultImpl = null; }
 const { humanToAtoms } = require("./jupiter");
 const { simulateBase64Tx } = require("./simulate");
+// V7-031 Token-2022 transfer-hook allowlist enforcement.
+const { checkTransferHook } = require("./_token_safety");
+
+function _meteoraHookBlocker(mintStr, hookProgramId) {
+  return {
+    kind: "blocker",
+    code: "TRANSFER_HOOK_NOT_ALLOWED",
+    blocker: "TRANSFER_HOOK_NOT_ALLOWED",
+    error: "TRANSFER_HOOK_NOT_ALLOWED",
+    message:
+      `Meteora build blocked: input mint ${mintStr} declares a Token-2022 transfer ` +
+      `hook (${hookProgramId}) that is not in the sidecar allowlist. Risk team must ` +
+      `approve the hook program before this pool routes here.`,
+    mint: mintStr,
+    hookProgramId,
+    transactions: [],
+  };
+}
 
 const DAMM_V2_PROGRAM = new PublicKey("cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG");
 const VAULT_PROGRAM   = new PublicKey("24Uqj9JCLxUeoC3hGfh5W3s9FM9uCHDS2SG3LYwBpyTi");
@@ -155,6 +173,9 @@ module.exports = {
     if (extra.vaultMint || extra.vaultTokenMint) {
       if (!VaultImpl) throw new Error("Meteora vault-sdk not installed — npm install @meteora-ag/vault-sdk required.");
       const tokenMint = new PublicKey(extra.vaultTokenMint || extra.vaultMint);
+      // V7-031 — refuse non-allowlisted Token-2022 transfer hooks on the vault deposit mint.
+      const vaultHook = await checkTransferHook(connection, tokenMint);
+      if (!vaultHook.ok) return _meteoraHookBlocker(tokenMint.toBase58(), vaultHook.hookProgramId);
       const vault = await VaultImpl.create(connection, tokenMint);
       const decimals = (await getMint(connection, tokenMint, "confirmed", TOKEN_PROGRAM_ID)).decimals;
       const amt = humanToAtoms(amount, decimals);
@@ -182,6 +203,14 @@ module.exports = {
 
     const tokenAMint = pool.tokenAMint;
     const tokenBMint = pool.tokenBMint;
+    // V7-031 — gate both pool sides on the Token-2022 transfer-hook allowlist.
+    for (const m of [tokenAMint, tokenBMint]) {
+      if (!m) continue;
+      const hookCheck = await checkTransferHook(connection, m);
+      if (!hookCheck.ok) {
+        return _meteoraHookBlocker(m.toBase58 ? m.toBase58() : String(m), hookCheck.hookProgramId);
+      }
+    }
     const tokenAProgram = pool.tokenAFlag ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
     const tokenBProgram = pool.tokenBFlag ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
     const isTokenA = (asset || "").toUpperCase() === pool.tokenASymbol?.toUpperCase();

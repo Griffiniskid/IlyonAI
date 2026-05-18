@@ -32,6 +32,7 @@ from src.defi.simulator.tenderly_client import (
     SimulationResult,
     TenderlyClient,
 )
+from src.shield.mev_router import private_rpc_for_chain
 
 if TYPE_CHECKING:
     from src.defi.execution.models import ExecutionPlanV3, ExecutionStepV3
@@ -200,6 +201,50 @@ async def simulate_step_before_broadcast(
     return sim
 
 
+def _resolve_mev_routing(
+    step: "ExecutionStepV3",
+    *,
+    notional_usd: float | None = None,
+) -> dict[str, Any]:
+    """V7-037 — decide whether this step's broadcast should hit a private relay.
+
+    Consults `src.shield.mev_router.private_rpc_for_chain` with the step's
+    `slippage_bps` and the caller-supplied `notional_usd`. Returns an
+    observability dict that is always populated so downstream callers
+    (receipts, audit logs, frontend) can prove the routing decision.
+
+    For Ethereum-family chains a private cfg becomes `{"rpc_url": ...,
+    "lane": "mevblocker"}`; for Solana it carries `{"jito_tip_lamports": ...,
+    "lane": "jito"}`. Below-threshold or unsupported-chain falls back to
+    `{"routed_via": "public"}` so the public mempool path runs unchanged.
+
+    NOT-YET-WIRED: chains other than ethereum/solana (e.g. base, arbitrum,
+    bsc) currently fall back to public. Add chain-specific private relays
+    in `src/shield/mev_router.py` as they come online.
+    """
+    chain = (step.chain or "").lower()
+    slippage_bps = int(step.slippage_bps or 0)
+    cfg = private_rpc_for_chain(chain, slippage_bps, float(notional_usd or 0.0))
+    if cfg is None:
+        return {
+            "routed_via": "public",
+            "chain": chain,
+            "slippage_bps": slippage_bps,
+            "notional_usd": float(notional_usd or 0.0),
+        }
+    out: dict[str, Any] = {
+        "routed_via": cfg.get("lane", "private"),
+        "chain": chain,
+        "slippage_bps": slippage_bps,
+        "notional_usd": float(notional_usd or 0.0),
+    }
+    if "rpc_url" in cfg:
+        out["rpc_url"] = cfg["rpc_url"]
+    if "jito_tip_lamports" in cfg:
+        out["jito_tip_lamports"] = cfg["jito_tip_lamports"]
+    return out
+
+
 async def broadcast_step(
     plan: "ExecutionPlanV3",
     step_id: str,
@@ -208,6 +253,7 @@ async def broadcast_step(
     solana_rpc_url: str | None = None,
     network_id: int | None = None,
     receipt: dict[str, Any] | None = None,
+    notional_usd: float | None = None,
 ) -> SimulationResult:
     """End-to-end pre-broadcast: simulate, stamp hash, flip to submitted.
 
@@ -259,12 +305,25 @@ async def broadcast_step(
             sim, step_id=step.step_id, plan_id=plan.plan_id,
         )
 
+    # V7-037 — MEV auto-flip to private relays. Consulted POST-sim (so the
+    # bind hash is already stamped) and PRE-flip-to-submitted (so the
+    # routing decision lands in the same receipt the audit trail sees).
+    # Below-threshold steps stamp `routed_via=public` and broadcast the
+    # public mempool path unchanged.
+    mev_routing = _resolve_mev_routing(step, notional_usd=notional_usd)
+    logger.info(
+        "broadcast_step: plan=%s step=%s mev_routing=%s",
+        plan.plan_id, step_id, mev_routing,
+    )
+    receipt_with_mev: dict[str, Any] = dict(receipt) if receipt else {}
+    receipt_with_mev["mev_routing"] = mev_routing
+
     # V7-001's mark_step_status('submitted') compares hashes. Because we
     # stamped both to the same simulator-derived value above (and the
     # wallet adapter is expected to OVERWRITE broadcast_calldata_hash
     # right before the wallet popup with a hash of the actual signed
     # bytes), the bind is enforced end-to-end.
-    plan.mark_step_status(step_id, "submitted", receipt=receipt)
+    plan.mark_step_status(step_id, "submitted", receipt=receipt_with_mev)
     return sim
 
 
@@ -272,6 +331,7 @@ __all__ = [
     "BroadcastSimulationError",
     "SIM_FRESHNESS_THRESHOLD_SEC",
     "_check_sim_freshness",
+    "_resolve_mev_routing",
     "broadcast_step",
     "simulate_step_before_broadcast",
 ]

@@ -9,7 +9,7 @@ Action codes (per @uniswap/v4-periphery):
 
 Plan shape:
   1. Optional Enso swap input → USDC (when input not already in pool legs)
-  2. ERC20.approve USDC → Permit2 (one-time max)
+  2. ERC20.approve USDC → Permit2 (scoped to amount_max +5%; §11 D.3)
   3. Permit2.approve(USDC, PositionManager, deposit×1.05, expiration)
   4. PositionManager.modifyLiquidities(unlockData, deadline) [msg.value = ETH leg]
 
@@ -381,17 +381,23 @@ class UniswapV4NativeAdapter:
         step_idx = 1
         if non_native_side and non_native_side[0] != "0x" + "00" * 20:
             tok_addr, max_amt, sym = non_native_side
-            # Step A1: ERC20.approve token → Permit2 (max, one-time).
-            erc20_approve_calldata = _APPROVE_SEL + _enc_addr(_PERMIT2) + _enc_uint(2**256 - 1)
+            # Step A1: ERC20.approve token → Permit2 — SCOPED to the +5% padded
+            # amount_max ceiling (spec §11 D.3: no unlimited approvals). The
+            # buffer matches the Permit2.approve below so a single mint never
+            # blocks on a short approve, but a malicious Permit2 cannot drain
+            # more than this exact ceiling.
+            scoped_amt = int(max_amt * 105 // 100)
+            erc20_approve_calldata = _APPROVE_SEL + _enc_addr(_PERMIT2) + _enc_uint(scoped_amt)
             steps.append(make_step(
                 index=step_idx, action="approve",
                 title=f"Approve {sym} to Permit2",
                 description=(
-                    f"One-time max ERC20 approval so the Permit2 router can pull {sym} for V4 "
-                    "mints. Subsequent V4 mints will reuse this approval without another popup."
+                    f"Scoped ERC20 approval ({scoped_amt} units, amount_max +5%) so the "
+                    f"Permit2 router can pull {sym} for this V4 mint. Per §11 D.3 the "
+                    "allowance is bounded to this mint's ceiling — never max-uint."
                 ),
                 chain=chain, wallet="MetaMask", protocol="uniswap-v4",
-                asset_in=sym, amount_in=str(2**256 - 1),
+                asset_in=sym, amount_in=str(scoped_amt),
                 transaction=UnsignedStepTransaction(
                     chain_kind="evm", chain_id=chain_id,
                     to=tok_addr, data=erc20_approve_calldata, value="0x0", spender=_PERMIT2,

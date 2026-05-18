@@ -20,6 +20,23 @@ const { Marinade, MarinadeConfig } = require("@marinade.finance/marinade-ts-sdk"
 const { buildSwap, resolveMint, decimalsFor, SOL_MINT } = require("./jupiter");
 const { simulateBase64Tx } = require("./simulate");
 const { checkTxAccountCount } = require("./altSplit");
+// V7-031 Token-2022 transfer-hook allowlist enforcement.
+const { checkTransferHook } = require("./_token_safety");
+
+function _marinadeHookBlocker(mintStr, hookProgramId) {
+  return {
+    kind: "blocker",
+    code: "TRANSFER_HOOK_NOT_ALLOWED",
+    blocker: "TRANSFER_HOOK_NOT_ALLOWED",
+    error: "TRANSFER_HOOK_NOT_ALLOWED",
+    message:
+      `Marinade build blocked: input mint ${mintStr} declares a Token-2022 ` +
+      `transfer hook (${hookProgramId}) that is not in the sidecar allowlist.`,
+    mint: mintStr,
+    hookProgramId,
+    transactions: [],
+  };
+}
 
 const MSOL_MINT = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So";
 // Marinade staking program (canonical mainnet ID, surfaced as redemption_program
@@ -266,6 +283,12 @@ module.exports = {
     const inputMint = resolveMint(inputSym);
     if (!inputMint) {
       throw new Error(`Marinade adapter: unknown input asset ${inputSym}.`);
+    }
+    // V7-031 — gate the non-SOL input mint on the transfer-hook allowlist
+    // before Jupiter quotes a swap into it. mSOL receipt is classic SPL.
+    const inputHook = await checkTransferHook(connection, new PublicKey(inputMint));
+    if (!inputHook.ok) {
+      return _marinadeHookBlocker(inputMint, inputHook.hookProgramId);
     }
     const inputDecimals = decimalsFor(inputSym) || 9;
     const { tx: swapB64 } = await buildSwap({

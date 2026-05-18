@@ -29,6 +29,8 @@ const { ComputeBudgetProgram, PublicKey, TransactionInstruction } = require("@so
 const crypto = require("crypto");
 const { simulateBase64Tx } = require("./simulate");
 const _legacyPrep = require("./_legacyRaydiumPrep");
+// V7-031 Token-2022 transfer-hook allowlist enforcement.
+const { checkTransferHook } = require("./_token_safety");
 
 const AMM_V4_PROGRAM = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8";
 const CPMM_PROGRAM = "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C";
@@ -260,6 +262,31 @@ module.exports = {
     const poolInfo = await _fetchPool({ raydium, poolId });
     const isCpmm = _isCpmm(extra, poolInfo);
     const redemption_program = isCpmm ? CPMM_PROGRAM : AMM_V4_PROGRAM;
+
+    // V7-031 — gate both pool mints against the Token-2022 transfer-hook
+    // allowlist. Raydium AMM v4/CPMM addLiquidity touches BOTH sides, so we
+    // refuse the build if EITHER mint carries a non-allowlisted hook.
+    const mintAStr = poolInfo.mintA?.address || poolInfo.mintA?.mint || poolInfo.mintA;
+    const mintBStr = poolInfo.mintB?.address || poolInfo.mintB?.mint || poolInfo.mintB;
+    for (const mintStr of [mintAStr, mintBStr]) {
+      if (!mintStr) continue;
+      const hookCheck = await checkTransferHook(connection, new PublicKey(mintStr));
+      if (!hookCheck.ok) {
+        return {
+          kind: "blocker",
+          code: "TRANSFER_HOOK_NOT_ALLOWED",
+          blocker: "TRANSFER_HOOK_NOT_ALLOWED",
+          error: "TRANSFER_HOOK_NOT_ALLOWED",
+          message:
+            `Raydium build blocked: pool mint ${String(mintStr)} declares a Token-2022 ` +
+            `transfer hook (${hookCheck.hookProgramId}) that is not in the sidecar ` +
+            `allowlist. Risk team must approve the hook program before deposits route here.`,
+          mint: String(mintStr),
+          hookProgramId: hookCheck.hookProgramId,
+          transactions: [],
+        };
+      }
+    }
 
     const transaction = isCpmm
       ? await _buildCpmm({ raydium, sdk, poolInfo, amount, slippageBps, asset })

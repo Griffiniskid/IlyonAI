@@ -2998,20 +2998,13 @@ _POOL_PROTO_PAIR_RE = re.compile(
 )
 
 
-# Approximate fiat hint for converting "put 0.2 SOL into pool X" → USD size.
-# Price drift is fine because pool deposit sizing is bounded by user balance and
-# slippage_bps tolerates volatility. Real-time price lookup would be ideal but
-# would couple this detector to the pricing service for negligible gain.
-_TOKEN_USD_HINT: dict[str, float] = {
-    "SOL": 90.0, "WSOL": 90.0,
-    "ETH": 2300.0, "WETH": 2300.0,
-    "BNB": 640.0, "WBNB": 640.0,
-    "MATIC": 0.13, "WMATIC": 0.13, "POL": 0.13,
-    "AVAX": 18.0, "WAVAX": 18.0,
-    "ARB": 0.13, "OP": 0.15,
-    "USDC": 1.0, "USDT": 1.0, "DAI": 1.0, "BUSD": 1.0, "FDUSD": 1.0, "TUSD": 1.0,
-    "BTC": 80000.0, "WBTC": 80000.0, "CBBTC": 80000.0,
-}
+# V7-044: The hardcoded ``_TOKEN_USD_HINT`` dict (WETH=2300, WBTC=80000, etc.)
+# was removed in favour of the live price oracle. The intent detectors that
+# previously read this dict now call ``get_cached_price_usd_sync`` from
+# ``src.data.price_oracle`` — that helper reads the same 60s TTL cache that
+# the async oracle path populates. Cache miss → ``None`` → caller falls
+# through to native-amount sizing without inventing a stale baseline.
+from src.data.price_oracle import get_cached_price_usd_sync as _get_cached_price_usd_sync
 
 
 _DIRECT_POOL_DEPOSIT_RE = re.compile(
@@ -3163,9 +3156,10 @@ def _detect_direct_pool_deposit(message: str) -> tuple[str, dict] | None:
     amount_value = _expand_numeric_amount(m.group("amount"), m.group("suffix"))
     if amount_value is None or amount_value <= 0:
         return None
-    price = _TOKEN_USD_HINT.get(token)
-    if not price:
-        # Unknown token — pass native amount; tool will fail-soft if it can't price.
+    price = _get_cached_price_usd_sync(token)
+    if not price or price <= 0:
+        # V7-044: cache miss — pass native amount through; the async downstream
+        # tool re-prices via the live oracle rather than baking in a stale USD.
         usd_amount = float(amount_value) * 1.0
     else:
         usd_amount = float(amount_value) * price
@@ -3447,8 +3441,10 @@ def _detect_slipstream_lp(message: str) -> tuple[str, dict] | None:
             continue
         amount = amt_val
         asset_in = tok
-        price = _TOKEN_USD_HINT.get(tok, 1.0)
-        usd_equivalent = amt_val * price
+        # V7-044: cache-only oracle lookup; ``None`` → leave USD equivalent at
+        # native amount (no stale hardcoded multiplier).
+        price = _get_cached_price_usd_sync(tok)
+        usd_equivalent = amt_val * (price if price and price > 0 else 1.0)
         break
     if amount is None:
         um = _SLIPSTREAM_AMT_USD_RE.search(text)
@@ -3699,8 +3695,10 @@ def _detect_add_liquidity(message: str) -> tuple[str, dict] | None:
         # ETH when they typed "0.05 ETH" (115× overshoot). USD-equivalent is
         # surfaced separately for budgeting / Preview display only.
         amount = qty
-        price = _TOKEN_USD_HINT.get(native_tok, 1.0)
-        usd_equivalent = qty * price
+        # V7-044: cache-only oracle lookup; ``None`` → USD equivalent stays at
+        # native qty so downstream async stages re-price via the live oracle.
+        price = _get_cached_price_usd_sync(native_tok)
+        usd_equivalent = qty * (price if price and price > 0 else 1.0)
         asset_in = native_tok
     elif _no_amt_synthetic and _no_amt_src:
         # §6d no-amount form: user named source token but no amount. Default
@@ -6088,16 +6086,11 @@ _NATIVE_AMOUNT_FROM_TEXT_RE = re.compile(
     r"(?:^|\b)([\d,]+(?:\.\d+)?)\s*([kKmM])?\s*(SOL|ETH|WETH|BTC|WBTC|BNB|MATIC|AVAX|ARB|OP)\b",
     re.IGNORECASE,
 )
-_NATIVE_USD_HINT: dict[str, float] = {
-    "SOL": 90.0, "WSOL": 90.0,
-    "ETH": 2300.0, "WETH": 2300.0,
-    "BTC": 80000.0, "WBTC": 80000.0,
-    "BNB": 640.0, "WBNB": 640.0,
-    "MATIC": 0.13,
-    "AVAX": 18.0,
-    "ARB": 0.13,
-    "OP": 0.15,
-}
+# V7-044: The hardcoded ``_NATIVE_USD_HINT`` dict was removed. Native→USD
+# conversion in ``_parse_amount_from_text`` now reads the live oracle cache
+# via the ``_get_cached_price_usd_sync`` import at the top of the module.
+# Cache miss for a native token → the native-amount branch is skipped and
+# the parser falls through to the dollar-style regex pass below.
 
 
 def _references_prior_pools_for_allocation(
@@ -6803,9 +6796,10 @@ def _parse_amount_from_text(text: str) -> float | None:
     """Parse a USD-equivalent amount from free text.
 
     Recognises plain dollar amounts ("$1000", "1000 USDC", "1k") AND native
-    crypto amounts ("10 SOL", "0.5 ETH"), converting native via _NATIVE_USD_HINT.
-    Native conversion uses approximate spot prices — fine for sizing the
-    allocation card; exact USD value comes from on-chain balance at signing.
+    crypto amounts ("10 SOL", "0.5 ETH"), converting native via the live
+    DefiLlama oracle cache (V7-044). Cache miss → native branch is skipped
+    so we never bake in a stale baseline. Exact USD comes from on-chain
+    balance at signing.
 
     Skips numbers that are clearly APY/percent values: number followed by
     '%', 'percent', 'pct', 'apy', 'apr', 'yield', or preceded by mode words
@@ -6825,7 +6819,9 @@ def _parse_amount_from_text(text: str) -> float | None:
         elif suffix == "m":
             qty *= 1_000_000
         token = nm.group(3).upper()
-        price = _NATIVE_USD_HINT.get(token, 0.0)
+        # V7-044: cache-only oracle lookup; ``None`` / non-positive → skip
+        # the native branch (parser falls through to the dollar regex below).
+        price = _get_cached_price_usd_sync(token) or 0.0
         if qty > 0 and price > 0:
             usd = qty * price
             if 0 < usd <= 1_000_000_000:
