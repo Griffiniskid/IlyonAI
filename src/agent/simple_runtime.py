@@ -8532,6 +8532,35 @@ _UNBACKED_FAKE_METRICS_RE = re.compile(
     r'|you\s+(?:currently\s+)?hold\s+\d+\s+\w+\s+positions?',
     re.IGNORECASE,
 )
+# A01 t3 hand-read (USDC allocation): model leaked first-person chain-of-thought
+# scratchpad ("We need to allocate $250 across the same pools... Compute each
+# amount: 250 * (1/7) = 35.71") as user-facing prose. This is internal planning
+# monologue that should never reach the user. The existing `_clean_response`
+# strips leading scratchpad lines but does not refuse the entire contextual
+# fallback. Catch first-person planning stems + inline arithmetic + "compute/
+# calculate/divide by/apply/approximate to" verb phrases as a sanitizer-level
+# refusal trigger when no real card backs the response.
+#
+# Conservative — requires a planning stem to be followed by ≥1 substantive word
+# (so a 2-word sentence like "Let's go." does NOT trip) AND only fires when
+# has_real_card=False. False positives stripping legitimate prose would be
+# worse than letting through occasional scratchpad.
+_UNBACKED_SCRATCHPAD_RE = re.compile(
+    # First-person planning sentence stems — require a follow-on word so bare
+    # "Let's" / "We need to" alone don't false-match.
+    r'\b(?:We\s+(?:need\s+to|have\s+to|must|should|can|will)'
+    r'|Let(?:\s+me|\'?s)\s+(?:think|compute|calculate|see|figure|break|review|check|analyze)'
+    r'|I(?:\s+need\s+to|\s+have\s+to|\s+must|\s+should|\'ll\s+need\s+to|\'ll)\s+\w+'
+    r'|First[,\s]+(?:we|I|let|step)'
+    r'|Then[,\s]+(?:we|I|compute|calculate|divide|apply|sum|add|subtract)'
+    r'|Step\s+\d+\s*:)\s+\w+'
+    # Inline arithmetic expressions used in compute steps (e.g. "250 * (1/7) =")
+    r'|\b\d+(?:\.\d+)?\s*[*x×÷/]\s*[(\d./]+\s*='
+    # Compute / calculate / sum up / divide by / apply / approximate to verb
+    # phrases — strong scratchpad markers when emitted as user-facing prose.
+    r'|\b(?:Compute|Calculate|Sum\s+up|Divide\s+by|Apply\s+the|Approximate\s+to)\s+\w+',
+    re.IGNORECASE,
+)
 
 
 def _strip_unbacked_claims(content: str, *, has_real_card: bool) -> tuple[str, bool]:
@@ -8577,6 +8606,8 @@ def _strip_unbacked_claims(content: str, *, has_real_card: bool) -> tuple[str, b
         hits.append("fabricated_exec_url")
     if _UNBACKED_FAKE_METRICS_RE.search(content):
         hits.append("fabricated_metrics")
+    if _UNBACKED_SCRATCHPAD_RE.search(content):
+        hits.append("chain_of_thought_scratchpad")
     if not hits:
         return content, False
     refusal = (
