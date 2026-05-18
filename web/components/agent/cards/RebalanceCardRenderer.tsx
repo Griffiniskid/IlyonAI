@@ -1,6 +1,8 @@
 "use client";
 
 import { Repeat, TrendingUp, AlertTriangle } from "lucide-react";
+import { V3RangeBlock } from "./V3RangeBlock";
+import type { V3RangeBlock as V3RangeBlockPayload } from "@/types/agent";
 
 /* Backend payload shape for card_type="rebalance_card" */
 export interface RebalanceCardPayload {
@@ -14,6 +16,22 @@ export interface RebalanceCardPayload {
   time_out_of_range_pct: number;
   estimated_fee_apr_uplift_pct: number;
   cta_label: string;
+  /** Optional interactive V3 picker payload — present only for concentrated-liquidity protocols. */
+  range_block?: V3RangeBlockPayload | null;
+}
+
+/** V3-style concentrated-liquidity protocol slugs that should render the interactive picker. */
+function isV3Protocol(slug: string | undefined): boolean {
+  if (!slug) return false;
+  const s = slug.toLowerCase();
+  return (
+    s.includes("v3") ||
+    s.includes("v4") ||
+    s.includes("concentrated") ||
+    s === "uniswap-v3" ||
+    s === "pancakeswap-v3" ||
+    s === "sushiswap-v3"
+  );
 }
 
 function fmtUsd(usd: number | null | undefined): string {
@@ -106,6 +124,12 @@ export function RebalanceCardRenderer({ payload }: { payload: RebalanceCardPaylo
           </div>
         </div>
       </div>
+
+      {payload.range_block && isV3Protocol(payload.protocol) && (
+        <div className="mt-3">
+          <V3RangeBlock block={payload.range_block} />
+        </div>
+      )}
 
       <button
         type="button"

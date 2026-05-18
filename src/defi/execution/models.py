@@ -33,7 +33,7 @@ StepAction = Literal[
 # Add new constants here when new actions land in the Literal above.
 REVOKE_SESSION_KEY = "revoke_session_key"
 StepStatus = Literal[
-    "blocked", "pending", "ready", "signing", "submitted", "confirmed", "failed", "skipped"
+    "blocked", "pending", "queued", "ready", "signing", "submitted", "confirmed", "verified", "failed", "skipped"
 ]
 PlanStatus = Literal[
     # Legacy runtime statuses kept as backward-compat shims.

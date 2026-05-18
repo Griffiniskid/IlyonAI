@@ -174,6 +174,66 @@ V2_FACTORIES: dict[tuple[str, str], str] = {
 }
 
 
+# ─── ABI decode helpers (used by cross_check_token_onchain) ─────────────────
+
+
+def _decode_uint8(hex_data: Optional[str]) -> Optional[int]:
+    """Decode a uint8 (or any uint up to 32 bytes) from an eth_call result."""
+    if not hex_data:
+        return None
+    h = hex_data.removeprefix("0x")
+    if not h:
+        return None
+    try:
+        v = int(h, 16)
+    except ValueError:
+        return None
+    if v < 0 or v > 0xFF:
+        # decimals() must fit in uint8 — anything larger is a malformed token.
+        return None
+    return v
+
+
+def _decode_string_or_bytes32(hex_data: Optional[str]) -> Optional[str]:
+    """Decode either an ABI-encoded ``string`` or a legacy ``bytes32`` symbol.
+
+    Tries dynamic-string layout first (offset|length|data). Falls back to
+    bytes32 (right-padded ASCII, e.g. MKR/SAI). Returns the trimmed text or
+    None when the buffer is empty / undecodable.
+    """
+    if not hex_data:
+        return None
+    h = hex_data.removeprefix("0x")
+    if len(h) < 64:
+        return None
+
+    # Dynamic-string layout: 32-byte offset, 32-byte length, then payload.
+    # Offset is typically 0x20 for a single-string return.
+    try:
+        offset = int(h[:64], 16)
+    except ValueError:
+        offset = -1
+    if offset == 32 and len(h) >= 128:
+        try:
+            length = int(h[64:128], 16)
+        except ValueError:
+            length = -1
+        if 0 < length <= (len(h) - 128) // 2:
+            try:
+                payload = bytes.fromhex(h[128:128 + length * 2]).decode("utf-8")
+                return payload.strip("\x00").strip()
+            except (ValueError, UnicodeDecodeError):
+                pass
+
+    # bytes32 layout: just 32 bytes right-padded.
+    try:
+        raw = bytes.fromhex(h[:64])
+        text = raw.decode("utf-8").strip("\x00").strip()
+        return text or None
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
 @dataclass(frozen=True)
 class TokenInfo:
     """Canonical token descriptor returned by `EntityResolver.resolve_token`.
@@ -526,3 +586,121 @@ class EntityResolver:
             return None
 
         return None
+
+    # ─── On-chain cross-check (V7 §2) ───────────────────────────────────────
+
+    async def cross_check_token_onchain(
+        self,
+        token_addr: str,
+        chain: str,
+        evm_client: object,
+    ) -> dict:
+        """Cross-check the on-chain ``symbol()`` + ``decimals()`` of a token
+        against the registry entry for the same (chain, address).
+
+        ``evm_client`` is duck-typed: it must expose an ``async`` method
+        ``call(to: str, data: str) -> str`` that returns the raw 0x-prefixed
+        eth_call result. Both string ``symbol()`` and ``uint8 decimals()``
+        ABI encodings are decoded inline so the resolver does not depend on
+        web3.py.
+
+        Returns::
+
+            {
+                "match": bool,
+                "on_chain": {"symbol": str | None, "decimals": int | None},
+                "registry": {"symbol": str | None, "decimals": int | None,
+                             "address": str | None},
+            }
+
+        ``match`` is True iff both symbol (case-insensitive) AND decimals
+        agree between chain and registry. When the registry has no entry
+        for the address, ``match`` is False and the registry slot is empty.
+        """
+        chain_l = (chain or "").lower().strip()
+        addr_l = (token_addr or "").lower().strip()
+
+        # symbol() selector = 0x95d89b41 ; decimals() selector = 0x313ce567
+        sym_raw = None
+        dec_raw = None
+        try:
+            sym_raw = await evm_client.call(addr_l, "0x95d89b41")
+        except Exception:  # noqa: BLE001 — best-effort RPC, surface in result
+            sym_raw = None
+        try:
+            dec_raw = await evm_client.call(addr_l, "0x313ce567")
+        except Exception:  # noqa: BLE001
+            dec_raw = None
+
+        on_chain_sym = _decode_string_or_bytes32(sym_raw) if sym_raw else None
+        on_chain_dec = _decode_uint8(dec_raw) if dec_raw else None
+
+        # Find the registry entry for this address (if any).
+        registry_sym: Optional[str] = None
+        registry_dec: Optional[int] = None
+        for (c, sym), (a, dec) in _TOKEN_REGISTRY.items():
+            if c == chain_l and a == addr_l:
+                registry_sym = sym
+                registry_dec = dec
+                break
+
+        symbol_ok = (
+            on_chain_sym is not None
+            and registry_sym is not None
+            and on_chain_sym.upper() == registry_sym.upper()
+        )
+        decimals_ok = (
+            on_chain_dec is not None
+            and registry_dec is not None
+            and on_chain_dec == registry_dec
+        )
+        return {
+            "match": bool(symbol_ok and decimals_ok),
+            "on_chain": {"symbol": on_chain_sym, "decimals": on_chain_dec},
+            "registry": {
+                "symbol": registry_sym,
+                "decimals": registry_dec,
+                "address": addr_l if registry_sym else None,
+            },
+        }
+
+    # ─── TVL tiebreak (V7 §3) ───────────────────────────────────────────────
+
+    def resolve_protocol_with_tvl_tiebreak(
+        self,
+        candidates: list[str],
+        tvl_lookup,  # type: ignore[no-untyped-def]
+    ) -> Optional[str]:
+        """Pick the highest-TVL protocol from ``candidates``.
+
+        ``tvl_lookup`` is a callable ``(canonical_slug: str) -> float`` that
+        returns TVL in USD (or any monotone metric). Candidates are first
+        canonicalised via :meth:`resolve_protocol` so aliases collapse.
+
+        Returns the canonical slug of the winner, or ``None`` when the
+        input list is empty. Ties are broken by lexicographic order to keep
+        the choice deterministic. Single-candidate inputs short-circuit
+        without calling ``tvl_lookup``.
+        """
+        if not candidates:
+            return None
+        canonical = [self.resolve_protocol(c) or c.lower() for c in candidates]
+        # Dedupe while preserving order.
+        seen: list[str] = []
+        for c in canonical:
+            if c not in seen:
+                seen.append(c)
+        if len(seen) == 1:
+            return seen[0]
+
+        best_slug: Optional[str] = None
+        best_tvl: float = float("-inf")
+        for slug in seen:
+            try:
+                tvl = float(tvl_lookup(slug))
+            except Exception:  # noqa: BLE001 — missing TVL ⇒ treat as 0
+                tvl = 0.0
+            if tvl > best_tvl or (tvl == best_tvl and (best_slug is None or slug < best_slug)):
+                best_tvl = tvl
+                best_slug = slug
+        return best_slug

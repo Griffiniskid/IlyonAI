@@ -103,9 +103,11 @@ async def test_load_plan_returns_none_for_missing():
 async def test_list_active_plans_returns_user_plans():
     """list_active_plans must return active plans for a specific user only."""
     db = await get_database()
-    user_a = 999990
-    user_b = 999989
-    
+    # Use per-run unique user_ids so the test is isolated from leftover
+    # plans persisted by prior runs against the same SQLite fallback DB.
+    user_a = uuid.uuid4().int & 0x7FFFFFFF
+    user_b = uuid.uuid4().int & 0x7FFFFFFF
+
     plan_a = _make_plan(plan_id=f"plan-a-{uuid.uuid4().hex[:8]}")
     plan_b = _make_plan(plan_id=f"plan-b-{uuid.uuid4().hex[:8]}")
     
@@ -123,7 +125,8 @@ async def test_list_active_plans_returns_user_plans():
 async def test_list_active_plans_excludes_non_active():
     """list_active_plans must not return plans with non-active status."""
     db = await get_database()
-    user_id = 999988
+    # Unique per-run user_id avoids cross-run leak in the SQLite fallback DB.
+    user_id = uuid.uuid4().int & 0x7FFFFFFF
     
     plan_active = _make_plan(plan_id=f"plan-active-{uuid.uuid4().hex[:8]}")
     plan_complete = _make_plan(plan_id=f"plan-complete-{uuid.uuid4().hex[:8]}")
@@ -141,7 +144,8 @@ async def test_list_active_plans_excludes_non_active():
 async def test_list_active_plans_excludes_expired():
     """list_active_plans must not return plans past their expires_at."""
     db = await get_database()
-    user_id = 999987
+    # Unique per-run user_id avoids cross-run leak in the SQLite fallback DB.
+    user_id = uuid.uuid4().int & 0x7FFFFFFF
     
     plan_not_expired = _make_plan(plan_id=f"plan-not-expired-{uuid.uuid4().hex[:8]}")
     plan_expired = _make_plan(plan_id=f"plan-expired-{uuid.uuid4().hex[:8]}")

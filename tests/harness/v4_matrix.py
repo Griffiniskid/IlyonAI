@@ -1645,11 +1645,214 @@ CATEGORY_I: list[Chain] = [
 
 
 # ---------------------------------------------------------------------------
+# Category ENSO — Enso shortcuts API catch-all coverage (12 chains × 4 turns)
+# Spec §A.7: ≥12 enso-tagged scenarios so the matrix exercises every
+# protocol Enso routes for. Each chain ends with an execute turn that
+# expects an execution_plan_v3 card whose tx.to == Enso router.
+# ---------------------------------------------------------------------------
+CATEGORY_ENSO: list[Chain] = [
+    Chain(
+        id="enso-01",
+        category="ENSO",
+        notes="Enso V3 LP add USDC/WETH on Base via shortcuts/route",
+        turns=[
+            Turn("Open a Uniswap V3 USDC/WETH LP on Base via Enso", expect_card="pool_link"),
+            Turn("Use 200 USDC and matching WETH", expect_card="pool_link"),
+            Turn("Narrow range around current price", expect_card="execution_plan_v3"),
+            Turn(
+                "Execute",
+                expect_card="execution_plan_v3",
+                expect_status="ready",
+                expect_action="lp_mint",
+            ),
+        ],
+    ),
+    Chain(
+        id="enso-02",
+        category="ENSO",
+        notes="Enso V3 LP increase liquidity on Arbitrum existing NFT",
+        turns=[
+            Turn("Increase liquidity on my Uniswap V3 ARB/ETH 0.3% NFT on Arbitrum via Enso", expect_card="pool_link"),
+            Turn("Add 50 ARB plus matching ETH", expect_card="pool_link"),
+            Turn("Preview the increase tx", expect_card="execution_plan_v3"),
+            Turn(
+                "Execute",
+                expect_card="execution_plan_v3",
+                expect_status="ready",
+                expect_action="lp_increase",
+            ),
+        ],
+    ),
+    Chain(
+        id="enso-03",
+        category="ENSO",
+        notes="Enso Aave V3 supply ETH→aETH on Ethereum",
+        turns=[
+            Turn("Supply 0.25 ETH to Aave V3 on Ethereum via Enso", expect_card="pool_link"),
+            Turn("Use native ETH (wrap inside the shortcut)", expect_card="pool_link"),
+            Turn("Show me the route", expect_card="execution_plan_v3"),
+            Turn(
+                "Execute",
+                expect_card="execution_plan_v3",
+                expect_status="ready",
+                expect_action="supply",
+            ),
+        ],
+    ),
+    Chain(
+        id="enso-04",
+        category="ENSO",
+        notes="Enso Compound V3 USDC supply on Base",
+        turns=[
+            Turn("Compound V3 USDC supply on Base via Enso, 300 USDC", expect_card="pool_link"),
+            Turn("Confirm the cUSDCv3 receipt token", expect_card="pool_link"),
+            Turn("Preview the bundle", expect_card="execution_plan_v3"),
+            Turn(
+                "Execute",
+                expect_card="execution_plan_v3",
+                expect_status="ready",
+                expect_action="supply",
+            ),
+        ],
+    ),
+    Chain(
+        id="enso-05",
+        category="ENSO",
+        notes="Enso Curve 3pool add USDC/USDT/DAI on Ethereum",
+        turns=[
+            Turn("Add 500 USDC to Curve 3pool on Ethereum via Enso", expect_card="pool_link"),
+            Turn("Stake the LP in the gauge", expect_card="pool_link"),
+            Turn("Show me the multi-step plan", expect_card="execution_plan_v3"),
+            Turn(
+                "Execute",
+                expect_card="execution_plan_v3",
+                expect_status="ready",
+                expect_action="lp_join",
+            ),
+        ],
+    ),
+    Chain(
+        id="enso-06",
+        category="ENSO",
+        notes="Enso Balancer ComposableStable join on Arbitrum",
+        turns=[
+            Turn("Join the Balancer wstETH/ETH ComposableStable pool on Arbitrum via Enso", expect_card="pool_link"),
+            Turn("Use 0.1 wstETH plus matching ETH", expect_card="pool_link"),
+            Turn("Show the join calldata", expect_card="execution_plan_v3"),
+            Turn(
+                "Execute",
+                expect_card="execution_plan_v3",
+                expect_status="ready",
+                expect_action="lp_join",
+            ),
+        ],
+    ),
+    Chain(
+        id="enso-07",
+        category="ENSO",
+        notes="Enso Pendle PT mint on Ethereum",
+        turns=[
+            Turn("Buy Pendle PT-sUSDe on Ethereum via Enso with 200 USDC", expect_card="pool_link"),
+            Turn("Maturity Dec-2026", expect_card="pool_link"),
+            Turn("Preview the swap-then-mint route", expect_card="execution_plan_v3"),
+            Turn(
+                "Execute",
+                expect_card="execution_plan_v3",
+                expect_status="ready",
+                expect_action="pt_mint",
+            ),
+        ],
+    ),
+    Chain(
+        id="enso-08",
+        category="ENSO",
+        notes="Enso Slipstream (Aerodrome CL) LP on Base",
+        turns=[
+            Turn("LP USDC/WETH on Aerodrome Slipstream Base via Enso", expect_card="pool_link"),
+            Turn("Use 250 USDC at tick spacing 100", expect_card="pool_link"),
+            Turn("Show me the mint tx", expect_card="execution_plan_v3"),
+            Turn(
+                "Execute",
+                expect_card="execution_plan_v3",
+                expect_status="ready",
+                expect_action="lp_mint",
+            ),
+        ],
+    ),
+    Chain(
+        id="enso-09",
+        category="ENSO",
+        notes="Enso Aerodrome V3 LP on Base (volatile pair)",
+        turns=[
+            Turn("Aerodrome V3 AERO/WETH LP on Base via Enso", expect_card="pool_link"),
+            Turn("Use 100 AERO and matching WETH wide range", expect_card="pool_link"),
+            Turn("Preview the bundle", expect_card="execution_plan_v3"),
+            Turn(
+                "Execute",
+                expect_card="execution_plan_v3",
+                expect_status="ready",
+                expect_action="lp_mint",
+            ),
+        ],
+    ),
+    Chain(
+        id="enso-10",
+        category="ENSO",
+        notes="Enso Kodiak V3 BEX LP on Berachain",
+        turns=[
+            Turn("LP HONEY/WBERA on Kodiak V3 Berachain via Enso", expect_card="pool_link"),
+            Turn("Use 100 HONEY and matching WBERA", expect_card="pool_link"),
+            Turn("Show the calldata", expect_card="execution_plan_v3"),
+            Turn(
+                "Execute",
+                expect_card="execution_plan_v3",
+                expect_status="ready",
+                expect_action="lp_mint",
+            ),
+        ],
+    ),
+    Chain(
+        id="enso-11",
+        category="ENSO",
+        notes="Enso SwapX V3 LP on Sonic",
+        turns=[
+            Turn("LP S/USDC on SwapX V3 Sonic via Enso", expect_card="pool_link"),
+            Turn("Use 50 S and matching USDC narrow range", expect_card="pool_link"),
+            Turn("Preview the mint", expect_card="execution_plan_v3"),
+            Turn(
+                "Execute",
+                expect_card="execution_plan_v3",
+                expect_status="ready",
+                expect_action="lp_mint",
+            ),
+        ],
+    ),
+    Chain(
+        id="enso-12",
+        category="ENSO",
+        notes="Enso V2 LP USDC/WETH on Ethereum",
+        turns=[
+            Turn("Open a Uniswap V2 USDC/WETH LP on Ethereum via Enso", expect_card="pool_link"),
+            Turn("Use 200 USDC and matching WETH", expect_card="pool_link"),
+            Turn("Show me the addLiquidity tx", expect_card="execution_plan_v3"),
+            Turn(
+                "Execute",
+                expect_card="execution_plan_v3",
+                expect_status="ready",
+                expect_action="lp_join",
+            ),
+        ],
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
 # Final assembly
 # ---------------------------------------------------------------------------
 ALL_CHAINS: list[Chain] = (
     CATEGORY_A + CATEGORY_B + CATEGORY_C + CATEGORY_D
     + CATEGORY_E + CATEGORY_F + CATEGORY_G + CATEGORY_H + CATEGORY_I
+    + CATEGORY_ENSO
 )
 
 assert len(ALL_CHAINS) >= 100, f"Need ≥100 chains, got {len(ALL_CHAINS)}"

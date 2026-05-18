@@ -120,3 +120,56 @@ class YieldAdapter(Protocol):
     async def build(self, request: YieldBuildRequest) -> list[ExecutionStepV3]: ...
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult: ...
+
+    # --- V6 §3.2 lifecycle methods (Phase 3-5) ---------------------------------
+    # Optional lifecycle operations. Default implementations raise
+    # NotImplementedError so adapters that do not support a given lifecycle
+    # action fail loudly with a useful message. Adapters opt in by overriding.
+
+    async def build_increase(self, intent: Any) -> list[ExecutionStepV3]:
+        """Increase / add to an existing position (e.g. add liquidity, top up)."""
+        raise NotImplementedError(
+            f"{getattr(self, 'adapter_id', type(self).__name__)}.build_increase is not implemented"
+        )
+
+    async def build_decrease(self, intent: Any) -> list[ExecutionStepV3]:
+        """Decrease / partially exit an existing position."""
+        raise NotImplementedError(
+            f"{getattr(self, 'adapter_id', type(self).__name__)}.build_decrease is not implemented"
+        )
+
+    async def build_collect(self, intent: Any) -> list[ExecutionStepV3]:
+        """Collect accrued fees / rewards without modifying principal."""
+        raise NotImplementedError(
+            f"{getattr(self, 'adapter_id', type(self).__name__)}.build_collect is not implemented"
+        )
+
+    async def build_close(self, intent: Any) -> list[ExecutionStepV3]:
+        """Fully close / exit a position."""
+        raise NotImplementedError(
+            f"{getattr(self, 'adapter_id', type(self).__name__)}.build_close is not implemented"
+        )
+
+    async def build_rebalance(self, intent: Any) -> list[ExecutionStepV3]:
+        """Rebalance a position (e.g. shift CL range, migrate vault)."""
+        raise NotImplementedError(
+            f"{getattr(self, 'adapter_id', type(self).__name__)}.build_rebalance is not implemented"
+        )
+
+    async def build_withdraw(self, intent: Any) -> list[ExecutionStepV3]:
+        """Withdraw underlying from a vault / lending position."""
+        raise NotImplementedError(
+            f"{getattr(self, 'adapter_id', type(self).__name__)}.build_withdraw is not implemented"
+        )
+
+    async def build_unstake(self, intent: Any) -> list[ExecutionStepV3]:
+        """Unstake / unbond a staked position."""
+        raise NotImplementedError(
+            f"{getattr(self, 'adapter_id', type(self).__name__)}.build_unstake is not implemented"
+        )
+
+    async def build_claim(self, intent: Any) -> list[ExecutionStepV3]:
+        """Claim rewards / vested tokens."""
+        raise NotImplementedError(
+            f"{getattr(self, 'adapter_id', type(self).__name__)}.build_claim is not implemented"
+        )
