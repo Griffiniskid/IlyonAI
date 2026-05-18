@@ -6018,7 +6018,23 @@ _REJECT_PRIOR_RE = re.compile(
 )
 # "the top one", "the first one", "the best one", "first pool", "highest APY one"
 _SINGLE_POOL_PICK_RE = re.compile(
-    r"\b(?:the\s+)?(?:top|first|best|highest(?:\s+apy)?|safest)\s+(?:one|pool)\b",
+    r"\b(?:the\s+)?(?:top|first|best|highest(?:\s+apy)?|safest)\s+(?:one|pool)\b"
+    r"|\bdrill\s+(?:into|down\s+to)\s+(?:the\s+)?(?:top|first|best)\s+(?:one|pool)\b",
+    re.IGNORECASE,
+)
+# LRT (liquid restaking) and LST (liquid staking) protocol families. Used by
+# refine synth when user says "switch to LRT" / "filter to liquid staking"
+# without naming a specific protocol — expand to the protocol set so the
+# downstream search keeps the family but drops the prior-singular protocol.
+_LRT_FAMILY = {
+    "renzo", "kelp", "swell", "puffer", "etherfi", "ether.fi", "eigenlayer",
+}
+_LST_FAMILY = {
+    "lido", "rocketpool", "rocket-pool", "frax-eth", "frax", "stader", "ankr",
+}
+_LRT_LST_REFINE_RE = re.compile(
+    r"\b(?:switch\s+to|filter\s+to|only|just)\s+"
+    r"(?P<fam>lst|lrt|liquid[\s-]?staking|restaking)s?\b",
     re.IGNORECASE,
 )
 # Onboarding bootstrap: "I have $X USDC, what should I do" / "what's the play"
@@ -6185,6 +6201,24 @@ def _last_defi_card_constraints(history_cards: list[dict] | None) -> dict:
             "pool": "pool",
             "yield aggregator": "vault",
             "money market": "lending",
+            # Taxonomy-emitted product_type values
+            # (src/defi/opportunity_taxonomy.py emits these, NOT the friendly
+            # forms above). A19/T2 regression: items[].product_type is
+            # "single_asset_staking" / "lending_supply_like" /
+            # "single_asset_vault" / "*_lp" / "single_asset_yield", none of
+            # which the friendly-form table caught → refine fell back to
+            # default ["pool","farm","vault","lending"] and lost the staking
+            # filter, surfacing HIGH-risk gmtrade perp pools on turn 2.
+            "single_asset_staking": "staking",
+            "lending_supply_like": "lending",
+            "single_asset_vault": "vault",
+            "single_asset_yield": "vault",
+            "stable_lp": "pool",
+            "incentivized_stable_lp": "pool",
+            "crypto_stable_lp": "pool",
+            "incentivized_crypto_stable_lp": "pool",
+            "crypto_crypto_lp": "pool",
+            "incentivized_crypto_crypto_lp": "pool",
         }
         items = p.get("items") or []
         if isinstance(items, list) and items:
@@ -6297,6 +6331,43 @@ def _synthesize_refine_search_args(
             args["asset_hint"] = None  # don't reuse prior asset hint
             # use protocol slug as substring for ranking re-ordering — pass via a custom kwarg
             args["protocol_filter"] = proto_m.group(1).strip().lower().replace(" ", "-")
+
+    # LRT/LST family expansion — "switch to LRT" / "filter to liquid staking".
+    # Don't reset asset_hint; user is narrowing protocol family, not asset.
+    fam_m = _LRT_LST_REFINE_RE.search(message)
+    if fam_m:
+        fam_raw = fam_m.group("fam").lower().replace(" ", "").replace("-", "")
+        if fam_raw in {"lrt", "restaking"}:
+            args["protocol_family"] = "lrt"
+            args["protocol_allowlist"] = sorted(_LRT_FAMILY)
+        elif fam_raw in {"lst", "liquidstaking"}:
+            args["protocol_family"] = "lst"
+            args["protocol_allowlist"] = sorted(_LST_FAMILY)
+
+    # Protocol + asset co-occurrence preservation — when message has both a
+    # known protocol head AND a known asset symbol within ~4 tokens of each
+    # other ("Spark DAI", "Aave USDC", "Spark DAI sDAI"), preserve BOTH.
+    # Don't let a prior protocol_filter null the asset_hint.
+    proto_co = re.search(
+        rf"\b(?P<proto>{_REFINE_PROTO_ALT})\b",
+        message, re.IGNORECASE,
+    )
+    asset_co = re.search(
+        r"\b(USDC|USDT|DAI|sDAI|FRAX|GHO|ETH|WETH|stETH|wstETH|rETH|cbETH|"
+        r"weETH|ezETH|rsETH|sfrxETH|SOL|mSOL|jitoSOL|bSOL|BTC|WBTC|tBTC)\b",
+        message,
+    )
+    if proto_co and asset_co:
+        # Distance in tokens — use char distance as a cheap proxy (~4 tokens
+        # roughly equals 30 chars).
+        p_start = proto_co.start()
+        a_start = asset_co.start()
+        if abs(p_start - a_start) <= 40:
+            asset_sym = asset_co.group(1)
+            args["asset_hint"] = asset_sym.upper() if asset_sym.isupper() or asset_sym.islower() else asset_sym
+            proto_raw = proto_co.group("proto").lower().replace(" ", "-")
+            norm = _REFINE_PROTO_NORM.get(proto_raw, proto_raw)
+            args["protocol_filter"] = norm
     # Reject prior pools — pass exclude_pool_ids from prior card
     if _REJECT_PRIOR_RE.search(message):
         prior_ids = []
@@ -6598,6 +6669,24 @@ def _synthesize_refine_execution_args(
         new_asset = nq.group("tok").upper()
         any_signal = True
 
+    # LRT/LST family refine — "switch to LRT" / "filter to liquid staking".
+    # Set protocol_family on extra; do NOT reset asset (user is changing
+    # protocol family, not asset). Caller can read extra.protocol_family +
+    # the allowlist to fan out across the family.
+    fam_m = _LRT_LST_REFINE_RE.search(message)
+    if fam_m:
+        fam_raw = fam_m.group("fam").lower().replace(" ", "").replace("-", "")
+        if fam_raw in {"lrt", "restaking"}:
+            new_extra["protocol_family"] = "lrt"
+            new_extra["protocol_allowlist"] = sorted(_LRT_FAMILY)
+            new_action = "stake"
+            any_signal = True
+        elif fam_raw in {"lst", "liquidstaking"}:
+            new_extra["protocol_family"] = "lst"
+            new_extra["protocol_allowlist"] = sorted(_LST_FAMILY)
+            new_action = "stake"
+            any_signal = True
+
     # Amount override — prefer native form, fall back to USD.
     amt_set = False
     for am in _AMOUNT_NATIVE_REFINE_RE.finditer(message):
@@ -6630,6 +6719,54 @@ def _synthesize_refine_execution_args(
                     any_signal = True
             except (TypeError, ValueError):
                 pass
+
+    # BUG 2 — explicit amount-override on a refinement turn. User saying
+    # "Use 150 USDC" on a follow-up MUST override the prior card's base
+    # amount, even when no other refine signal fired. Pattern matches
+    # action verbs (use/with/allocate/deploy/put/invest/split) followed
+    # by digits, optional k/m suffix, and optional asset symbol.
+    if not amt_set:
+        ov = re.search(
+            r"\b(?:use|with|allocate|deploy|put|invest|split)\s*\$?"
+            r"(?P<num>[\d,]+(?:\.\d+)?)\s*(?P<sfx>[kKmM])?\s*"
+            r"(?P<tok>USDC|USDT|DAI|ETH|SOL|WETH|WBTC|BTC)?\b",
+            message, re.IGNORECASE,
+        )
+        if ov:
+            try:
+                n = float(ov.group("num").replace(",", ""))
+                sfx = (ov.group("sfx") or "").lower()
+                if sfx == "k":
+                    n *= 1_000
+                elif sfx == "m":
+                    n *= 1_000_000
+                if n > 0:
+                    new_amount = n
+                    tok = (ov.group("tok") or "").upper()
+                    if tok:
+                        new_asset = tok
+                    any_signal = True
+            except (TypeError, ValueError):
+                pass
+
+    # BUG 1 part 5 — "drill into top pool" / "the first one" / "the top one"
+    # without an amount. Reuse prior turn's defi_opportunities[0] pool_id and
+    # the prior card's base_amount; skip the strict amount-required path.
+    if _SINGLE_POOL_PICK_RE.search(message):
+        top_pool_id: str | None = None
+        for card in (history_cards or []):
+            if card.get("card_type") != "defi_opportunities":
+                continue
+            items = (card.get("payload") or {}).get("items") or []
+            if items and isinstance(items[0], dict):
+                pid = items[0].get("pool_id")
+                if pid:
+                    top_pool_id = str(pid)
+                    break
+        if top_pool_id:
+            new_extra["pool_id"] = top_pool_id
+            new_extra["pick_top_pool"] = True
+            any_signal = True
 
     if not any_signal:
         return None
@@ -8561,6 +8698,38 @@ _UNBACKED_SCRATCHPAD_RE = re.compile(
     r'|\b(?:Compute|Calculate|Sum\s+up|Divide\s+by|Apply\s+the|Approximate\s+to)\s+\w+',
     re.IGNORECASE,
 )
+# A13 t1 + A20 t3 hand-read (LST APY fabrication, adapter-state narration):
+# `stETH (Lido) – ~4.5% APY, MEDIUM risk` / `rETH... similar yield, MEDIUM risk` /
+# `adapter reports insufficient SOL in the wallet (maximum deposit amount is
+# 0 SOL)`. These are quantitative yield / risk-tier / adapter-state claims in
+# contextual_fallback prose with no card backing them. Financial-trust
+# violation — the LLM does not know real APYs, real risk tiers, or real
+# wallet/adapter state without a deterministic tool result.
+#
+# 11th class. Only fires when has_real_card=False.
+_UNBACKED_NUMERIC_YIELD_RE = re.compile(
+    # Bare APY/APR numeric: "~4.5% APY", "approximately 5% APR", "3% yield",
+    # "around 4.2% annual yield". Requires the APY/APR/yield qualifier so a
+    # bare "4.2%" alone (could be slippage, slip-tolerance) doesn't trip.
+    r'\b(?:~|≈|approximately\s+|around\s+|about\s+)?\d+(?:\.\d+)?\s*%\s*(?:APY|APR|yield|annual\s+yield)\b'
+    # Risk-level tier claim: "MEDIUM risk", "low-risk", "HIGH risk pool".
+    r'|\b(?:LOW|MEDIUM|HIGH|low|medium|high)\s*[-]?\s*risk\b'
+    # Adapter-state narration: prose claiming what the adapter / wallet
+    # "reports / has / shows / returns" in qualitative state terms. Only fires
+    # on the adapter|wallet stem to avoid catching "the user has insufficient
+    # balance" general statements that might be legitimate help text.
+    r'|\b(?:adapter|wallet)\s+(?:reports|has|shows|returns)\s+(?:insufficient|sufficient|maximum|minimum|zero|empty|N/?A)\b'
+    # Max-deposit / max-withdraw / max-stake / max-borrow narration with a
+    # numeric ceiling. The deterministic adapter emits these as card fields;
+    # prose claims are fabrications.
+    r'|\bmaximum\s+(?:deposit|withdrawal|stake|swap|borrow)\s+(?:amount\s+)?(?:is|of)\s+\d+(?:\.\d+)?\s*(?:USD|USDC|SOL|ETH|DAI|WBTC)?\b'
+    # Meta-yield comparison claims: "similar yield", "slightly higher yield",
+    # "yield varies". LLM-only relative judgments with no numeric ground truth.
+    r'|\b(?:slightly|moderately|significantly)\s+(?:higher|lower|similar|different)\s+yield\b'
+    r'|\bsimilar\s+yield\b'
+    r'|\byield\s+varies\b',
+    re.IGNORECASE,
+)
 
 
 def _strip_unbacked_claims(content: str, *, has_real_card: bool) -> tuple[str, bool]:
@@ -8608,6 +8777,8 @@ def _strip_unbacked_claims(content: str, *, has_real_card: bool) -> tuple[str, b
         hits.append("fabricated_metrics")
     if _UNBACKED_SCRATCHPAD_RE.search(content):
         hits.append("chain_of_thought_scratchpad")
+    if _UNBACKED_NUMERIC_YIELD_RE.search(content):
+        hits.append("unbacked_numeric_yield_claim")
     if not hits:
         return content, False
     refusal = (

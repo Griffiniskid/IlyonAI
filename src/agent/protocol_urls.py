@@ -644,3 +644,47 @@ def is_pool_link_action(*, action: str | None, protocol: str | None, chain: str 
         return True
 
     return False
+
+
+def get_exec_capability(protocol: str | None, chain: str | None, action: str | None) -> dict:
+    """Single source of truth for execution capability.
+
+    Both the search-card badge (`search_defi_opportunities`) and the
+    execution gate (`build_yield_execution_plan`) must consult this helper so
+    they cannot drift. Previously the badge inspected the adapter registry
+    directly while exec checked `is_pool_link_action` first, which produced a
+    pool that advertised "ready via enso-shortcut-fallback" but actually
+    returned a "Direct execution disabled" pool_link card.
+
+    Returns:
+        {
+            "executable": bool,   # Can it be signed in-chat?
+            "mode": "deterministic" | "enso_fallback" | "link_only" | "unknown",
+            "reason": str | None, # Why link_only / unknown if applicable
+        }
+    """
+    # Step 1: hardcoded link-only check wins first. This mirrors what the
+    # execution gate enforces; the badge must agree.
+    if is_pool_link_action(action=action or "", protocol=protocol or "", chain=chain or ""):
+        return {
+            "executable": False,
+            "mode": "link_only",
+            "reason": "Direct execution disabled for this pool type",
+        }
+    # Step 2: protocol is in the deterministic adapter set?
+    # (Lazy import to avoid the circular protocol_urls ↔ capabilities edge.)
+    from src.defi.execution.capabilities import build_default_registry
+    registry = build_default_registry()
+    verdict = registry.find(
+        chain=(chain or "").lower(),
+        protocol=(protocol or "").lower(),
+        action=(action or "").lower(),
+    )
+    if verdict.supported:
+        return {"executable": True, "mode": "deterministic", "reason": None}
+    # Step 3: Enso shortcut fallback for EVM protocols on EVM chains.
+    enso_supported = {"morpho", "compound", "aave", "balancer", "convex", "yearn", "pendle"}
+    evm_chains = {"ethereum", "polygon", "arbitrum", "optimism", "base"}
+    if (protocol or "").lower() in enso_supported and (chain or "").lower() in evm_chains:
+        return {"executable": True, "mode": "enso_fallback", "reason": None}
+    return {"executable": False, "mode": "unknown", "reason": "no adapter registered"}

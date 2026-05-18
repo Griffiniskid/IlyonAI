@@ -4,7 +4,7 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from src.agent.protocol_urls import classify_pool_kind, is_pool_link_action, pool_protocol_url
+from src.agent.protocol_urls import classify_pool_kind, get_exec_capability, pool_protocol_url
 from src.agent.tools._base import err_envelope, ok_envelope
 from src.defi.apr_curve import empirical_cdf_or_fallback
 from src.defi.execution.adapters.base import YieldBuildRequest
@@ -451,12 +451,14 @@ async def build_yield_execution_plan(
     if amount <= 0 and not _lifecycle_zero_ok:
         return err_envelope("invalid_amount", "amount_in must be a positive decimal value.")
 
-    # Pool-link gate: when the (action, protocol, chain) tuple is on the
-    # link-only list (V3 EVM LPs, generic V2 EVM LPs, non-Aave EVM supply,
-    # non-LST stake), emit a pool_link card pointing at the exact pool on
-    # the protocol app. Solana flows pass through (sidecar adapters handle
-    # pair-aware prep + sim themselves).
-    if is_pool_link_action(action=action, protocol=protocol, chain=chain):
+    # Pool-link gate: consult the canonical `get_exec_capability` helper so
+    # the search-card badge and this gate cannot drift. When the helper
+    # reports `mode == "link_only"` (V3 EVM LPs, generic V2 EVM LPs, non-Aave
+    # EVM supply, non-LST stake), emit a pool_link card pointing at the exact
+    # pool on the protocol app. Solana flows pass through (sidecar adapters
+    # handle pair-aware prep + sim themselves).
+    _cap = get_exec_capability(protocol, chain, action)
+    if _cap["mode"] == "link_only":
         extra_dict = extra or {}
         url = pool_protocol_url(
             chain=chain,

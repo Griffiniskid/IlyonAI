@@ -116,10 +116,14 @@ _REGISTRY: dict[tuple[str, str], LstEntry] = {
     ("ethereum", "mETH"): LstEntry(
         chain="ethereum", symbol="mETH",
         direct_mint=DirectMintPath(
-            contract="0xe3cbd06d7dadb3f4e6557bab7edd924cd1489e8f",  # mantle staking
-            selector="0xf6326fb3",  # stake()
+            contract="0xe3cbd06d7dadb3f4e6557bab7edd924cd1489e8f",  # mantle staking proxy
+            # stake(uint256 minMETHAmount) external payable — verified on-chain via
+            # tx 0x3fe0045191a7617a607b04a32dcbc07bdc95ca1adeb31a93a842a9a2fbf24217:
+            # MethodID 0xa694fc3a = keccak256("stake(uint256)")[:4].
+            selector="0xa694fc3a",
             native_eth=True,
             min_deposit_native=0.01,
+            note="Mantle stake(uint256 minMETHAmount) — pass 0 for unrestricted, else min mETH receive amount.",
         ),
         secondary_market=None,
         protocol="mantle", receipt_token="mETH",
@@ -145,10 +149,15 @@ _REGISTRY: dict[tuple[str, str], LstEntry] = {
     ("ethereum", "rsETH"): LstEntry(
         chain="ethereum", symbol="rsETH",
         direct_mint=DirectMintPath(
-            contract="0x036676389e48133b63a802f8635ad39e752d375d",  # Kelp depositPool
-            selector="0x47e7ef24",  # depositAsset(address asset, uint256 amount)
-            native_eth=False,
-            min_deposit_native=0,
+            contract="0x036676389e48133b63a802f8635ad39e752d375d",  # LRTDepositPool proxy
+            # depositETH(uint256 minRSETHAmountExpected, string referralId) external payable
+            # — verified on-chain via tx
+            # 0x854f15912bfc56c97938208aae54c40f6fae0a242576fcbd5cbd7fdd5fa840e8:
+            # MethodID 0x72c51c0b = keccak256("depositETH(uint256,string)")[:4].
+            selector="0x72c51c0b",
+            native_eth=True,
+            min_deposit_native=0.01,
+            note="Kelp depositETH(uint256 minRSETH, string referralId) — pass 0 + '' for unrestricted.",
         ),
         secondary_market=SecondaryMarketPath(
             venue="balancer",
@@ -161,10 +170,14 @@ _REGISTRY: dict[tuple[str, str], LstEntry] = {
     ("ethereum", "rswETH"): LstEntry(
         chain="ethereum", symbol="rswETH",
         direct_mint=DirectMintPath(
-            contract="0xfae103dc9cf190ed75350761e95403b7b8afa6c0",  # Swell rswETH
-            selector="0xf340fa01",  # deposit()
+            contract="0xfae103dc9cf190ed75350761e95403b7b8afa6c0",  # Swell rswETH proxy
+            # deposit() external payable — verified on-chain via tx
+            # 0x2d390499a244a2502fd26937b85d0ec0a0a3594eae593ef5aba55c33799076c5:
+            # MethodID 0xd0e30db0 = keccak256("deposit()")[:4].
+            selector="0xd0e30db0",
             native_eth=True,
             min_deposit_native=0.01,
+            note="Swell deposit() — no-arg, selector is full calldata; msg.value carries ETH.",
         ),
         secondary_market=None,
         protocol="swell", receipt_token="rswETH",
@@ -184,7 +197,27 @@ _REGISTRY: dict[tuple[str, str], LstEntry] = {
 
 
 def lookup_lst(chain: str, symbol: str) -> LstEntry | None:
-    return _REGISTRY.get((chain.lower(), symbol))
+    """Case-insensitive lookup by (chain, symbol).
+
+    Registry keys store the canonical mixed-case symbol (e.g. ``mETH``,
+    ``rsETH``, ``rswETH``) but callers up the routing stack often hand us
+    upper-case or lower-case variants (``METH``, ``rseth``). Match on the
+    case-folded symbol so direct-mint dispatch does not silently fall back
+    to a secondary market pool just because the caller normalised case.
+    """
+    if not isinstance(chain, str) or not isinstance(symbol, str):
+        return None
+    chain_l = chain.lower()
+    sym_cf = symbol.casefold()
+    # Fast-path exact match.
+    direct = _REGISTRY.get((chain_l, symbol))
+    if direct is not None:
+        return direct
+    # Case-insensitive sweep.
+    for (c, s), entry in _REGISTRY.items():
+        if c == chain_l and s.casefold() == sym_cf:
+            return entry
+    return None
 
 
 def all_entries() -> list[LstEntry]:
@@ -192,7 +225,47 @@ def all_entries() -> list[LstEntry]:
 
 
 def chains_for_symbol(symbol: str) -> list[str]:
-    return [k[0] for k in _REGISTRY if k[1] == symbol]
+    if not isinstance(symbol, str):
+        return []
+    sym_cf = symbol.casefold()
+    return [k[0] for k in _REGISTRY if k[1].casefold() == sym_cf]
+
+
+def get_lst_mint_route(token: str, chain: str) -> dict | None:
+    """Return a flat dict describing the direct-mint route for ``token`` on
+    ``chain``, or ``None`` when no registry entry exists / the protocol has
+    no direct-mint path on this chain.
+
+    Shape (stable contract — callers and tests rely on these keys):
+        {
+            "contract":       str,   # lowercased mint contract address
+            "selector":       str,   # 4-byte calldata prefix, e.g. "0xa1903eab"
+            "native_payable": bool,  # True when deposit takes native ETH via msg.value
+            "protocol":       str,   # canonical protocol slug (e.g. "mantle")
+            "receipt_token":  str,   # ERC20 the user holds after mint
+            "min_native":     float, # protocol-imposed min deposit in native units
+            "chain":          str,   # canonical chain slug, lowercased
+            "symbol":         str,   # canonical receipt symbol from the registry
+        }
+
+    Lookup is case-insensitive on both ``token`` and ``chain``. Returns
+    ``None`` rather than raising when the entry is missing, so callers can
+    treat absence as "fall back to secondary market / pool link".
+    """
+    entry = lookup_lst(chain, token)
+    if entry is None or entry.direct_mint is None:
+        return None
+    mint = entry.direct_mint
+    return {
+        "contract":       mint.contract.lower(),
+        "selector":       mint.selector,
+        "native_payable": bool(mint.native_eth),
+        "protocol":       entry.protocol,
+        "receipt_token":  entry.receipt_token,
+        "min_native":     float(mint.min_deposit_native),
+        "chain":          entry.chain.lower(),
+        "symbol":         entry.symbol,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

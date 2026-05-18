@@ -76,30 +76,70 @@ def test_frax_emits_submit_no_args():
 
 
 def test_swell_emits_deposit_no_args():
+    """Swell rswETH deposit() is no-arg native ETH (selector 0xd0e30db0)."""
     a = EvmLstDirectMintAdapter()
     steps = _run(a.build(_req("swell")))
-    assert steps[0].transaction.data == "0xf340fa01"
+    assert steps[0].transaction.data == "0xd0e30db0"
+    assert steps[0].transaction.value == "0xde0b6b3a7640000"
 
 
-def test_mantle_emits_stake_no_args():
+def test_mantle_emits_stake_uint256():
+    """Mantle stake(uint256 minMETHAmount) is payable; default min=0."""
     a = EvmLstDirectMintAdapter()
     steps = _run(a.build(_req("mantle")))
-    assert steps[0].transaction.data == "0xf6326fb3"
+    s = steps[0]
+    assert s.transaction.data.startswith("0xa694fc3a")
+    body = s.transaction.data[10:]
+    # uint256 arg = 1 word
+    assert len(body) == 64
+    # default min_receive = 0 → zero-padded uint256
+    assert int(body, 16) == 0
+    assert s.transaction.value == "0xde0b6b3a7640000"
 
 
-def test_kelp_erc20_path_two_step_with_approve():
+def test_mantle_min_receive_override():
+    """extra.min_receive must round-trip into the uint256 calldata word."""
     a = EvmLstDirectMintAdapter()
-    req = _req("kelp", asset_in="ETHx", amount="5",
-               extra={"token_address": "0xa35b1b31ce002fbf2058d22f30f95d405200a15b"})
-    steps = _run(a.build(req))
-    assert len(steps) == 2
-    assert steps[0].action == "approve"
-    assert steps[0].transaction.data.startswith("0x095ea7b3")
-    # depositAsset(address, uint256)
-    assert steps[1].transaction.data.startswith("0x47e7ef24")
-    body = steps[1].transaction.data[10:]
-    assert len(body) == 2 * 64
-    assert steps[1].transaction.value == "0x0"
+    steps = _run(a.build(_req("mantle", extra={"min_receive": 123_456_789})))
+    body = steps[0].transaction.data[10:]
+    assert int(body, 16) == 123_456_789
+
+
+def test_kelp_native_eth_path_emits_depositETH():
+    """Kelp now uses native depositETH(uint256, string) — single step, msg.value=ETH."""
+    a = EvmLstDirectMintAdapter()
+    steps = _run(a.build(_req("kelp", asset_in="ETH", amount="1")))
+    assert len(steps) == 1
+    s = steps[0]
+    assert s.transaction.data.startswith("0x72c51c0b")
+    body = s.transaction.data[10:]
+    # ABI layout: min(uint256) ‖ offset(uint256=0x40) ‖ len(uint256=0)
+    # With empty referral string: 3 words = 192 hex chars exactly.
+    assert len(body) == 3 * 64
+    # word 0 = min_receive (default 0)
+    assert int(body[0:64], 16) == 0
+    # word 1 = string-tail offset = 0x40
+    assert int(body[64:128], 16) == 0x40
+    # word 2 = string length = 0 (empty referralId)
+    assert int(body[128:192], 16) == 0
+    # msg.value carries 1 ETH
+    assert s.transaction.value == "0xde0b6b3a7640000"
+
+
+def test_kelp_with_referral_id_encodes_string():
+    """Non-empty referralId pads the dynamic string to a 32-byte boundary."""
+    a = EvmLstDirectMintAdapter()
+    steps = _run(a.build(_req(
+        "kelp", asset_in="ETH", amount="1",
+        extra={"referral_id": "kelp-abc"},  # 8 bytes
+    )))
+    body = steps[0].transaction.data[10:]
+    # min + offset + len + 1 padded word for 8-byte body
+    assert len(body) == 4 * 64
+    assert int(body[128:192], 16) == 8  # length field
+    # body word = "kelp-abc" hex-encoded + 24-byte zero pad
+    expected_body = b"kelp-abc".hex() + ("00" * 24)
+    assert body[192:256] == expected_body
 
 
 def test_puffer_erc4626_deposit_uint256():
@@ -146,8 +186,9 @@ def test_unsupported_chain_raises():
         _run(a.build(req))
 
 
-def test_kelp_without_token_address_raises():
+def test_puffer_without_token_address_raises_for_non_eth():
+    """Puffer is ERC-4626; non-ETH non-token_address input must be rejected."""
     a = EvmLstDirectMintAdapter()
-    req = _req("kelp", asset_in="ETHx", amount="5")
+    req = _req("puffer", asset_in="stETH", amount="5")
     with pytest.raises(ValueError, match="extra.token_address"):
         _run(a.build(req))

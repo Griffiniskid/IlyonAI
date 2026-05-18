@@ -5,16 +5,16 @@ Mantle / Renzo / Kelp / Swell / Puffer), emit the canonical direct-mint
 calldata. Each protocol publishes its own selector + arg shape; this
 adapter dispatches by selector and encodes per-shape.
 
-Selector → arg shape:
-  0xa1903eab  Lido         submit(address referral) → 1 word
-  0xa3e0464d  Rocket Pool  deposit()                → 0 words
-  0xd5c08a72  ether.fi     deposit()                → 0 words
-  0x4dcd4547  Frax         submit()                 → 0 words
-  0xf6326fb3  Mantle       stake()                  → 0 words
-  0xfdaf83a3  Renzo        depositETH(referral)     → 1 word
-  0xf340fa01  Swell        deposit()                → 0 words
-  0xb6b55f25  Puffer       deposit(uint256)         → 1 word (ERC-4626 deposit)
-  0x47e7ef24  Kelp         depositAsset(asset, amount) → 2 words (ERC20 path)
+Selector → arg shape (all selectors verified against live mainnet txs):
+  0xa1903eab  Lido         submit(address referral)         → 1 word  (native)
+  0xa3e0464d  Rocket Pool  deposit()                        → 0 words (native)
+  0xd5c08a72  ether.fi     deposit()                        → 0 words (native)
+  0x4dcd4547  Frax         submit()                         → 0 words (native)
+  0xa694fc3a  Mantle       stake(uint256 minMETH)           → 1 word  (native)
+  0xfdaf83a3  Renzo        depositETH(address referral)     → 1 word  (native)
+  0xd0e30db0  Swell        deposit()                        → 0 words (native)
+  0x72c51c0b  Kelp         depositETH(uint256 min, string)  → ABI-enc (native)
+  0xb6b55f25  Puffer       deposit(uint256)                 → 1 word  (ERC-4626)
 """
 from __future__ import annotations
 
@@ -38,17 +38,28 @@ _APPROVE_SELECTOR = "0x095ea7b3"
 
 # Native ETH-deposit + no extra args → selector alone is full calldata.
 _NATIVE_NO_ARGS = frozenset({
-    "0xa3e0464d",  # Rocket Pool deposit
-    "0xd5c08a72",  # ether.fi deposit
-    "0x4dcd4547",  # Frax submit
-    "0xf6326fb3",  # Mantle stake
-    "0xf340fa01",  # Swell deposit
+    "0xa3e0464d",  # Rocket Pool deposit()
+    "0xd5c08a72",  # ether.fi deposit()
+    "0x4dcd4547",  # Frax submit()
+    "0xd0e30db0",  # Swell deposit()
 })
 
 # Native ETH-deposit with a single `referral` address arg.
 _NATIVE_REFERRAL = frozenset({
     "0xa1903eab",  # Lido submit(address)
     "0xfdaf83a3",  # Renzo depositETH(address)
+})
+
+# Native ETH-deposit with a single uint256 min-receive arg.
+_NATIVE_MIN_UINT = frozenset({
+    "0xa694fc3a",  # Mantle stake(uint256 minMETHAmount)
+})
+
+# Native ETH-deposit with (uint256 minReceive, string referralId) tuple.
+# String is dynamic so calldata is: selector ‖ uint256(min) ‖ offset(0x40) ‖
+# uint256(strlen=0) — empty referral means no referral discount.
+_NATIVE_MIN_STRING = frozenset({
+    "0x72c51c0b",  # Kelp depositETH(uint256, string)
 })
 
 # Protocols this adapter owns end-to-end.
@@ -96,31 +107,37 @@ _CHAIN_IDS: dict[str, int] = {
 
 
 def _resolve_entry(chain: str, asset_in: str, protocol: str) -> LstEntry | None:
-    """The user may type either the receipt symbol ('stETH') or the underlying
-    asset ('ETH') — for native LSTs the underlying is always the chain's
-    native gas, so we look up by the symbol the registry registered."""
+    """Resolve the registry entry given (chain, asset_in, protocol).
+
+    Resolution order matters: when the caller has supplied an explicit
+    ``protocol`` (e.g. ``"puffer"``) we must NOT auto-route to a different
+    protocol's entry just because ``asset_in`` happens to be the receipt
+    symbol of another protocol (e.g. user staking stETH *into* Puffer). The
+    protocol-name lookup therefore wins over the asset-symbol lookup.
+
+    1. Protocol-name match (canonical or alias) on the requested chain.
+    2. Fall back to symbol match (case-insensitive via ``lookup_lst``) — for
+       cases where the routing layer only passed a receipt symbol with no
+       protocol slug.
+    """
     chain_l = chain.lower()
-    asset_u = asset_in.upper()
-    # 1. Direct symbol match.
-    direct = lookup_lst(chain_l, asset_u)
-    if direct:
-        return direct
-    # 2. Protocol-based fallback — pick the registry entry whose protocol
-    # name matches the request when the user typed the underlying.
-    proto_l = protocol.lower().replace("_", "-")
-    # Normalise aliases.
+    # 1. Protocol-name lookup (canonical-slug aware).
+    proto_l = (protocol or "").lower().replace("_", "-")
     proto_norm = {
         "rocketpool": "rocket-pool", "rocket": "rocket-pool",
         "etherfi": "ether.fi", "ether-fi": "ether.fi",
         "fraxether": "frax-ether", "frax": "frax-ether",
         "kelp-dao": "kelp",
     }.get(proto_l, proto_l)
-    from src.defi.execution.lst_registry import _REGISTRY
-    for (c, _sym), entry in _REGISTRY.items():
-        if c != chain_l:
-            continue
-        if entry.protocol == proto_norm:
-            return entry
+    if proto_norm:
+        from src.defi.execution.lst_registry import _REGISTRY
+        for (c, _sym), entry in _REGISTRY.items():
+            if c == chain_l and entry.protocol == proto_norm:
+                return entry
+    # 2. Symbol-only fallback (legacy callers that pass receipt token only).
+    direct = lookup_lst(chain_l, asset_in)
+    if direct:
+        return direct
     return None
 
 
@@ -193,6 +210,33 @@ class EvmLstDirectMintAdapter:
             elif mint.selector in _NATIVE_REFERRAL:
                 referral = (extra.get("referral") or request.user_address)
                 calldata = mint.selector + _encode_address(referral)
+            elif mint.selector in _NATIVE_MIN_UINT:
+                # `min_receive` is the minimum receipt token the user is willing
+                # to mint. 0 = unrestricted (slippage protection delegated to
+                # the caller via UI confirmation). Override via extra.min_receive.
+                min_receive = int(extra.get("min_receive", 0))
+                calldata = mint.selector + _encode_uint256(min_receive)
+            elif mint.selector in _NATIVE_MIN_STRING:
+                # depositETH(uint256 min, string referralId) — string is dynamic.
+                # Empty string referral keeps calldata compact + selectorable.
+                min_receive = int(extra.get("min_receive", 0))
+                referral_id: str = str(extra.get("referral_id", ""))
+                ref_bytes = referral_id.encode("utf-8")
+                ref_len = len(ref_bytes)
+                # Pad string body to a multiple of 32 bytes per ABI rules.
+                if ref_len == 0:
+                    ref_body_hex = ""
+                else:
+                    pad = (32 - (ref_len % 32)) % 32
+                    ref_body_hex = ref_bytes.hex() + ("00" * pad)
+                # Head: min(uint256) + offset(uint256=0x40). Tail: len + body.
+                calldata = (
+                    mint.selector
+                    + _encode_uint256(min_receive)
+                    + _encode_uint256(0x40)
+                    + _encode_uint256(ref_len)
+                    + ref_body_hex
+                )
             else:
                 raise ValueError(
                     f"Unknown native-ETH selector shape {mint.selector} for {entry.protocol}."
@@ -222,11 +266,11 @@ class EvmLstDirectMintAdapter:
             )
             return [step]
 
-        # ── ERC20-in paths (Kelp depositAsset / Puffer ERC-4626) ──
+        # ── ERC20-in paths (Puffer ERC-4626 — Kelp now uses native depositETH) ──
         # Auto-wrap path: when user passes asset_in=ETH but the protocol
         # requires ERC20 input, default to WETH on the same chain + prepend
         # a wrap step (WETH.deposit() selector 0xd0e30db0). Caught by v4-A18
-        # blocking on Kelp ETH input.
+        # blocking on Puffer/Kelp ETH input.
         _WETH_ADDRS: dict[str, str] = {
             "ethereum": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
             "arbitrum": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
@@ -246,13 +290,7 @@ class EvmLstDirectMintAdapter:
                 raise ValueError(
                     f"{entry.protocol} mint expects ERC20 input — pass extra.token_address."
                 )
-        if mint.selector == "0x47e7ef24":  # Kelp depositAsset(address, uint256)
-            calldata = (
-                mint.selector
-                + _encode_address(token_in_address)
-                + _encode_uint256(amount_units)
-            )
-        elif mint.selector == "0xb6b55f25":  # Puffer deposit(uint256) — ERC-4626
+        if mint.selector == "0xb6b55f25":  # Puffer deposit(uint256) — ERC-4626
             calldata = mint.selector + _encode_uint256(amount_units)
         else:
             raise ValueError(f"Unknown ERC20 selector shape {mint.selector}")

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.agent.protocol_urls import protocol_app_url
+from src.agent.protocol_urls import get_exec_capability, protocol_app_url
 from src.agent.tools._base import err_envelope, ok_envelope
-from src.defi.execution.capabilities import build_default_registry
 from src.defi.search.models import OpportunityCandidate, OpportunitySearchRequest
 from src.defi.search.ranking import rank_opportunities
 
@@ -497,40 +496,37 @@ async def search_defi_opportunities(
     if protocol_filter:
         pf = protocol_filter.lower()
         candidates = [c for c in candidates if pf in (c.protocol_slug or "").lower() or pf in (c.protocol or "").lower()]
-    registry = build_default_registry()
+    # Both badge (here) and exec gate (build_yield_execution_plan) consult
+    # `get_exec_capability` so they cannot drift. The helper enforces
+    # is_pool_link_action FIRST (matching the exec gate) before checking the
+    # adapter registry — this prevents the "ready via enso-shortcut-fallback"
+    # badge from being shown on pools that exec will redirect to pool_link.
     for candidate in candidates:
         action = "supply" if candidate.product_type in {"lending", "supply"} else (
             "deposit_lp" if candidate.product_type in {"pool", "lp"} else "stake"
         )
-        verdict = registry.find(chain=candidate.chain, protocol=candidate.protocol_slug or candidate.protocol, action=action)
-        if verdict.supported:
+        protocol_key = candidate.protocol_slug or candidate.protocol
+        cap = get_exec_capability(protocol_key, candidate.chain, action)
+        if cap["executable"]:
             candidate.executable = True
-            candidate.adapter_id = verdict.adapter_id
+            candidate.adapter_id = (
+                "enso-shortcut-fallback" if cap["mode"] == "enso_fallback"
+                else ("solana-yield-builder-fallback" if (candidate.chain or "").lower() in {"solana", "sol"} and cap["mode"] == "deterministic" and candidate.protocol_slug not in {"marinade", "jito", "sanctum"}
+                      else cap["mode"])
+            )
             candidate.unsupported_reason = None
             continue
-        # Try the catch-all Enso adapter on EVM, or the Solana sidecar by chain.
-        chain_lower = candidate.chain.lower()
-        fallback_action = "supply" if candidate.product_type in {"lending", "supply", "vault"} else "deposit_lp"
-        if chain_lower in {"ethereum", "polygon", "arbitrum", "optimism", "base", "avalanche", "bsc"}:
-            fallback = registry.find(chain=chain_lower, protocol="yearn-finance", action=fallback_action)
-            if fallback.supported:
-                candidate.executable = True
-                candidate.adapter_id = "enso-shortcut-fallback"
-                candidate.unsupported_reason = None
-                continue
-        if chain_lower in {"solana", "sol"}:
-            fallback = registry.find(chain="solana", protocol="kamino", action="supply")
-            if fallback.supported:
-                candidate.executable = True
-                candidate.adapter_id = "solana-yield-builder-fallback"
-                candidate.unsupported_reason = None
-                continue
-        # Last resort — keep candidate but mark as needing manual route.
+        # Not executable — surface the helper's reason so badge and exec align.
         candidate.executable = False
-        candidate.unsupported_reason = (
-            f"No direct adapter for {candidate.protocol} on {candidate.chain}; "
-            f"closest executable alternative will be substituted at execution time."
-        )
+        if cap["mode"] == "link_only":
+            candidate.unsupported_reason = (
+                f"{candidate.protocol} on {candidate.chain}: {cap['reason']}."
+            )
+        else:
+            candidate.unsupported_reason = (
+                f"No direct adapter for {candidate.protocol} on {candidate.chain}; "
+                f"closest executable alternative will be substituted at execution time."
+            )
     ranked = rank_opportunities(candidates, request)
     primary = [candidate.to_dict() for candidate in ranked.primary]
     primary = _dedup_primary(primary)

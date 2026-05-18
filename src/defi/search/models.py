@@ -16,7 +16,7 @@ class OpportunitySearchRequest:
     ranking_objective: str = "constraint_fit_then_risk_adjusted_return"
     limit: int = 8
     execution_requested: bool = False
-    include_experimental: bool = True
+    include_experimental: bool = False
     asset_hint: str | None = None
 
     def __post_init__(self) -> None:

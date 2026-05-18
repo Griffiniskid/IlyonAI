@@ -79,6 +79,28 @@ def _ranking_score(candidate: OpportunityCandidate, request: OpportunitySearchRe
     return (_target_fit(candidate, request) * 500.0) + (_sentinel_score(candidate) * 2.0) + _liquidity_score(candidate)
 
 
+def _apply_sanity_penalty(
+    primary: list[OpportunityCandidate],
+    request: OpportunitySearchRequest,
+) -> list[OpportunityCandidate]:
+    """Down-rank pools with high APY (>99%) and thin TVL (<$1M) unless the
+    caller has explicitly opted into experimental opportunities. Demoted pools
+    are appended to the end of the list while preserving relative order.
+    """
+    if request.include_experimental:
+        return primary
+    kept: list[OpportunityCandidate] = []
+    demoted: list[OpportunityCandidate] = []
+    for candidate in primary:
+        apy = float(candidate.apy or 0.0)
+        tvl = float(candidate.tvl_usd or 0.0)
+        if apy > 99.0 and tvl < 1_000_000.0:
+            demoted.append(candidate)
+        else:
+            kept.append(candidate)
+    return kept + demoted
+
+
 def rank_opportunities(
     candidates: list[OpportunityCandidate],
     request: OpportunitySearchRequest,
@@ -93,6 +115,7 @@ def rank_opportunities(
             primary.append(candidate)
 
     primary.sort(key=lambda candidate: _ranking_score(candidate, request), reverse=True)
+    primary = _apply_sanity_penalty(primary, request)
     limit = max(1, int(request.limit or 8))
 
     # Per-tier quota: when the user requested multiple risk levels, divide the

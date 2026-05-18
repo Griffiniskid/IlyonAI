@@ -42,11 +42,19 @@ def test_lrt_set_present():
         assert e.direct_mint is not None
 
 
-def test_kelp_rseth_erc20_path():
+def test_kelp_rseth_native_eth_path():
+    """Kelp depositETH(uint256 min, string referral) is payable native ETH.
+
+    Previously this entry pointed at the ERC20 depositAsset path which forced
+    callers to pre-wrap to WETH or supply an LST. That left Matrix Pass A
+    turns 3/4 routing to pool_link when the user said "stake ETH via Kelp".
+    Selector verified against live mainnet tx
+    0x854f15912bfc56c97938208aae54c40f6fae0a242576fcbd5cbd7fdd5fa840e8.
+    """
     e = lookup_lst("ethereum", "rsETH")
-    assert e.direct_mint.native_eth is False
-    # depositAsset(asset, amount) selector
-    assert e.direct_mint.selector == "0x47e7ef24"
+    assert e.direct_mint.native_eth is True
+    # depositETH(uint256 minRSETH, string referralId) selector
+    assert e.direct_mint.selector == "0x72c51c0b"
 
 
 def test_all_entries_returns_list():
