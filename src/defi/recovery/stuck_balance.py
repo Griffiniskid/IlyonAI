@@ -42,6 +42,15 @@ class FailureKind(str, Enum):
     SIMULATION_FAIL = "simulation_fail"
     BLOCKHASH_EXPIRED = "blockhash_expired"
     BASE_FEE_SPIKE = "base_fee_spike"
+    # V7-067 — typed failure kinds for the blocker codes that previously
+    # only existed as plain strings on ExecutionBlocker.code. Adding them
+    # to the enum lets the recovery dispatcher route on a single typed
+    # union without string fallbacks in callsites.
+    NULL_ROUTE = "null_route"
+    AGGREGATOR_CIRCUIT_BREAKER = "aggregator_circuit_breaker"
+    WALLET_CHAIN_MISMATCH = "wallet_chain_mismatch"
+    INSUFFICIENT_BALANCE = "insufficient_balance"
+    GAS_TOPUP_REQUIRED = "gas_topup_required"
     UNKNOWN = "unknown"
 
 
@@ -78,6 +87,7 @@ def decide_recovery(
     user_slippage_cap_bps: int = 500,
     alternatives_lookup: Callable[[str], list[dict]] | None = None,
     pool_id: str | None = None,
+    proposed_action: str | None = None,
 ) -> Recovery:
     """Map a failed-step context to a typed Recovery posture.
 
@@ -94,8 +104,30 @@ def decide_recovery(
         6. Default: ASK_USER with three generic buttons.
 
     HARD RULE: never auto-refund-swap-back. The only auto-action is
-    AUTO_REBUILD with wider slippage on the same intent.
+    AUTO_REBUILD with wider slippage on the same intent. V7-068 wires
+    `src.shield.refund_guard.guard_refund` as a chokepoint: if the
+    caller's `proposed_action` (or the step_kind itself) names a
+    refund-swap-back action, we short-circuit to a NO_AUTO recovery
+    with FORBIDDEN_REFUND_SWAP_BACK so the frontend renders a refusal
+    card instead of building calldata.
     """
+    # V7-068 — global refund-swap-back guard.
+    from src.shield.refund_guard import guard_refund as _guard_refund
+    for _candidate in (proposed_action, step_kind):
+        _blocker = _guard_refund(_candidate or "", {"step_kind": step_kind, "pool_id": pool_id})
+        if _blocker:
+            return Recovery(
+                action=RecoveryAction.NO_AUTO,
+                posture="Refused: auto-refund-swap-back is never allowed",
+                buttons=["Leave in wallet", "Resume deposit", "Swap back (explicit)"],
+                rationale=(
+                    f"Shield refused proposed action '{_candidate}' (code {_blocker}). "
+                    f"Spec §6f hard rule: refund-swap-back is a second taxable event + "
+                    f"second slippage hit and requires explicit user button-click. "
+                    f"Never auto."
+                ),
+            )
+
     if isinstance(failure_kind, str):
         try:
             failure_kind = FailureKind(failure_kind)

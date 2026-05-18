@@ -18,6 +18,7 @@ from decimal import Decimal
 from src.defi.execution.adapters.base import (
     CapabilityResult,
     VerifyResult,
+    parse_receipt_logs,
     YieldBuildRequest,
     YieldQuote,
     YieldQuoteRequest,
@@ -143,6 +144,11 @@ def _resolve_pool(chain: str, pool_hint: str | None, asset_in: str) -> tuple[str
 @dataclass
 class CurveSingleSidedAdapter:
     adapter_id: str = "curve-stable-singlesided"
+    # V7-043 — canonical Curve StableSwap AddLiquidity event topic0.
+    # Note: Curve has multiple AddLiquidity variants (2/3/4-coin, factory-deployed).
+    # We pin the most common StableSwap topic0; pool-specific variants will be
+    # surfaced via log_match=0 + raw receipt for downstream handling.
+    EXPECTED_TOPIC0: str = "0x423f6495a08fc652425cf4ed0d1f9e37e571d9b9529b1c1c23cce780b2e7df0d"
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base"})
     protocols: frozenset[str] = frozenset({"curve", "curve-dex", "curve-finance", "curve-stable"})
     actions: frozenset[str] = frozenset({
@@ -493,7 +499,12 @@ class CurveSingleSidedAdapter:
         return [approve_step, add_step]
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
-        return VerifyResult(
-            confirmed=False,
-            detail="Curve verification requires on-chain LP balance read; wired in V2.",
-        )
+        """Parse receipt logs for canonical Curve StableSwap AddLiquidity topic0.
+
+        Receipt is taken from ``request.receipt`` (preferred) or
+        ``request.expected_position["receipt"]``. Curve has per-pool topology;
+        pools whose AddLiquidity signature differs return log_match=0 and the
+        caller can inspect ``receipt`` directly for higher-fidelity attribution.
+        """
+        receipt = request.receipt or (request.expected_position or {}).get("receipt")
+        return parse_receipt_logs(receipt, self.EXPECTED_TOPIC0)

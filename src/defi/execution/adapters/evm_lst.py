@@ -24,6 +24,7 @@ from decimal import Decimal
 from src.defi.execution.adapters.base import (
     CapabilityResult,
     VerifyResult,
+    parse_receipt_logs,
     YieldBuildRequest,
     YieldQuote,
     YieldQuoteRequest,
@@ -129,6 +130,10 @@ class EvmLstDirectMintAdapter:
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base"})
     protocols: frozenset[str] = _PROTOCOLS
     actions: frozenset[str] = _ACTIONS
+    # V7-043 — canonical ERC20 Transfer(address,address,uint256) topic0.
+    # LST direct mints emit Transfer(0x0, user, shares) on the receipt token
+    # (stETH, rETH, cbETH, etc.) which is the canonical mint-proof.
+    EXPECTED_TOPIC0: str = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 
     def supports(self, *, chain: str, protocol: str, action: str) -> CapabilityResult:
         if chain.lower() not in self.chains:
@@ -319,7 +324,12 @@ class EvmLstDirectMintAdapter:
         return [approve_step, mint_step]
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
-        return VerifyResult(
-            confirmed=False,
-            detail="LST verify: read receipt-token balanceOf delta.",
-        )
+        """Parse receipt logs for canonical ERC20 Transfer mint topic0.
+
+        LST direct mints (Lido submit, Rocket deposit, Frax submit, etc.) emit
+        an ERC20 Transfer from the zero address to the user on the receipt
+        token. We confirm by topic0 presence; mint-quantity attribution is
+        decoded from log.data by the position-tracker.
+        """
+        receipt = request.receipt or (request.expected_position or {}).get("receipt")
+        return parse_receipt_logs(receipt, self.EXPECTED_TOPIC0)

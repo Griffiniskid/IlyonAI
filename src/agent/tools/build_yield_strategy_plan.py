@@ -85,7 +85,7 @@ async def build_yield_strategy_plan(
         )
         from src.defi.execution.models import ExecutionBlocker
         plan.add_blocker(ExecutionBlocker(
-            code="unsupported_adapter",
+            code="UNSUPPORTED_ADAPTER",
             severity="blocker",
             title="No verified adapter",
             detail=capability.reason or "Unsupported adapter combination.",

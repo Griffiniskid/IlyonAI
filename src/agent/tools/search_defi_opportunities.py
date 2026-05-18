@@ -378,7 +378,7 @@ def _execution_blockers(primary: list[dict[str, Any]], request: OpportunitySearc
     chain = primary[0]["chain"] if primary else (request.chains[0] if request.chains else "requested chain")
     return [
         {
-            "code": "unsupported_adapter",
+            "code": "UNSUPPORTED_ADAPTER",
             "severity": "blocker",
             "title": "Direct execution is not supported yet",
             "detail": (

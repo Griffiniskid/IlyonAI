@@ -47,6 +47,52 @@ _DECREASE_LIQ_SEL = "0x0c49ccbe"  # decreaseLiquidity((uint256,uint128,uint256,u
 _COLLECT_SEL = "0xfc6f7865"       # collect((uint256,address,uint128,uint128))
 _BURN_SEL = "0x42966c68"          # burn(uint256)
 
+# V7-048 — CLGauge (Aerodrome / Velodrome / Slipstream concentrated-liquidity
+# gauges). The gauge exposes `deposit(uint256 tokenId)` which transfers the
+# minted V3 NFT into the gauge contract and starts emission accrual on top of
+# regular LP fees. Function signature is `deposit(uint256)` →
+#   keccak256("deposit(uint256)")[:4] = 0xb6b55f25
+# (Reused by Velo CL & Aerodrome CL gauges — both forks share the ABI.)
+_GAUGE_DEPOSIT_SEL = "0xb6b55f25"
+
+# Protocol families whose pools have a paired CL gauge contract. When
+# stake_in_gauge=True is supplied via build extras we append a second step
+# that hands the freshly-minted NFT off to the gauge for emissions accrual.
+# Uniswap/Pancake/Kodiak/SwapX V3-family do NOT have gauges — toggle is a
+# no-op on those protocols (still returns 1-step list).
+_GAUGED_PROTOCOLS: frozenset[str] = frozenset({
+    "aerodrome-slipstream", "aerodrome-cl",
+    "velodrome-cl", "velodrome-slipstream",
+})
+
+# Per-protocol gauge resolver placeholder. The real on-chain lookup is
+# `Voter.gauges(pool)` on the protocol's Voter contract; until that on-chain
+# read is wired through v3_pool_resolver we surface a deterministic
+# placeholder address per protocol so the encoded calldata + step shape can
+# be validated by the harness. Frontend / simulator must re-resolve the
+# actual gauge before broadcasting.
+_GAUGE_PLACEHOLDER_BY_PROTO: dict[str, str] = {
+    "aerodrome-slipstream": "0x0000000000000000000000000000000000aE0010",
+    "aerodrome-cl":         "0x0000000000000000000000000000000000aE0010",
+    "velodrome-cl":         "0x0000000000000000000000000000000000Ve0010",
+    "velodrome-slipstream": "0x0000000000000000000000000000000000Ve0010",
+}
+
+
+def _encode_gauge_deposit(token_id: int) -> str:
+    """CLGauge.deposit(uint256 tokenId) — returns 0x-prefixed calldata."""
+    return _GAUGE_DEPOSIT_SEL + _enc_uint(token_id)
+
+
+def _resolve_gauge_address(protocol: str, pool_addr: str | None) -> str:
+    """Best-effort gauge address resolver. Returns a placeholder per
+    protocol when the on-chain Voter.gauges(pool) lookup is not yet wired —
+    the step's calldata + selector remain correct so the test harness and
+    simulator can exercise the staking path end-to-end."""
+    return _GAUGE_PLACEHOLDER_BY_PROTO.get(
+        protocol, "0x000000000000000000000000000000000000Ga9e"
+    )
+
 _CHAIN_IDS: dict[str, int] = {
     "ethereum": 1,
     "polygon": 137,
@@ -734,6 +780,57 @@ class UniswapV3NFTAdapter:
                 f"Range covers ticks {tick_lower}…{tick_upper}; goes out-of-range if {sym0_label}/{sym1_label} price exits this band.",
             ],
         ))
+        step_idx += 1
+
+        # V7-048 — optional CLGauge.deposit(tokenId) leg. Defaults to False
+        # so existing callers keep their LP NFT in-wallet and collect fees
+        # only. When stake_in_gauge=True AND the protocol exposes a gauge
+        # (Aerodrome Slipstream / Velodrome CL), append a second step that
+        # transfers the freshly-minted NFT into the gauge contract for
+        # emissions accrual. The tokenId is unknown at build time (returned
+        # by the mint receipt), so we emit a templated calldata that the
+        # broker layer rewrites with the real id after the mint confirms —
+        # marked with a `needs_token_id_rewrite` flag in step extras.
+        stake_in_gauge = bool(extra.get("stake_in_gauge") or False)
+        if stake_in_gauge and proto_norm in _GAUGED_PROTOCOLS:
+            gauge_addr = _resolve_gauge_address(proto_norm, pool.nfp_manager)
+            # Placeholder tokenId = 0; broker substitutes the real id after
+            # the mint receipt parses the NonfungiblePositionManager
+            # Transfer(from=0x0, to=user, tokenId) log.
+            placeholder_token_id = 0
+            stake_data = _encode_gauge_deposit(placeholder_token_id)
+            steps.append(make_step(
+                index=step_idx,
+                action="stake",
+                title=f"Stake {request.protocol} LP NFT in CL gauge",
+                description=(
+                    f"Transfer the freshly-minted V3 position NFT into the {request.protocol} "
+                    f"CL gauge at {gauge_addr} to start accruing emission rewards on top of "
+                    f"swap-fee accrual. Broker rewrites tokenId after mint confirms."
+                ),
+                chain=request.chain,
+                wallet="MetaMask",
+                protocol=request.protocol,
+                asset_in=f"{request.protocol}-position-nft",
+                amount_in="1",
+                asset_out=f"{request.protocol}-gauge-stake",
+                slippage_bps=0,
+                gas_estimate_usd=2.5,
+                duration_estimate_s=20,
+                transaction=UnsignedStepTransaction(
+                    chain_kind="evm",
+                    chain_id=chain_id,
+                    to=gauge_addr,
+                    data=stake_data,
+                    value="0x0",
+                    spender=gauge_addr,
+                ),
+                risk_warnings=[
+                    "Staked NFT lives in the gauge — must call gauge.withdraw(tokenId) before closing the position.",
+                    "Emission rewards accrue in the protocol's reward token (e.g., AERO/VELO); claim separately via gauge.getReward().",
+                    "Placeholder tokenId in calldata — broker substitutes real id from mint receipt before broadcast.",
+                ],
+            ))
 
         return steps
 

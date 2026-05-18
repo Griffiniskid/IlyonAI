@@ -396,7 +396,7 @@ async def build_yield_execution_plan(
             summary=f"{humanize_protocol(protocol)} {asset_in} on {chain[:1].upper()+chain[1:]} requires an EVM wallet.",
         )
         plan.add_blocker(ExecutionBlocker(
-            code="wallet_chain_mismatch",
+            code="WALLET_CHAIN_MISMATCH",
             severity="blocker",
             title="Wrong wallet for this chain",
             detail=(
@@ -421,7 +421,7 @@ async def build_yield_execution_plan(
             summary=f"{humanize_protocol(protocol)} {asset_in} on Solana requires a Solana wallet.",
         )
         plan.add_blocker(ExecutionBlocker(
-            code="wallet_chain_mismatch",
+            code="WALLET_CHAIN_MISMATCH",
             severity="blocker",
             title="Wrong wallet for this chain",
             detail=(
@@ -565,7 +565,7 @@ async def build_yield_execution_plan(
             summary=f"Direct execution for {humanize_protocol(protocol)} {humanize_action(action)} on {chain[:1].upper()+chain[1:]} is not yet supported.",
         )
         plan.add_blocker(ExecutionBlocker(
-            code="unsupported_adapter",
+            code="UNSUPPORTED_ADAPTER",
             severity="blocker",
             title="No verified adapter",
             detail=capability.reason or "No adapter is registered for that protocol/action/chain combination.",
@@ -636,7 +636,7 @@ async def build_yield_execution_plan(
             user_slippage_cap_bps=500,
         )
         plan.add_blocker(ExecutionBlocker(
-            code="adapter_build_failed",
+            code="ADAPTER_BUILD_FAILED",
             severity="blocker",
             title="Adapter could not build steps",
             detail=str(exc),
@@ -1054,6 +1054,8 @@ async def build_yield_execution_plan(
             "Base": "base", "Avalanche": "avalanche", "Solana": "solana",
             "Linea": "linea", "Mantle": "mantle", "Scroll": "scroll",
             "zkSync": "zksync",
+            # V7-069 — Sonic chain name → key.
+            "Sonic": "sonic",
         }
         for _entry in (_bal_doc.get("balances") or []):
             _chain_name = str(_entry.get("chain") or "")
@@ -1120,12 +1122,19 @@ async def build_yield_execution_plan(
             "MATIC": 0.13, "WMATIC": 0.13, "POL": 0.13,
             "AVAX": 18.0, "WAVAX": 18.0,
             "BTC": 80000.0, "WBTC": 80000.0,
+            # V7-069 — Sonic native gas. Conservative hint ~$0.30 so the
+            # 1.5× headroom math still produces a credible top-up amount.
+            "S": 0.30, "WS": 0.30,
         }
         _NATIVE_BY_CHAIN = {
             "ethereum": "ETH", "base": "ETH", "arbitrum": "ETH",
             "optimism": "ETH", "linea": "ETH", "scroll": "ETH",
             "zksync": "ETH", "bsc": "BNB", "polygon": "MATIC",
             "avalanche": "AVAX", "solana": "SOL", "mantle": "MNT",
+            # V7-069 — Sonic chain native gas symbol. Sonic uses "S" (the
+            # rebranded FTM) for L1 gas fees; without this entry the gas
+            # preflight silently skips Sonic plans.
+            "sonic": "S",
         }
         _chain_key = (chain or "").lower()
         _native_sym = _NATIVE_BY_CHAIN.get(_chain_key)
@@ -1146,7 +1155,7 @@ async def build_yield_execution_plan(
                     _native_have = float(_wallet_balances.get(_native_sym, 0.0))
                 if _native_have < _native_needed:
                     plan.add_blocker(ExecutionBlocker(
-                        code="GAS_TOP_UP",
+                        code="GAS_TOPUP_REQUIRED",
                         severity="blocker",
                         title=f"Not enough {_native_sym} for gas",
                         detail=(

@@ -16,6 +16,7 @@ from src.defi.execution.adapters.base import (
     YieldQuote,
     YieldQuoteRequest,
     YieldVerifyRequest,
+    parse_receipt_logs,
 )
 from src.defi.execution.models import ExecutionStepV3, UnsignedStepTransaction, make_step
 
@@ -67,6 +68,8 @@ class CompoundV3SupplyAdapter:
     adapter_id: str = "compound-v3-supply"
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base"})
     protocols: frozenset[str] = frozenset({"compound-v3", "compound", "compound v3", "compoundv3", "comet"})
+    # V7-043 — canonical Comet Supply(address,address,uint256) topic0.
+    EXPECTED_TOPIC0: str = "0xfa56f7b24f17183d81894d3ac2ee654e3c26388d17a28dbd9549b8114304e1f4"
     actions: frozenset[str] = frozenset({
         "supply", "deposit", "lend", "withdraw", "claim", "borrow",
         # V7-002 §7 S12 — claim COMP rewards and re-supply on Comet.
@@ -265,4 +268,11 @@ class CompoundV3SupplyAdapter:
         return [approve_step, supply_step]
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
-        return VerifyResult(confirmed=False, detail="Compound v3 verification deferred to V2 (post-deposit balance read).")
+        """Parse receipt logs for canonical Comet Supply event topic0.
+
+        Receipt is read from ``request.receipt`` or
+        ``request.expected_position["receipt"]``. Returns confirmed=True iff
+        at least one log matches the Supply signature.
+        """
+        receipt = request.receipt or (request.expected_position or {}).get("receipt")
+        return parse_receipt_logs(receipt, self.EXPECTED_TOPIC0)

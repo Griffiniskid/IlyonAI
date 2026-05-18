@@ -137,9 +137,9 @@ async def test_empty_wallet_emits_insufficient_balance_blocker(monkeypatch, ctx)
     assert "100000" in usdc_blocker["detail"] or "100,000" in usdc_blocker["detail"] \
         or "1e+05" in usdc_blocker["detail"]
     assert usdc_blocker["severity"] == "blocker"
-    # GAS_TOP_UP should also fire — supply step has gas_estimate_usd=3.0
-    # and wallet has 0 ETH.
-    assert "GAS_TOP_UP" in blocker_codes
+    # GAS_TOPUP_REQUIRED should also fire — supply step has gas_estimate_usd=3.0
+    # and wallet has 0 ETH. (V7-063 — UPPER_SNAKE canonical token.)
+    assert "GAS_TOPUP_REQUIRED" in blocker_codes
 
 
 @pytest.mark.asyncio
@@ -175,4 +175,4 @@ async def test_balance_lookup_failure_preserves_ready_plan(monkeypatch, ctx):
     # No balance-related blockers — preflight failed soft.
     blocker_codes = [b["code"] for b in plan.get("blockers", [])]
     assert "INSUFFICIENT_BALANCE" not in blocker_codes
-    assert "GAS_TOP_UP" not in blocker_codes
+    assert "GAS_TOPUP_REQUIRED" not in blocker_codes

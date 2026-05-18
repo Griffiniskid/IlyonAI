@@ -579,7 +579,7 @@ async def execute_pool_position(
             summary=f"{humanize_protocol(protocol)} {pool_symbol} requires a Solana wallet.",
         )
         plan.add_blocker(ExecutionBlocker(
-            code="wallet_chain_mismatch",
+            code="WALLET_CHAIN_MISMATCH",
             severity="blocker",
             title="Wrong wallet for this pool",
             detail=(
@@ -599,7 +599,7 @@ async def execute_pool_position(
             summary=f"{humanize_protocol(protocol)} {pool_symbol} on {chain[:1].upper()+chain[1:]} requires an EVM wallet.",
         )
         plan.add_blocker(ExecutionBlocker(
-            code="wallet_chain_mismatch",
+            code="WALLET_CHAIN_MISMATCH",
             severity="blocker",
             title="Wrong wallet for this pool",
             detail=(

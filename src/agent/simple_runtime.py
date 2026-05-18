@@ -2051,6 +2051,98 @@ def _detect_lst_unwrap_chain(
     }
 
 
+# ── V7-070 — wstETH → ETH/USDC LP (H10) ───────────────────────────────────
+# Detects two LP-targeted phrasings that the supply-only regex above cannot
+# express because the destination is a two-sided pool, not a single asset:
+#   1. "wstETH → ETH/USDC LP"  (compact arrow form)
+#   2. "Take my 5 wstETH and put into ETH+USDC" / "...split into ETH+USDC"
+# Both map to a prep_swap that unwraps wstETH → WETH (Curve) then halves the
+# WETH into the two pool sides. The adapter consumes extra.lp_target_pair to
+# build the LP mint call. Conservative: requires explicit two-sided notation
+# (slash, plus, or "and"-joined pair) so single-asset prompts still fall
+# through to the supply path.
+_LST_TO_LP_RE = re.compile(
+    r"(?:^|\b)"
+    # Form 1 — arrow form, no amount needed: "wstETH → ETH/USDC LP"
+    r"(?:"
+    r"(?P<lst1>wsteth|steth|reth|eeth|weeth|ezeth|rseth|meth|frxeth|sfrxeth)\s*"
+    r"(?:->|→|=>|to|into)\s+"
+    r"(?P<pair1_a>eth|weth|usdc|usdt|dai|wbtc)\s*[/+]\s*"
+    r"(?P<pair1_b>eth|weth|usdc|usdt|dai|wbtc)\s+"
+    r"(?:lp|pool|liquidity|pair)\b"
+    r"|"
+    # Form 2 — H10 imperative form with amount:
+    # "Take my 5 wstETH and put/split into ETH+USDC"
+    r"(?:take|use|with)\s+(?:my\s+)?"
+    r"(?P<amount>[\d,]+(?:\.\d+)?)\s+"
+    r"(?P<lst2>wsteth|steth|reth|eeth|weeth|ezeth|rseth|meth|frxeth|sfrxeth)\s+"
+    r"(?:and\s+)?(?:put|split|deposit|provide|seed|deploy|stake)\s+"
+    r"(?:it\s+|them\s+)?"
+    r"(?:into|to|onto|as|in)\s+"
+    r"(?P<pair2_a>eth|weth|usdc|usdt|dai|wbtc)\s*[/+]\s*"
+    r"(?P<pair2_b>eth|weth|usdc|usdt|dai|wbtc)"
+    r"(?:\s+(?:lp|pool|liquidity|pair))?"
+    r")"
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?",
+    re.IGNORECASE,
+)
+# wstETH → WETH unwrap is Curve's wstETH/WETH pool; same DEX as stETH path.
+_LST_TO_LP_UNWRAP = {
+    "WSTETH":  ("WETH", "curve"),
+    "STETH":   ("WETH", "curve"),
+    "RETH":    ("WETH", "curve"),
+    "EETH":    ("WETH", "curve"),
+    "WEETH":   ("WETH", "curve"),
+    "EZETH":   ("WETH", "balancer"),
+    "RSETH":   ("WETH", "balancer"),
+    "METH":    ("WETH", "curve"),
+    "FRXETH":  ("WETH", "curve"),
+    "SFRXETH": ("FRXETH", "curve"),
+}
+
+
+def _detect_lst_to_lp(message: str) -> tuple[str, dict] | None:
+    """V7-070 — LST → two-sided LP. Returns build_yield_execution_plan args
+    with extra.prep_swap for the unwrap leg and extra.lp_target_pair for the
+    adapter's pool mint. Conservative: both sides must be a recognised token
+    and the LST must be in `_LST_TO_LP_UNWRAP`."""
+    m = _LST_TO_LP_RE.search(message)
+    if not m:
+        return None
+    lst_raw = (m.group("lst1") or m.group("lst2") or "").upper()
+    if not lst_raw or lst_raw not in _LST_TO_LP_UNWRAP:
+        return None
+    pair_a = (m.group("pair1_a") or m.group("pair2_a") or "").upper()
+    pair_b = (m.group("pair1_b") or m.group("pair2_b") or "").upper()
+    if not (pair_a and pair_b) or pair_a == pair_b:
+        return None
+    amount = (m.group("amount") or "0").replace(",", "")
+    chain = (m.group("chain") or "ethereum").lower()
+    if chain == "bnb":
+        chain = "bsc"
+    elif chain == "sol":
+        chain = "solana"
+    target_token, dex = _LST_TO_LP_UNWRAP[lst_raw]
+    # If one of the LP sides is the unwrap target (e.g. wstETH→WETH→ETH/USDC),
+    # the adapter only needs one swap leg for the other side. Pin the pair
+    # ordering so {ETH, USDC} normalises consistently.
+    pair = tuple(sorted([pair_a, pair_b]))
+    return "build_yield_execution_plan", {
+        "chain": chain,
+        "protocol": "uniswap-v3",  # default LP venue; adapter may override
+        "action": "deposit_lp",
+        "asset_in": target_token,
+        "amount_in": amount,
+        "extra": {
+            "prep_swap": [(lst_raw, target_token, dex)],
+            "source_token": lst_raw,
+            "source_amount": amount,
+            "lp_target_pair": list(pair),
+            "lst_to_lp": True,
+        },
+    }
+
+
 # ── §7 S11: NFT-locked LP refinance close+reopen ───────────────────────────
 # "Refinance my Uniswap V3 USDC-WETH position 12345 with tighter range" —
 # (1) decreaseLiquidity(positionId, 100%) + collect + burn the old NFT,
@@ -2145,6 +2237,39 @@ _CLAIM_COMPOUND_RE = re.compile(
     r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?\s*[.!?]*\s*$",
     re.IGNORECASE,
 )
+# V7-071 — token-first claim form (Slipstream/AERO, Compound/COMP, etc.):
+#   "claim AERO and re-stake"   → Aerodrome veAERO compound
+#   "claim COMP and compound"   → Compound V3 staking compound
+# Distinct from the proto-first regex above because reward-token symbols are
+# 3-5 char tickers, not multi-word protocol names. The detector looks the
+# token up in `_CLAIM_TOKEN_TO_PROTO` to recover the protocol slug + stake
+# target. Conservative: token must be in the whitelist below — random ERC20
+# tickers won't false-match because the table is closed.
+_CLAIM_COMPOUND_TOKEN_RE = re.compile(
+    r"^\s*claim\s+(?:my\s+|the\s+)?"
+    r"(?P<token>[A-Za-z][A-Za-z0-9]{2,9})\s+"
+    r"(?:and\s+)?"
+    r"(?P<verb>re-?stake|compound|supply\s+back|restake|deposit\s+back|"
+    r"reinvest|put\s+back|stake\s+back)"
+    r"(?:\s+into\s+(?P<target>[A-Za-z][A-Za-z0-9-]+))?"
+    r"(?:\s+on\s+(?P<chain>[A-Za-z]+))?\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+_CLAIM_TOKEN_TO_PROTO = {
+    "AERO":   ("aerodrome",   "AERO",   "aerodrome-veaero"),
+    "VELO":   ("velodrome",   "VELO",   "velodrome-vevelo"),
+    "COMP":   ("compound-v3", "COMP",   "compound-staking"),
+    "AAVE":   ("aave-v3",     "AAVE",   "stkaave"),
+    "CRV":    ("curve",       "CRV",    "convex"),
+    "CVX":    ("convex",      "CVX",    "convex-staking"),
+    "BAL":    ("balancer-v2", "BAL",    "aurabal"),
+    "PENDLE": ("pendle",      "PENDLE", "vependle"),
+    "GMX":    ("gmx",         "GMX",    "gmx-staking"),
+    "FXS":    ("frax",        "FXS",    "vefxs"),
+    "MORPHO": ("morpho-blue", "MORPHO", "morpho-staking"),
+    "LDO":    ("lido",        "LDO",    "lido-staking"),
+    "UNI":    ("uniswap-v3",  "UNI",    "uniswap-staking"),
+}
 _CLAIM_COMPOUND_PROTOS = {
     "aave": ("aave-v3", "AAVE", "stkaave"),
     "aave v3": ("aave-v3", "AAVE", "stkaave"),
@@ -2166,15 +2291,26 @@ _CLAIM_COMPOUND_PROTOS = {
 
 
 def _detect_claim_compound(message: str) -> tuple[str, dict] | None:
-    """Match 'Claim my Aave rewards and re-stake into stkAAVE' → 2-step plan."""
+    """Match 'Claim my Aave rewards and re-stake into stkAAVE' → 2-step plan.
+    V7-071 also accepts token-first phrasings — 'claim AERO and re-stake',
+    'claim COMP and compound' — via _CLAIM_COMPOUND_TOKEN_RE."""
     m = _CLAIM_COMPOUND_RE.search(message)
-    if not m:
-        return None
-    proto_raw = m.group("proto").strip().lower()
-    meta = _CLAIM_COMPOUND_PROTOS.get(proto_raw)
+    meta: tuple[str, str, str] | None = None
+    if m:
+        proto_raw = m.group("proto").strip().lower()
+        meta = _CLAIM_COMPOUND_PROTOS.get(proto_raw)
+        if meta is None:
+            first = proto_raw.split()[0]
+            meta = _CLAIM_COMPOUND_PROTOS.get(first)
     if meta is None:
-        first = proto_raw.split()[0]
-        meta = _CLAIM_COMPOUND_PROTOS.get(first)
+        # V7-071 — fall back to token-first regex.
+        m = _CLAIM_COMPOUND_TOKEN_RE.search(message)
+        if not m:
+            return None
+        token_raw = m.group("token").strip().upper()
+        meta = _CLAIM_TOKEN_TO_PROTO.get(token_raw)
+        if meta is None:
+            return None
     if meta is None:
         return None
     proto_slug, reward_token, stake_target_default = meta
@@ -4472,7 +4608,10 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     # accepts an optional history_cards arg but the runtime tuple invokes
     # detectors with just (message); the lambda below normalises the signature.
     _lst_unwrap = lambda m: _detect_lst_unwrap_chain(m, None)  # noqa: E731
-    for detector in (_detect_cross_chain_then_yield, _detect_v3_nft_refinance, _detect_v2_to_v3_migrate, _detect_claim_compound, _lst_unwrap, _detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_slipstream_lp, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_enso_vault_deposit, _detect_execute_named_proto, _detect_multi_input_lp, _detect_aave_supply, _detect_pendle_mint, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    # V7-070 — _detect_lst_to_lp runs before _lst_unwrap so wstETH→ETH/USDC LP
+    # phrasings produce a deposit_lp plan instead of falling through to the
+    # supply path (which doesn't support two-sided pool targets).
+    for detector in (_detect_cross_chain_then_yield, _detect_v3_nft_refinance, _detect_v2_to_v3_migrate, _detect_claim_compound, _detect_lst_to_lp, _lst_unwrap, _detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_slipstream_lp, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_enso_vault_deposit, _detect_execute_named_proto, _detect_multi_input_lp, _detect_aave_supply, _detect_pendle_mint, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected

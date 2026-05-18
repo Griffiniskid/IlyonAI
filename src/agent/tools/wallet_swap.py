@@ -367,7 +367,7 @@ async def build_swap_tx(
             _notional_usd = _human_amount * _usd_price
             if _notional_usd > _MEGASWAP_USD_CAP:
                 return err_envelope(
-                    code="aggregator_circuit",
+                    code="AGGREGATOR_CIRCUIT_BREAKER",
                     message=(
                         f"Swap exceeds $500K size cap (${_notional_usd:,.0f}). "
                         f"Pass extra.confirm_megaswap=true to override, or "

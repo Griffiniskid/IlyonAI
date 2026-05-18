@@ -73,7 +73,7 @@ async def test_megaswap_rejected_by_size_cap():
 
     assert result.ok is False
     assert result.error is not None
-    assert result.error.code == "aggregator_circuit"
+    assert result.error.code == "AGGREGATOR_CIRCUIT_BREAKER"
     assert "500K" in result.error.message
     assert "confirm_megaswap" in result.error.message
 

@@ -1261,7 +1261,7 @@ CATEGORY_F: list[Chain] = [
         category="F",
         notes="Gas top-up blocker",
         turns=[
-            Turn("Supply 100 USDC to Aave V3 on Avalanche (with empty AVAX wallet)", expect_blockers=["GAS_TOP_UP"]),
+            Turn("Supply 100 USDC to Aave V3 on Avalanche (with empty AVAX wallet)", expect_blockers=["GAS_TOPUP_REQUIRED"]),
             Turn("Why?", expect_card="text"),
             Turn("Top up 0.1 AVAX from bridge", expect_card="execution_plan_v3"),
             Turn("Confirm"),

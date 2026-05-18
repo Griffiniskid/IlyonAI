@@ -11,6 +11,7 @@ from src.defi.execution.adapters.base import (
     YieldQuote,
     YieldQuoteRequest,
     YieldVerifyRequest,
+    parse_receipt_logs,
 )
 from src.defi.execution.models import ExecutionStepV3, UnsignedStepTransaction, make_step
 
@@ -215,6 +216,8 @@ class AaveV3SupplyAdapter:
     adapter_id: str = "aave-v3-supply"
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base", "avalanche"})
     protocols: frozenset[str] = frozenset({"aave-v3", "aave", "aave v3", "aavev3"})
+    # V7-043 — canonical Pool.Supply(address,address,address,uint256,uint16) topic0.
+    EXPECTED_TOPIC0: str = "0x2b627736bca15cd5381dcf80b0bf11fd197d01a037c52b927a881a10fb73ba61"
     actions: frozenset[str] = frozenset({
         "supply", "deposit", "lend", "withdraw", "claim", "repay", "borrow",
         # V7-002 §7 S12 — claim Aave incentives and re-supply (stkAAVE
@@ -808,4 +811,12 @@ class AaveV3SupplyAdapter:
         return steps
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
-        return VerifyResult(confirmed=False, detail="Aave V3 verification requires on-chain balance read; wired in V2.")
+        """Parse receipt logs for canonical Aave V3 Pool.Supply event topic0.
+
+        Accepts the EVM receipt via ``request.receipt`` or
+        ``request.expected_position["receipt"]``. Returns confirmed=True when
+        ≥1 log carries the Supply signature, plus log_match count and the
+        first matching raw log for downstream attribution.
+        """
+        receipt = request.receipt or (request.expected_position or {}).get("receipt")
+        return parse_receipt_logs(receipt, self.EXPECTED_TOPIC0)

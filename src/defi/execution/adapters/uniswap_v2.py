@@ -28,6 +28,7 @@ from src.defi.defaults import DEFAULT_SLIPPAGE_BPS
 from src.defi.execution.adapters.base import (
     CapabilityResult,
     VerifyResult,
+    parse_receipt_logs,
     YieldBuildRequest,
     YieldQuote,
     YieldQuoteRequest,
@@ -198,6 +199,8 @@ def _resolve_token(chain: str, symbol: str) -> tuple[str, int] | None:
 @dataclass
 class UniswapV2DualTokenAdapter:
     adapter_id: str = "uniswap-v2-dual-token"
+    # V7-043 — canonical Uniswap V2 Pair.Mint(address indexed, uint, uint) topic0.
+    EXPECTED_TOPIC0: str = "0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f"
     chains: frozenset[str] = frozenset({
         "ethereum", "bsc", "polygon", "arbitrum", "optimism", "base", "avalanche",
     })
@@ -558,7 +561,11 @@ class UniswapV2DualTokenAdapter:
         return [approve_step, remove_step]
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
-        return VerifyResult(
-            confirmed=False,
-            detail="V2 LP verification requires on-chain LP-token balance read; wired in V2.",
-        )
+        """Parse receipt logs for canonical Uniswap V2 Pair.Mint event topic0.
+
+        Mint is emitted by the pair contract when ``addLiquidity`` succeeds and
+        carries the deposited token amounts. We confirm by topic0 match; LP
+        balance delta is left to the higher-level position-tracker.
+        """
+        receipt = request.receipt or (request.expected_position or {}).get("receipt")
+        return parse_receipt_logs(receipt, self.EXPECTED_TOPIC0)

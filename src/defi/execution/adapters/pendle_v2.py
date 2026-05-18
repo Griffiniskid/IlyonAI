@@ -25,6 +25,7 @@ import aiohttp
 from src.defi.execution.adapters.base import (
     CapabilityResult,
     VerifyResult,
+    parse_receipt_logs,
     YieldBuildRequest,
     YieldQuote,
     YieldQuoteRequest,
@@ -144,6 +145,9 @@ def _extract_route0_tx(payload: dict[str, Any] | None) -> dict[str, Any] | None:
 @dataclass
 class PendleV2Adapter:
     adapter_id: str = "pendle-v2"
+    # V7-043 — canonical Pendle SY Deposit(address,address,address,uint256,uint256)
+    # topic0 (ERC4626 Deposit signature; Pendle SY wraps ERC4626 semantics).
+    EXPECTED_TOPIC0: str = "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7"
     chains: frozenset[str] = frozenset(_PENDLE_ROUTER.keys())
     protocols: frozenset[str] = frozenset({"pendle", "pendle-v2"})
     actions: frozenset[str] = frozenset({
@@ -349,7 +353,11 @@ class PendleV2Adapter:
         ]
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
-        return VerifyResult(
-            confirmed=False,
-            detail="Pendle V2 receipt verify: read SY/PT/YT balanceOf delta or LP shares.",
-        )
+        """Parse receipt logs for Pendle SY (ERC4626) Deposit topic0.
+
+        Pendle V2 wraps yield-bearing assets via SY tokens with ERC4626
+        semantics, so the canonical Deposit topic0 matches. SY/PT/YT split
+        accounting is delegated to the position-tracker.
+        """
+        receipt = request.receipt or (request.expected_position or {}).get("receipt")
+        return parse_receipt_logs(receipt, self.EXPECTED_TOPIC0)

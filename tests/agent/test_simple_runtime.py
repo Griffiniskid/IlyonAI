@@ -320,7 +320,7 @@ async def test_run_ephemeral_turn_formats_unsupported_yield_execution_without_pl
             "execution_readiness_summary": {"executable_count": 0, "research_only_count": 1},
             "execution_blockers": [
                 {
-                    "code": "unsupported_adapter",
+                    "code": "UNSUPPORTED_ADAPTER",
                     "title": "Direct execution is not supported yet",
                     "detail": "Meteora Solana pool deposits need a verified Solana pool adapter before signing is enabled.",
                 }

@@ -78,6 +78,17 @@ KNOWN_BLOCKER_CODES: frozenset[str] = frozenset({
     "JIT_ATTACK_ADJACENCY",        # Mempool JIT monitor flagged a sandwich risk
     "POOL_LINK_REDIRECT",          # Adapter unsupported — frontend pool_link card was emitted
     "NEEDS_FRONTEND_SDK",          # Calldata composition needs in-browser SDK (Pendle ApproxParams, etc.)
+    # V7-062..V7-065 — UPPER_SNAKE normalization batch. These codes were
+    # previously emitted lowercase across the build_*_execution_plan +
+    # wallet_swap + execute_pool_position emitters. Normalized to the
+    # canonical UPPER_SNAKE form so the recovery dispatcher can do
+    # case-sensitive matching without per-emitter casefolding.
+    "UNSUPPORTED_ADAPTER",         # Intent picked a protocol with no registered adapter
+    "ADAPTER_BUILD_FAILED",        # Adapter raised mid-build (timeout / quote miss / RPC)
+    "WALLET_CHAIN_MISMATCH",       # EVM wallet present, Solana plan (or vice versa)
+    "INSUFFICIENT_BALANCE",        # Wallet shortfall vs requested amount_in
+    "NULL_ROUTE",                  # F09 — DexScreener / aggregator returned no credible route
+    "FORBIDDEN_REFUND_SWAP_BACK",  # V7-068 — shield refused an auto-swap-back-of-refund recovery
 })
 
 

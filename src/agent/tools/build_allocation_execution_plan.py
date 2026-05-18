@@ -196,7 +196,7 @@ async def build_allocation_execution_plan(
         capability = registry.find(chain=chain, protocol=protocol, action=action)
         if not capability.supported:
             plan.add_blocker(ExecutionBlocker(
-                code="unsupported_adapter",
+                code="UNSUPPORTED_ADAPTER",
                 severity="warning",
                 title=f"Row {idx} ({protocol} on {chain}) not yet executable",
                 detail=capability.reason or "No verified adapter for this protocol/action/chain.",
@@ -217,7 +217,7 @@ async def build_allocation_execution_plan(
             ))
         except Exception as exc:
             plan.add_blocker(ExecutionBlocker(
-                code="adapter_build_failed",
+                code="ADAPTER_BUILD_FAILED",
                 severity="warning",
                 title=f"Row {idx} ({protocol} on {chain}) skipped",
                 detail=str(exc)[:240],

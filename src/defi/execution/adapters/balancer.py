@@ -25,6 +25,7 @@ from eth_abi import encode as abi_encode  # type: ignore
 from src.defi.execution.adapters.base import (
     CapabilityResult,
     VerifyResult,
+    parse_receipt_logs,
     YieldBuildRequest,
     YieldQuote,
     YieldQuoteRequest,
@@ -210,6 +211,9 @@ def _bpt_address_from_pool_id(pool_id: str) -> str:
 @dataclass
 class BalancerSingleAssetAdapter:
     adapter_id: str = "balancer-single-asset-join"
+    # V7-043 — canonical Balancer Vault PoolBalanceChanged event topic0.
+    # PoolBalanceChanged(bytes32,address,address[],int256[],uint256[])
+    EXPECTED_TOPIC0: str = "0xe5ce249087ce04f05a957192435400fd97868dba0e6a4b4c049abf8af80dae78"
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base"})
     protocols: frozenset[str] = frozenset({"balancer", "balancer-v2", "balancer-v3"})
     actions: frozenset[str] = frozenset({
@@ -522,7 +526,10 @@ class BalancerSingleAssetAdapter:
         return [approve_step, exit_step]
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
-        return VerifyResult(
-            confirmed=False,
-            detail="Balancer verification requires on-chain BPT balance read.",
-        )
+        """Parse receipt logs for Balancer Vault.PoolBalanceChanged topic0.
+
+        The Vault emits PoolBalanceChanged on join/exit with the pool id and
+        delta arrays, which is the canonical proof an LP action settled.
+        """
+        receipt = request.receipt or (request.expected_position or {}).get("receipt")
+        return parse_receipt_logs(receipt, self.EXPECTED_TOPIC0)

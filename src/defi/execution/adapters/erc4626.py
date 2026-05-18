@@ -16,6 +16,7 @@ from src.defi.execution.adapters.aave_v3 import _encode_address, _encode_uint256
 from src.defi.execution.adapters.base import (
     CapabilityResult,
     VerifyResult,
+    parse_receipt_logs,
     YieldBuildRequest,
     YieldQuote,
     YieldQuoteRequest,
@@ -100,6 +101,8 @@ _ARB_MORPHO_USDC_VAULTS: dict[str, str] = {
 @dataclass
 class ERC4626VaultAdapter:
     adapter_id: str = "erc4626-vault"
+    # V7-043 — canonical ERC4626 Deposit(address,address,uint256,uint256) topic0.
+    EXPECTED_TOPIC0: str = "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7"
     chains: frozenset[str] = frozenset({"ethereum", "polygon", "arbitrum", "optimism", "base", "avalanche", "bsc"})
     # Empty protocol set means: defer support entirely to the registry lookup.
     # Anything in _VAULT_REGISTRY is supported; anything else returns False.
@@ -292,4 +295,6 @@ class ERC4626VaultAdapter:
         return [approve_step, deposit_step]
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
-        return VerifyResult(confirmed=False, detail="ERC-4626 verification deferred (post-deposit share read).")
+        """Parse receipt logs for canonical ERC-4626 Deposit event topic0."""
+        receipt = request.receipt or (request.expected_position or {}).get("receipt")
+        return parse_receipt_logs(receipt, self.EXPECTED_TOPIC0)
