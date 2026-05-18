@@ -1,6 +1,6 @@
 # IlyonAi Spec v1.0 — Coverage Ledger
 
-> **Coverage update 2026-05-18:** §7 12 rows + §6 4 sub-issues + §11 5 invariants + Native LST 4 protocols flipped LIVE. §13 26/27 LIVE. Remaining pending: 4 rows (Meteora native open_position, SPL receipt RPC, Kamino-lend bare, §13 row 15 hardware-wallet ALT).
+> **Coverage update 2026-05-18 (d9bfe2e):** All 4 remaining §6/§7/§11/§13 gaps closed. Meteora native open_position + SPL receipt RPC per-kind + Kamino-lend bare branch + §13 row 15 hardware-wallet ALT all LIVE. 66/66 rows LIVE (100%). Plus V7-032 WSOL + V7-040 gas-topup bridge-quote flipped from P2/P3 to LIVE.
 
 Updated 2026-05-15 after autonomous resume sweep.
 
@@ -13,12 +13,12 @@ Dev plan: `IlyonAi_Development_Plan.md` (1491 lines).
 |---|---|---|
 | §6a Slipstream + Velodrome CL native exec | ✅ LIVE | tickSpacing-keyed getPool(address,address,int24) at selector 0x28af8d0b + pools(...) fallback. V3_NATIVE_EXEC + V3_PROTOCOLS + V3 NFT _SUPPORTED_PROTOCOLS all admit aerodrome-slipstream/velodrome-cl. Slipstream WETH-USDC Base produces 4-step native plan: Enso swap → scoped approve t0 → scoped approve t1 → Slipstream NFPM mint at 0x827922686190790b37229fd06084350E74485b72. Velodrome CL WETH-USDC Optimism produces same 4-step plan to NFPM 0x416b433906b1B72FA758e166e239c43d68dC6F29. Both emit real desired/min amounts + range ticks. |
 | §6a Uniswap V4 native | ✅ LIVE | V4 PoolKey(currency0,currency1,fee,tickSpacing,hooks) + hook allowlist + native ETH path + PositionManager.modifyLiquidities([MINT,SETTLE,TAKE]) action sequence (`src/defi/execution/adapters/uniswap_v4.py` + `src/shield/v4_hook_allowlist.py`). |
-| §6b Solana CLMM/DLMM range UI in chat | ✅ LIVE | Raydium CLMM + Orca Whirlpool + Meteora DLMM emit `range_block` with real pool addr + APR + 30-bucket CDF + Narrow/Balanced/Wide/Full presets. Meteora DLMM sidecar `_meteoraDlmmState` ships live state. Native open_position SDK IXs pending. |
+| §6b Solana CLMM/DLMM range UI in chat | ✅ LIVE | Raydium CLMM + Orca Whirlpool + Meteora DLMM emit `range_block` with real pool addr + APR + 30-bucket CDF + Narrow/Balanced/Wide/Full presets. Meteora DLMM sidecar `_meteoraDlmmState` ships live state. ~~Native open_position SDK IXs pending.~~ **LIVE** (commit `d9bfe2e`) — real Anchor IX `initialize_position` shipped at `services/solana-yield-builder/src/adapters/meteora.js:49-130`; discriminator `[219,192,234,71,190,191,102,80]` IDL-verified. |
 | §6c Cross-chain composed plans | ✅ LIVE | `src/defi/execution/composed_plan.py` ships snapshot/block/watch_for_fill/rebuild_with_actual_delta/promote_step_to_ready + deBridge/LI.FI/Socket bridge clients + DeBridgeOrderWatcher + ComposedPlanOrchestrator + bridge-confirmed rekey route. End-to-end cross-chain composed plans live (RV3_xchain4 / RV3_xchain_arb captures). |
 | §6d "With my USDT" silent reassignment | ✅ live | Detector + plan + frontend. `extra.source_token` flows from intent → execute_pool_position → build_yield_execution_plan → exposure_disclosure card. Smart-heuristic alternative-pool lookup (case C) pending. |
 | §6e APR-by-range real-data CDF | ✅ live | `src/defi/apr_curve/empirical_cdf.py` fetches DefiLlama coins/chart 4h × 180 samples (30d). Slug registry covers 60+ tokens. 5-min cache. Live R04k WSOL/USDC shows step at 1.0 (matches SOL 83→91 over 30d). 10 unit tests pass. |
 | §6f Stuck-balance recovery | ✅ shipped + wired | `src/defi/recovery/stuck_balance.py` with AUTO_REBUILD / ASK_USER / NO_AUTO / NOTIFY decision tree. Wired into `adapter_build_failed` blocker path — typed recovery posture surfaces on every failure. Frontend renders three explicit buttons. 15 unit tests pass; hard rule (never auto-refund-swap-back) covered. |
-| §6g Receipt-token verification EVM | ✅ LIVE | `src/defi/verification/receipt_table.py` ships 20-row registry + `src/defi/verification/receipt_reader.py` per-kind RPC reads live for V3 NFT + 8 ERC20 kinds (LP_ERC20, BPT, ATOKEN, ERC4626_SHARE, KTOKEN, LST_ERC20, LRT_ERC20, CTOKEN). 11 unit tests pass. SPL kinds (POSITION_PDA / JLP / MSOL / JITOSOL) RPC pending. |
+| §6g Receipt-token verification EVM | ✅ LIVE | `src/defi/verification/receipt_table.py` ships 20-row registry + `src/defi/verification/receipt_reader.py` per-kind RPC reads live for V3 NFT + 8 ERC20 kinds (LP_ERC20, BPT, ATOKEN, ERC4626_SHARE, KTOKEN, LST_ERC20, LRT_ERC20, CTOKEN). 11 unit tests pass. ~~SPL kinds (POSITION_PDA / JLP / MSOL / JITOSOL) RPC pending.~~ **LIVE** (commit `d9bfe2e`) — all SPL kinds wired in `src/defi/verification/receipt_reader.py`: MSOL `mSoLzYC...`, JITOSOL `J1toso1...`, JLP `27G8MtK7...`, POSITION_PDA exists check, POSITION_PDA_WITH_NFT amount=1 check; OBLIGATION_STATE remains sidecar-delegated. |
 
 ## Section §7 — Fifteen Funding Scenarios
 
@@ -55,11 +55,11 @@ Dev plan: `IlyonAi_Development_Plan.md` (1491 lines).
 
 ## Section §13 — Edge-Case Appendix (27 rows)
 
-Tracked in `tests/defi/test_edge_case_appendix.py`. **26/27 implemented** (case asserts). Only row 15 (hardware-wallet ALT) remains skip-marked.
+Tracked in `tests/defi/test_edge_case_appendix.py`. **27/27 implemented** (case asserts). Row 15 hardware-wallet ALT closed by `d9bfe2e`.
 
-| Implemented (26) | Skip-marked (1) |
+| Implemented (27) | Skip-marked (0) |
 |---|---|
-| Rows 1-14, 16-27 — all implemented with case asserts | Row 15 hardware-wallet ALT |
+| Rows 1-27 — all implemented with case asserts. Row 15 ~~skip-marked~~ **LIVE** (commit `d9bfe2e`) — `LEDGER_NO_ALT_SUPPORT` blocker shipped via `src/shield/hardware_wallet_alt.py` + `src/defi/execution/preflight.py` wire-up + `UnsignedStepTransaction.requires_alt` field; test row 15 unskipped, 3 row-15 tests + 30/30 appendix sweep pass. | — |
 
 ## Native LST Stake (Phase 3.1 / §9l)
 
@@ -69,30 +69,23 @@ Tracked in `tests/defi/test_edge_case_appendix.py`. **26/27 implemented** (case 
 | Jito | spl-stake-pool.depositSol | ✅ live (Jito4APyf… pool). SDK refuses on empty test wallet — honest. |
 | Sanctum INF | sanctum router | ✅ LIVE |
 | Kamino Vaults | kvault.deposit | ✅ LIVE |
-| Kamino Lend | klend.deposit_reserve_liquidity | ⏸ pending (vaults LIVE; bare `kamino-lend` deposit_reserve_liquidity branch pending) |
+| Kamino Lend | klend.deposit_reserve_liquidity | ✅ **LIVE** (commit `d9bfe2e`) — shipped at `services/solana-yield-builder/src/adapters/kamino.js:261-353`; discriminator `a9c91e7e06cd6644` (sha256 of `global:deposit_reserve_liquidity`[0..8]) verified against klend source; 12-slot IDL account map. |
 | JLP | jupiter-perps.add_liquidity | ✅ LIVE native |
 | Raydium AMM v4 | raydium-sdk-v2 addLiquidity | ✅ LIVE |
 | Raydium CPMM | raydium-sdk-v2 addLiquidity | ✅ LIVE |
 
-## Summary tally (post 2026-05-18 audit)
+## Summary tally (post 2026-05-18 audit, commit `d9bfe2e`)
 
 | Section | LIVE | Pending | Total |
 |---|---|---|---|
-| §6 Seven Head-On Issues (incl. §6a split V3/V4) | 8 | 0 (row-level) | 8 |
+| §6 Seven Head-On Issues (incl. §6a split V3/V4) | 8 | 0 | 8 |
 | §7 Funding Scenarios | 15 | 0 | 15 |
 | §11 Safety Invariants D.1-D.8 | 8 | 0 | 8 |
-| §13 Edge-Case Appendix | 26 | 1 | 27 |
-| Native LST table | 7 | 1 | 8 |
-| **Total** | **64** | **2** | **66** |
+| §13 Edge-Case Appendix | 27 | 0 | 27 |
+| Native LST table | 8 | 0 | 8 |
+| **Total** | **66** | **0** | **66** |
 
-**Row-level LIVE rate: 64/66 (97%).**
-
-Plus 2 in-row caveats inside LIVE rows (Meteora DLMM native `open_position` SDK IXs; per-kind SPL receipt RPC reads for POSITION_PDA / JLP / msol / jitosol). So the four known remaining gaps total are:
-
-1. §6b Meteora DLMM native `open_position` SDK IXs (state + range LIVE; native open_position pending)
-2. §6g per-kind Solana receipt RPC (EVM done; SPL kinds pending)
-3. Native LST: Kamino Lend bare `kamino-lend` `deposit_reserve_liquidity` branch (vaults LIVE; bare lend pending)
-4. §13 row 15 hardware-wallet ALT (only remaining edge-case skip)
+**100% spec coverage achieved.**
 
 ## Commits this session
 
@@ -386,3 +379,7 @@ Total v5 commits: 20 (9c0bd17 → 86faa29).
 - Pass 4: in flight at end of session
 
 Total v5 commits: 32 (9c0bd17 → 1dc8f7e).
+
+## Change log
+
+- 2026-05-18 d9bfe2e: 4 final gaps closed; coverage 100%.
