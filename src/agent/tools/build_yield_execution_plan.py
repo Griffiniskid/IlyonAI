@@ -332,6 +332,45 @@ async def build_yield_execution_plan(
         # through to step 2 out of order (financial-loss bug). The DLN
         # /dln/order/create-tx endpoint returns {to, data, value}.
         from src.routing.debridge_client import DeBridgeClient as _LegacyDeBridge  # used by network mock test paths
+        # BUG-E-002 (matrix Pass A wave 1): the guest sentinel must NEVER
+        # be passed to deBridge — DLN responds HTTP 400 with a
+        # mozilla.org docs URL that leaks back to the user. Gate the call
+        # on a real EVM address; emit a structured WALLET_CHAIN_MISMATCH
+        # blocker (the closest canonical code for "wallet not connected"
+        # until a distinct code lands).
+        _looks_like_evm_addr = (
+            isinstance(user_address, str)
+            and user_address.startswith("0x")
+            and len(user_address) == 42
+        )
+        if (not _looks_like_evm_addr) or user_address.lower() == "guest":
+            plan = ExecutionPlanV3.new(
+                title="Cross-chain bridge requires a connected wallet",
+                summary=(
+                    f"Composed plan {src_chain_hint}→{chain} needs an EVM wallet "
+                    f"address to construct the deBridge order. Connect a wallet "
+                    f"and resend."
+                ),
+            )
+            plan.add_blocker(ExecutionBlocker(
+                code="WALLET_CHAIN_MISMATCH",
+                severity="blocker",
+                title="Wallet not connected",
+                detail=(
+                    f"deBridge DLN /create-tx requires senderAddress and "
+                    f"recipient to be valid EVM addresses. Current "
+                    f"user_address={user_address!r} is not signable. "
+                    f"Connect an EVM wallet (MetaMask / Phantom EVM mode) and resend."
+                ),
+                affected_step_ids=[],
+                cta="Connect an EVM wallet via the wallet button, then re-send the request.",
+            ))
+            plan_dict = plan.to_dict()
+            return ok_envelope(
+                data={"plan": plan_dict},
+                card_type="execution_plan_v3",
+                card_payload=plan_dict,
+            )
         try:
             order_tx = await bridge.create_order_encoded(
                 src_chain_id=_CHAIN_ID_MAP.get(src_chain_hint, 0),
