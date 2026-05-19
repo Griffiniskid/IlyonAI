@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"If the destination RPC node is unreachable or returns an error, the transaction simply won\u2019t be broadcast\u2014you\u2019ll see a \u201cfailed to send\u201d or timeout message in your wallet. No funds are moved, so there\u2019s no risk of loss.\n\nWhat to do:\n\n1. **Retry** \u2013 most wallets let you resend the same transaction with a nonce bump or higher gas price.\n2. **Switch RPC** \u2013 add a fallback endpoint (e.g., Alchemy, Infura, QuickNode, or a public node) in your wallet settings and try again.\n3. **Check status** \u2013 verify the chain\u2019s health via a block explorer or status page; if the whole network is degraded, wait a few minutes.\n4. **Gas adjustment** \u2013 if the node returns \u201creplacement transaction underpriced,\u201d increase the gas fee and resend.\n\nIn short, an RPC failure is a communication issue, not a financial one\u2014just retry with a working node or higher gas, and your transaction will go through once the node responds.","card_ids":[],"elapsed_ms":4329,"steps":3}
+
+event: done
+data: {}
+

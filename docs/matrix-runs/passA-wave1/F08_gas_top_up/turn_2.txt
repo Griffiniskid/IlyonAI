@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The supply step is blocked because you don\u2019t have enough AVAX to cover the gas fees. The transaction requires roughly\u202f0.692\u202fAVAX (\u2248\u202f$6.30 with a 1.5\u00d7 safety buffer), but your wallet currently holds only\u202f0.250\u202fAVAX. Top up your AVAX balance or reduce the USDC amount to proceed.","card_ids":[],"elapsed_ms":3004,"steps":3}
+
+event: done
+data: {}
+

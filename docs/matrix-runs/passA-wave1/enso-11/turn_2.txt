@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Submit the Add Liquidity call using the preview amounts (50\u202fS and matching USDC) via Enso or the SwapX\u202fV3\u202fSonic UI. Approve only those exact amounts, set low slippage, verify contract addresses. After confirmation you\u2019ll receive LP tokens. This remains a medium\u2011risk, balanced\u2011strategy LP\u2014monitor for impermanent loss.","card_ids":[],"elapsed_ms":8911,"steps":3}
+
+event: done
+data: {}
+

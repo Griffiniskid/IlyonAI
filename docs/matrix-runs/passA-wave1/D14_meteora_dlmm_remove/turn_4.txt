@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have access to your wallet or personal holdings, so I can\u2019t list your actual Meteora DLMM positions. To see them, connect your wallet to the Meteora app or view them in a portfolio tracker like Zerion or Debank.","card_ids":[],"elapsed_ms":4818,"steps":3}
+
+event: done
+data: {}
+

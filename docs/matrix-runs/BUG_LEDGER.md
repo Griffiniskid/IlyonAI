@@ -166,6 +166,62 @@ Legitimate exceptions: `_GAUGE_PLACEHOLDER_BY_PROTO` (per-protocol fallback gaug
 
 ### Matrix passes
 
+## Matrix Pass A wave 1 — 2026-05-20, HEAD `9ffe441` (with BUG-M01 singleton fix LIVE)
+
+**Aggregate**: 9 category reviewers hand-read 532 captures across 120 chains. Each wrote `docs/matrix-runs/passA-wave1/findings-{A-I}.md` (subagent file-writes blocked by harness; main thread persisted from inline reports).
+
+**Totals (after triaging false positives like the `0xaaaa...` test wallet)**:
+
+| Cat | P0 (real) | P1 | Notes |
+|-----|-----------|-----|-------|
+| A | 2 | 9 | (3 P0 false positives from test-wallet `0xaaaa...` dismissed) |
+| B | 11 | 17 | **0/15 chains clean** — worst category |
+| C | 5 | 13 | |
+| D | 6 | 10 | (1 P0 FP dismissed - test wallet) |
+| E | 4 | 4 | **0/15 working composed plans** |
+| F | 5 | 6 | Cross-cutting normalizer gap drives 4 of 5 |
+| G | 4 | 6 | State-loss / chain-switch / freeform-invents-state |
+| H | 8 | 7 | 12/15 §7 detectors missing or misroute |
+| I | 3 | 3 | Session-key intent absent (V7-073/074 backend shipped but unreachable from chat) |
+| **TOTAL** | **48 P0** | **75 P1** | |
+
+**Cross-cutting root-cause clusters (Wave-fix priority order)**:
+
+1. **Lowercase blocker codes bypass normalization + recovery** (F: 4/5 P0s, also appears as 'unsupported_chain' in B). Three emit sites (`execute_pool_position.py:475`, `build_yield_execution_plan.py:614/640`, `swap_simulate.py:150`) hand-mint blocker codes as lowercase strings upstream of `scan_scenario_blockers`. Fix candidate: `_normalize_blocker_code()` chokepoint at `ExecutionPlanV3.add_blocker` that maps to KNOWN_BLOCKER_CODES + fires `enrich_blocker_with_recovery`.
+
+2. **Plan builder ignores `executable:false` flag** (B: 4 P0s — B04 gmx-v2-perps, B06 pharaoh-v3, B09 yearn-finance/base, B12 zeebu). Plan steps emit with `blocker:null` despite source `defi_opportunities` items marked unsupported.
+
+3. **Freeform fallback invents calldata / fees / workflows** (B: 3 P0s, C: 3 P0s, E: 1 P0 + 5+ P0-class hallucinations, G: 1 P0, H: 1 P0). Largest user-trust risk. Sanitizer leak of LLM chain-of-thought into `final.content` (B06/B11/B14). Fix: freeform-guard refuses prose when (a) prior turn was deterministic-plan-build, (b) calldata-style hex / specific addresses appear in fallback prose.
+
+4. **Cross-chain intent collapsed at parser** (E: 1 P0 / 10 chains affected). "supply X to Y on optimism (from ethereum)" parses without `extra.source_chain`. Fix: extract source-chain from prepositional phrases ("from <chain>", "starting on <chain>") + implicit-source heuristics.
+
+5. **`senderAddress=guest` passed to deBridge `/create-tx`** (E: 1 P0 / 4 chains). Fix: gate `create_order_encoded` on real EVM address; if "guest", emit BLOCKER_WALLET_NOT_CONNECTED via pending.py infrastructure.
+
+6. **Cross-chain plan emits `transaction:null` on bridge leg with `status:"ready"`** (E07, H06, possibly B07/D11). Plan looks healthy but unsignable. Fix: builder must attach COMPOSED_PLAN_INCOMPLETE_TX blocker when bridge_to/bridge_data missing.
+
+7. **Verb/asset/calldata desync in allocation steps** (C P0-C-04, possibly B). Plan step verb declares "Supply WBTC" but calldata only approves USDC.
+
+8. **Balance preflight doesn't walk dependency DAG** (D-P0-05). Native ETH wrap → WETH deposit step incorrectly fires INSUFFICIENT_BALANCE for WETH.
+
+9. **Hallucinated protocol slugs / pool addresses** (B P0-B-08 ADPUSDC/ETH-UPEG registry, C P0-C-02 fake Raydium CLMM address, D P0-D-04 `via-secondary-market-on-jupiter`, H P0-H-02 wrong Lido contract). Same family as #3 but specifically for invented on-chain identifiers.
+
+10. **§7 funding scenario detectors mostly absent** (H: 12/15 missing or misroute). S1, S2, S4, S5, S6, S9, S10, S11, S12, S14, S15 not implemented or misrouting. S7 EXPECTED_BLOCKED mismatch — works when brief said deferred.
+
+11. **Price oracle wrong for chain-bridged assets** (B P0-B-01 BSC WBETH stakes use BNB price instead of ETH). Same family as P1-A-04 (MATIC at $0.09 instead of $0.20).
+
+12. **EXPECTED_BLOCKED carve-outs that should be retired**:
+    - E09 eth→arb morpho: Morpho Blue MetaMorpho USDC Arb registry now has `0x7c574174DA4b2be3f705c6244B4BfA0815a8B3Ed` at `src/defi/execution/adapters/erc4626.py:78`.
+
+**Status**: Matrix Pass A is **NOT clean**. 48 P0s + 75 P1s require a fix-loop before Pass B can fire usefully.
+
+---
+
+### Individual matrix-surfaced bugs (mapped from findings-{A-I}.md)
+
+See `docs/matrix-runs/passA-wave1/findings-{A,B,C,D,E,F,G,H,I}.md` for per-chain detail and quoted SSE evidence. Bug numbering per-category (e.g. BUG-A-01..02, BUG-B-01..28, etc.).
+
+---
+
 #### BUG-M01 — AIRouter instantiated per agent request (aiohttp session leak + matrix hang)
 - **Surfaced by**: passA-wave1/* (matrix fires hung after ~50 requests on 2026-05-20 ~21:42 UTC; api logs showed "AI Router initialized" on every request + "Unclosed client session/connector" warnings stacking up)
 - **Severity**: P0 (production users hit this on every chat turn — leaks aiohttp ClientSessions; eventually pool exhausts and requests stall; matrix needed to run sequentially with hangs to surface this)
@@ -178,12 +234,13 @@ Legitimate exceptions: `_GAUGE_PLACEHOLDER_BY_PROTO` (per-protocol fallback gaug
 - **Pin test**: covered indirectly by matrix Pass A completion (full 532-capture run without hang). Direct unit test would require an aiohttp test harness — tracked as a follow-up if matrix doesn't naturally surface a future regression.
 
 #### BUG-M02 — Plan illegal state transition draft → ready (spec §5 violation)
-- **Surfaced by**: passA-wave1/* (api logs: "plan plan_XXX illegal state transition draft (Prompted) → ready (ReadyToSign) — spec §5 forbids this jump", multiple plan IDs in <1s window during matrix fire on 2026-05-20)
-- **Severity**: P1 (state-machine warning; the plan still emits but spec §5 mandates explicit intermediate `simulated` → `ready` transition. Risk: a downstream consumer that strictly enforces §5 would reject these plans).
-- **Spec reference**: §5 Canonical State Machine ("draft → prompted → simulating → simulated → ready → signing → submitted → confirmed → indexed")
-- **Root cause**: (under investigation — `src/defi/execution/models.py::_emit_status_warn` fires; some code path is calling `_set_status("ready")` directly from "draft" without going through "simulated". Likely in a planner that constructs and immediately marks-ready when no simulation is needed.)
-- **Fix**: pending root-cause trace.
-- **Status**: P1 LOGGED — will fix in matrix fix-loop wave.
+- **Surfaced by**: passA-wave1/* (api logs: "plan plan_XXX illegal state transition draft (Prompted) → ready (ReadyToSign) — spec §5 forbids this jump", multiple plan IDs per second during matrix fire on 2026-05-20)
+- **Severity**: P1 (state-machine warning flooding production logs every chat turn; the plan still emits but spec §5 mandates explicit intermediate transitions. Risk: a downstream consumer that strictly enforces §5 would reject these plans.)
+- **Spec reference**: §5 Canonical State Machine (PROMPTED → PARSING → RESOLVING → SIZING → PREVIEWING → SHIELDING → SIMULATING → READY_TO_SIGN → …)
+- **Root cause**: `src/defi/execution/models.py::_validate_pipeline_transition` enforced spec §5 against the plan-level coarse status rollup. But the plan-level vocabulary (draft / ready / blocked / executing / complete / failed / aborted) has no intermediate "simulating" / "simulated" — the per-step state machine already walks PROMPTED→…→SIMULATED before steps reach `status="ready"`. When `_refresh_plan_status` sees all steps ready, it sets `plan.status = "ready"` directly, which the validator then flagged as a spec §5 violation. The check was too strict for the coarse projection.
+- **Fix**: `src/defi/execution/models.py::_validate_pipeline_transition` now admits 7 known-good "projection jumps" silently (draft→ready, draft→blocked, draft→executing, draft→failed, ready→complete, blocked→ready, blocked→draft) — these are coarse rollups where the per-step machine already justified the transition. Truly illegal jumps (e.g. ready→blocked) still soft-warn. Commit `9ffe441` + extension here.
+- **Pin test**: `tests/defi/test_plan_projection_jumps.py` — 9/9; covers all 7 projection jumps silent, ready→blocked still warns, unmapped initial-entry tolerated.
+- **Status**: FIXED.
 
 ---
 

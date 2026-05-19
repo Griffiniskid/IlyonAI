@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t provide a bridge\u2011fee estimate without a deterministic Sentinel tool generating the calldata. Please run an explicit command such as:\n\n`Bridge 0.1 ETH from Arbitrum to Base via deBridge`\n\nto get a signable Execution Plan card, which will include the exact fee.","card_ids":[],"elapsed_ms":3030,"steps":3}
+
+event: done
+data: {}
+

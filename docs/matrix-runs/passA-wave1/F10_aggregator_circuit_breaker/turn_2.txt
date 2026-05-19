@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The swap of\u202f1,000,000\u202fUSDC (~$999,750) exceeds the $500\u202fK aggregator size cap, so the transaction is blocked. To proceed you can split it into smaller chunks or add\u202fextra.confirm_megaswap=true\u202ffor a manual mega\u2011swap review. Mega\u2011swaps carry higher slippage and execution risk, so consider splitting to reduce exposure.","card_ids":[],"elapsed_ms":4796,"steps":3}
+
+event: done
+data: {}
+

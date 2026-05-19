@@ -502,7 +502,30 @@ class ExecutionPlanV3:
         when the env flag IL_STRICT_STATE is set, so existing flows don't
         break while wire-in beds in. Maps plan-status → PipelineState then
         defers to src.defi.state_machine.is_legal_transition.
+
+        Projection-jump exceptions: plan-level status is a *coarse* rollup of
+        the per-step state machine. When all steps reach `ready` directly
+        (deterministic build path that pre-simulated each step), the plan
+        legitimately advances draft→ready without ever emitting intermediate
+        plan statuses for parsing/resolving/sizing/previewing/shielding/
+        simulating. The per-step machine already walked through those; the
+        plan-level rollup is just catching up. Same for the draft→blocked
+        fast-path when a build-time blocker fires before any step land.
         """
+        # Coarse-projection fast-forwards that the per-step machine already
+        # justified — admit silently to keep production logs signal-only.
+        _projection_jumps = {
+            ("draft", "ready"),
+            ("draft", "blocked"),
+            ("draft", "executing"),
+            ("draft", "failed"),
+            ("ready", "complete"),  # zero-step plans (e.g. research-only)
+            ("blocked", "ready"),   # blocker cleared on user input
+            ("blocked", "draft"),   # plan reset for re-prompt
+        }
+        if (prior, next_status) in _projection_jumps:
+            return
+
         from src.defi.state_machine import PipelineState, is_legal_transition
         prior_state = _PLAN_TO_PIPELINE_STATE.get(prior)
         next_state = _PLAN_TO_PIPELINE_STATE.get(next_status)

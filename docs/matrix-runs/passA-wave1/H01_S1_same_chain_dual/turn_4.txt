@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can only build a signable plan for the pools that have deterministic adapters:\n\n- **Uniswap\u202fV4\u202fWETH\u2011GITLAWB (Base)** \u2013 via deterministic adapter \n- **Uniswap\u202fV4\u202fRAVE\u2011USDT (Ethereum)** \u2013 via deterministic adapter \n- **Gmtrade\u202fXAU\u2011USDC (Solana)** \u2013 via solana\u2011yield\u2011builder\u2011fallback \n- **Gmtrade\u202fSOL\u2011USDC (Solana)** \u2013 via solana\u2011yield\u2011builder\u2011fallback \n\nPharaoh\u2011V3 on Avalanche currently has no executable adapter (research\u2011only).\n\nTo proceed, specify the exact amounts you\u2019d like to deposit for each supported pool (e.g., \u201cSupply\u202f20\u202fUSDC to gmtrade\u202fXAU\u2011USDC on Solana\u201d) or repeat a verb form for each action, and I\u2019ll generate a signable Execution\u2011Plan card.","card_ids":[],"elapsed_ms":64678,"steps":3}
+
+event: done
+data: {}
+

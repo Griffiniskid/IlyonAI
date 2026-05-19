@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Open Enso, connect your Base\u2011compatible wallet, and click \u201cAdd Liquidity\u201d. Choose the Aerodrome Slipstream USDC/WETH pool, enter the amounts you want to supply (maintaining a 1:1 value ratio), approve both tokens, and confirm the transaction. You\u2019ll receive Slipstream LP tokens, which you can stake in Aerodrome\u2019s farms for extra yield.\n\nRisk: MEDIUM (impermanent loss & smart\u2011contract exposure). \nStrategy fit: balanced\u2011to\u2011aggressive. \nSafety tip: verify the contract addresses and start with a small test amount before committing larger funds.","card_ids":[],"elapsed_ms":3726,"steps":3}
+
+event: done
+data: {}
+

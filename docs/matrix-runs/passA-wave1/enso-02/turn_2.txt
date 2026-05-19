@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To add 50\u202fARB plus the matching ETH to your Uniswap V3 ARB/ETH\u202f0.3% NFT on Arbitrum via Enso:\n\n1. Open Enso, select Arbitrum, choose the Uniswap V3 ARB/ETH\u202f0.3% pool, and click **Add Liquidity**. \n2. Enter **50\u202fARB**; Enso will auto\u2011fill the ETH amount (~0.0306\u202fETH at the current pool price). Approve both tokens if prompted, then confirm the transaction. \n\n**Risk:** MEDIUM (impermanent loss). **Strategy fit:** balanced. \n**Safety tips:** verify the pool contract address, set slippage tolerance low (\u22480.5%), approve only the exact amounts shown, and monitor the position for large price moves.","card_ids":[],"elapsed_ms":5112,"steps":3}
+
+event: done
+data: {}
+

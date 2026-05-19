@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Confirmed split:\u202f100\u202fUSDC will be swapped to WETH and\u202f100\u202fUSDC deposited into the Slipstream WETH\u2011USDC pool on Base. Your wallet currently holds\u202f190.132\u202fUSDC, leaving a shortfall of\u202f9.868\u202fUSDC. Add funds or reduce the deposit amount to proceed.","card_ids":[],"elapsed_ms":4107,"steps":3}
+
+event: done
+data: {}
+

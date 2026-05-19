@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Aave\u202fV3 is an EVM\u2011only protocol and has no deployment on Solana, so MetaMask can\u2019t sign a Solana transaction for it. To use Aave\u202fV3 you must switch to an EVM chain (Ethereum, Base, Polygon, Arbitrum, Optimism, Avalanche, or BSC) or use a Solana lending market like Kamino Lend or MarginFi instead. Always verify contract addresses and consider a hardware wallet for added safety.","card_ids":[],"elapsed_ms":4905,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t confirm a Frax\u202fETH\u2011staking transaction without a deterministic Sentinel tool that can generate the calldata. To get a signable Execution Plan, please phrase the request with an explicit verb that matches a supported adapter, e.g.:\n\n- `Stake 0.05 ETH on Frax via frxETH mint`\n- `Supply 0.05 ETH to Frax ETH vault`\n\nIf you can provide one of those forms, I\u2019ll return a ready\u2011to\u2011sign plan. Otherwise, the action remains in research\u2011only mode. (Risk: MEDIUM for liquid\u2011staking derivatives; consider your strategy fit.)","card_ids":[],"elapsed_ms":6516,"steps":3}
+
+event: done
+data: {}
+

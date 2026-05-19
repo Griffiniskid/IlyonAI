@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"If step\u202f2 (the supply) reverts, first confirm that the USDC approval succeeded and that you still have at least\u202f100\u202fUSDC plus enough ETH for gas. Check the revert reason (e.g., insufficient allowance, contract paused, out\u2011of\u2011gas). If the allowance is fine, resend the same supply calldata with a higher gas price after the network clears. If the approval failed, repeat the approval step before retrying the supply. If the failure persists, lower the amount or move to a different vault. This keeps risk\u202fLOW\u2011MEDIUM and avoids unnecessary token loss.","card_ids":[],"elapsed_ms":3937,"steps":3}
+
+event: done
+data: {}
+

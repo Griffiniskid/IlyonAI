@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Signing Policy for Token Approvals / Revocations**\n\nTo create or cancel an approval you must provide:\n\n1. **Token contract address** \u2013 the ERC\u201120 (or ERC\u2011777) token you\u2019re approving. \n2. **Spender contract address** \u2013 the dApp/router that will be allowed to transfer the token. \n3. **Amount** \u2013 exact uint256 amount or `type(uint256).max` for unlimited. \n4. **Your wallet address** \u2013 the account that holds the tokens. \n5. **Network/chain ID** \u2013 e.g., Ethereum\u202f1, Polygon\u202f137, etc.\n\n**Safety tips**\n\n- Verify both token and spender addresses on a block explorer before signing. \n- Never disclose your private key, seed phrase, or password. \n- Prefer limited approvals when possible; unlimited approvals increase risk if the spender is compromised. \n- After signing, check the transaction receipt to confirm the approval/revocation succeeded.","card_ids":[],"elapsed_ms":4392,"steps":3}
+
+event: done
+data: {}
+

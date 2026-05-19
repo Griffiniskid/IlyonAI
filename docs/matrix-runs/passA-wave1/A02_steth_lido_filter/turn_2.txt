@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Sure\u2014just tell me the exact amount of ETH you\u2019d like to stake via Lido (e.g.,\u202f0.3\u202fETH or\u202f$500). Once you give the amount, I\u2019ll output the allocation, APY (~2.4\u202f%), risk (LOW), and the signing steps.","card_ids":[],"elapsed_ms":7491,"steps":3}
+
+event: done
+data: {}
+

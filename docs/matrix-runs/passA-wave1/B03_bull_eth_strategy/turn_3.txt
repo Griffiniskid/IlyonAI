@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"All five positions are **instant\u2011withdrawable** \u2013 there is no built\u2011in lock\u2011up period. You can remove liquidity from the Uniswap\u202fv3/v4 pools or exit the Curve pool at any time (subject to on\u2011chain transaction confirmation). Any accrued fees or rewards must be claimed when you withdraw.","card_ids":[],"elapsed_ms":5295,"steps":3}
+
+event: done
+data: {}
+

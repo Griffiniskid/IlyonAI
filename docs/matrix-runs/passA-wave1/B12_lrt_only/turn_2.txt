@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Any attempt would expose you to high\u2011risk, unverified contracts and would not suit a conservative or balanced approach. If you\u2019d like to proceed, share the ETH amount and pick from the available pools (ADPUSDC, RAVE\u2011USDT, ETH\u2011ASTEROID, SERV\u2011WETH, IDAI\u2011IUSDC\u2011IUSDT, ETH\u2011UPEG, ZBU, WBTC\u2011WETH) and I\u2019ll provide a ready\u2011to\u2011sign allocation.","card_ids":[],"elapsed_ms":39311,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Step\u202f1:** Bridge\u202f100\u202fDAI from Ethereum to Polygon using LI.FI. \n**Step\u202f2:** Approve\u202f100\u202fDAI for Aave\u202fV3 on Polygon. \n**Step\u202f3:** Supply the bridged\u202f100\u202fDAI into Aave\u202fV3 on Polygon.","card_ids":[],"elapsed_ms":5436,"steps":3}
+
+event: done
+data: {}
+

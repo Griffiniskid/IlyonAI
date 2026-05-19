@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"withdraw\", \"amount_in\": 0, \"asset_in\": \"USDC\", \"chain\": \"ethereum\", \"extra\": {\"action\": \"withdraw\"}, \"protocol\": \"yearn\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"ethereum","protocol":"yearn","action":"withdraw","asset_in":"USDC","amount_in":0,"extra":{"action":"withdraw"}}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"fc5ab5f7-ceb3-401a-9197-39ca91acc528","card_type":"execution_plan_v3","payload":{"plan_id":"plan_0bfce6800cab","title":"Yearn Withdraw","summary":"Withdraw 0 USDC via Yearn on Ethereum.","status":"ready","risk_gate":"clear","requires_double_confirm":false,"blockers":[],"steps":[{"step_id":"step_b8831683f9","index":1,"action":"withdraw","title":"Withdraw USDC from yearn vault","description":"ERC-4626 withdraw(0) \u2014 assets returned to 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.","chain":"ethereum","wallet":"MetaMask","protocol":"yearn","asset_in":"yearn-USDC","asset_out":"USDC","amount_in":"0","amount_out":null,"slippage_bps":0,"gas_estimate_usd":2.0,"duration_estimate_s":15,"depends_on":[],"status":"ready","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":1,"to":"0xbe53a109b494e5c9f97b9cd39fe969be68bf6204","data":"0xb460af94ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","value":"0x0","spender":"0xbe53a109b494e5c9f97b9cd39fe969be68bf6204"},"receipt":null,"risk_warnings":["Vault yearn may impose exit fee or pending-queue delay."]}],"totals":{"estimated_gas_usd":2.0,"estimated_duration_s":15,"signatures_required":1,"chains_touched":["ethereum"],"assets_required":{}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"**Yearn Withdraw** \u2014 Withdraw 0 USDC via Yearn on Ethereum.\nStatus: `ready` \u00b7 1 signature(s) required.\n\n**Steps**\n\u25b6 Step 1 \u2014 withdraw 0 yearn-USDC on ethereum via yearn (ready)\n\nOpen the Execution Plan card above and sign step 1 in your wallet to begin.","card_ids":["fc5ab5f7-ceb3-401a-9197-39ca91acc528"],"elapsed_ms":5,"steps":5}
+
+event: done
+data: {}
+

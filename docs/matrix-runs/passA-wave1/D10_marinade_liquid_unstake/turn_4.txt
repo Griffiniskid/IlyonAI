@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Liquid unstaking\u202f0.5\u202fmSOL via Marinade will return roughly\u202f0.5\u202fSOL plus any accrued staking rewards after the standard unstaking delay (typically 1\u20112 epochs on Solana). The operation is low\u2011risk, but you\u2019ll need a small amount of SOL for the transaction fee.\n\n**Next steps**\n1. Open the Marinade app (or your wallet\u2019s Marinade integration) and navigate to \u201cUnstake\u201d.\n2. Enter\u202f0.5\u202fmSOL as the amount to liquid\u2011unstake.\n3. Review the estimated SOL you\u2019ll receive and confirm the transaction in your wallet.\n4. After the unstaking period completes, the SOL will be available in your wallet.","card_ids":[],"elapsed_ms":6234,"steps":3}
+
+event: done
+data: {}
+

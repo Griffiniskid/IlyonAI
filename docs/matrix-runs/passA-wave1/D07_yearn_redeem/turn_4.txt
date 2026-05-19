@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"No on\u2011chain receipt exists because the withdrawal amount was\u202f0\u202fUSDC, so no transaction was sent. To get a receipt, specify a non\u2011zero amount to withdraw (or check your current Yearn USDC balance and tell me how much you\u2019d like to redeem). Once you provide the amount, I\u2019ll generate an execution plan and you can sign it to receive the transaction hash as your receipt.","card_ids":[],"elapsed_ms":2405,"steps":3}
+
+event: done
+data: {}
+

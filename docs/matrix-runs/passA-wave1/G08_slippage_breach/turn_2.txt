@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"If slippage exceeds the 50\u202fbps limit, the bridge/swap transaction will revert\u2014no USDC moves and your funds stay in the originating wallet. You\u2019ll need to raise the slippage tolerance, wait for a better price, or re\u2011submit with adjusted settings. Always check slippage before confirming to avoid failed txs.","card_ids":[],"elapsed_ms":3159,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"You haven\u2019t submitted any on\u2011chain transaction yet\u2014everything so far remains in draft mode. Since no position was actually opened or closed, there\u2019s no transaction receipt to display. Let me know if you\u2019d like to execute the close (or another trade) and I\u2019ll generate the signed transaction for you.","card_ids":[],"elapsed_ms":11734,"steps":3}
+
+event: done
+data: {}
+
