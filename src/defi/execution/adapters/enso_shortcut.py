@@ -33,6 +33,7 @@ from src.defi.execution.adapters.base import (
     YieldQuote,
     YieldQuoteRequest,
     YieldVerifyRequest,
+    parse_receipt_logs,
 )
 from src.defi.execution.models import ExecutionStepV3, UnsignedStepTransaction, make_step
 
@@ -70,6 +71,67 @@ _SUPPORTED_CHAINS = frozenset({
     "avalanche", "bsc", "binance", "linea", "zksync",
     "scroll", "gnosis", "sonic", "soneium", "plasma", "ink",
 })
+
+# V7-043 — canonical ERC-20 Transfer(address indexed from, address indexed to,
+# uint256 value) topic0. Used as the cross-protocol fallback signal.
+_TRANSFER_TOPIC0 = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+
+# V7-043 — Per-protocol canonical Deposit-class event topic0. Keys are the
+# normalized protocol slugs Enso route hits; values are the keccak256 of the
+# event signature the destination contract emits on a successful supply.
+# This is the strongest receipt signal we can give without doing a full
+# protocol-specific decode in the watcher.
+_PROTOCOL_DEPOSIT_TOPIC0: dict[str, str] = {
+    # Aave V3 Pool.Supply(address reserve, address user, address onBehalfOf,
+    #                     uint256 amount, uint16 referralCode)
+    "aave-v3": "0x2b627736bca15cd5381dcf80b0bf11fd197d01a037c52b927a881a10fb73ba61",
+    "aave": "0x2b627736bca15cd5381dcf80b0bf11fd197d01a037c52b927a881a10fb73ba61",
+    "aavev3": "0x2b627736bca15cd5381dcf80b0bf11fd197d01a037c52b927a881a10fb73ba61",
+    # Compound V3 Comet.Supply(address indexed from, address indexed dst,
+    #                          uint256 amount)
+    "compound-v3": "0xfa56f7b24f17183d81894d3ac2ee654e3c26388d17a28dbd9549b8114304e1f4",
+    "compound": "0xfa56f7b24f17183d81894d3ac2ee654e3c26388d17a28dbd9549b8114304e1f4",
+    "compoundv3": "0xfa56f7b24f17183d81894d3ac2ee654e3c26388d17a28dbd9549b8114304e1f4",
+    # ERC-4626 Deposit(address indexed sender, address indexed owner,
+    #                  uint256 assets, uint256 shares) — covers Yearn V3,
+    # MetaMorpho, Morpho vaults, Spark sDAI, ERC-4626 vaults broadly.
+    "yearn-finance": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "yearn": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "yearn-v3": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "morpho": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "morpho-blue": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "metamorpho": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "spark": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "spark-protocol": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "spark-lending": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "sky": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "sky-lending": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "fluid": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "fluid-lending": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "beefy": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "beefy-finance": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "beefy-clm": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "tokemak": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+    "tokemak-autoeth": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7",
+}
+
+
+def _normalize_addr(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    v = value.strip().lower()
+    if not v:
+        return None
+    return v if v.startswith("0x") else "0x" + v
+
+
+def _topic_addr_match(topic: str | None, addr: str | None) -> bool:
+    """Compare a 32-byte topic (left-padded address) against a 20-byte addr."""
+    if not isinstance(topic, str) or not isinstance(addr, str):
+        return False
+    t = topic.lower().removeprefix("0x").lstrip("0")
+    a = addr.lower().removeprefix("0x").lstrip("0")
+    return bool(t) and bool(a) and t == a
 
 
 @dataclass
@@ -327,4 +389,87 @@ class EnsoShortcutAdapter:
         return [step]
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
-        return VerifyResult(confirmed=False, detail="Enso receipt verified by tx hash + balance read in V2.")
+        """Parse the receipt with awareness of the Enso-routed protocol.
+
+        Enso bundles approvals + swaps + final supply into one tx, so the
+        receipt carries logs from many contracts. Strategy:
+
+        1. If ``expected_position.protocol`` resolves to a known canonical
+           deposit topic0 (Aave Supply, Compound Supply, ERC-4626 Deposit,
+           etc.), look for THAT — it's the strongest possible signal.
+        2. Otherwise fall back to a two-leg ERC-20 Transfer check: user
+           sent the input AND user received a position token. If both
+           directions are present the supply settled; if only one is
+           present we surface an ``ambiguous`` reason rather than lie.
+        """
+        receipt = request.receipt or (request.expected_position or {}).get("receipt")
+        exp = request.expected_position or {}
+        protocol_raw = exp.get("protocol") or exp.get("routed_protocol")
+        if isinstance(protocol_raw, str):
+            slug = normalize_protocol(protocol_raw)
+            topic = _PROTOCOL_DEPOSIT_TOPIC0.get(slug) or _PROTOCOL_DEPOSIT_TOPIC0.get(protocol_raw.lower())
+        else:
+            topic = None
+
+        if topic is not None:
+            return parse_receipt_logs(receipt, topic)
+
+        # Fallback path — generic ERC-20 Transfer reconciliation.
+        if not receipt or not isinstance(receipt, dict):
+            return VerifyResult(
+                confirmed=False,
+                detail="Enso verify: no receipt provided and no known deposit topic0 for protocol.",
+            )
+        logs = receipt.get("logs", []) or []
+        user_addr = _normalize_addr(exp.get("user_address") or request.user_address)
+        protocol_addr = _normalize_addr(exp.get("protocol_address") or exp.get("position_token") or exp.get("to"))
+
+        sent_from_user = False
+        received_by_user = False
+        transfer_count = 0
+        for log in logs:
+            if not isinstance(log, dict):
+                continue
+            topics = log.get("topics") or []
+            if not topics or not isinstance(topics[0], str):
+                continue
+            if topics[0].lower() != _TRANSFER_TOPIC0:
+                continue
+            transfer_count += 1
+            if len(topics) < 3:
+                continue
+            from_topic, to_topic = topics[1], topics[2]
+            if user_addr and _topic_addr_match(from_topic, user_addr):
+                if protocol_addr is None or _topic_addr_match(to_topic, protocol_addr):
+                    sent_from_user = True
+            if user_addr and _topic_addr_match(to_topic, user_addr):
+                received_by_user = True
+
+        if sent_from_user and received_by_user:
+            return VerifyResult(
+                confirmed=True,
+                detail=(
+                    f"Enso receipt: user→protocol AND protocol→user Transfer legs both present "
+                    f"({transfer_count} Transfer log(s) total)."
+                ),
+                receipt=receipt,
+                event_signature=_TRANSFER_TOPIC0,
+                log_match=transfer_count,
+            )
+        if user_addr is None:
+            reason = "no user_address available to reconcile Transfer legs"
+        elif transfer_count == 0:
+            reason = "no ERC-20 Transfer logs present on receipt"
+        else:
+            missing = []
+            if not sent_from_user:
+                missing.append("user→protocol leg missing")
+            if not received_by_user:
+                missing.append("protocol→user leg missing")
+            reason = "ambiguous: " + " and ".join(missing)
+        return VerifyResult(
+            confirmed=False,
+            detail=f"Enso verify fallback inconclusive — {reason}.",
+            receipt={"reason": reason, "transfer_log_count": transfer_count},
+            log_match=transfer_count,
+        )

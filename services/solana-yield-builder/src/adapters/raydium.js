@@ -31,8 +31,16 @@ const { simulateBase64Tx } = require("./simulate");
 const _legacyPrep = require("./_legacyRaydiumPrep");
 // V7-031 Token-2022 transfer-hook allowlist enforcement.
 // V7-032 WSOL syncNative + closeAccount wiring for native-SOL deposit paths.
+// V7-041 isRaydiumCLMMInitialized gate for close_position (wrong-program close
+// is a real failure mode even though CLMM open is not yet routed through
+// `build()` — AMM v4/CPMM only — see _isCpmm + supportedActions below).
 const tokenSafety = require("./_token_safety");
-const { checkTransferHook, buildSyncNativeIx, buildCloseWsolIx } = tokenSafety;
+const {
+  checkTransferHook,
+  buildSyncNativeIx,
+  buildCloseWsolIx,
+  isRaydiumCLMMInitialized,
+} = tokenSafety;
 
 // Wrapped SOL native mint — used to detect when a pool side or input mint is
 // WSOL so the adapter can wrap native SOL + emit syncNative/closeAccount
@@ -224,6 +232,50 @@ function buildClose(positionNft, opts = {}) {
   });
 }
 
+/**
+ * V7-041 — async wrapper around buildClose that first asserts the
+ * personalPosition PDA is owned by the Raydium CLMM program. Returning a
+ * typed-recovery POOL_NOT_INITIALIZED blocker is cleaner than letting the
+ * on-chain `close_position` IX revert with a confusing wrong-owner error.
+ *
+ * The plain sync `buildClose` is kept for callers (and pin tests) that
+ * already verified the position out-of-band.
+ *
+ * NOTE on CLMM open: this adapter's `build()` dispatcher currently routes
+ * only AMM v4 + CPMM addLiquidity (see `_isCpmm` + `supportedActions`).
+ * CLMM open_position is NOT yet wired through `build()`, so the V7-041
+ * pool-init gate is applied at the close path — the only CLMM lifecycle
+ * stage this file currently emits.
+ */
+async function buildCloseChecked(positionNft, opts = {}, { connection } = {}) {
+  if (!connection) {
+    // No connection passed → fall back to sync sig (caller assumes pre-checked).
+    return buildClose(positionNft, opts);
+  }
+  const nftMint = positionNft instanceof PublicKey ? positionNft : new PublicKey(positionNft);
+  const [personalPosition] = PublicKey.findProgramAddressSync(
+    [Buffer.from("position"), nftMint.toBuffer()],
+    CLMM_PROGRAM_PK,
+  );
+  const ready = await isRaydiumCLMMInitialized(connection, personalPosition);
+  if (!ready) {
+    return {
+      kind: "blocker",
+      code: "POOL_NOT_INITIALIZED",
+      blocker: "POOL_NOT_INITIALIZED",
+      error: "POOL_NOT_INITIALIZED",
+      message:
+        `Raydium CLMM close_position blocked: position PDA ${personalPosition.toString()} ` +
+        `for NFT mint ${nftMint.toString()} is not owned by the CLMM program ` +
+        `(${CLMM_PROGRAM}). The pool may not be initialized or the NFT is not a CLMM position.`,
+      whirlpool: personalPosition.toString(),
+      positionMint: nftMint.toString(),
+      transactions: [],
+    };
+  }
+  return buildClose(positionNft, opts);
+}
+
 module.exports = {
   aliases: ["raydium-amm", "raydium-amm-v4", "raydium-cpmm", "raydium-cp", "raydium-clmm"],
   supportedActions: ["deposit", "deposit_lp", "supply"],
@@ -231,6 +283,9 @@ module.exports = {
   // V7-059 exports
   CLMM_PROGRAM,
   buildClose,
+  // V7-041 — async wrapper that gates on Raydium CLMM ownership of the
+  // position PDA. Surfaces a typed POOL_NOT_INITIALIZED blocker.
+  buildCloseChecked,
 
   async quote({ asset, amount }) {
     return {
@@ -381,5 +436,6 @@ module.exports = {
     _isCpmm,
     _shouldFallbackToLegacy,
     buildClose,
+    buildCloseChecked,
   },
 };

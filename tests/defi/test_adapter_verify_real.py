@@ -20,10 +20,13 @@ from src.defi.execution.adapters.balancer import BalancerSingleAssetAdapter
 from src.defi.execution.adapters.base import YieldVerifyRequest
 from src.defi.execution.adapters.compound_v3 import CompoundV3SupplyAdapter
 from src.defi.execution.adapters.curve import CurveSingleSidedAdapter
+from src.defi.execution.adapters.enso_shortcut import EnsoShortcutAdapter
 from src.defi.execution.adapters.erc4626 import ERC4626VaultAdapter
 from src.defi.execution.adapters.evm_lst import EvmLstDirectMintAdapter
 from src.defi.execution.adapters.pendle_v2 import PendleV2Adapter
 from src.defi.execution.adapters.uniswap_v2 import UniswapV2DualTokenAdapter
+from src.defi.execution.adapters.uniswap_v3_nft import UniswapV3NFTAdapter
+from src.defi.execution.adapters.wallet_assistant import WalletAssistantAdapter
 
 
 def _run(coro):
@@ -62,6 +65,10 @@ ADAPTERS = [
     ("balancer", BalancerSingleAssetAdapter()),
     ("erc4626", ERC4626VaultAdapter()),
     ("evm_lst", EvmLstDirectMintAdapter()),
+    # V7-043 wave 2 — the three previously-stubbed adapters now return real
+    # parse results from parse_receipt_logs.
+    ("uniswap_v3_nft", UniswapV3NFTAdapter()),
+    ("wallet_assistant", WalletAssistantAdapter()),
 ]
 
 
@@ -160,3 +167,190 @@ def test_multi_log_receipt_counts_only_matching() -> None:
     result = _run(adapter.verify(req))
     assert result.confirmed is True
     assert result.log_match == 2
+
+
+# ---------------------------------------------------------------------------
+# V7-043 wave 2 — adapter-specific assertions for the 3 newly-wired verifiers
+# ---------------------------------------------------------------------------
+
+def _v3_nft_receipt_with_increase_liquidity(
+    topic0: str,
+    token_id: int = 12345,
+    liquidity: int = 999_888_777,
+    amount0: int = 1_000_000_000_000_000_000,  # 1e18 — 1 ETH
+    amount1: int = 2_500_000_000,              # 2500 USDC (6dp)
+) -> dict:
+    """Build a receipt with a canonical NFP IncreaseLiquidity log."""
+    token_id_topic = "0x" + token_id.to_bytes(32, "big").hex()
+    data_body = (
+        liquidity.to_bytes(32, "big").hex()
+        + amount0.to_bytes(32, "big").hex()
+        + amount1.to_bytes(32, "big").hex()
+    )
+    return {
+        "status": "0x1",
+        "logs": [{
+            "address": "0xc36442b4a4522e871399cd717abdd847ab11fe88",  # NFP mainnet
+            "topics": [topic0, token_id_topic],
+            "data": "0x" + data_body,
+        }],
+        "transactionHash": "0xa1b2c3",
+    }
+
+
+def test_v3_nft_verify_decodes_token_id_and_amounts() -> None:
+    """V7-043 — V3 NFT verify must surface tokenId/liquidity/amount0/amount1."""
+    adapter = UniswapV3NFTAdapter()
+    receipt = _v3_nft_receipt_with_increase_liquidity(adapter.EXPECTED_TOPIC0)
+    result = _run(adapter.verify(_verify_request(receipt)))
+    assert result.confirmed is True
+    assert result.log_match == 1
+    assert isinstance(result.receipt, dict)
+    decoded = result.receipt.get("v3_increase_liquidity")
+    assert decoded == {
+        "tokenId": 12345,
+        "liquidity": 999_888_777,
+        "amount0": 1_000_000_000_000_000_000,
+        "amount1": 2_500_000_000,
+    }
+
+
+def test_wallet_assistant_verify_matches_erc20_transfer() -> None:
+    """V7-043 — wallet_assistant confirms on any canonical ERC-20 Transfer."""
+    adapter = WalletAssistantAdapter()
+    receipt = _receipt(adapter.EXPECTED_TOPIC0)
+    result = _run(adapter.verify(_verify_request(receipt)))
+    assert result.confirmed is True
+    assert result.log_match == 1
+    assert result.event_signature == adapter.EXPECTED_TOPIC0
+
+
+# ---- Enso-specific cases: protocol-aware vs fallback path -----------------
+
+ENSO_AAVE_SUPPLY_TOPIC = "0x2b627736bca15cd5381dcf80b0bf11fd197d01a037c52b927a881a10fb73ba61"
+ENSO_ERC4626_DEPOSIT_TOPIC = "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7"
+ENSO_TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+
+
+def _enso_request(receipt: dict | None, **extra) -> YieldVerifyRequest:
+    expected = {**extra}
+    if receipt is not None:
+        expected.setdefault("receipt", receipt)
+    return YieldVerifyRequest(
+        chain="ethereum",
+        user_address="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        expected_position=expected,
+        receipt=receipt,
+    )
+
+
+def test_enso_verify_confirms_aave_supply_when_protocol_known() -> None:
+    """V7-043 — when protocol=aave-v3 we look for Pool.Supply topic0."""
+    adapter = EnsoShortcutAdapter()
+    receipt = _receipt(ENSO_AAVE_SUPPLY_TOPIC)
+    req = _enso_request(receipt, protocol="aave-v3")
+    result = _run(adapter.verify(req))
+    assert result.confirmed is True
+    assert result.log_match == 1
+    assert result.event_signature == ENSO_AAVE_SUPPLY_TOPIC
+
+
+def test_enso_verify_confirms_erc4626_for_yearn_morpho() -> None:
+    """V7-043 — Yearn / Morpho / Spark all emit canonical ERC-4626 Deposit."""
+    adapter = EnsoShortcutAdapter()
+    for proto in ("yearn-v3", "morpho", "spark", "metamorpho", "beefy"):
+        receipt = _receipt(ENSO_ERC4626_DEPOSIT_TOPIC)
+        req = _enso_request(receipt, protocol=proto)
+        result = _run(adapter.verify(req))
+        assert result.confirmed is True, f"Enso {proto} did not confirm"
+        assert result.event_signature == ENSO_ERC4626_DEPOSIT_TOPIC
+
+
+def test_enso_verify_rejects_wrong_event_for_known_protocol() -> None:
+    """V7-043 — wrong-event receipt under known protocol must not confirm."""
+    adapter = EnsoShortcutAdapter()
+    receipt = _receipt(WRONG_TOPIC)
+    req = _enso_request(receipt, protocol="aave-v3")
+    result = _run(adapter.verify(req))
+    assert result.confirmed is False
+    assert result.log_match == 0
+
+
+def test_enso_verify_empty_logs_unknown_protocol() -> None:
+    """V7-043 — unknown protocol + empty logs → confirmed=False, reason set."""
+    adapter = EnsoShortcutAdapter()
+    req = _enso_request(_empty_receipt())  # no protocol hint
+    result = _run(adapter.verify(req))
+    assert result.confirmed is False
+    assert result.log_match == 0
+    assert isinstance(result.receipt, dict)
+    assert "reason" in result.receipt
+
+
+def _enso_two_leg_receipt(user_addr: str, protocol_addr: str) -> dict:
+    """Both user→protocol Transfer AND protocol→user Transfer present."""
+    def topic_for(addr: str) -> str:
+        return "0x" + addr.lower().removeprefix("0x").rjust(64, "0")
+    return {
+        "status": "0x1",
+        "logs": [
+            {  # user → protocol (input token leg)
+                "address": "0x" + "11" * 20,
+                "topics": [ENSO_TRANSFER_TOPIC, topic_for(user_addr), topic_for(protocol_addr)],
+                "data": "0x" + "00" * 32,
+            },
+            {  # protocol → user (receipt token leg)
+                "address": "0x" + "22" * 20,
+                "topics": [ENSO_TRANSFER_TOPIC, topic_for(protocol_addr), topic_for(user_addr)],
+                "data": "0x" + "00" * 32,
+            },
+        ],
+        "transactionHash": "0xbeef",
+    }
+
+
+def test_enso_verify_fallback_confirms_two_leg_transfer() -> None:
+    """V7-043 — unknown protocol but two-leg Transfer reconciliation succeeds."""
+    adapter = EnsoShortcutAdapter()
+    user = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    proto = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    receipt = _enso_two_leg_receipt(user, proto)
+    req = YieldVerifyRequest(
+        chain="ethereum",
+        user_address=user,
+        expected_position={"protocol_address": proto},
+        receipt=receipt,
+    )
+    result = _run(adapter.verify(req))
+    assert result.confirmed is True
+    assert result.event_signature == ENSO_TRANSFER_TOPIC
+    assert result.log_match == 2
+
+
+def test_enso_verify_fallback_ambiguous_single_leg() -> None:
+    """V7-043 — single-leg Transfer (only user→protocol) → not confirmed,
+    reason must say 'ambiguous'."""
+    adapter = EnsoShortcutAdapter()
+    user = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    proto = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    def topic_for(addr: str) -> str:
+        return "0x" + addr.lower().removeprefix("0x").rjust(64, "0")
+    receipt = {
+        "status": "0x1",
+        "logs": [{
+            "address": "0x" + "11" * 20,
+            "topics": [ENSO_TRANSFER_TOPIC, topic_for(user), topic_for(proto)],
+            "data": "0x" + "00" * 32,
+        }],
+        "transactionHash": "0xfee1",
+    }
+    req = YieldVerifyRequest(
+        chain="ethereum",
+        user_address=user,
+        expected_position={"protocol_address": proto},
+        receipt=receipt,
+    )
+    result = _run(adapter.verify(req))
+    assert result.confirmed is False
+    assert isinstance(result.receipt, dict)
+    assert "ambiguous" in (result.receipt.get("reason") or "")

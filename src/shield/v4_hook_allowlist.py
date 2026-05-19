@@ -33,9 +33,40 @@ class HookEntry:
     properties: tuple[str, ...]  # e.g. ("dynamic-fee",) ("LVR-mitigation",) ("MEV-skim",)
 
 
-# Allowlist — populated conservatively. Add entries via PRs that include
-# the audit report link + property tags. Empty by default at launch.
-_ALLOWLIST: dict[tuple[str, int], HookEntry] = {}
+# Allowlist — populated conservatively from the Uniswap-maintained
+# canonical V4 hooks registry at https://github.com/Uniswap/hooklist
+# (each entry requires an audit + verified-source on a block explorer).
+# Adding an address requires the registry JSON URL + a property tag tuple.
+# Entries here MUST stay in sync with src/data/v4_hooks_allowlist.py — the
+# preflight gate consumes that flat lookup; the adapter-build gate consumes
+# this rich registry. Keeping them divergent surfaces "preflight allows but
+# adapter-build refuses" UX bugs.
+_ETH_MAINNET = 1
+_ANGSTROM_ADDR = "0x0000000aa232009084bd71a5797d089aa4edfad4"
+_BUNNI_HOOK_ADDR = "0x00001f3b9712708127b1fcad61cb892535951888"
+
+_ALLOWLIST: dict[tuple[str, int], HookEntry] = {
+    (_ANGSTROM_ADDR, _ETH_MAINNET): HookEntry(
+        address=_ANGSTROM_ADDR,
+        chain_id=_ETH_MAINNET,
+        name="Angstrom (Sorella Labs)",
+        audit_report=(
+            "https://github.com/spearbit/portfolio/blob/master/pdfs/"
+            "Sorella-Spearbit-Security-Review-October-2024.pdf"
+        ),
+        properties=("MEV-resistant", "auction-based", "LVR-mitigation"),
+    ),
+    (_BUNNI_HOOK_ADDR, _ETH_MAINNET): HookEntry(
+        address=_BUNNI_HOOK_ADDR,
+        chain_id=_ETH_MAINNET,
+        name="BunniHook (Bunni v2)",
+        audit_report=(
+            "https://github.com/Uniswap/hooklist/blob/main/hooks/"
+            "ethereum/0x00001f3b9712708127b1fcad61cb892535951888.json"
+        ),
+        properties=("dynamic-fee", "am-AMM", "LVR-recapture", "auto-rebalance"),
+    ),
+}
 
 
 def is_no_hook(addr: str | None) -> bool:

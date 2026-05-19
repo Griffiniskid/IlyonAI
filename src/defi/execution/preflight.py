@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Iterable
 
+from src.data.v4_hooks_allowlist import check_v4_hook
 from src.defi.execution.models import ExecutionBlocker, ExecutionStepV3
 
 logger = logging.getLogger(__name__)
@@ -243,7 +245,133 @@ def evaluate_preflight(
     except Exception as exc:  # never let a §13 detector crash preflight
         logger.debug("kyc-pool detector raised: %s", exc)
 
+    # V7-049 / Spec §6a — DISALLOWED_V4_HOOK. Defense-in-depth gate against
+    # untrusted Uniswap V4 hook contracts. The V4 adapter
+    # (src/defi/execution/adapters/uniswap_v4.py) already refuses unknown
+    # hooks at build time via src.shield.v4_hook_allowlist; this preflight
+    # branch re-checks against the curated address allowlist in
+    # src/data/v4_hooks_allowlist.py so a deposit_lp step assembled by any
+    # other path (composed-plan rebuild, ingested 3rd-party plan, etc.)
+    # cannot smuggle a malicious hook into the wallet's confirm dialog.
+    try:
+        _v4_hook_blockers = _check_v4_hook_blockers(steps)
+        for b in _v4_hook_blockers:
+            if b.code not in seen_codes:
+                blockers.append(b)
+                seen_codes.add(b.code)
+    except Exception as exc:  # never let the gate crash preflight
+        logger.debug("v4-hook-allowlist detector raised: %s", exc)
+
     return blockers
+
+
+# V7-049 — Matches a 0x-prefixed 20-byte EVM address. Used to recover the
+# hook address from `step.risk_warnings` strings stamped by
+# UniswapV4NativeAdapter when adapters don't expose a dedicated
+# transaction attribute. Hex is case-insensitive per EIP-55.
+_V4_HOOK_ADDR_RE = re.compile(r"0x[a-fA-F0-9]{40}")
+
+
+def _extract_v4_hook_addr(step: ExecutionStepV3) -> str | None:
+    """Resolve the V4 hook contract address attached to a deposit_lp step.
+
+    Resolution order (most explicit first):
+      1. ``step.transaction.v4_hook_addr`` — adapter-stamped attribute.
+         Mirrors the lp_pool_addr / swap_pool_addr escape-hatch pattern
+         the §13 detectors already honor.
+      2. ``step.transaction.hooks`` — alternate adapter attribute name
+         matching the PoolKey field literally.
+      3. ``step.receipt["v4_hook_addr"]`` — sidecar/runtime injection.
+      4. Last-resort scrape of ``step.risk_warnings`` text. The native
+         V4 adapter currently stamps a "Hook contract 0x… — Shield: …"
+         line; we look for the FIRST 0x-address token in any risk_warning
+         entry that contains the word "hook". Skips entries that mention
+         the user's own address by checking only hook-tagged lines.
+    Returns None when no address is recoverable — the gate fails-open in
+    that case (the adapter-level check is the primary line of defense).
+    """
+    tx = step.transaction
+    if tx is not None:
+        for attr in ("v4_hook_addr", "hooks", "hook_addr"):
+            v = getattr(tx, attr, None)
+            if v:
+                return str(v).lower()
+    if step.receipt and isinstance(step.receipt, dict):
+        for key in ("v4_hook_addr", "hooks", "hook_addr"):
+            v = step.receipt.get(key)
+            if v:
+                return str(v).lower()
+    # Risk-warning scrape — only inspect entries that mention "hook" so we
+    # don't accidentally pick up the owner address from another warning.
+    for w in step.risk_warnings or []:
+        if not isinstance(w, str):
+            continue
+        if "hook" not in w.lower():
+            continue
+        m = _V4_HOOK_ADDR_RE.search(w)
+        if m:
+            return m.group(0).lower()
+    return None
+
+
+def _check_v4_hook_blockers(
+    steps: Iterable[ExecutionStepV3],
+) -> list[ExecutionBlocker]:
+    """Run the V7-049 V4-hook allowlist gate against any V4 LP step.
+
+    Only fires on (protocol == 'uniswap-v4', action in {deposit_lp,
+    add_liquidity, provide_liquidity, increase_liquidity}). The zero
+    address (vanilla pool) and an unresolved hook address both pass —
+    the latter because the adapter-level check is authoritative and
+    fail-open here matches the shape of the other §13 detectors.
+    """
+    lp_actions = {"deposit_lp", "add_liquidity", "provide_liquidity", "increase_liquidity"}
+    bad: list[tuple[str, str]] = []  # (step_id, hook_addr)
+    for step in steps:
+        if (step.protocol or "").lower() != "uniswap-v4":
+            continue
+        if (step.action or "").lower() not in lp_actions:
+            continue
+        hook_addr = _extract_v4_hook_addr(step)
+        if not hook_addr:
+            continue  # adapter-level gate is authoritative when we can't see it
+        # Chain id is best-effort — pulled from the unsigned tx when present.
+        chain_id = None
+        if step.transaction is not None and step.transaction.chain_id is not None:
+            chain_id = step.transaction.chain_id
+        code = check_v4_hook(hook_addr, chain_id)
+        if code == "DISALLOWED_V4_HOOK":
+            bad.append((step.step_id, hook_addr))
+
+    if not bad:
+        return []
+
+    # One blocker row per offending hook address; affected_step_ids
+    # carries every step that references it. Matches the dedupe shape
+    # of evaluate_kyc_pool_preflight.
+    by_hook: dict[str, list[str]] = {}
+    for sid, addr in bad:
+        by_hook.setdefault(addr, []).append(sid)
+
+    out: list[ExecutionBlocker] = []
+    for hook_addr, step_ids in by_hook.items():
+        out.append(ExecutionBlocker(
+            code="DISALLOWED_V4_HOOK",
+            severity="blocker",
+            title="Untrusted Uniswap V4 hook",
+            detail=(
+                f"V4 pool hook {hook_addr} is not in the verified-hooks "
+                f"allowlist. Refusing to route to prevent fund loss from "
+                f"untrusted hook code — a malicious hook can redirect "
+                f"funds, freeze positions, or front-run the mint. To "
+                f"opt into experimental pools, the plan must be rebuilt "
+                f"with allow_experimental_hook=True after explicit user "
+                f"confirmation."
+            ),
+            affected_step_ids=step_ids,
+            cta="Pick a different fee tier / pool with an audited hook, or rebuild with explicit experimental-hook opt-in.",
+        ))
+    return out
 
 
 def _check_hardware_wallet_alt_blockers(

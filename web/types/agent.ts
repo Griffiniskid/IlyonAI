@@ -294,6 +294,14 @@ export interface ExecutionPlanV3StepTransaction {
    * raw `data` is broadcast. The runtime splices the signature into
    * the calldata via /api/v1/plans/{plan_id}/steps/{step_id}/permit2. */
   permit_payload?: Permit2PermitSingle | null;
+  /** keccak256(calldata) bound to the most recent simulation. The signing
+   * hook compares this to a fresh local hash before broadcast and refuses
+   * on mismatch (CALLDATA_MISMATCH). */
+  simulated_calldata_hash?: string | null;
+  /** Epoch-seconds timestamp of the simulation that produced
+   * `simulated_calldata_hash`. The signing hook refuses to sign when the
+   * gap to now() exceeds SIM_FRESHNESS_SECONDS (SIM_STALE). */
+  simulated_at?: number | null;
 }
 
 export type ExecutionPlanV3StepStatus =

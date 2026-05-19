@@ -169,7 +169,25 @@ app.post("/build", async (req, res) => {
   const isUnstake = ["unstake", "redeem", "exit"].includes(actionNorm);
   try {
     let result;
-    if (isClose && typeof adapter.buildClose === "function") {
+    if (isClose && typeof adapter.buildCloseChecked === "function") {
+      // V7-041: prefer the async init-gated wrapper. Signature is
+      // (positionNft, opts, {connection}) — adapt from the wire body.
+      const body = req.body || {};
+      const positionNft =
+        body.positionMint || body.position_mint || body.positionNft || body.position_nft;
+      if (!positionNft) {
+        result = {
+          kind: "blocker",
+          code: "MISSING_POSITION_MINT",
+          blocker: "MISSING_POSITION_MINT",
+          message:
+            "Close requires position_mint in request body (the position NFT mint pubkey).",
+          transactions: [],
+        };
+      } else {
+        result = await adapter.buildCloseChecked(positionNft, body, { connection });
+      }
+    } else if (isClose && typeof adapter.buildClose === "function") {
       result = await adapter.buildClose(req.body || {}, { connection, rpcUrl: RPC_URL });
     } else if (isOrderUnstake && typeof adapter.buildOrderUnstake === "function") {
       result = await adapter.buildOrderUnstake(req.body || {}, { connection, rpcUrl: RPC_URL });

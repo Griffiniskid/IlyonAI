@@ -6,6 +6,11 @@ import { AlertTriangle, ArrowRight, CheckCircle2, Clock, LockKeyhole, Play, Powe
 import { V3RangeBlock } from "./V3RangeBlock";
 import Permit2SigButton from "./Permit2SigButton";
 import { usePlanStream } from "@/hooks/usePlanStream";
+import {
+  useWalletSigning,
+  SimStaleError,
+  CalldataMismatchError,
+} from "@/hooks/useWalletSigning";
 
 interface Props {
   payload: ExecutionPlanV3Payload;
@@ -50,6 +55,72 @@ function StepRow({
 }) {
   const badge = statusBadge(step.status);
   const canSign = isFirstReady && step.status === "ready" && (!needsAcknowledge || acknowledged);
+  // V7-045 — centralized pre-flight (30s freshness + calldata-hash bind).
+  // We invoke sign() with the step's already-built tx; on success it
+  // returns the txId, and we still call the parent onSignStep so
+  // MainApp's plan-state book-keeping fires. On freshness/hash failure
+  // we surface the error inline and short-circuit before the wallet
+  // popup opens. The parent broadcast handler (MainApp.handleSignStep)
+  // also runs the gate as a defence-in-depth check.
+  const { sign, isPending: hookPending, error: hookError } =
+    useWalletSigning();
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  // Pull simulator-stamped metadata off the transaction. These fields
+  // are emitted by src/defi/execution/models.py::to_dict() but not yet
+  // surfaced in the TS type — narrow via cast to keep this work
+  // scoped to the files allowed by the V7-045 brief.
+  const txWithSim = (step.transaction ?? {}) as ExecutionPlanV3Step["transaction"] & {
+    simulated_calldata_hash?: string;
+    simulated_at?: number;
+  };
+  const simHash = txWithSim?.simulated_calldata_hash ?? "";
+  const simAt = txWithSim?.simulated_at ?? 0;
+
+  const handleClick = async () => {
+    if (!onSignStep) return;
+    setLocalError(null);
+    try {
+      const tx = step.transaction;
+      if (!tx) {
+        onSignStep(planId, step.step_id);
+        return;
+      }
+      if (tx.chain_kind === "evm" && tx.to && tx.data) {
+        await sign({
+          mode: "evm_send",
+          tx: {
+            to: tx.to,
+            data: tx.data,
+            value: tx.value ?? undefined,
+          },
+          simTimestamp: simAt,
+          expectedCalldataHash: simHash,
+        });
+      } else if (tx.chain_kind === "solana" && tx.serialized) {
+        await sign({
+          mode: "solana_send",
+          serialized: tx.serialized,
+          simTimestamp: simAt,
+          expectedCalldataHash: simHash,
+        });
+      } else {
+        // Unsupported tx shape — defer to parent for the toast.
+        onSignStep(planId, step.step_id);
+        return;
+      }
+      // sign() already broadcast; still notify parent so it can mark
+      // the step submitted in plan state.
+      onSignStep(planId, step.step_id);
+    } catch (e: unknown) {
+      if (e instanceof SimStaleError || e instanceof CalldataMismatchError) {
+        setLocalError(e.message);
+        return;
+      }
+      // Other wallet errors — surface and let the user retry.
+      setLocalError(e instanceof Error ? e.message : "Signing failed");
+    }
+  };
   return (
     <div data-testid="execution-plan-v3-step" data-step-id={step.step_id} className="relative rounded-3xl border border-white/10 bg-slate-950/55 p-4">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -104,17 +175,28 @@ function StepRow({
                   stepId={step.step_id}
                   chainId={step.transaction.chain_id}
                   permitMessage={step.transaction.permit_payload as unknown as Parameters<typeof Permit2SigButton>[0]["permitMessage"]}
+                  simulatedCalldataHash={simHash}
+                  simulatedAt={simAt}
                 />
               ) : null}
               <button
                 type="button"
                 data-testid={`sign-step-${step.step_id}`}
-                disabled={!canSign}
-                onClick={() => onSignStep(planId, step.step_id)}
+                disabled={!canSign || hookPending}
+                onClick={handleClick}
                 className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-300 to-orange-300 px-4 py-2 text-xs font-black text-amber-950 shadow-lg shadow-amber-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <Play className="h-3.5 w-3.5" /> Sign step {step.index}
+                <Play className="h-3.5 w-3.5" />
+                {hookPending ? "Signing…" : `Sign step ${step.index}`}
               </button>
+              {(localError || hookError) && (
+                <div
+                  data-testid={`sign-step-error-${step.step_id}`}
+                  className="mt-1 max-w-xs text-right text-[11px] text-rose-300"
+                >
+                  {localError || hookError?.message}
+                </div>
+              )}
             </>
           )}
           {step.status === "ready" && !isFirstReady && (

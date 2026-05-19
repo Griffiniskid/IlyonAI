@@ -31,8 +31,38 @@ const {
 const { simulateBase64Tx } = require("./simulate");
 const { checkTxAccountCount } = require("./altSplit");
 // V7-031/032/041 centralized safety helpers. WSOL sync/close ixs are wired
-// into the native open+increase path below.
+// into the native open+increase path below. checkTransferHook (V7-031) and
+// isWhirlpoolInitialized (V7-041) gate every Whirlpool open before the SDK
+// is touched, mirroring the marinade/raydium/kamino canonical pattern.
 const tokenSafety = require("./_token_safety");
+const { checkTransferHook, isWhirlpoolInitialized } = tokenSafety;
+
+function _orcaHookBlocker(mintStr, hookProgramId) {
+  return {
+    kind: "blocker",
+    code: "TRANSFER_HOOK_NOT_ALLOWED",
+    blocker: "TRANSFER_HOOK_NOT_ALLOWED",
+    error: "TRANSFER_HOOK_NOT_ALLOWED",
+    message:
+      `Orca build blocked: mint ${mintStr} declares a Token-2022 ` +
+      `transfer hook (${hookProgramId}) that is not in the sidecar allowlist.`,
+    mint: mintStr,
+    hookProgramId,
+    transactions: [],
+  };
+}
+
+function _orcaPoolNotInitBlocker(whirlpoolPubkeyStr) {
+  return {
+    kind: "blocker",
+    code: "POOL_NOT_INITIALIZED",
+    blocker: "POOL_NOT_INITIALIZED",
+    error: "POOL_NOT_INITIALIZED",
+    message: `Whirlpool ${whirlpoolPubkeyStr} is not initialized on-chain.`,
+    whirlpool: whirlpoolPubkeyStr,
+    transactions: [],
+  };
+}
 
 // Orca Whirlpool program — verified on mainnet, hard-coded constant.
 const WHIRLPOOL_PROGRAM_ID = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc";
@@ -127,6 +157,27 @@ async function buildOpenPositionTx({
   const userPubkey = new PublicKey(user);
   const whirlpoolPk = new PublicKey(whirlpool);
 
+  // V7-041 — gate the pool account BEFORE booting the SDK so a missing or
+  // wrong-program-owned account surfaces a clean POOL_NOT_INITIALIZED blocker
+  // instead of an opaque SDK exception inside getPool().
+  const poolReady = await isWhirlpoolInitialized(connection, whirlpoolPk);
+  if (!poolReady) {
+    return _orcaPoolNotInitBlocker(whirlpoolPk.toString());
+  }
+
+  // V7-031 (pre-SDK leg) — gate the INPUT mint up-front so a hook-bearing
+  // mint refuses cleanly without booting the Whirlpool SDK. Pool-side mints
+  // are checked after `getPool()` below since their pubkeys come from the
+  // on-chain pool state.
+  const inputMintStr = resolveMint(inputSymbol) || resolveMint("USDC");
+  const inputMintPk = new PublicKey(inputMintStr);
+  if (inputMintStr && inputMintStr !== SOL_MINT) {
+    const inputHook = await checkTransferHook(connection, inputMintPk);
+    if (!inputHook.ok) {
+      return _orcaHookBlocker(inputMintStr, inputHook.hookProgramId);
+    }
+  }
+
   const sdk = _loadWhirlpoolSdk();
   const {
     buildWhirlpoolClient,
@@ -142,11 +193,22 @@ async function buildOpenPositionTx({
   // SDK derives the matching amount of the other side at current price.
   const inputDecimals = decimalsFor(inputSymbol);
   const inputAtoms = humanToAtoms(inputAmount, inputDecimals);
-  const inputMintStr = resolveMint(inputSymbol) || resolveMint("USDC");
-  const inputMintPk = new PublicKey(inputMintStr);
 
   const tokenMintA = poolData.tokenMintA;
   const tokenMintB = poolData.tokenMintB;
+
+  // V7-031 — gate the two pool-side mints against the Token-2022 hook
+  // allowlist now that we know them from on-chain pool data. WSOL is
+  // legacy SPL and cannot carry a hook, so skip it to avoid wasted RPC.
+  for (const sideMint of [tokenMintA, tokenMintB]) {
+    const sideStr = sideMint.toString();
+    if (!sideStr || sideStr === SOL_MINT || sideStr === inputMintStr) continue;
+    const hookCheck = await checkTransferHook(connection, new PublicKey(sideMint));
+    if (!hookCheck.ok) {
+      return _orcaHookBlocker(sideStr, hookCheck.hookProgramId);
+    }
+  }
+
   // Increase-liquidity quote requires the input mint to be one side of
   // the pool. If the caller passed a non-pool symbol we surface a
   // clean blocker — auto Jupiter routing into one side lands in V7-051.
@@ -595,6 +657,15 @@ module.exports = {
     if (extra.lpMint) {
       const inputSym = (asset || "USDC").toUpperCase();
       const inputMint = resolveMint(inputSym) || resolveMint("USDC");
+      // V7-031 — gate the AMM v1 LP-mint route on the input mint's transfer
+      // hook before Jupiter quotes anything. lpMint itself is a classic AMM
+      // v1 LP token (legacy SPL, no extensions possible).
+      if (connection && inputMint && inputMint !== SOL_MINT) {
+        const inputHook = await checkTransferHook(connection, new PublicKey(inputMint));
+        if (!inputHook.ok) {
+          return _orcaHookBlocker(inputMint, inputHook.hookProgramId);
+        }
+      }
       const { tx } = await buildSwap({
         inputMint,
         outputMint: extra.lpMint,

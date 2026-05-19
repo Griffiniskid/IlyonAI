@@ -33,6 +33,7 @@ from src.defi.execution.adapters.base import (
     YieldQuote,
     YieldQuoteRequest,
     YieldVerifyRequest,
+    parse_receipt_logs,
 )
 from src.defi.execution.models import ExecutionStepV3, UnsignedStepTransaction, make_step
 
@@ -200,6 +201,12 @@ class UniswapV3NFTAdapter:
     adapter_id: str = "uniswap-v3-nft"
     chains: frozenset[str] = _SUPPORTED_CHAINS
     protocols: frozenset[str] = _SUPPORTED_PROTOCOLS
+    # V7-043 — canonical NonfungiblePositionManager.IncreaseLiquidity
+    # (uint256 indexed tokenId, uint128 liquidity, uint256 amount0,
+    #  uint256 amount1) topic0. The same event fires on both initial mint
+    # (via Multicall mint→increaseLiquidity) and on subsequent add-liquidity
+    # calls, so it is the strongest single signal for "user got V3 LP".
+    EXPECTED_TOPIC0: str = "0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f"
     actions: frozenset[str] = frozenset({
         "deposit_lp", "provide_liquidity", "add_liquidity",
         "decrease_liquidity", "collect", "close_position",
@@ -949,4 +956,38 @@ class UniswapV3NFTAdapter:
         ]
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
-        return VerifyResult(confirmed=False, detail="V3 NFT receipt verify: read NonfungiblePositionManager.Transfer log for tokenId.")
+        """Parse receipt logs for the NFP IncreaseLiquidity event.
+
+        On match, decode the indexed ``tokenId`` from topics[1] and the
+        ``liquidity``/``amount0``/``amount1`` triple from the log data so the
+        receipt watcher can surface the actual minted amounts to the user
+        (otherwise we'd show "confirmed" with no numbers, which is worse than
+        useless during alpha testing).
+        """
+        receipt = request.receipt or (request.expected_position or {}).get("receipt")
+        result = parse_receipt_logs(receipt, self.EXPECTED_TOPIC0)
+        if not result.confirmed or not result.raw_log:
+            return result
+        topics = result.raw_log.get("topics") or []
+        data = result.raw_log.get("data") or "0x"
+        decoded: dict[str, Any] = {}
+        # topics[1] = indexed tokenId (uint256)
+        if len(topics) >= 2 and isinstance(topics[1], str):
+            try:
+                decoded["tokenId"] = int(topics[1], 16)
+            except (ValueError, TypeError):
+                pass
+        # data layout: liquidity (uint128, padded to 32) || amount0 (uint256) || amount1 (uint256)
+        body = data[2:] if isinstance(data, str) and data.startswith("0x") else (data or "")
+        if isinstance(body, str) and len(body) >= 64 * 3:
+            try:
+                decoded["liquidity"] = int(body[0:64], 16)
+                decoded["amount0"] = int(body[64:128], 16)
+                decoded["amount1"] = int(body[128:192], 16)
+            except ValueError:
+                pass
+        if decoded:
+            merged_receipt = dict(result.receipt or {})
+            merged_receipt["v3_increase_liquidity"] = decoded
+            result.receipt = merged_receipt
+        return result

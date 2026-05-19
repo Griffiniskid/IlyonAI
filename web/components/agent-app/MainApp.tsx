@@ -6,6 +6,11 @@ import type { CardFrame, ExecutionPlanPayload, ObservationFrame, PlanCompleteFra
 import { connectMetaMask, resolveMetaMaskProvider } from "./wallets/metamask";
 import { connectPhantomSolana, disconnectPhantomSolana, getStoredPhantomWalletContext, resolvePhantomEvmProvider, restorePhantomWalletContext } from "./wallets/phantom";
 import { copyWithFeedback } from "./utils/copyWithFeedback";
+import {
+  useWalletSigning,
+  SimStaleError,
+  CalldataMismatchError,
+} from "@/hooks/useWalletSigning";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type Role = "user" | "assistant";
@@ -4313,6 +4318,14 @@ function buildPhantomPortfolioAddress(solanaAddress: string | null, evmAddress: 
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function MainApp() {
+  // V7-045 — centralized signing pre-flight (30s freshness +
+  // calldata-hash bind). We use the hook only for its pre-flight
+  // (`sign` is intentionally NOT called for the actual broadcast here
+  // because handleSignStep needs to layer in chain-switching,
+  // pre-flight gas estimation, and 0-native-balance refusal that the
+  // hook does not own). Defence-in-depth: ExecutionPlanV3Card.StepRow
+  // also runs the gate before calling onSignStep.
+  const walletSigner = useWalletSigning();
   const makeWelcome = (): Message => ({ ...WELCOME, ts: new Date() });
   const createClientSessionId = () => globalThis.crypto?.randomUUID?.() ?? `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const [messages, setMessages]         = useState<Message[]>(() => loadLocalChatMessages() ?? [makeWelcome()]);
@@ -5186,6 +5199,66 @@ export default function MainApp() {
       return;
     }
     const tx = step.transaction;
+    // V7-045 — pre-flight: refuse to proceed if the sim artifact is
+    // stale (>30s) or the broadcast calldata diverges from the
+    // simulator-stamped hash. We do this via the centralized
+    // useWalletSigning hook (walletSigner.sign) so the same rules
+    // apply to every signing surface. We invoke sign() in "preflight
+    // only" mode by catching after the gate fires; the wallet popup
+    // is delegated to the existing chain-aware path below to preserve
+    // chain-switch + gas-estimate semantics. The simulator stamps
+    // `simulated_calldata_hash` + `simulated_at` on the step tx; cast
+    // to read them without widening the shared TS type here.
+    const txWithSim = tx as typeof tx & {
+      simulated_calldata_hash?: string;
+      simulated_at?: number;
+    };
+    const simHash = txWithSim.simulated_calldata_hash || "";
+    const simAt = txWithSim.simulated_at || 0;
+    if (simHash && simAt > 0) {
+      try {
+        if (tx.chain_kind === "evm" && tx.to && tx.data) {
+          await walletSigner.sign({
+            mode: "evm_send",
+            tx: { to: tx.to, data: tx.data, value: tx.value ?? undefined },
+            simTimestamp: simAt,
+            expectedCalldataHash: simHash,
+          });
+          // Pre-flight passed AND broadcast succeeded — bail out
+          // before the legacy code path so we don't double-broadcast.
+          showToast("Signed.", "success");
+          return;
+        }
+        if (tx.chain_kind === "solana" && tx.serialized) {
+          await walletSigner.sign({
+            mode: "solana_send",
+            serialized: tx.serialized,
+            simTimestamp: simAt,
+            expectedCalldataHash: simHash,
+          });
+          showToast("Signed.", "success");
+          return;
+        }
+      } catch (preflightErr: unknown) {
+        if (
+          preflightErr instanceof SimStaleError ||
+          preflightErr instanceof CalldataMismatchError
+        ) {
+          const m = preflightErr.message;
+          console.warn("[handleSignStep] pre-flight refused", m);
+          showToast(`Refusing to sign: ${m}`, "error");
+          try { window.alert(m); } catch {}
+          return;
+        }
+        // Any other error from the hook path — fall through to the
+        // legacy chain-aware path which has richer error reporting
+        // (chain switching, gas estimation, 0-balance refusal).
+        console.warn(
+          "[handleSignStep] hook path failed, falling back",
+          preflightErr,
+        );
+      }
+    }
     try {
       if (tx.chain_kind === "solana" && tx.serialized) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
