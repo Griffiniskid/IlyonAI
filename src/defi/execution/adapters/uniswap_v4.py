@@ -32,6 +32,11 @@ try:
 except ImportError:
     _keccak = None
 _V4_GETSLOT0_SEL = "0xc815641c"  # keccak("getSlot0(bytes32)")[:4]
+# keccak256("getPositionInfo(bytes32,address,bytes32)")[:4] — V4 PoolManager
+# 3-arg variant that takes (poolId, owner, salt) and returns the position triple
+# (liquidity uint128, feeGrowthInside0LastX128 uint256, feeGrowthInside1LastX128 uint256).
+# Verified offline 2026-05-19 via pycryptodome keccak — see commit message.
+_V4_GETPOSINFO3_SEL = "0xfba8dbd4"
 from src.defi.execution.adapters.base import (
     CapabilityResult,
     VerifyResult,
@@ -108,6 +113,69 @@ def _enc_int24(v: int) -> str:
 
 def _to_units(amount: Decimal, decimals: int) -> int:
     return int(amount * (Decimal(10) ** decimals))
+
+
+async def _verify_v4_position(
+    *,
+    pool_id: str,
+    owner: str,
+    salt: str,
+    chain: str,
+    pool_manager: str,
+) -> tuple[bool, dict[str, Any]]:
+    """Call PoolManager.getPositionInfo(bytes32 poolId, address owner, bytes32 salt).
+
+    Selector 0xfba8dbd4 (verified keccak). Returns
+    `(confirmed, {"liquidity": int, "fee_growth_0": int, "fee_growth_1": int})`.
+
+    The 3-arg variant (poolId, owner, salt) is the canonical PoolManager getter
+    used by all V4 PositionManager flows where the position is keyed by
+    (owner, tickLower, tickUpper, salt). Decoded layout:
+      word 0: uint128 liquidity (low-order 16 bytes)
+      word 1: uint256 feeGrowthInside0LastX128
+      word 2: uint256 feeGrowthInside1LastX128
+    """
+    pid_hex = pool_id.lower().removeprefix("0x").rjust(64, "0")
+    owner_hex = _pad32(owner)
+    salt_hex = salt.lower().removeprefix("0x").rjust(64, "0")
+    data = _V4_GETPOSINFO3_SEL + pid_hex + owner_hex + salt_hex
+    raw = await _eth_call_with_fallback(chain, pool_manager, data)
+    if not raw or raw == "0x":
+        return False, {
+            "liquidity": 0,
+            "fee_growth_0": 0,
+            "fee_growth_1": 0,
+            "reason": "rpc_empty",
+            "pool_id": pool_id,
+            "owner": owner,
+            "salt": salt,
+        }
+    body = raw.removeprefix("0x")
+    if len(body) < 192:
+        return False, {
+            "liquidity": 0,
+            "fee_growth_0": 0,
+            "fee_growth_1": 0,
+            "reason": "short_response",
+            "raw": raw,
+        }
+    try:
+        liquidity = int(body[0:64], 16)
+        fg0 = int(body[64:128], 16)
+        fg1 = int(body[128:192], 16)
+    except ValueError:
+        return False, {
+            "liquidity": 0, "fee_growth_0": 0, "fee_growth_1": 0,
+            "reason": "decode_error", "raw": raw,
+        }
+    return liquidity > 0, {
+        "liquidity": liquidity,
+        "fee_growth_0": fg0,
+        "fee_growth_1": fg1,
+        "pool_id": pool_id,
+        "owner": owner,
+        "salt": salt,
+    }
 
 
 def _encode_pool_key(currency0: str, currency1: str, fee: int, tick_spacing: int, hooks: str) -> str:
@@ -202,6 +270,31 @@ def _encode_unlock_data(actions: bytes, param_hex_list: list[str]) -> str:
         params_block += _enc_uint(param_lengths_bytes[i]) + param_padded[i]
 
     return _enc_uint(actions_offset) + _enc_uint(params_offset) + actions_block + params_block
+
+
+# V4 wrap guard — V4 PoolManager settles native ETH via flash accounting +
+# msg.value (currency = address(0)). Pre-wrapping ETH -> WETH burns gas and
+# produces an ERC-20 currency the PoolKey doesn't reference; the mint would
+# either revert (PoolKey mismatch) or stash the WETH unspent in the wallet.
+# This sentinel set is consulted by build_yield_execution_plan.py before the
+# RC7b wrap-prepend fires.
+V4_PROTOCOLS_NO_WRAP: frozenset[str] = frozenset({"uniswap-v4"})
+
+
+def is_v4_native_lp_no_wrap(*, protocol: str, asset_in: str) -> bool:
+    """Return True iff the (protocol, asset_in) pair is a V4 native-ETH LP
+    path that must NOT have a WETH9.deposit() wrap step inserted.
+
+    V4 accepts native ETH via PoolManager flash accounting (msg.value), so
+    wrapping is both gas-wasteful and incorrect (PoolKey references the
+    native currency address(0), not WETH).
+    """
+    proto_l = (protocol or "").lower()
+    if proto_l not in V4_PROTOCOLS_NO_WRAP:
+        return False
+    asset_u = (asset_in or "").upper()
+    # Per-chain native gas tokens that V4 PoolManager accepts via msg.value.
+    return asset_u in {"ETH", "MATIC", "POL", "BNB", "AVAX"}
 
 
 class UniswapV4NativeAdapter:
@@ -462,11 +555,58 @@ class UniswapV4NativeAdapter:
         return steps
 
     async def verify(self, request: YieldVerifyRequest) -> VerifyResult:
-        # V4 receipt verification: PoolManager.Initialize lookup + PositionManager
-        # ERC721 Transfer log. Per-kind RPC reader lands in §6g Phase R14.
+        """V4 receipt verification — spec §6g.
+
+        Reads `PoolManager.getPositionInfo(bytes32 poolId, address owner, bytes32 salt)`
+        (selector 0xfba8dbd4, verified via keccak256 offline). A position is
+        confirmed iff `liquidity > 0`. Required keys on
+        `request.expected_position`: pool_id, salt. Owner defaults to
+        `request.user_address`. If the PoolManager address is missing from the
+        verified registry for the requested chain, returns
+        `STUB_NO_POOL_MANAGER` instead of guessing an on-chain address.
+        """
+        exp = request.expected_position or {}
+        chain = (request.chain or "").lower()
+        owner = exp.get("owner") or request.user_address
+        pool_id = exp.get("pool_id") or exp.get("poolId")
+        salt = exp.get("salt") or "0x" + "00" * 32  # canonical default salt
+
+        if not pool_id:
+            return VerifyResult(
+                confirmed=False,
+                detail="V4 receipt verify requires expected_position.pool_id.",
+            )
+        if not owner:
+            return VerifyResult(
+                confirmed=False,
+                detail="V4 receipt verify requires owner (request.user_address or expected_position.owner).",
+            )
+
+        pm_addr = _V4_POOL_MANAGER.get(chain)
+        if not pm_addr:
+            # NEVER guess on-chain PoolManager addresses — if the chain is not in
+            # the verified registry, surface the gap to the caller as a typed
+            # stub reason. New chains MUST be added with canonical deploys.
+            return VerifyResult(
+                confirmed=False,
+                detail=f"STUB_NO_POOL_MANAGER: no verified PoolManager address for chain={chain!r}.",
+                receipt={"reason": "STUB_NO_POOL_MANAGER", "chain": chain},
+            )
+
+        confirmed, payload = await _verify_v4_position(
+            pool_id=str(pool_id),
+            owner=str(owner),
+            salt=str(salt),
+            chain=chain,
+            pool_manager=pm_addr,
+        )
         return VerifyResult(
-            confirmed=False,
-            detail="V4 receipt verify: read PositionManager.Transfer for tokenId, then PoolManager.getPositionInfo.",
+            confirmed=confirmed,
+            detail=(
+                f"PoolManager.getPositionInfo(poolId={pool_id}, owner={owner}, "
+                f"salt={salt}).liquidity={payload.get('liquidity')} > 0={confirmed}."
+            ),
+            receipt=payload,
         )
 
     def _tick_spacing_for_fee(self, fee_bps: int) -> int:

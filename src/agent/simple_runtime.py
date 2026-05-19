@@ -9019,8 +9019,9 @@ _UNBACKED_FAKE_URL_RE = re.compile(
     # surface as a user-clickable execute URL — the agent emits a signable
     # card instead.
     r'|https?://app\.enso\.fi/execute\?'
-    # Generic enso execute URL catch-all (any TLD).
-    r'|https?://(?:app\.)?enso\.(?:fi|finance|app|xyz|io|org|com)/execute\b'
+    # RC15-broaden (Pass B 113755f enso-07 t2-4) — fabricated swap/route/trade
+    # URLs across .fi/.finance/.network/.app/.xyz/.io/.org/.com TLDs.
+    r'|https?://(?:app\.)?enso\.(?:fi|finance|app|xyz|io|org|com|network)/(?:execute|swap|route|shortcuts|trade)\b'
     r'|https?://(?:defillama\.com/yields/pool/|app\.morpho\.org/[\w-]+/vault/)',
     re.IGNORECASE,
 )
@@ -9081,11 +9082,18 @@ _UNBACKED_FAKE_METRICS_RE = re.compile(
 _UNBACKED_SCRATCHPAD_RE = re.compile(
     # First-person planning sentence stems — require a follow-on word so bare
     # "Let's" / "We need to" alone don't false-match.
-    r'\b(?:We\s+(?:need\s+to|have\s+to|must|should|can|will)'
-    r'|Let(?:\s+me|\'?s)\s+(?:think|compute|calculate|see|figure|break|review|check|analyze)'
-    r'|I(?:\s+need\s+to|\s+have\s+to|\s+must|\s+should|\'ll\s+need\s+to|\'ll)\s+\w+'
+    # RC2-broaden (Pass B enso-06 t2): "Let's assume 1 ETH = $2,000" — added
+    # `assume`, `try`, `pick`, `use`, `go`, `say`, `pretend` to Let stem.
+    r'\b(?:We(?:\s+(?:need\s+to|have\s+to|must|should|can|will|could|would|might|may)|\'(?:ll|d|re))'
+    r'|Let(?:\s+me|\'?s)\s+(?:think|compute|calculate|see|figure|break|review|check|analyze|assume|try|pick|use|go|say|pretend|imagine|suppose|estimate|approximate|round)'
+    r'|I(?:\s+need\s+to|\s+have\s+to|\s+must|\s+should|\s+could|\s+would|\'ll\s+need\s+to|\'ll|\'d|\'ve)\s+\w+'
     r'|First[,\s]+(?:we|I|let|step)'
     r'|Then[,\s]+(?:we|I|compute|calculate|divide|apply|sum|add|subtract)'
+    # Hedging / planning openers — strong scratchpad markers.
+    r'|Probably\s+(?:they|user|the\s+user)\s+(?:want|need|mean)'
+    r'|Better\s*:'
+    r'|Alternatively[,\s]'
+    r'|(?:Could|Should)\s+we\s+\w+'
     r'|Step\s+\d+\s*:)\s+\w+'
     # Inline arithmetic expressions used in compute steps (e.g. "250 * (1/7) =")
     r'|\b\d+(?:\.\d+)?\s*[*x×÷/]\s*[(\d./]+\s*='

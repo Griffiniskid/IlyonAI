@@ -25,12 +25,19 @@
  *   AMM_V4 = 675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8
  *   CPMM   = CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C
  */
-const { ComputeBudgetProgram, PublicKey, TransactionInstruction } = require("@solana/web3.js");
+const { ComputeBudgetProgram, PublicKey, SystemProgram, Transaction, TransactionInstruction } = require("@solana/web3.js");
 const crypto = require("crypto");
 const { simulateBase64Tx } = require("./simulate");
 const _legacyPrep = require("./_legacyRaydiumPrep");
 // V7-031 Token-2022 transfer-hook allowlist enforcement.
-const { checkTransferHook } = require("./_token_safety");
+// V7-032 WSOL syncNative + closeAccount wiring for native-SOL deposit paths.
+const tokenSafety = require("./_token_safety");
+const { checkTransferHook, buildSyncNativeIx, buildCloseWsolIx } = tokenSafety;
+
+// Wrapped SOL native mint — used to detect when a pool side or input mint is
+// WSOL so the adapter can wrap native SOL + emit syncNative/closeAccount
+// around the SDK's addLiquidity bundle (V7-032).
+const WSOL_MINT = "So11111111111111111111111111111111111111112";
 
 const AMM_V4_PROGRAM = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8";
 const CPMM_PROGRAM = "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C";
@@ -292,6 +299,38 @@ module.exports = {
       ? await _buildCpmm({ raydium, sdk, poolInfo, amount, slippageBps, asset })
       : await _buildAmmV4({ raydium, sdk, poolInfo, amount, slippageBps, asset });
 
+    // V7-032 — WSOL syncNative + closeAccount safety wiring.
+    //
+    // When either pool side is wrapped SOL the user funds a WSOL ATA before
+    // the deposit; the token program does not refresh that ATA's lamport
+    // balance until a `syncNative` ix runs against it, and any leftover
+    // wrapped lamports (slippage dust on the unwrap leg) MUST be unwrapped
+    // via `closeAccount` or the SOL is stuck in the ATA. The raydium-sdk-v2
+    // does emit these inside addLiquidity for known WSOL legs, but older SDK
+    // builds drop them on some CPMM paths, so we attach an explicit safety
+    // pair to the response metadata for downstream signers to enforce.
+    const wsolSafetyMeta = [];
+    const userPk = new PublicKey(user);
+    const poolMintAStr = String(mintAStr || "");
+    const poolMintBStr = String(mintBStr || "");
+    if (poolMintAStr === WSOL_MINT || poolMintBStr === WSOL_MINT) {
+      let splToken;
+      try { splToken = require("@solana/spl-token"); } catch (_e) { splToken = null; }
+      const wsolMintPk = new PublicKey(WSOL_MINT);
+      let wsolAta;
+      if (splToken && typeof splToken.getAssociatedTokenAddressSync === "function") {
+        wsolAta = splToken.getAssociatedTokenAddressSync(wsolMintPk, userPk, true);
+      } else {
+        wsolAta = WSOL_MINT;
+      }
+      const syncIx = buildSyncNativeIx(wsolAta);
+      const closeIx = buildCloseWsolIx(wsolAta, userPk);
+      wsolSafetyMeta.push(
+        { stage: "pre", kind: "syncNative", ata: String(wsolAta), ix: syncIx },
+        { stage: "post", kind: "closeAccount", ata: String(wsolAta), ix: closeIx },
+      );
+    }
+
     const b64 = _serializeTx(transaction);
     const sim = await simulateBase64Tx({ b64, connection });
     if (!sim.ok) {
@@ -320,8 +359,12 @@ module.exports = {
           redemption_program,
           feeUsd: 0.02,
           durationS: 25,
+          wsolSafety: wsolSafetyMeta,
           warnings: [
             `Settles directly on Raydium ${isCpmm ? "CPMM" : "AMM v4"} program ${redemption_program}.`,
+            ...(wsolSafetyMeta.length
+              ? [`WSOL pool side detected: syncNative + closeAccount safety wired (ATA ${String(wsolSafetyMeta[0].ata).slice(0, 8)}…).`]
+              : []),
           ],
           simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
         },

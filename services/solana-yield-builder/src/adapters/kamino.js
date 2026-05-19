@@ -31,7 +31,37 @@ const {
 const BN = require("bn.js");
 const { simulateBase64Tx } = require("./simulate");
 // V7-031 Token-2022 transfer-hook allowlist enforcement.
-const { checkTransferHook } = require("./_token_safety");
+// V7-032 WSOL syncNative + closeAccount wiring for native-SOL deposit paths.
+const { checkTransferHook, buildSyncNativeIx, buildCloseWsolIx } = require("./_token_safety");
+
+// Wrapped SOL native mint — detect when reserveLiquidityMint == WSOL so the
+// adapter can attach syncNative + closeAccount safety metadata around the
+// klend deposit IX. Klend reserves can hold WSOL (SOL reserve); when the
+// user is depositing native SOL into such a reserve, the wrapped lamports
+// MUST be synced into the SPL accounting layer before deposit_reserve_*
+// touches them, and any leftover wrapped dust MUST be closeAccount-ed
+// post-deposit so the user reclaims the SOL.
+const WSOL_MINT_STR = "So11111111111111111111111111111111111111112";
+
+function _kaminoBuildWsolSafetyMeta(ownerPk, mintCandidates) {
+  const candidates = (Array.isArray(mintCandidates) ? mintCandidates : [mintCandidates])
+    .filter(Boolean)
+    .map((m) => (m && m.toBase58 ? m.toBase58() : String(m)));
+  if (!candidates.some((s) => s === WSOL_MINT_STR)) return [];
+  let splToken;
+  try { splToken = require("@solana/spl-token"); } catch (_e) { splToken = null; }
+  const wsolMintPk = new PublicKey(WSOL_MINT_STR);
+  let wsolAta;
+  if (splToken && typeof splToken.getAssociatedTokenAddressSync === "function") {
+    wsolAta = splToken.getAssociatedTokenAddressSync(wsolMintPk, ownerPk, true);
+  } else {
+    wsolAta = WSOL_MINT_STR;
+  }
+  return [
+    { stage: "pre",  kind: "syncNative",   ata: String(wsolAta), ix: buildSyncNativeIx(wsolAta) },
+    { stage: "post", kind: "closeAccount", ata: String(wsolAta), ix: buildCloseWsolIx(wsolAta, ownerPk) },
+  ];
+}
 
 function _kaminoHookBlocker(mintStr, hookProgramId) {
   return {
@@ -602,6 +632,11 @@ module.exports = {
         e.simulation = sim;
         throw e;
       }
+      // V7-032 — when reserveLiquidityMint is WSOL, attach syncNative +
+      // closeAccount safety metadata so the user's WSOL ATA gets refreshed
+      // pre-deposit and any leftover wrapped dust is reclaimed post-deposit.
+      const reserveLiquidityMint = extra.accounts.reserveLiquidityMint;
+      const klendReserveWsolSafety = _kaminoBuildWsolSafetyMeta(ownerPk, [reserveLiquidityMint]);
       return {
         transactions: [
           {
@@ -616,7 +651,10 @@ module.exports = {
             redemption_program: KAMINO_LEND_PROGRAM_ID,
             feeUsd: 0.005,
             durationS: 30,
-            warnings: [],
+            wsolSafety: klendReserveWsolSafety,
+            warnings: klendReserveWsolSafety.length
+              ? [`WSOL reserve detected: syncNative + closeAccount safety wired (ATA ${String(klendReserveWsolSafety[0].ata).slice(0, 8)}…).`]
+              : [],
             source: "kamino-native-reserve",
             simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
           },
@@ -721,6 +759,18 @@ module.exports = {
       e.simulation = sim;
       throw e;
     }
+    // V7-032 — obligation-variant deposit may also take WSOL as the underlying
+    // liquidity mint (klend SOL reserve). Caller can pass reserveLiquidityMint
+    // via extra.accounts or extra.reserveLiquidityMint; gate against WSOL and
+    // attach syncNative + closeAccount safety metadata.
+    const obligationReserveLiquidityMint =
+      extra.accounts.reserveLiquidityMint
+      || extra.reserveLiquidityMint
+      || extra.reserve_liquidity_mint;
+    const obligationWsolSafety = _kaminoBuildWsolSafetyMeta(
+      ownerPk,
+      [obligationReserveLiquidityMint],
+    );
     return {
       transactions: [
         {
@@ -735,7 +785,13 @@ module.exports = {
           redemption_program: KAMINO_LEND_PROGRAM_ID,
           feeUsd: 0.005,
           durationS: 30,
-          warnings: ["Kamino REST unreachable; routed via hand-rolled Kamino Lend native IX."],
+          wsolSafety: obligationWsolSafety,
+          warnings: [
+            "Kamino REST unreachable; routed via hand-rolled Kamino Lend native IX.",
+            ...(obligationWsolSafety.length
+              ? [`WSOL reserve detected: syncNative + closeAccount safety wired (ATA ${String(obligationWsolSafety[0].ata).slice(0, 8)}…).`]
+              : []),
+          ],
           source: "kamino-native",
           simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
         },

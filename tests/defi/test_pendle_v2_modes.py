@@ -14,6 +14,7 @@ from src.defi.execution.adapters.pendle_v2 import (
     SEL_MINT_PY_FROM_TOKEN,
     SEL_REDEEM_PY_TO_TOKEN,
     SEL_SWAP_EXACT_PT_FOR_TOKEN,
+    SEL_SWAP_EXACT_TOKEN_FOR_PT,
     SEL_SWAP_TOKEN_FOR_PT,
 )
 
@@ -100,12 +101,23 @@ def test_unsupported_chain_raises():
 
 
 def test_selector_constants_pinned():
-    """Regression pin: Pendle V4 router dispatcher selectors must not drift."""
-    assert SEL_MINT_PY_FROM_TOKEN == "0xc81f847a"
-    assert SEL_SWAP_TOKEN_FOR_PT == "0x594a88cc"
-    assert SEL_ADD_LIQUIDITY_FROM_TOKEN == "0x9f9da99e"
+    """Regression pin: Pendle V4 router dispatcher selectors must not drift.
+
+    Re-pinned after V7-057 collision fix (all 6 verified via keccak256 of
+    canonical Pendle V4 Router ABI flattened sigs).
+    """
+    assert SEL_MINT_PY_FROM_TOKEN == "0xd0f42385"  # mintPyFromToken(address,address,uint256,TokenInput)
+    assert SEL_SWAP_TOKEN_FOR_PT == "0xfeb9d1d2"   # swapExactTokenForPtSimple(...)
+    assert SEL_SWAP_EXACT_TOKEN_FOR_PT == "0xc81f847a"  # swapExactTokenForPt(...,ApproxParams,...)
+    assert SEL_SWAP_EXACT_PT_FOR_TOKEN == "0x594a88cc"  # swapExactPtForToken(...)
     assert SEL_REDEEM_PY_TO_TOKEN == "0x47f1de22"
-    assert SEL_SWAP_EXACT_PT_FOR_TOKEN == "0x594a88cc"
+    assert SEL_ADD_LIQUIDITY_FROM_TOKEN == "0x12599ac6"
+    # All 6 selectors distinct (V7-057 collision sentinel).
+    sels = {
+        SEL_MINT_PY_FROM_TOKEN, SEL_SWAP_TOKEN_FOR_PT, SEL_SWAP_EXACT_TOKEN_FOR_PT,
+        SEL_SWAP_EXACT_PT_FOR_TOKEN, SEL_REDEEM_PY_TO_TOKEN, SEL_ADD_LIQUIDITY_FROM_TOKEN,
+    }
+    assert len(sels) == 6
 
 
 # ---------------------------------------------------------------------------

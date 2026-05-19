@@ -7,6 +7,17 @@
  * at the protocol's exchange rate — no Jupiter aggregator tax — and the
  * receipt is a verifiable INF SPL balance delta.
  *
+ * V7-032 — WSOL syncNative + closeAccount NOT needed.
+ *   AddLiquidity accepts ONLY pre-existing LSTs (MSOL/JITOSOL/BSOL via
+ *   `PINNED_LSTS`); `resolveLstFromSymbol()` hard-throws on any input
+ *   that is not in that allowlist (including raw SOL / WSOL). Sanctum
+ *   has no native-SOL entry path — the user must already hold an LST
+ *   SPL balance, and the receipt INF is its own distinct SPL mint. No
+ *   WSOL ATA is ever touched, so syncNative is meaningless and there is
+ *   no ATA to closeAccount. Verdict: gate INTENTIONALLY NOT WIRED — no
+ *   native-SOL path exists. (Allowlisted in
+ *   tests/defi/test_wsol_sync_close_audit.py.)
+ *
  * Instruction layout (borsh, 22 bytes total):
  *   u8  disc                = 3
  *   u8  lst_value_calc_accs = remaining-account count for SOL-value calc

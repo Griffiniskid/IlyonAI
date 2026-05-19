@@ -149,6 +149,8 @@ KNOWN_BLOCKER_CODES: frozenset[str] = frozenset({
     "NULL_ROUTE",                  # F09 — DexScreener / aggregator returned no credible route
     "FORBIDDEN_REFUND_SWAP_BACK",  # V7-068 — shield refused an auto-swap-back-of-refund recovery
     "LEDGER_NO_ALT_SUPPORT",       # §13 Row 15 — Ledger/hw wallet can't sign Solana v0 ALT tx
+    "DUST_BELOW_THRESHOLD",        # §3 / §6f — position <$1 USD, sweep/leave/increase choice
+    "SESSION_KEY_MIRROR_DRIFT",    # §1 inv 5 — on-chain session-key policy diverges from off-chain proposal
 })
 
 

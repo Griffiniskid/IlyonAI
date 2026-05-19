@@ -17,7 +17,42 @@ try { const m = require("@meteora-ag/vault-sdk"); VaultImpl = m.default || m.Vau
 const { humanToAtoms } = require("./jupiter");
 const { simulateBase64Tx } = require("./simulate");
 // V7-031 Token-2022 transfer-hook allowlist enforcement.
-const { checkTransferHook } = require("./_token_safety");
+// V7-032 WSOL syncNative + closeAccount wiring for native-SOL deposit paths.
+const { checkTransferHook, buildSyncNativeIx, buildCloseWsolIx } = require("./_token_safety");
+
+// Wrapped SOL native mint — detect when a vault token or pool side is WSOL
+// so the adapter can attach syncNative + closeAccount safety metadata.
+const WSOL_MINT_STR = "So11111111111111111111111111111111111111112";
+
+/**
+ * V7-032 — Build a WSOL safety-pair (syncNative + closeAccount) for the user
+ * when `mintStrs` contains the native WSOL mint. Returns a metadata array;
+ * empty array when no WSOL side is present. Each entry carries a real ix
+ * (when @solana/spl-token is loadable) plus the ATA pubkey for callers that
+ * want to inject them into a fresh Transaction wrapper.
+ */
+function _buildWsolSafetyMeta(ownerPk, mintStrs) {
+  const meta = [];
+  if (!ownerPk) return meta;
+  const hasWsol = (Array.isArray(mintStrs) ? mintStrs : [mintStrs])
+    .map((m) => (m && m.toBase58 ? m.toBase58() : String(m || "")))
+    .some((s) => s === WSOL_MINT_STR);
+  if (!hasWsol) return meta;
+  const wsolMintPk = new PublicKey(WSOL_MINT_STR);
+  let splToken;
+  try { splToken = require("@solana/spl-token"); } catch (_e) { splToken = null; }
+  let wsolAta;
+  if (splToken && typeof splToken.getAssociatedTokenAddressSync === "function") {
+    wsolAta = splToken.getAssociatedTokenAddressSync(wsolMintPk, ownerPk, true);
+  } else {
+    wsolAta = WSOL_MINT_STR;
+  }
+  meta.push(
+    { stage: "pre",  kind: "syncNative",   ata: String(wsolAta), ix: buildSyncNativeIx(wsolAta) },
+    { stage: "post", kind: "closeAccount", ata: String(wsolAta), ix: buildCloseWsolIx(wsolAta, ownerPk) },
+  );
+  return meta;
+}
 
 function _meteoraHookBlocker(mintStr, hookProgramId) {
   return {
@@ -280,13 +315,22 @@ module.exports = {
       const b64 = await serializeTx(tx, null, owner, connection);
       const sim = await simulateBase64Tx({ b64, connection });
       if (!sim.ok) { const e = new Error(`Meteora vault sim failed: ${sim.errStr || "unknown"}`); e.simulation = sim; throw e; }
+      // V7-032 — when the vault's deposit token is native WSOL, attach a
+      // syncNative + closeAccount safety pair so the user's WSOL ATA gets
+      // its lamport balance synced before deposit and any leftover dust
+      // is reclaimed when the ATA closes.
+      const vaultWsolSafety = _buildWsolSafetyMeta(owner, [tokenMint]);
       return { transactions: [{
         b64, summary: `Meteora Dynamic Vault deposit ${amount} ${asset || ""}`,
         description: `Deposit via VAULT_PROGRAM ${VAULT_PROGRAM.toBase58()}.`,
         receiptToken: "meteora-vault-share",
         receiptMint: vault.vaultState?.lpMint?.toBase58() || null,
         redemption_program: VAULT_PROGRAM.toBase58(),
-        feeUsd: 0.01, durationS: 20, warnings: [],
+        feeUsd: 0.01, durationS: 20,
+        wsolSafety: vaultWsolSafety,
+        warnings: vaultWsolSafety.length
+          ? [`WSOL vault deposit: syncNative + closeAccount safety wired (ATA ${String(vaultWsolSafety[0].ata).slice(0, 8)}…).`]
+          : [],
         simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
       }] };
     }
@@ -384,6 +428,10 @@ module.exports = {
     const b64 = await serializeTx(txBuilder, [positionNft], owner, connection);
     const sim = await simulateBase64Tx({ b64, connection });
     if (!sim.ok) { const e = new Error(`Meteora DAMM v2 sim failed: ${sim.errStr || "unknown"}`); e.simulation = sim; throw e; }
+    // V7-032 — DAMM v2 createPositionAndAddLiquidity deposits BOTH sides.
+    // When either side is WSOL the user's WSOL ATA must be syncNative-d
+    // pre-deposit and closeAccount-d post-deposit to reclaim dust SOL.
+    const dammWsolSafety = _buildWsolSafetyMeta(owner, [tokenAMint, tokenBMint]);
     return { transactions: [{
       b64,
       summary: `Meteora DAMM v2 createPositionAndAddLiquidity (${pool.tokenASymbol || "A"}-${pool.tokenBSymbol || "B"})`,
@@ -393,7 +441,14 @@ module.exports = {
       position_nft: positionNft.publicKey.toBase58(),
       redemption_program: DAMM_V2_PROGRAM.toBase58(),
       feeUsd: 0.02, durationS: 30,
-      warnings: ["Position is NFT-gated.", "Transfer-hook Token-2022 mints unsupported on DAMM v2."],
+      wsolSafety: dammWsolSafety,
+      warnings: [
+        "Position is NFT-gated.",
+        "Transfer-hook Token-2022 mints unsupported on DAMM v2.",
+        ...(dammWsolSafety.length
+          ? [`WSOL pool side detected: syncNative + closeAccount safety wired (ATA ${String(dammWsolSafety[0].ata).slice(0, 8)}…).`]
+          : []),
+      ],
       simulation: { ok: true, benign: sim.benign || false, unitsConsumed: sim.unitsConsumed },
     }] };
   },

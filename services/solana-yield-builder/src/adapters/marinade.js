@@ -13,6 +13,20 @@
  * For non-SOL inputs (USDC, USDT, ETH, etc.) the adapter still requires
  * a Jupiter prep-swap leg because Marinade only accepts SOL natively.
  * Surface this as two signed transactions in chat.
+ *
+ * V7-032 — WSOL syncNative + closeAccount NOT needed.
+ *   marinade.deposit(lamports) takes NATIVE SOL (System-program lamport
+ *   transfer into Marinade's state PDA, not an SPL transfer from a WSOL
+ *   ATA). The user never funds a WSOL ATA in this path, so there is no
+ *   ATA to syncNative and nothing to closeAccount. The receipt is mSOL,
+ *   a distinct SPL mint (mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So),
+ *   NOT a WSOL ATA — so no post-deposit closeAccount is meaningful here.
+ *   The non-SOL leg (USDC → SOL via Jupiter prep-swap) emits Jupiter's
+ *   own internal WSOL safety inside the swap tx; the second Marinade leg
+ *   then takes native lamports, again no WSOL ATA involved. Verdict:
+ *   syncNative / closeAccount gate INTENTIONALLY NOT WIRED — no native-SOL
+ *   wrapping path exists in this adapter. (Allowlisted in
+ *   tests/defi/test_wsol_sync_close_audit.py.)
  */
 const { Connection, Keypair, PublicKey, Transaction } = require("@solana/web3.js");
 const BN = require("bn.js");

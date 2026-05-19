@@ -101,6 +101,66 @@ RANGE_PRESET_BPS: dict[RangePreset, Optional[int]] = {
 
 
 # ---------------------------------------------------------------------------
+# Stable-pair range presets — spec §3.3:
+#   "Stable pairs use ±0.5% / ±0.1% / ±0.05%."
+# Stable LP concentrates almost all liquidity in a very thin band around
+# 1.0 because the pair is engineered to peg. Using the blue-chip ±25%
+# preset on a USDC/USDT pool would deploy ~98% of capital outside the
+# high-utilisation band and earn near-zero fees.
+# ---------------------------------------------------------------------------
+
+STABLE_RANGE_PRESET_BPS: dict[RangePreset, Optional[int]] = {
+    RangePreset.FULL: None,
+    RangePreset.WIDE: 50,        # ±0.5%
+    RangePreset.BALANCED: 10,    # ±0.1%
+    RangePreset.TIGHT: 5,        # ±0.05%
+    RangePreset.CUSTOM_TICKS: None,
+    RangePreset.CUSTOM_PRICE: None,
+}
+
+
+# ---------------------------------------------------------------------------
+# Stable-pair detection token set (shared with fee-tier defaults).
+# Imported lazily inside ``is_stable_pair`` to avoid a circular import:
+# ``src.defi.fee_tier_defaults`` is the single source of truth.
+# ---------------------------------------------------------------------------
+
+
+def is_stable_pair(token0: Optional[str], token1: Optional[str]) -> bool:
+    """Return True iff *both* sides of the pair are USD-pegged stables.
+
+    Uses the canonical ``STABLE_TOKENS`` set from
+    :mod:`src.defi.fee_tier_defaults` so the two helpers stay in sync.
+    Case-insensitive; bridge-suffix variants (``USDC.e``) are honoured.
+    """
+    if not token0 or not token1:
+        return False
+    # Local import keeps this module dependency-light at import time.
+    from src.defi.fee_tier_defaults import STABLE_TOKENS
+
+    return (
+        token0.strip().upper() in STABLE_TOKENS
+        and token1.strip().upper() in STABLE_TOKENS
+    )
+
+
+def range_preset_bps(
+    preset: RangePreset, *, is_stable_pair: bool = False
+) -> Optional[int]:
+    """Resolve the half-width (in bps) for a given preset + pair category.
+
+    Spec §3.3:
+      - Blue-chip pairs: ±25% / ±10% / ±5%  (WIDE / BALANCED / TIGHT)
+      - Stable pairs:    ±0.5% / ±0.1% / ±0.05%
+
+    ``FULL`` and ``CUSTOM_*`` always return ``None`` (unbounded or
+    caller-supplied bounds).
+    """
+    table = STABLE_RANGE_PRESET_BPS if is_stable_pair else RANGE_PRESET_BPS
+    return table.get(preset)
+
+
+# ---------------------------------------------------------------------------
 # Native ↔ wrapped alias map. The LP planner normalises pair symbols to
 # their wrapped form because every AMM trades the wrapped token.
 # ---------------------------------------------------------------------------
@@ -214,6 +274,9 @@ __all__ = [
     "AmountMode",
     "LiquidityIntent",
     "RANGE_PRESET_BPS",
+    "STABLE_RANGE_PRESET_BPS",
+    "is_stable_pair",
+    "range_preset_bps",
     "WETH_NATIVE_ALIAS_MAP",
     "NATIVE_FROM_WRAPPED",
 ]

@@ -6,7 +6,7 @@ from typing import Any
 
 from src.agent.protocol_urls import classify_pool_kind, get_exec_capability, pool_protocol_url
 from src.agent.tools._base import err_envelope, ok_envelope
-from src.defi.apr_curve import empirical_cdf_or_fallback
+from src.defi.apr_curve import compose_apr_curve, empirical_cdf_or_fallback
 from src.defi.execution.adapters.base import YieldBuildRequest
 from src.defi.execution.capabilities import build_default_registry
 from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
@@ -51,6 +51,56 @@ def _synth_cdf_30d(sym0: str, sym1: str) -> list[dict[str, float]]:
         cdf = 0.5 * (1.0 + math.tanh(z * 0.7978))  # erf(z/sqrt(2)) ≈ tanh(z*0.7978)
         samples.append({"ratio": round(ratio, 4), "cdf": round(cdf, 6)})
     return samples
+
+
+def _augment_curve_with_four_factor_apr(
+    bucket_curve: list[dict[str, float]] | None,
+    pool_fee_apr_pct: float | None,
+) -> list[dict[str, float]]:
+    """Spec §6e four-factor composition.
+
+        APR(width) = P_in(width) * CE(width) * fee_yield_full(pool) - IL_drag(width, vol)
+
+    Each empirical-CDF bucket is `{"ratio": r, "cdf": p}`. We interpret the
+    distance from ratio=1.0 (current) as a symmetric range half-width in bps,
+    use the bucket CDF as P_in, derive 30-day vol from the CDF's 16-84th
+    percentile spread, and feed (pool_fee_apr / 100) as fee_yield_full.
+
+    Falls back to the unmodified curve when fee_apr or curve are missing —
+    preserves the existing legacy `cdf` field for frontend backward compat
+    and adds `composed_apr` per bucket for §6e consumers.
+    """
+    if not bucket_curve:
+        return []
+    fee_frac = (pool_fee_apr_pct or 0.0) / 100.0
+    if fee_frac <= 0:
+        # Pass through unchanged — composed APR cannot be assembled without fee.
+        return list(bucket_curve)
+    # Estimate 30-day vol from the empirical CDF: half-spread of 16-84th percentile
+    # in log-ratio space approximates 1 sigma of a lognormal price-ratio.
+    import math as _math
+    ratios = [float(b.get("ratio") or 0.0) for b in bucket_curve]
+    cdfs = [float(b.get("cdf") or 0.0) for b in bucket_curve]
+    r16 = r84 = None
+    for r, c in zip(ratios, cdfs):
+        if r16 is None and c >= 0.16:
+            r16 = r
+        if r84 is None and c >= 0.84:
+            r84 = r
+            break
+    if r16 and r84 and r16 > 0 and r84 > 0:
+        vol_30d = abs(_math.log(r84 / r16)) / 2.0
+    else:
+        vol_30d = 0.3  # exotic default; matches _synth_cdf_30d
+    p_in_curve = cdfs
+    width_bps_curve = [int(round(abs(r - 1.0) * 10000.0)) for r in ratios]
+    composed = compose_apr_curve(p_in_curve, width_bps_curve, fee_frac, vol_30d)
+    out: list[dict[str, float]] = []
+    for bucket, apr in zip(bucket_curve, composed):
+        new_bucket = dict(bucket)
+        new_bucket["composed_apr"] = round(float(apr), 6)
+        out.append(new_bucket)
+    return out
 
 
 def _coerce_amount(value: Any) -> Decimal:
@@ -379,7 +429,12 @@ async def build_yield_execution_plan(
             chain=chain, wallet="MetaMask", protocol=protocol,
             asset_in=asset_in, amount_in=str(amount_in),
         )
-        block_step_for_async_fill(deposit_step, blocker_code="PENDING_DST_FILL")
+        from src.defi.execution.pending import debridge_fill as _debridge_pending
+        block_step_for_async_fill(
+            deposit_step,
+            blocker_code="PENDING_DST_FILL",
+            pending=_debridge_pending(),
+        )
         plan.steps = [bridge_step, deposit_step]
         plan._recompute_step_statuses()
         plan._refresh_plan_status()
@@ -629,10 +684,14 @@ async def build_yield_execution_plan(
     # CHAIN_KIND_MISMATCH blocker — never silently route an SPL mint to an
     # EVM adapter (would either Enso-422 or, worse, sign a swap for a same-
     # symbol scam token on the wrong chain).
+    # RC8-narrow (Pass B 113755f A08): exclude symbols that ALSO have an
+    # Ethereum/EVM mint (USDS lives at 0xdc035d45...; PYUSD lives at
+    # 0x6c3ea9036406852006290770BEdFcAbA0e23A0e8 on Ethereum). Solana-only set
+    # — never let an EVM holding force a Solana plan.
     _SOLANA_NATIVE_ASSETS = {
         "MSOL", "JITOSOL", "BSOL", "BNSOL", "JUPSOL", "JSOL",
         "INF", "JLP", "JTO", "RAY", "ORCA", "BONK", "PYTH", "JUP",
-        "WIF", "PYUSD", "USDS",
+        "WIF",
     }
     _asset_up = (asset_in or "").strip().upper()
     if _asset_up in _SOLANA_NATIVE_ASSETS and not is_solana_chain:
@@ -1124,7 +1183,18 @@ async def build_yield_execution_plan(
                 _already_wrapping = True
                 break
 
-        if not _already_wrapping and is_native_wrap_required(
+        # V4 LP guard — V4 PoolManager settles native ETH via flash accounting
+        # (msg.value, currency = address(0)). Prepending a WETH9.deposit() wrap
+        # both burns gas and breaks PoolKey matching. Skip the wrap entirely.
+        try:
+            from src.defi.execution.adapters.uniswap_v4 import (
+                is_v4_native_lp_no_wrap as _v4_no_wrap,
+            )
+            _skip_wrap_for_v4 = _v4_no_wrap(protocol=protocol, asset_in=asset_in)
+        except Exception:
+            _skip_wrap_for_v4 = False
+
+        if not _already_wrapping and not _skip_wrap_for_v4 and is_native_wrap_required(
             chain=chain, asset_in=asset_in, action=action,
         ):
             from decimal import Decimal as _Dec
@@ -1262,6 +1332,13 @@ async def build_yield_execution_plan(
                             # Compute the §6e empirical APR curve once and
                             # surface under both legacy + spec-mandated keys.
                             _sol_apr_curve = await empirical_cdf_or_fallback(sides_sol[0], sides_sol[1])
+                            # §6e four-factor composition: augment each bucket
+                            # with `composed_apr = P_in*CE*fee_yield - IL_drag`.
+                            # Falls back to P_in-only when fee_apr missing.
+                            _sol_apr_curve = _augment_curve_with_four_factor_apr(
+                                _sol_apr_curve,
+                                float(sp.get("baseAprPct") or 0.0),
+                            )
                             plan_dict["range_block"] = {
                                 "card_subtype": "v3_range",
                                 "chain": chain,
@@ -1459,6 +1536,13 @@ async def build_yield_execution_plan(
                         # Spec §3.3 → §6e: compute the empirical APR curve once
                         # and surface under both legacy + spec-mandated keys.
                         _evm_apr_curve = await empirical_cdf_or_fallback(sides[0], sides[1])
+                        # §6e four-factor composition: augment each bucket with
+                        # `composed_apr = P_in*CE*fee_yield - IL_drag`. Falls
+                        # back to P_in-only when fee_apr missing.
+                        _evm_apr_curve = _augment_curve_with_four_factor_apr(
+                            _evm_apr_curve,
+                            float(extra_dict.get("apy_base") or extra_dict.get("apy_total") or 0.0),
+                        )
                         plan_dict["range_block"] = {
                             "card_subtype": "v3_range",
                             "chain": chain,
@@ -1805,6 +1889,54 @@ async def build_yield_execution_plan(
                     plan.add_blocker(_blocker)
                 if _frozen_blockers:
                     plan_dict = plan.to_dict()
+
+                # V7-031 — Spec §13 row 4 Token-2022 transfer-hook gate.
+                # For each mint surfaced above, fetch the mint account and
+                # check the TLV extension stream. Untrusted hook → emit
+                # TOKEN_2022_HOOK_UNTRUSTED blocker. Fail-soft on RPC errors.
+                try:
+                    from src.shield.spl_transfer_hook import check_transfer_hook
+                    _seen_hook_mints: set[str] = set()
+                    _hook_blockers: list[Any] = []
+                    for _mint, _ in pairs:
+                        if _mint in _seen_hook_mints:
+                            continue
+                        _seen_hook_mints.add(_mint)
+                        _ok, _hook_addr = await check_transfer_hook(
+                            _mint, rpc_url=str(_rpc_url),
+                        )
+                        if _ok:
+                            continue
+                        _short_mint = _mint[:8] + "…" if len(_mint) > 9 else _mint
+                        _short_hook = (_hook_addr or "")[:8] + "…" if (_hook_addr or "") else "?"
+                        _hook_blockers.append(ExecutionBlocker(
+                            code="TOKEN_2022_HOOK_UNTRUSTED",
+                            severity="blocker",
+                            title=f"Token-2022 transfer-hook not allow-listed for mint {_short_mint}",
+                            detail=(
+                                f"Mint {_mint} declares a Token-2022 TransferHook "
+                                f"extension whose program id ({_hook_addr}) is not on "
+                                f"the trusted allowlist. Every transfer of this asset "
+                                f"would CPI into {_short_hook}, which can refuse, "
+                                f"redirect, or tax the transfer. Spec §13 row 4 "
+                                f"refuses to surface a Confirm button until the hook "
+                                f"is reviewed and explicitly allow-listed."
+                            ),
+                            affected_step_ids=list(tagged_steps),
+                            recoverable=False,
+                            cta=(
+                                "Pick a different asset, or have the integrator add "
+                                f"{_hook_addr} to TRUSTED_TRANSFER_HOOKS after a "
+                                "security review."
+                            ),
+                        ))
+                    for _blocker in _hook_blockers:
+                        plan.add_blocker(_blocker)
+                    if _hook_blockers:
+                        plan_dict = plan.to_dict()
+                except Exception:
+                    # Fail-soft per module docstring.
+                    pass
     except Exception:
         # Fail-soft: never let the frozen preflight crash the planner.
         pass
