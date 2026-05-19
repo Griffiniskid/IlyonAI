@@ -90,7 +90,9 @@ class AmountMode(str, Enum):
 
 RANGE_PRESET_BPS: dict[RangePreset, Optional[int]] = {
     RangePreset.FULL: None,
-    RangePreset.WIDE: 2000,
+    # Spec §3.3 (PDF p.6): "Wide ±25% (~4× efficiency, ~95% in-range
+    # historically for blue-chips)" → 2500 bps half-width.
+    RangePreset.WIDE: 2500,
     RangePreset.BALANCED: 1000,
     RangePreset.TIGHT: 500,
     RangePreset.CUSTOM_TICKS: None,

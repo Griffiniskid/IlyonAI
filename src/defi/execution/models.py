@@ -25,6 +25,29 @@ StepAction = Literal[
     # `assert_session_key_revoked` from src/auth/session_key_mirror.py
     # to mirror-check the on-chain registry before promoting the step).
     "revoke_session_key",
+    # Spec §12 canonical step kinds (PDF v1.0 plan schema, page ~36):
+    #     kind: enum(APPROVE, PERMIT2_SIG, SWAP, BRIDGE, WRAP_NATIVE,
+    #                UNWRAP_NATIVE, ATA_CREATE, TICK_ARRAY_INIT,
+    #                BIN_ARRAY_INIT, MINT_POSITION, INCREASE_LIQUIDITY,
+    #                DEPOSIT, STAKE, COMPOUND, MULTICALL)
+    # The 12 legacy lowercase verbs above already cover APPROVE/SWAP/
+    # BRIDGE/STAKE/DEPOSIT(==deposit_lp/supply)/COMPOUND(==compound_rewards).
+    # The 9 entries below close the §12 gap. They are additive only —
+    # no existing emitter is rewritten this cycle. Adapter wiring for
+    # MULTICALL / PERMIT2_SIG / WRAP_NATIVE / UNWRAP_NATIVE / ATA_CREATE /
+    # TICK_ARRAY_INIT / BIN_ARRAY_INIT / MINT_POSITION / INCREASE_LIQUIDITY
+    # is tracked as a follow-up; right now several adapters reuse `approve`
+    # or `withdraw` as placeholders (see composed_plan.py:505 wrap-as-approve
+    # and multicall_bundler.py:108 withdraw-as-V3-decreaseLiquidity).
+    "PERMIT2_SIG",
+    "WRAP_NATIVE",
+    "UNWRAP_NATIVE",
+    "ATA_CREATE",
+    "TICK_ARRAY_INIT",
+    "BIN_ARRAY_INIT",
+    "MINT_POSITION",
+    "INCREASE_LIQUIDITY",
+    "MULTICALL",
 ]
 
 # V7-074 — Public StepAction constants so the rest of the codebase
@@ -32,6 +55,26 @@ StepAction = Literal[
 # literals (the Literal[...] above is the type, not a value namespace).
 # Add new constants here when new actions land in the Literal above.
 REVOKE_SESSION_KEY = "revoke_session_key"
+
+# Spec §12 canonical-verb constants. Mirrors the upstream enum literally
+# so adapters/tests can import a single symbol per verb when wiring lands.
+PERMIT2_SIG = "PERMIT2_SIG"
+WRAP_NATIVE = "WRAP_NATIVE"
+UNWRAP_NATIVE = "UNWRAP_NATIVE"
+ATA_CREATE = "ATA_CREATE"
+TICK_ARRAY_INIT = "TICK_ARRAY_INIT"
+BIN_ARRAY_INIT = "BIN_ARRAY_INIT"
+MINT_POSITION = "MINT_POSITION"
+INCREASE_LIQUIDITY = "INCREASE_LIQUIDITY"
+MULTICALL = "MULTICALL"
+
+# Frozen set of all 15 spec §12 canonical verbs (UPPER_SNAKE form). Tests
+# pin this against the StepAction Literal so spec drift is caught.
+SPEC_STEP_KINDS: frozenset[str] = frozenset({
+    "APPROVE", "PERMIT2_SIG", "SWAP", "BRIDGE", "WRAP_NATIVE", "UNWRAP_NATIVE",
+    "ATA_CREATE", "TICK_ARRAY_INIT", "BIN_ARRAY_INIT", "MINT_POSITION",
+    "INCREASE_LIQUIDITY", "DEPOSIT", "STAKE", "COMPOUND", "MULTICALL",
+})
 StepStatus = Literal[
     "blocked", "pending", "queued", "ready", "signing", "submitted", "confirmed", "verified", "failed", "skipped"
 ]

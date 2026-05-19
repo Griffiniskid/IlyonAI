@@ -68,7 +68,8 @@ def test_amount_mode_membership() -> None:
 
 def test_range_preset_bps_table() -> None:
     assert RANGE_PRESET_BPS[RangePreset.FULL] is None
-    assert RANGE_PRESET_BPS[RangePreset.WIDE] == 2000
+    # Spec §3.3: Wide ±25% = 2500 bps half-width (PDF page 6).
+    assert RANGE_PRESET_BPS[RangePreset.WIDE] == 2500
     assert RANGE_PRESET_BPS[RangePreset.BALANCED] == 1000
     assert RANGE_PRESET_BPS[RangePreset.TIGHT] == 500
     assert RANGE_PRESET_BPS[RangePreset.CUSTOM_TICKS] is None

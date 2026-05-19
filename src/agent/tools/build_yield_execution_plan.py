@@ -705,7 +705,7 @@ async def build_yield_execution_plan(
         # block the build. We don't want to refuse arbitrary integer
         # amounts the user actually typed, so the gate fires only on the
         # explicit placeholder values the legacy default-amount path used.
-        _looks_placeholder = amount in (Decimal("1000"), Decimal("100"))
+        _looks_placeholder = amount == Decimal("1000")
         if _looks_placeholder:
             plan = ExecutionPlanV3.new(
                 title=f"{humanize_protocol(protocol)} {humanize_action(action)}",
@@ -1259,6 +1259,9 @@ async def build_yield_execution_plan(
                             kind = sp.get("kind") or "clmm"
                             tok_a = sp.get("tokenA") or {}
                             tok_b = sp.get("tokenB") or {}
+                            # Compute the §6e empirical APR curve once and
+                            # surface under both legacy + spec-mandated keys.
+                            _sol_apr_curve = await empirical_cdf_or_fallback(sides_sol[0], sides_sol[1])
                             plan_dict["range_block"] = {
                                 "card_subtype": "v3_range",
                                 "chain": chain,
@@ -1292,7 +1295,15 @@ async def build_yield_execution_plan(
                                 "market": {
                                     "base_apr_pct": float(sp.get("baseAprPct") or 0.0),
                                     "reward_apr_pct": float(sp.get("rewardAprPct") or 0.0),
-                                    "cdf_30d": await empirical_cdf_or_fallback(sides_sol[0], sides_sol[1]),
+                                    # Spec §3.3 → §6e: real-data APR curve. The
+                                    # empirical_cdf_or_fallback series IS the §6e
+                                    # APR-by-range curve (module docstring is
+                                    # explicit). Surface under both legacy
+                                    # `cdf_30d` and the spec-mandated
+                                    # `apr_curve_30d` field for downstream
+                                    # consumers that key on the spec name.
+                                    "cdf_30d": _sol_apr_curve,
+                                    "apr_curve_30d": _sol_apr_curve,
                                     "kind": kind,
                                 },
                                 "initial_range": {
@@ -1445,6 +1456,9 @@ async def build_yield_execution_plan(
                             from decimal import Decimal as _D
                             raw = _D(1) / raw if raw != 0 else raw
                         human_price = float(raw)
+                        # Spec §3.3 → §6e: compute the empirical APR curve once
+                        # and surface under both legacy + spec-mandated keys.
+                        _evm_apr_curve = await empirical_cdf_or_fallback(sides[0], sides[1])
                         plan_dict["range_block"] = {
                             "card_subtype": "v3_range",
                             "chain": chain,
@@ -1471,7 +1485,8 @@ async def build_yield_execution_plan(
                                 "base_apr_pct": float(extra_dict.get("apy_base") or extra_dict.get("apy_total") or 0.0),
                                 "reward_apr_pct": float(extra_dict.get("apy_reward") or 0.0),
                                 "tvl_usd": float(extra_dict.get("tvl_usd") or 0.0),
-                                "cdf_30d": await empirical_cdf_or_fallback(sides[0], sides[1]),
+                                "cdf_30d": _evm_apr_curve,
+                                "apr_curve_30d": _evm_apr_curve,
                                 "kind": "v3" if "v3" in protocol.lower() else (
                                     "v4" if "v4" in protocol.lower() else (
                                         "slipstream" if "slipstream" in protocol.lower() else "v3"
