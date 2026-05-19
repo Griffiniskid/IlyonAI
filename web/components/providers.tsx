@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useMemo } from "react";
+import { ReactNode, useMemo, type FC } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   ConnectionProvider,
@@ -13,6 +13,24 @@ import { MultiWalletProvider } from "@/components/providers/WalletProvider";
 
 // Import wallet adapter CSS
 import "@solana/wallet-adapter-react-ui/styles.css";
+
+// `@solana/wallet-adapter-*` typings predate @types/react 18.3 (which dropped
+// implicit `children` from FC<P>), so the providers fail as JSX components
+// under the current types. Re-typing them locally as FC with explicit
+// `children` is the minimum surface change that satisfies the compiler
+// without touching upstream packages.
+type ProviderWithChildren<P> = FC<P & { children?: ReactNode }>;
+const ConnectionProviderT = ConnectionProvider as ProviderWithChildren<{
+  endpoint: string;
+  config?: Record<string, unknown>;
+}>;
+const WalletProviderT = WalletProvider as ProviderWithChildren<{
+  wallets: unknown[];
+  autoConnect?: boolean;
+}>;
+const WalletModalProviderT = WalletModalProvider as ProviderWithChildren<
+  Record<string, unknown>
+>;
 
 // Create a client
 const queryClient = new QueryClient({
@@ -47,15 +65,15 @@ export function Providers({ children }: ProvidersProps) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ConnectionProvider endpoint={endpoint}>
-        <WalletProvider wallets={wallets} autoConnect>
-          <WalletModalProvider>
+      <ConnectionProviderT endpoint={endpoint}>
+        <WalletProviderT wallets={wallets} autoConnect>
+          <WalletModalProviderT>
             <MultiWalletProvider>
               <ToastProvider>{children}</ToastProvider>
             </MultiWalletProvider>
-          </WalletModalProvider>
-        </WalletProvider>
-      </ConnectionProvider>
+          </WalletModalProviderT>
+        </WalletProviderT>
+      </ConnectionProviderT>
     </QueryClientProvider>
   );
 }

@@ -14,6 +14,13 @@ from src.defi.execution.adapters.base import (
     parse_receipt_logs,
 )
 from src.defi.execution.models import ExecutionStepV3, UnsignedStepTransaction, make_step
+from src.defi.resolver.entity_resolver import EntityResolver
+
+
+# V7-015: centralised entity resolution (spec §3). `_ASSETS` and `_CHAIN_IDS`
+# remain as exported surface (compound_v3 + erc4626 re-import _ASSETS / helpers).
+# The build() path prefers EntityResolver and falls back to the local dicts.
+_RESOLVER = EntityResolver()
 
 # Aave V3 Pool addresses per chain (verified mainnets).
 _AAVE_REWARDS_BY_CHAIN: dict[str, str] = {
@@ -247,7 +254,13 @@ class AaveV3SupplyAdapter:
 
     async def build(self, request: YieldBuildRequest) -> list[ExecutionStepV3]:
         chain_norm = request.chain.lower()
-        chain_id = _CHAIN_IDS.get(chain_norm)
+        # V7-015: chain id via EntityResolver; fall back to local _CHAIN_IDS.
+        chain_info = _RESOLVER.resolve_chain(chain_norm)
+        chain_id = (
+            chain_info.chain_id
+            if chain_info is not None and chain_info.chain_id > 0
+            else _CHAIN_IDS.get(chain_norm)
+        )
         pool_address = _AAVE_POOL_ADDRESSES.get(chain_norm)
         if chain_id is None or pool_address is None:
             raise ValueError(f"Aave V3 adapter cannot build on chain {request.chain}.")
@@ -515,8 +528,14 @@ class AaveV3SupplyAdapter:
             )
             return [approve_delegation_step, borrow_eth_step]
 
+        # V7-015 — central token resolver, fall back to local _ASSETS for any
+        # adapter-specific extras (Base USDbC etc.) not yet in asset_registry.
         asset_key = (chain_norm, request.asset_in.upper())
-        asset_meta = _ASSETS.get(asset_key)
+        token_info = _RESOLVER.resolve_token(request.asset_in, chain_norm)
+        if token_info is not None:
+            asset_meta = (token_info.address, token_info.decimals)
+        else:
+            asset_meta = _ASSETS.get(asset_key)
         if asset_meta is None:
             raise ValueError(f"Aave V3 adapter has no token metadata for {request.asset_in} on {request.chain}.")
         token_address, decimals = asset_meta

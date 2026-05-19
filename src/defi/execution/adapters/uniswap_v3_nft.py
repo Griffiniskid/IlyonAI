@@ -36,6 +36,15 @@ from src.defi.execution.adapters.base import (
     parse_receipt_logs,
 )
 from src.defi.execution.models import ExecutionStepV3, UnsignedStepTransaction, make_step
+from src.defi.resolver.entity_resolver import EntityResolver
+
+
+# V7-015: centralised entity resolution (spec §3). Chain id is resolved
+# via EntityResolver in build(); the local _CHAIN_IDS dict is retained
+# because _SUPPORTED_CHAINS = frozenset(_CHAIN_IDS.keys()) is part of the
+# adapter's capability surface and the per-chain wrapper-symbol table
+# below still keys off the same canonical chain names.
+_RESOLVER = EntityResolver()
 
 # Function selectors
 _APPROVE_SEL = "0x095ea7b3"  # ERC20.approve(spender, amount)
@@ -245,7 +254,13 @@ class UniswapV3NFTAdapter:
     async def build(self, request: YieldBuildRequest) -> list[ExecutionStepV3]:
         chain_norm = request.chain.lower()
         proto_norm = request.protocol.lower()
-        chain_id = _CHAIN_IDS.get(chain_norm)
+        # V7-015: chain id via EntityResolver; fall back to local _CHAIN_IDS.
+        chain_info = _RESOLVER.resolve_chain(chain_norm)
+        chain_id = (
+            chain_info.chain_id
+            if chain_info is not None and chain_info.chain_id > 0
+            else _CHAIN_IDS.get(chain_norm)
+        )
         if chain_id is None:
             raise ValueError(f"V3 NFT: unsupported chain {request.chain}.")
 

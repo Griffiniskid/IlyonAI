@@ -13,6 +13,13 @@ data/
 .env.*.local
 .env.production
 .env.development
+.env.root
+deploy/**/assistant.env
+deploy/**/app.env
+deploy/**/.env.root
+
+# Local-only spec-text extraction (derived from spec PDF, do not commit)
+.spec_text_session.txt
 
 # Python
 __pycache__/

@@ -35,7 +35,15 @@ from src.defi.execution.adapters.base import (
     YieldVerifyRequest,
 )
 from src.defi.execution.models import ExecutionStepV3, UnsignedStepTransaction, make_step
+from src.defi.resolver.entity_resolver import EntityResolver
 
+
+# V7-015: centralised entity resolution (spec §3). The module-level dicts
+# (`_CHAIN_IDS`, `_TOKENS`, `_resolve_token`) remain as exported surface for
+# sibling modules (uniswap_v2_zap re-imports them) and as a fallback for
+# the small handful of pair-specific symbols (BUSD on BSC, etc.) that aren't
+# in the canonical asset_registry yet. The build() path prefers EntityResolver.
+_RESOLVER = EntityResolver()
 
 _CHAIN_IDS: dict[str, int] = {
     "ethereum": 1,
@@ -243,7 +251,11 @@ class UniswapV2DualTokenAdapter:
 
     async def build(self, request: YieldBuildRequest) -> list[ExecutionStepV3]:
         chain_norm = request.chain.lower()
-        chain_id = _CHAIN_IDS.get(chain_norm)
+        # V7-015: chain id via EntityResolver. Fall back to local _CHAIN_IDS
+        # so any chain that's still registered locally but not yet in the
+        # central registry continues to work (defence-in-depth).
+        chain_info = _RESOLVER.resolve_chain(chain_norm)
+        chain_id = chain_info.chain_id if chain_info is not None and chain_info.chain_id > 0 else _CHAIN_IDS.get(chain_norm)
         if chain_id is None:
             raise ValueError(f"V2 adapter cannot build on chain {request.chain}.")
 
@@ -285,8 +297,21 @@ class UniswapV2DualTokenAdapter:
                 f"({symbol_a} and {symbol_b}). Re-prompt with both amounts."
             )
 
-        token_a_meta = _resolve_token(chain_norm, symbol_a)
-        token_b_meta = _resolve_token(chain_norm, symbol_b)
+        # V7-015 — token addresses via EntityResolver. Fall back to the
+        # legacy _TOKENS dict so BSC pancake-only symbols (BUSD, etc.) that
+        # may not be in the central registry continue to resolve.
+        token_a_info = _RESOLVER.resolve_token(symbol_a, chain_norm)
+        token_b_info = _RESOLVER.resolve_token(symbol_b, chain_norm)
+        token_a_meta = (
+            (token_a_info.address, token_a_info.decimals)
+            if token_a_info is not None
+            else _resolve_token(chain_norm, symbol_a)
+        )
+        token_b_meta = (
+            (token_b_info.address, token_b_info.decimals)
+            if token_b_info is not None
+            else _resolve_token(chain_norm, symbol_b)
+        )
         if token_a_meta is None:
             raise ValueError(f"No token metadata for {symbol_a} on {chain_norm}.")
         if token_b_meta is None:
@@ -461,8 +486,19 @@ class UniswapV2DualTokenAdapter:
                 "or pool_symbol like 'USDC-WETH')."
             )
 
-        token_a_meta = _resolve_token(chain_norm, symbol_a)
-        token_b_meta = _resolve_token(chain_norm, symbol_b)
+        # V7-015 — central token resolver; legacy _TOKENS is the fallback.
+        token_a_info = _RESOLVER.resolve_token(symbol_a, chain_norm)
+        token_b_info = _RESOLVER.resolve_token(symbol_b, chain_norm)
+        token_a_meta = (
+            (token_a_info.address, token_a_info.decimals)
+            if token_a_info is not None
+            else _resolve_token(chain_norm, symbol_a)
+        )
+        token_b_meta = (
+            (token_b_info.address, token_b_info.decimals)
+            if token_b_info is not None
+            else _resolve_token(chain_norm, symbol_b)
+        )
         if token_a_meta is None or token_b_meta is None:
             raise ValueError(
                 f"V2 removeLiquidity needs token metadata for {symbol_a} and {symbol_b} "

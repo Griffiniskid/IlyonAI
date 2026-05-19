@@ -108,7 +108,16 @@ git push origin main
 ssh ilyonai-vps
 cd ~/ai-sentinel-staging
 git pull
-docker compose --env-file deploy/staging/.env.root up -d --build
+# Canonical staging env file is deploy/staging/compose.env (provides
+# COMPOSE_PROJECT_NAME=ilyonai-staging so containers land in the right
+# namespace). The container app envs live in deploy/staging/app.env and
+# are referenced by ${APP_ENV_FILE:-.env} in docker-compose.yml — repo
+# root .env already points at them on VPS.
+docker compose --env-file deploy/staging/compose.env up -d --build
+# Web container has a pre-existing TS error in providers.tsx that blocks
+# full rebuild. To deploy only the python+solana backend without the web
+# rebuild step (matrix doesn't need browser UI):
+#   docker compose --env-file deploy/staging/compose.env up -d --build api assistant-api solana-yield-builder
 # wait for healthcheck
 curl -fsS https://staging.ilyonai.com/api/v1/agent-health  # expect 200
 ```

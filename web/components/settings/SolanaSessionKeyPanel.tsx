@@ -47,7 +47,13 @@ interface StoredSigner {
  *  signs a fixed challenge string — same input → same key, so reload still
  *  decrypts. */
 async function deriveKey(walletSig: Uint8Array): Promise<Uint8Array> {
-  const digest = await crypto.subtle.digest("SHA-256", walletSig);
+  // Re-wrap to an ArrayBuffer-backed view: lib.dom's `BufferSource` no longer
+  // accepts `Uint8Array<ArrayBufferLike>` directly (could be SharedArrayBuffer).
+  const buf = walletSig.buffer.slice(
+    walletSig.byteOffset,
+    walletSig.byteOffset + walletSig.byteLength,
+  ) as ArrayBuffer;
+  const digest = await crypto.subtle.digest("SHA-256", buf);
   return new Uint8Array(digest);
 }
 

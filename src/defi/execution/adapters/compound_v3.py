@@ -19,6 +19,13 @@ from src.defi.execution.adapters.base import (
     parse_receipt_logs,
 )
 from src.defi.execution.models import ExecutionStepV3, UnsignedStepTransaction, make_step
+from src.defi.resolver.entity_resolver import EntityResolver
+
+
+# V7-015: centralised entity resolution (spec §3). Prefer EntityResolver in
+# build(); fall back to the local _ASSETS / _CHAIN_IDS dicts (kept for
+# compatibility with sibling adapters that may import them).
+_RESOLVER = EntityResolver()
 
 # Verified Comet (cToken v3) addresses, base-asset → comet contract per chain.
 _COMET_REWARDS_BY_CHAIN: dict[str, str] = {
@@ -98,11 +105,22 @@ class CompoundV3SupplyAdapter:
 
     async def build(self, request: YieldBuildRequest) -> list[ExecutionStepV3]:
         chain_norm = request.chain.lower()
-        chain_id = _CHAIN_IDS.get(chain_norm)
+        # V7-015: chain id via EntityResolver (with fallback).
+        chain_info = _RESOLVER.resolve_chain(chain_norm)
+        chain_id = (
+            chain_info.chain_id
+            if chain_info is not None and chain_info.chain_id > 0
+            else _CHAIN_IDS.get(chain_norm)
+        )
         comet_address = _COMET_BY_CHAIN_ASSET.get((chain_norm, request.asset_in.upper()))
         if chain_id is None or comet_address is None:
             raise ValueError(f"Compound v3 adapter has no Comet for {request.asset_in} on {request.chain}.")
-        asset_meta = _ASSETS.get((chain_norm, request.asset_in.upper()))
+        # V7-015: token metadata via EntityResolver, fall back to local _ASSETS.
+        token_info = _RESOLVER.resolve_token(request.asset_in, chain_norm)
+        if token_info is not None:
+            asset_meta = (token_info.address, token_info.decimals)
+        else:
+            asset_meta = _ASSETS.get((chain_norm, request.asset_in.upper()))
         if asset_meta is None:
             raise ValueError(f"Compound v3 adapter has no token metadata for {request.asset_in} on {request.chain}.")
         token_address, decimals = asset_meta
