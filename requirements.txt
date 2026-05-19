@@ -31,6 +31,14 @@ pynacl>=1.5.0
 # Base58 encoding for Solana addresses
 base58>=2.1.0
 
+# EVM crypto + ABI helpers (Wave 3 pin — were transient/missing in audit env).
+# eth-hash needs pycryptodome backend to satisfy keccak256 callers in src.
+web3>=6.0.0
+eth-account>=0.10.0
+eth-utils>=2.3.0
+eth-abi>=4.2.0
+eth-hash[pycryptodome]>=0.6.0
+
 # ═══════════════════════════════════════════════════════════════════════════
 # HTTP & NETWORKING
 # ═══════════════════════════════════════════════════════════════════════════
@@ -50,6 +58,7 @@ httpx>=0.25.0
 
 # HTML/XML parsing
 beautifulsoup4>=4.12.0
+lxml>=4.9.0
 
 # Browser automation (for JavaScript-rendered sites)
 playwright>=1.40.0

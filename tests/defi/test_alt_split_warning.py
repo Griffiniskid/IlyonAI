@@ -16,6 +16,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import textwrap
 from pathlib import Path
 
@@ -24,7 +25,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SIDE_CAR = REPO_ROOT / "services" / "solana-yield-builder"
 ALT_HELPER = SIDE_CAR / "src" / "adapters" / "altSplit.js"
-FALLBACK_DEPS = Path("/tmp/altsplit-test-deps")
+# Cross-platform: /tmp on Linux/Mac, %TEMP% on Windows.
+FALLBACK_DEPS = Path(tempfile.gettempdir()) / "altsplit-test-deps"
 
 
 def _has_sidecar_web3() -> bool:
@@ -72,7 +74,12 @@ def _run_node(body: str) -> dict:
     # to the helper's own location when sidecar deps exist; otherwise we
     # prepend the fallback node_modules via NODE_PATH so `require` finds it.
     env = os.environ.copy()
-    if not _has_sidecar_web3():
+    # node -e runs from CWD; CWD lacks a node_modules so we must point
+    # NODE_PATH at whichever install actually has @solana/web3.js. Prefer
+    # the sidecar's tree, fall back to the test-only tmp install.
+    if _has_sidecar_web3():
+        env["NODE_PATH"] = str(SIDE_CAR / "node_modules")
+    else:
         env["NODE_PATH"] = str(FALLBACK_DEPS / "node_modules")
     full_script = (
         f"const {{ checkTxAccountCount }} = require({json.dumps(str(ALT_HELPER))});\n"

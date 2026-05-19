@@ -187,19 +187,18 @@ def test_orchestrator_bridge_failure_emits_recovery_in_sse_payload():
 
 
 def test_decide_recovery_callsites_in_src_at_least_six():
-    """V7-066 exit criterion: grep `decide_recovery` in src/ must return ≥6 hits
+    """V7-066 exit criterion: `decide_recovery` callsites in src/ must be ≥ 6
     (was 2 before this ticket). Future refactors that strip a wiring would
     drop this count and fail the test."""
-    import subprocess
+    import pathlib
 
-    result = subprocess.run(
-        ["grep", "-rn", "decide_recovery", "src/"],
-        capture_output=True,
-        text=True,
-        cwd="/home/griffiniskid/Documents/ai-sentinel",
-    )
-    lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
+    repo_root = pathlib.Path(__file__).resolve().parents[2]
+    lines: list[str] = []
+    for py_path in (repo_root / "src").rglob("*.py"):
+        for lineno, line in enumerate(py_path.read_text(encoding="utf-8").splitlines(), 1):
+            if "decide_recovery" in line:
+                lines.append(f"{py_path.relative_to(repo_root)}:{lineno}: {line.strip()}")
     assert len(lines) >= 6, (
-        f"Expected ≥6 decide_recovery hits in src/, found {len(lines)}:\n"
+        f"Expected >=6 decide_recovery hits in src/, found {len(lines)}:\n"
         + "\n".join(lines)
     )

@@ -50,13 +50,14 @@ def test_clamp_above_max():
 
 def test_no_legacy_100bps_in_adapters():
     """Guard against drift: no `slippage_bps = 100` literal default in src/defi/."""
-    try:
-        out = subprocess.check_output(
-            ["grep", "-rnE", r"slippage_bps\s*=\s*100\b", "src/defi/"],
-            cwd="/home/griffiniskid/Documents/ai-sentinel/",
-        )
-    except subprocess.CalledProcessError as e:
-        if e.returncode == 1:
-            return  # zero matches = success
-        raise
-    raise AssertionError(f"Legacy 100bps still present in src/defi/:\n{out.decode()}")
+    import pathlib
+    import re
+
+    repo_root = pathlib.Path(__file__).resolve().parents[2]
+    pattern = re.compile(r"slippage_bps\s*=\s*100\b")
+    hits = []
+    for py_path in (repo_root / "src" / "defi").rglob("*.py"):
+        for lineno, line in enumerate(py_path.read_text(encoding="utf-8").splitlines(), 1):
+            if pattern.search(line):
+                hits.append(f"{py_path.relative_to(repo_root)}:{lineno}:{line.strip()}")
+    assert not hits, "Legacy 100bps still present in src/defi/:\n" + "\n".join(hits)

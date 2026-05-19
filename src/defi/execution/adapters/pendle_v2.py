@@ -45,15 +45,24 @@ _PENDLE_ROUTER: dict[str, str] = {
 }
 
 # Selectors per PendleRouterV4 dispatcher.
-# Pendle's router uses overloaded calls — the canonical IDs:
-SEL_MINT_PY_FROM_TOKEN = "0xc81f847a"
-SEL_SWAP_TOKEN_FOR_PT = "0x594a88cc"
-SEL_ADD_LIQUIDITY_FROM_TOKEN = "0x9f9da99e"
+# All 6 verified via keccak256 of the canonical Pendle V4 Router ABI
+# flattened sigs; pinned by tests/defi/test_pendle_v2_modes::test_selector_constants_pinned.
+# Used only as metadata in step snapshots — calldata itself comes from the
+# Pendle Hosted SDK convert endpoint, so these constants are display/audit
+# only, not wire-format. The V7-057 distinct-set sentinel asserts no two
+# router entrypoints collide on the same selector.
+SEL_MINT_PY_FROM_TOKEN = "0xd0f42385"        # mintPyFromToken(address,address,uint256,TokenInput)
+SEL_SWAP_TOKEN_FOR_PT = "0xfeb9d1d2"         # swapExactTokenForPtSimple(...)
+SEL_ADD_LIQUIDITY_FROM_TOKEN = "0x12599ac6"  # addLiquidityFromToken(...)
 # V7-057 — burn PT+YT → underlying token and PT → token swap. Pinned 4-byte
 # IDs from PendleRouterV4 source (`redeemPyToToken(address,address,uint256,TokenOutput)`
 # and `swapExactPtForToken(address,address,uint256,TokenOutput,LimitOrderData)`).
 SEL_REDEEM_PY_TO_TOKEN = "0x47f1de22"
 SEL_SWAP_EXACT_PT_FOR_TOKEN = "0x594a88cc"
+
+# Pendle V4 swapExactTokenForPt(...,ApproxParams,...) variant — distinct
+# from SEL_SWAP_TOKEN_FOR_PT (the Simple variant without ApproxParams).
+SEL_SWAP_EXACT_TOKEN_FOR_PT = "0xc81f847a"
 
 
 # ---------------------------------------------------------------------------
