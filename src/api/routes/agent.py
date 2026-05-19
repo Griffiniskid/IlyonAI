@@ -15,6 +15,22 @@ from src.config import settings
 routes = web.RouteTableDef()
 
 
+# Process-level singleton — AIRouter creates aiohttp ClientSessions in its
+# constructor (OpenAIClient + GrokClient + their pools). Re-instantiating
+# per request leaks those sessions (visible as "Unclosed client session"
+# warnings every ~50 calls until the connector pool exhausts and matrix
+# fires hang). Build it lazily once and reuse across the process lifetime.
+_AGENT_ROUTER = None
+
+
+def _get_agent_router():
+    global _AGENT_ROUTER
+    if _AGENT_ROUTER is None:
+        from src.ai.router import AIRouter
+        _AGENT_ROUTER = AIRouter()
+    return _AGENT_ROUTER
+
+
 def _flag_off() -> web.Response:
     return web.json_response({"error": "agent_v2_disabled"}, status=503)
 
@@ -88,13 +104,12 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
         from src.storage.database import get_database
         from src.agent.runtime import run_turn
         from src.agent.simple_runtime import run_simple_turn
-        from src.ai.router import AIRouter
         from src.agent.tools import register_all_tools
         from sqlalchemy import text
         from sqlalchemy.ext.asyncio import AsyncSession
 
         db = await get_database()
-        router = AIRouter()
+        router = _get_agent_router()
         
         # Initialize agent services with real data clients
         from src.agent.services import get_agent_services
