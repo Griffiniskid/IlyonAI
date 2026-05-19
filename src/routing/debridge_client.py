@@ -110,6 +110,69 @@ class DeBridgeBridge:
             "ttl_s": int(data.get("estimation", {}).get("orderTtlSec", 600)),
         }
 
+    async def create_order_encoded(
+        self,
+        *,
+        src_chain_id: int,
+        dst_chain_id: int,
+        token_in: str,
+        token_out: str,
+        amount: int,
+        sender: str,
+        recipient: str,
+        referral_code: int = 0,
+    ) -> dict[str, Any]:
+        """RC7a — fetch the REAL unsigned-tx envelope from DLN.
+
+        Hits `/dln/order/create-tx` (the production endpoint that returns
+        signable calldata; docs.debridge.finance/dln/api/quick-start).
+        Returns `{tx: {to, data, value, chainId}, order_id, fix_fee_quote,
+        estimated_dst_amount, slippage_bps_band}`.
+
+        Why this exists separately from `quote()`: the lifecycle-aware
+        composed-plan builder needs to:
+          1. snapshot the expected dst amount (`quote()`)
+          2. attach a SIGNABLE bridge-leg tx (`create_order_encoded()`)
+        We never bundle these because the snapshot must capture quote_id
+        + slippage band even when the user hasn't decided to broadcast.
+
+        Raises `httpx.HTTPStatusError` on 4xx/5xx; caller wraps into a
+        `composed_plan_bridge_build_failed` envelope.
+        """
+        params = {
+            "srcChainId": src_chain_id,
+            "srcChainTokenIn": token_in,
+            "srcChainTokenInAmount": str(amount),
+            "dstChainId": dst_chain_id,
+            "dstChainTokenOut": token_out,
+            "dstChainTokenOutRecipient": recipient,
+            "dstChainTokenOutAmount": "auto",  # solver decides; we snapshot the quote separately
+            "senderAddress": sender,
+            "srcChainOrderAuthorityAddress": sender,
+            "dstChainOrderAuthorityAddress": recipient,
+            "referralCode": referral_code,
+            "prependOperatingExpenses": "true",
+            "deBridgeApp": "AISentinel",
+        }
+        async with httpx.AsyncClient(timeout=20) as cli:
+            r = await cli.get(f"{self._base}/dln/order/create-tx", params=params)
+            r.raise_for_status()
+            data = r.json()
+        tx_blob = data.get("tx") or {}
+        # DLN returns tx.{to,data,value} for EVM src and a base64
+        # serialized message for Solana src. Surface both shapes; the
+        # caller decides which one to attach based on chain_kind.
+        return {
+            "tx": tx_blob,
+            "order_id": data.get("orderId") or data.get("estimation", {}).get("orderId"),
+            "fix_fee_quote": data.get("fixFee"),
+            "estimated_dst_amount": (
+                data.get("estimation", {}).get("dstChainTokenOut", {}).get("amount")
+                or data.get("estimation", {}).get("dstChainTokenOut", {}).get("recommendedAmount")
+            ),
+            "raw": data,
+        }
+
     async def status(self, order_id: str) -> dict[str, Any]:
         """Hit DLN /dln/order/{orderId} → fill state + actual dst amount."""
         async with httpx.AsyncClient(timeout=12) as cli:

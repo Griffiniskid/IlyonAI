@@ -1,8 +1,64 @@
+import asyncio
 from typing import Any
 
 from langchain_core.tools import StructuredTool
-from src.agent.tools._base import ToolCtx
+from src.agent.tools._base import ToolCtx, err_envelope
 from src.api.schemas.agent import ToolEnvelope
+
+
+# ── RC16: per-tool SLO timeouts ──────────────────────────────────────────────
+#
+# Pass A surfaced 17.5% of G-category turns (and multiple F/H/I/enso turns)
+# hanging in `build_yield_execution_plan` with a 90s curl timeout. The root
+# cause: no top-level timeout around tool dispatch — when an upstream RPC /
+# Enso / DefiLlama call hangs, the entire SSE stream hangs with it, the
+# client times out at 90s, and the agent emits a fabricated card from
+# partial state (a financial-loss vector).
+#
+# This dict sizes each tool's wall-clock budget to its real SLO. When the
+# timer fires, the wrapper returns a TOOL_TIMEOUT err_envelope so the
+# runtime can surface a blocker card — NEVER fabricate from incomplete data.
+_TOOL_SLO_SECONDS: dict[str, float] = {
+    # Heavy build / compose / route paths (RC16 explicit defaults).
+    "search_defi_opportunities": 30.0,
+    "build_yield_execution_plan": 45.0,
+    "build_swap_tx": 45.0,                # Enso shortcut route SLO
+    "build_solana_swap": 45.0,            # Jupiter route SLO
+    "build_bridge_tx": 30.0,              # deBridge order SLO
+    "build_deposit_lp_tx": 45.0,
+    "build_stake_tx": 30.0,
+    "build_transfer_tx": 15.0,
+    "compose_plan": 60.0,                 # composed_plan orchestrator SLO
+    "allocate_plan": 60.0,                # invokes build_yield_execution_plan N times
+    "rebalance_portfolio": 60.0,
+    "execute_pool_position": 45.0,
+    # Quote / read-only paths (smaller budgets).
+    "simulate_swap": 20.0,
+    "get_token_price": 15.0,
+    "get_wallet_balance": 15.0,
+    "find_liquidity_pool": 20.0,
+    "search_dexscreener_pairs": 15.0,
+    "get_defi_market_overview": 20.0,
+    "get_defi_analytics": 30.0,
+    "get_staking_options": 20.0,
+    "analyze_dex_pair": 30.0,
+    "analyze_token_full_sentinel": 30.0,
+    "analyze_pool_full_sentinel": 30.0,
+    "get_smart_money_hub": 30.0,
+    "get_shield_check": 30.0,
+    "lookup_entity": 15.0,
+    "track_whales": 30.0,
+    "update_preference": 10.0,
+}
+
+# Safety ceiling for any tool not explicitly listed. Chosen so the SSE
+# stream still resolves within the 90s client cap with margin for the
+# wrap-up event.
+_TOOL_SLO_DEFAULT = 45.0
+
+
+def _slo_for(tool_name: str) -> float:
+    return float(_TOOL_SLO_SECONDS.get(tool_name, _TOOL_SLO_DEFAULT))
 
 from .balance import get_wallet_balance
 from .price import get_token_price
@@ -223,58 +279,83 @@ def register_all_tools(services, user_id=0, wallet=None, solana_wallet=None, evm
     tools = []
     for name, (fn, desc) in _TOOL_REGISTRY.items():
 
-        def _bind(tool_fn, _ctx):
-            """Create a wrapper that curries ctx but preserves tool_fn's signature."""
+        # IMPORTANT: re-resolve the tool function from the registry on every
+        # call so `monkeypatch.setitem(_TOOL_REGISTRY, "<name>", (stub, ...))`
+        # in tests is honoured — and so the SLO is looked up by the registered
+        # name (dict key), not the function's `__name__` (which a stub may
+        # have changed). Without this, a monkeypatched slow stub would carry
+        # a different `__name__` (e.g. ``_slow_get_token_price``) and silently
+        # fall back to the default 45s SLO, letting hung tools slip past the
+        # dispatcher timeout — the exact RC16 financial-loss vector.
+        def _resolve(_name=name):
+            entry = _TOOL_REGISTRY.get(_name)
+            if entry is None:
+                return None
+            return entry[0]
 
+        def _late_bound(_ctx, _name=name):
             async def _run(*args, **kwargs):
-                # Debug logging
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.warning(f"TOOL CALL: {tool_fn.__name__} | args: {args} | kwargs: {kwargs}")
-                
-                # LangChain ReAct agent may pass input as a string containing JSON
-                # or as kwargs. Handle both cases.
-                result = None
-                if args and len(args) == 1:
-                    arg = args[0]
-                    if isinstance(arg, dict):
-                        result = await tool_fn(_ctx, **arg)
-                    elif isinstance(arg, str):
-                        # Try to parse JSON from the string
-                        try:
-                            import json
-                            # Extract JSON object from string if embedded
-                            if '{' in arg and '}' in arg:
-                                start = arg.find('{')
-                                end = arg.rfind('}') + 1
-                                parsed = json.loads(arg[start:end])
-                                if isinstance(parsed, dict):
-                                    result = await tool_fn(_ctx, **parsed)
-                        except (json.JSONDecodeError, ValueError):
-                            pass
-                        # If can't parse, pass as 'input' parameter
-                        if result is None:
-                            result = await tool_fn(_ctx, input=arg)
-                elif args:
-                    result = await tool_fn(_ctx, *args, **kwargs)
-                else:
-                    result = await tool_fn(_ctx, **kwargs)
+                logger.warning(f"TOOL CALL: {_name} | args: {args} | kwargs: {kwargs}")
+
+                tool_fn = _resolve(_name)
+                if tool_fn is None:
+                    return err_envelope(
+                        code="TOOL_MISSING",
+                        message=f"Tool '{_name}' was unregistered before dispatch.",
+                    )
+
+                _slo = _slo_for(_name)
+
+                async def _invoke() -> Any:
+                    if args and len(args) == 1:
+                        arg = args[0]
+                        if isinstance(arg, dict):
+                            return await tool_fn(_ctx, **arg)
+                        if isinstance(arg, str):
+                            try:
+                                import json
+                                if '{' in arg and '}' in arg:
+                                    start = arg.find('{')
+                                    end = arg.rfind('}') + 1
+                                    parsed = json.loads(arg[start:end])
+                                    if isinstance(parsed, dict):
+                                        return await tool_fn(_ctx, **parsed)
+                            except (json.JSONDecodeError, ValueError):
+                                pass
+                            return await tool_fn(_ctx, input=arg)
+                    if args:
+                        return await tool_fn(_ctx, *args, **kwargs)
+                    return await tool_fn(_ctx, **kwargs)
+
+                try:
+                    result = await asyncio.wait_for(_invoke(), timeout=_slo)
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "TOOL_TIMEOUT: %s exceeded SLO %.1fs", _name, _slo
+                    )
+                    return err_envelope(
+                        code="TOOL_TIMEOUT",
+                        message=(
+                            f"Tool '{_name}' exceeded its {_slo:.0f}s SLO. "
+                            f"Upstream call (RPC / Enso / DefiLlama / aggregator) "
+                            f"hung — no execution plan emitted. Retry or pick a "
+                            f"different route."
+                        ),
+                    )
 
                 from src.api.schemas.agent import ToolEnvelope
                 from src.agent.tools.sentinel_wrap import enrich_tool_envelope
 
                 if isinstance(result, ToolEnvelope):
-                    return enrich_tool_envelope(tool_fn.__name__, result)
+                    return enrich_tool_envelope(_name, result)
                 return result
 
-            _run.__signature__ = _strip_ctx_param(tool_fn)
-            _run.__name__ = tool_fn.__name__
-            _run.__doc__ = tool_fn.__doc__
-            # langchain's `create_schema_from_function` calls
-            # typing.get_type_hints() which reads __annotations__, not the
-            # synthetic __signature__ above. Copy annotations from the real
-            # tool function so required kwargs (e.g. usd_amount) resolve.
-            annotations = dict(getattr(tool_fn, "__annotations__", {}))
+            _run.__signature__ = _strip_ctx_param(fn)
+            _run.__name__ = _name
+            _run.__doc__ = fn.__doc__
+            annotations = dict(getattr(fn, "__annotations__", {}))
             annotations.pop("ctx", None)
             annotations.pop("return", None)
             _run.__annotations__ = annotations
@@ -282,7 +363,7 @@ def register_all_tools(services, user_id=0, wallet=None, solana_wallet=None, evm
 
         tools.append(
             StructuredTool.from_function(
-                coroutine=_bind(fn, ctx),
+                coroutine=_late_bound(ctx),
                 name=name,
                 description=desc,
             )

@@ -6,6 +6,7 @@ from src.agent.protocol_urls import get_exec_capability, protocol_app_url
 from src.agent.tools._base import err_envelope, ok_envelope
 from src.defi.search.models import OpportunityCandidate, OpportunitySearchRequest
 from src.defi.search.ranking import rank_opportunities
+from src.defi.strategy.memory import remember_search_universe
 
 
 def _infer_risk_level(*, apy: float, tvl_usd: float) -> str:
@@ -449,6 +450,19 @@ async def search_defi_opportunities(
             min_tvl_floor = max(min_tvl_floor, float(min_tvl))
         except (TypeError, ValueError):
             pass
+    # Defend against inverted APY bands BEFORE constructing the request so
+    # the downstream trace string and apy_band card field both show the
+    # corrected ordering. Pass A surfaced H11/H14/enso-02 emitting
+    # `min_apy=0.5, max_apy=0.48` -> 0 candidates. The model layer also
+    # guards this, but doing it here keeps the trace honest.
+    if min_apy is not None and max_apy is not None:
+        try:
+            _a, _b = float(min_apy), float(max_apy)
+            if _a > _b:
+                min_apy, max_apy = min(_a, _b), max(_a, _b)
+                max_apy_cap = max_apy
+        except (TypeError, ValueError):
+            pass
     canonical_chains = [_canonical_chain(c) for c in (chains or []) if c]
     canonical_chains = [c for c in canonical_chains if c]
     # F05 0-result trap fix: when protocol_filter narrows to a single
@@ -568,6 +582,16 @@ async def search_defi_opportunities(
             "stablecoin_only": stablecoin_only,
         },
     }
+    # RC14: cache the ranked universe per session so a downstream
+    # build_yield_execution_plan adapter-build failure can populate
+    # recovery.alternatives from candidates the user has already seen.
+    session_id = getattr(ctx, "session_id", None) if ctx is not None else None
+    if session_id and primary:
+        try:
+            remember_search_universe(str(session_id), primary)
+        except Exception:  # noqa: BLE001 — cache is best-effort
+            pass
+
     return ok_envelope(
         data=data,
         card_type="defi_opportunities" if primary else None,

@@ -51,12 +51,19 @@ def test_first_we_identify_stripped() -> None:
     assert REFUSAL_MARKER in out
 
 
-def test_scratchpad_with_real_card_passthrough() -> None:
-    # When a deterministic tool produced an actual card, the dev trace is fine.
+def test_scratchpad_with_real_card_still_stripped() -> None:
+    # RC2 (Pass A d9bfe2e enso-06 t2) — chain-of-thought scratchpad
+    # narration is NEVER user-facing, regardless of whether a deterministic
+    # tool produced a backing card. The earlier `has_real_card=True`
+    # passthrough was a bug: enso-06 t2 hand-read showed the model leaking
+    # full deliberation ("We need to follow… Let's assume 1 ETH = $2,000")
+    # with real cards present. After RC2, the scratchpad regex runs FIRST,
+    # before the has_real_card short-circuit.
     txt = "We need to allocate $250 across the same pools. Compute 250 * (1/7) = 35.71."
     out, stripped = _strip_unbacked_claims(txt, has_real_card=True)
-    assert stripped is False
-    assert out == txt
+    assert stripped is True
+    # The deterministic refusal banner appears in place of the scratchpad.
+    assert "I can't confirm that action without a deterministic Sentinel" in out
 
 
 def test_normal_user_facing_prose_passthrough() -> None:

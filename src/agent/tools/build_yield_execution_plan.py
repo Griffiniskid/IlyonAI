@@ -12,7 +12,11 @@ from src.defi.execution.capabilities import build_default_registry
 from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
 from src.defi.execution.preflight import WalletInventory, evaluate_preflight
 from src.defi.recovery import FailureKind, Recovery, RecoveryAction, decide_recovery
-from src.defi.strategy.memory import StrategyRecord, remember_strategy
+from src.defi.strategy.memory import (
+    StrategyRecord,
+    pick_alt_pools,
+    remember_strategy,
+)
 
 
 def _synth_cdf_30d(sym0: str, sym1: str) -> list[dict[str, float]]:
@@ -114,6 +118,71 @@ async def build_yield_execution_plan(
     # with the actual fill amount after the webhook resolves.
     extra_dict_pre = extra or {}
     src_chain_hint = (extra_dict_pre.get("source_chain") or "").lower()
+    # Pass A rows 10-11: cross-chain intent must NEVER route to pool_link.
+    # When the caller supplied a free-form `user_message` (or set
+    # `extra.cross_chain_message`), backstop the routing by inferring the
+    # source/dest chains from the prose. If the destination matches the
+    # `chain` argument and the source differs, force composed_plan. If the
+    # destination is set but the source can't be unambiguously extracted,
+    # surface CROSS_CHAIN_SOURCE_AMBIGUOUS instead of silently routing to
+    # pool_link (the E04-E14 bug class).
+    cross_chain_message = (
+        extra_dict_pre.get("cross_chain_message")
+        or extra_dict_pre.get("user_message")
+        or ""
+    )
+    if cross_chain_message and not src_chain_hint:
+        from src.agent.cross_chain import (
+            cross_chain_source_blocker_payload,
+            infer_cross_chain_hint,
+        )
+
+        hint = infer_cross_chain_hint(cross_chain_message)
+        if hint.is_cross_chain and hint.needs_source_blocker:
+            plan = ExecutionPlanV3.new(
+                title="Cross-chain plan — source chain missing",
+                summary=(
+                    "Cross-chain intent detected but the source chain "
+                    "wasn't specified. Re-prompt with 'from <chain>'."
+                ),
+            )
+            blocker_payload = cross_chain_source_blocker_payload(
+                dest_chain=hint.dest_chain, message=cross_chain_message,
+            )
+            plan.add_blocker(ExecutionBlocker(
+                code=blocker_payload["code"],
+                severity=blocker_payload["severity"],
+                title=blocker_payload["title"],
+                detail=blocker_payload["detail"],
+                affected_step_ids=[],
+                cta=blocker_payload["cta"],
+            ))
+            plan_dict = plan.to_dict()
+            plan_dict["recovery"] = Recovery(
+                action=RecoveryAction.ASK_USER,
+                posture="Ask user for the source chain.",
+                buttons=["Specify source chain", "Cancel"],
+                rationale=(
+                    "Cross-chain motion needs both endpoints. Refusing to "
+                    "default to dest-only so the bridge leg quote isn't "
+                    "silently dropped."
+                ),
+            ).to_dict()
+            return ok_envelope(
+                data={"plan": plan_dict},
+                card_type="execution_plan_v3",
+                card_payload=plan_dict,
+            )
+        if (
+            hint.is_cross_chain
+            and hint.source_chain
+            and hint.dest_chain
+            and hint.source_chain != hint.dest_chain
+            and (chain or "").lower() in {hint.dest_chain, ""}
+        ):
+            src_chain_hint = hint.source_chain
+            if not chain:
+                chain = hint.dest_chain
     if src_chain_hint and src_chain_hint != (chain or "").lower():
         from src.defi.execution.composed_plan import (
             Snapshot, block_step_for_async_fill, snapshot_bridge_quote,
@@ -190,6 +259,7 @@ async def build_yield_execution_plan(
                 "Cross-chain composed plan needs an EVM wallet address. "
                 "Reconnect MetaMask and retry.",
             )
+        amount_units = int(float(amount_in) * 10 ** src_dec)
         try:
             bridge = DeBridgeBridge()
             snap = await snapshot_bridge_quote(
@@ -198,7 +268,7 @@ async def build_yield_execution_plan(
                 dst_chain_id=_CHAIN_ID_MAP.get((chain or "").lower(), 0),
                 token_in=src_addr,
                 token_out=dst_meta[0],
-                amount=int(float(amount_in) * 10 ** src_dec),
+                amount=amount_units,
                 recipient=user_address,
             )
         except Exception as exc:  # noqa: BLE001
@@ -206,6 +276,68 @@ async def build_yield_execution_plan(
                 "composed_plan_bridge_quote_failed",
                 f"deBridge DLN quote failed for {src_chain_hint}→{chain}: {exc}",
             )
+        # RC7a — fetch the REAL unsigned tx envelope so the bridge step is
+        # signable. Without this, the step would have transaction=None and
+        # the user could click "Approve step 1" and either noop or fall
+        # through to step 2 out of order (financial-loss bug). The DLN
+        # /dln/order/create-tx endpoint returns {to, data, value}.
+        from src.routing.debridge_client import DeBridgeClient as _LegacyDeBridge  # used by network mock test paths
+        try:
+            order_tx = await bridge.create_order_encoded(
+                src_chain_id=_CHAIN_ID_MAP.get(src_chain_hint, 0),
+                dst_chain_id=_CHAIN_ID_MAP.get((chain or "").lower(), 0),
+                token_in=src_addr,
+                token_out=dst_meta[0],
+                amount=amount_units,
+                sender=user_address,
+                recipient=user_address,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return err_envelope(
+                "composed_plan_bridge_build_failed",
+                f"deBridge DLN /create-tx failed for {src_chain_hint}→{chain}: {exc}",
+            )
+        bridge_tx_payload = order_tx.get("tx") or {}
+        bridge_to = bridge_tx_payload.get("to")
+        bridge_data = bridge_tx_payload.get("data")
+        bridge_value = bridge_tx_payload.get("value") or "0x0"
+        if not bridge_to or not bridge_data:
+            # RC7a — DLN returned a malformed tx envelope. Refuse to emit
+            # a composed plan with a null calldata bridge step; emit a
+            # structured COMPOSED_PLAN_INCOMPLETE_TX blocker instead.
+            plan = ExecutionPlanV3.new(
+                title="Cross-chain bridge build incomplete",
+                summary=(
+                    f"deBridge DLN did not return signable calldata for "
+                    f"{src_chain_hint}→{chain}. Refusing to emit an "
+                    f"unsignable composed plan."
+                ),
+            )
+            plan.add_blocker(ExecutionBlocker(
+                code="COMPOSED_PLAN_INCOMPLETE_TX",
+                severity="blocker",
+                title="Bridge step has no calldata",
+                detail=(
+                    f"DLN order quote succeeded (quote_id={snap.quote_id}) but "
+                    f"/create-tx returned tx.to={bridge_to!r}, tx.data="
+                    f"{(bridge_data or '')[:20]}... Cannot construct a signable "
+                    f"bridge leg. Step index: 1 (bridge)."
+                ),
+                affected_step_ids=[],
+                cta="Retry the request; if the issue persists, the DLN solver "
+                    "may be temporarily refusing this route. Try a different "
+                    "bridge or smaller amount.",
+            ))
+            plan_dict = plan.to_dict()
+            return ok_envelope(
+                data={"plan": plan_dict},
+                card_type="execution_plan_v3",
+                card_payload=plan_dict,
+            )
+        # Convert hex value (DLN returns "0x..." for EVM) to a plain hex
+        # string we can put on UnsignedStepTransaction.value.
+        if isinstance(bridge_value, int):
+            bridge_value = "0x" + format(bridge_value, "x")
         plan = ExecutionPlanV3.new(
             title=f"Cross-chain {action} via deBridge DLN",
             summary=(
@@ -225,6 +357,16 @@ async def build_yield_execution_plan(
             chain=src_chain_hint, wallet="MetaMask", protocol="debridge-dln",
             asset_in=asset_in, amount_in=str(amount_in),
             asset_out=asset_in,
+            slippage_bps=snap.slippage_bps_band_max,
+            duration_estimate_s=300,
+            transaction=UnsignedStepTransaction(
+                chain_kind="evm",
+                chain_id=_CHAIN_ID_MAP.get(src_chain_hint, 0),
+                to=bridge_to,
+                data=bridge_data,
+                value=bridge_value,
+                spender=bridge_to,
+            ),
         )
         deposit_step = make_step(
             index=2, action=action,
@@ -241,6 +383,45 @@ async def build_yield_execution_plan(
         plan.steps = [bridge_step, deposit_step]
         plan._recompute_step_statuses()
         plan._refresh_plan_status()
+        # RC7a — final invariant gate. Refuse emission if any non-blocked
+        # step is missing its transaction. Bridge step + any future
+        # pre-bridge wrap step must be signable; only the post-bridge
+        # deposit step is allowed to be blocked.
+        try:
+            from src.defi.execution.composed_plan import (
+                ComposedPlanIncompleteTxError,
+                assert_signable_composed_plan,
+            )
+            assert_signable_composed_plan(plan)
+        except ComposedPlanIncompleteTxError as exc:
+            # Reshape the exception into a structured blocker. We never
+            # surface the bare exception to the user; the blocker carries
+            # the offending step's index so the frontend can highlight it.
+            blocker_plan = ExecutionPlanV3.new(
+                title="Composed plan refused — step missing calldata",
+                summary=(
+                    f"Plan emission refused: step {exc.step_index} "
+                    f"({exc.action}) has no signable transaction."
+                ),
+            )
+            blocker_plan.add_blocker(ExecutionBlocker(
+                code="COMPOSED_PLAN_INCOMPLETE_TX",
+                severity="blocker",
+                title="Step missing calldata",
+                detail=(
+                    f"step_index={exc.step_index} step_id={exc.step_id} "
+                    f"action={exc.action} carries transaction=None and is "
+                    f"not blocked. Refusing to emit an unsignable plan."
+                ),
+                affected_step_ids=[exc.step_id],
+                cta="Retry the request or contact support.",
+            ))
+            plan_dict = blocker_plan.to_dict()
+            return ok_envelope(
+                data={"plan": plan_dict},
+                card_type="execution_plan_v3",
+                card_payload=plan_dict,
+            )
         # Stash the snapshot in the plan metadata so the rebuild loop can
         # consume it without re-fetching.
         if not hasattr(plan, "metadata") or plan.metadata is None:
@@ -441,6 +622,59 @@ async def build_yield_execution_plan(
         ).to_dict()
         return ok_envelope(data={"plan": plan_dict}, card_type="execution_plan_v3", card_payload=plan_dict)
 
+    # RC8 — Solana-native asset → force chain_kind=solana. Symbols like
+    # MSOL, JITOSOL, BSOL, BNSOL, JUPSOL, JSOL, INF, JLP are SPL mints that
+    # only exist on Solana. If the caller (or an upstream router) stamped an
+    # EVM chain on a Solana-native asset, refuse the build and emit a
+    # CHAIN_KIND_MISMATCH blocker — never silently route an SPL mint to an
+    # EVM adapter (would either Enso-422 or, worse, sign a swap for a same-
+    # symbol scam token on the wrong chain).
+    _SOLANA_NATIVE_ASSETS = {
+        "MSOL", "JITOSOL", "BSOL", "BNSOL", "JUPSOL", "JSOL",
+        "INF", "JLP", "JTO", "RAY", "ORCA", "BONK", "PYTH", "JUP",
+        "WIF", "PYUSD", "USDS",
+    }
+    _asset_up = (asset_in or "").strip().upper()
+    if _asset_up in _SOLANA_NATIVE_ASSETS and not is_solana_chain:
+        plan = ExecutionPlanV3.new(
+            title=f"{humanize_protocol(protocol)} {humanize_action(action)}",
+            summary=(
+                f"{_asset_up} is a Solana-native SPL mint; refusing to "
+                f"build on {chain or 'unknown'} (chain_kind=evm)."
+            ),
+        )
+        plan.add_blocker(ExecutionBlocker(
+            code="CHAIN_KIND_MISMATCH",
+            severity="blocker",
+            title="Asset is Solana-native — wrong chain",
+            detail=(
+                f"{_asset_up} only exists on Solana (SPL mint). The caller "
+                f"requested {protocol} {action} on chain={chain!r}. Refusing "
+                f"to emit a plan that would route a Solana-native asset to "
+                f"an EVM adapter. Resubmit with chain='solana'."
+            ),
+            affected_step_ids=[],
+            cta=(
+                f"Switch chain to Solana for {_asset_up}, or pick a different "
+                f"asset for {chain or 'this chain'}."
+            ),
+        ))
+        plan_dict = plan.to_dict()
+        plan_dict["recovery"] = Recovery(
+            action=RecoveryAction.ASK_USER,
+            posture=f"{_asset_up} is Solana-only — switch chain",
+            buttons=["Use Solana", "Pick a different asset", "Cancel"],
+            rationale=(
+                "Solana-native SPL mint requested on a non-Solana chain. "
+                "Refuse build to prevent same-symbol token confusion."
+            ),
+        ).to_dict()
+        return ok_envelope(
+            data={"plan": plan_dict},
+            card_type="execution_plan_v3",
+            card_payload=plan_dict,
+        )
+
     amount = _coerce_amount(amount_in)
     # Phase 4 lifecycle: claim / withdraw with amount=0 is the canonical
     # "max" sentinel (adapter converts to uint256.max for withdraw, ignores
@@ -450,6 +684,69 @@ async def build_yield_execution_plan(
     )
     if amount <= 0 and not _lifecycle_zero_ok:
         return err_envelope("invalid_amount", "amount_in must be a positive decimal value.")
+
+    # RC3 — refuse to build when the user did NOT confirm the amount. The
+    # earlier behaviour silently substituted a $1000 placeholder when the
+    # detector couldn't pull a numeric amount out of the prose; that path
+    # was a financial-loss bug (user typed "stake some ETH on Lido" and
+    # got a 1000-ETH supply card). The detector now sets
+    # `extra.amount_confirmed=True` only when it extracted an explicit
+    # number from the user message (or when the caller passes through a
+    # known-good value). Without that flag, refuse the build and surface
+    # AMOUNT_NOT_CONFIRMED so the runtime re-prompts the user.
+    _extra = extra or {}
+    _amount_confirmed = bool(_extra.get("amount_confirmed"))
+    _placeholder_flag = bool(_extra.get("amount_is_placeholder"))
+    # Lifecycle "withdraw all" / "claim" emit amount=0; those are exempt
+    # because the sentinel is the confirmation.
+    if not _amount_confirmed and not _lifecycle_zero_ok and not _placeholder_flag:
+        # If the amount looks like a textbook placeholder (exactly 1000 or
+        # 100 with no decimal component) AND there's no confirmation flag,
+        # block the build. We don't want to refuse arbitrary integer
+        # amounts the user actually typed, so the gate fires only on the
+        # explicit placeholder values the legacy default-amount path used.
+        _looks_placeholder = amount in (Decimal("1000"), Decimal("100"))
+        if _looks_placeholder:
+            plan = ExecutionPlanV3.new(
+                title=f"{humanize_protocol(protocol)} {humanize_action(action)}",
+                summary=(
+                    f"Amount not confirmed — refusing to build a "
+                    f"{humanize_protocol(protocol)} {humanize_action(action)} "
+                    f"plan with a placeholder value."
+                ),
+            )
+            plan.add_blocker(ExecutionBlocker(
+                code="AMOUNT_NOT_CONFIRMED",
+                severity="blocker",
+                title="Amount not confirmed",
+                detail=(
+                    f"Caller passed amount_in={amount_in!r} but did NOT set "
+                    f"extra.amount_confirmed=True. The value matches the "
+                    f"legacy placeholder default ($1000 / $100), so refusing "
+                    f"to emit a signable plan. Re-prompt the user for the "
+                    f"exact amount."
+                ),
+                affected_step_ids=[],
+                cta=(
+                    f"Ask the user how much {asset_in} they want to "
+                    f"{humanize_action(action).lower()}."
+                ),
+            ))
+            plan_dict = plan.to_dict()
+            plan_dict["recovery"] = Recovery(
+                action=RecoveryAction.ASK_USER,
+                posture="Need an exact amount — no placeholder defaults",
+                buttons=["Use 0.1", "Use 1", "Use 10", "Custom amount", "Cancel"],
+                rationale=(
+                    "Caller passed a placeholder amount. Refusing to risk "
+                    "the user signing a 1000-token plan they didn't intend."
+                ),
+            ).to_dict()
+            return ok_envelope(
+                data={"plan": plan_dict},
+                card_type="execution_plan_v3",
+                card_payload=plan_dict,
+            )
 
     # Pool-link gate: consult the canonical `get_exec_capability` helper so
     # the search-card badge and this gate cannot drift. When the helper
@@ -559,6 +856,107 @@ async def build_yield_execution_plan(
         }
         return ok_envelope(data=card, card_type="pool_link", card_payload=card)
 
+    # RC6 — verb-aware dispatch table. Reject (protocol, verb) pairs the
+    # protocol doesn't support BEFORE the generic adapter registry, so the
+    # build never silently downgrades verbs (e.g. user requested `borrow`
+    # on a stake-only protocol like Lido → fell through to a supply step).
+    # Source of truth for what each protocol actually supports. Add new
+    # protocols here when adapters add new verbs; pin tests catch drift.
+    _VERB_DISPATCH: dict[str, frozenset[str]] = {
+        # EVM lending — full lend/borrow/repay/withdraw/claim cycle.
+        "aave-v3":     frozenset({"supply", "deposit", "lend", "withdraw",
+                                   "borrow", "repay", "claim", "claim_compound"}),
+        "aave":        frozenset({"supply", "deposit", "lend", "withdraw",
+                                   "borrow", "repay", "claim", "claim_compound"}),
+        "compound-v3": frozenset({"supply", "deposit", "lend", "withdraw",
+                                   "borrow", "repay", "claim", "claim_compound"}),
+        "compound":    frozenset({"supply", "deposit", "lend", "withdraw",
+                                   "borrow", "repay", "claim", "claim_compound"}),
+        "morpho-blue": frozenset({"supply", "deposit", "lend", "withdraw",
+                                   "borrow", "repay", "claim"}),
+        "morpho":      frozenset({"supply", "deposit", "lend", "withdraw",
+                                   "borrow", "repay", "claim"}),
+        "spark":       frozenset({"supply", "deposit", "lend", "withdraw",
+                                   "borrow", "repay", "claim"}),
+        "sparklend":   frozenset({"supply", "deposit", "lend", "withdraw",
+                                   "borrow", "repay", "claim"}),
+        # EVM LSTs — stake only. NO borrow/repay/lend.
+        "lido":            frozenset({"stake", "unstake", "withdraw"}),
+        "rocket-pool":     frozenset({"stake", "unstake", "withdraw"}),
+        "ether.fi":        frozenset({"stake", "unstake", "withdraw"}),
+        "etherfi":         frozenset({"stake", "unstake", "withdraw"}),
+        "renzo":           frozenset({"stake", "unstake", "withdraw"}),
+        "swell":           frozenset({"stake", "unstake", "withdraw"}),
+        "frax-ether":      frozenset({"stake", "unstake", "withdraw"}),
+        "kelp":            frozenset({"stake", "unstake", "withdraw"}),
+        "mantle-staked-ether": frozenset({"stake", "unstake", "withdraw"}),
+        # Solana LSTs — stake only.
+        "marinade":               frozenset({"stake", "unstake", "withdraw"}),
+        "marinade-liquid-staking": frozenset({"stake", "unstake", "withdraw"}),
+        "marinade-native":        frozenset({"stake", "unstake", "withdraw"}),
+        "jito":                   frozenset({"stake", "unstake", "withdraw"}),
+        "jito-liquid-staking":    frozenset({"stake", "unstake", "withdraw"}),
+        "sanctum":                frozenset({"stake", "unstake", "withdraw"}),
+        "sanctum-infinity":       frozenset({"stake", "unstake", "withdraw"}),
+        "sanctum-liquid-staking": frozenset({"stake", "unstake", "withdraw"}),
+        # Yield vaults — deposit / withdraw, no lend/borrow.
+        "yearn-finance":   frozenset({"deposit", "supply", "withdraw", "claim"}),
+        "yearn":           frozenset({"deposit", "supply", "withdraw", "claim"}),
+        "sky-savings-rate": frozenset({"deposit", "supply", "withdraw", "claim"}),
+        "sky":             frozenset({"deposit", "supply", "withdraw", "claim"}),
+    }
+    proto_lc_rc6 = (protocol or "").lower()
+    action_lc_rc6 = (action or "").lower()
+    if proto_lc_rc6 in _VERB_DISPATCH:
+        if action_lc_rc6 and action_lc_rc6 not in _VERB_DISPATCH[proto_lc_rc6]:
+            _supported_verbs = sorted(_VERB_DISPATCH[proto_lc_rc6])
+            plan = ExecutionPlanV3.new(
+                title=f"{humanize_protocol(protocol)} {humanize_action(action)}",
+                summary=(
+                    f"{humanize_protocol(protocol)} does not support the "
+                    f"`{action}` verb. Refusing to silently downgrade."
+                ),
+            )
+            plan.add_blocker(ExecutionBlocker(
+                code="VERB_NOT_SUPPORTED",
+                severity="blocker",
+                title=f"{humanize_protocol(protocol)} can't {humanize_action(action).lower()}",
+                detail=(
+                    f"`{action}` is not in the supported verb set for "
+                    f"{humanize_protocol(protocol)}. Supported: "
+                    f"{', '.join(_supported_verbs)}. Earlier builds would "
+                    f"silently fall through to a `supply` step here — that "
+                    f"path is now disabled to prevent verb-downgrade bugs."
+                ),
+                affected_step_ids=[],
+                cta=(
+                    f"Use one of: {', '.join(_supported_verbs)} — or pick a "
+                    f"protocol that supports `{action}` (e.g. Aave V3 / "
+                    f"Compound V3 for borrow/repay)."
+                ),
+            ))
+            plan_dict = plan.to_dict()
+            plan_dict["recovery"] = Recovery(
+                action=RecoveryAction.ASK_USER,
+                posture=(
+                    f"{humanize_protocol(protocol)} doesn't support "
+                    f"`{action}` — pick a different verb or protocol"
+                ),
+                buttons=(
+                    [f"Try {humanize_action(v)}" for v in _supported_verbs[:3]]
+                    + ["Switch to Aave V3", "Cancel"]
+                ),
+                rationale=(
+                    "Verb-aware dispatch refused to silently downgrade an "
+                    "unsupported action to supply. No financial-loss path."
+                ),
+            ).to_dict()
+            return ok_envelope(
+                data={"plan": plan_dict},
+                card_type="execution_plan_v3",
+                card_payload=plan_dict,
+            )
+
     registry = build_default_registry()
     capability = registry.find(chain=chain, protocol=protocol, action=action)
     if not capability.supported:
@@ -629,14 +1027,52 @@ async def build_yield_execution_plan(
         elif "user reject" in _msg or "user cancelled" in _msg:
             _fk = FailureKind.USER_CANCELLED
         else:
-            _fk = FailureKind.UNKNOWN
+            # Default to POOL_REMOVED so the recovery dispatcher surfaces
+            # ranked alternatives (RC14) for adapter-build failures that
+            # don't map to one of the typed kinds above. Adapter-build
+            # failure with a candidate universe → "this pool didn't work,
+            # here are 3 you already saw that might".
+            _fk = FailureKind.POOL_REMOVED
+        # RC14: pull alt pools from the cached search universe so
+        # recovery.alternatives is populated instead of the empty list
+        # that forced G04 t3 to issue a brand-new search. The lookup is
+        # a closure over the session_id + chain + asset + protocol so
+        # decide_recovery can call it without knowing about the cache.
+        _failed_pool_id = (extra or {}).get("pool_id")
+        _session_id = getattr(ctx, "session_id", None) if ctx is not None else None
+
+        def _alts_lookup(_pid: str) -> list[dict]:  # pragma: no cover - thin wrapper
+            if not _session_id:
+                return []
+            return pick_alt_pools(
+                str(_session_id),
+                failed_pool_id=_pid or _failed_pool_id,
+                failed_protocol=protocol,
+                chain=chain,
+                asset=asset_in,
+                limit=3,
+            )
+
         _recovery = decide_recovery(
             _fk,
             step_kind=action,
             elapsed_since_fail_s=0,
             current_slippage_bps=50,
             user_slippage_cap_bps=500,
+            alternatives_lookup=_alts_lookup,
+            pool_id=str(_failed_pool_id or f"{protocol}:{chain}:{asset_in}"),
         )
+        # If the typed failure kind didn't trigger the alternatives branch
+        # inside decide_recovery (only POOL_PAUSED/REMOVED/DEPOSIT_CAP do),
+        # still surface the alt pools we have — the user's recovery card
+        # should never be empty when the cache has real candidates.
+        if not _recovery.alternatives:
+            try:
+                _fallback_alts = _alts_lookup(str(_failed_pool_id or ""))
+            except Exception:  # noqa: BLE001
+                _fallback_alts = []
+            if _fallback_alts:
+                _recovery.alternatives = _fallback_alts[:3]
         plan.add_blocker(ExecutionBlocker(
             code="ADAPTER_BUILD_FAILED",
             severity="blocker",
@@ -664,6 +1100,80 @@ async def build_yield_execution_plan(
         summary=f"{action_human} {amount} {asset_in} via {proto_human} on {chain_human}.",
         research_thesis=research_thesis,
     )
+    # RC7b — native ETH (or MATIC/BNB/AVAX) → V3-style LP/supply must wrap first.
+    # Spec §13 row 3 mandates wrap(ETH)→LP(WETH), never a swap-router round-trip.
+    # Pass A H03 captured a 4-step plan where step 1 was a free-money swap of
+    # ETH→USDC (wrong leg) and step 2 was a *swap* of ETH→WETH via Enso
+    # (paying router fees on a 1:1 wrap). We refuse both routes: if the
+    # adapter didn't itself include a deposit() wrap, we prepend one here.
+    try:
+        from src.defi.execution.composed_plan import (
+            build_wrap_step,
+            is_native_wrap_required,
+        )
+
+        # Sniff whether the adapter already emitted a wrap step (evm_lst
+        # auto-wrap path does this when the LST mint accepts ERC20 only).
+        # We only prepend when no step is already wrapping the native.
+        _already_wrapping = False
+        for _st in steps:
+            _tx = getattr(_st, "transaction", None)
+            if _tx is not None and (getattr(_tx, "data", None) or "").lower().startswith(
+                "0xd0e30db0"
+            ):
+                _already_wrapping = True
+                break
+
+        if not _already_wrapping and is_native_wrap_required(
+            chain=chain, asset_in=asset_in, action=action,
+        ):
+            from decimal import Decimal as _Dec
+
+            _native_sym = (asset_in or "").upper()
+            try:
+                _amt_dec = _Dec(str(amount))
+            except Exception:  # noqa: BLE001
+                _amt_dec = _Dec("0")
+            if _amt_dec > 0:
+                _amt_wei = int((_amt_dec * (_Dec(10) ** 18)).to_integral_value())
+                _wrap = build_wrap_step(
+                    chain=chain,
+                    native_symbol=_native_sym,
+                    amount_wei=_amt_wei,
+                    index=0,
+                )
+                # Insert the wrap step at the head, re-index everything else.
+                # Existing steps may already have depends_on chains; the wrap
+                # is a pure prepend so we leave their depends_on alone but
+                # bump indices.
+                _new_steps: list = [_wrap]
+                for _i, _st in enumerate(steps, start=1):
+                    _st.index = _i
+                    _new_steps.append(_st)
+                steps = _new_steps
+                # Rewrite subsequent steps that referenced native asset_in to
+                # use the wrapped symbol — they're now consuming the wrap
+                # step's output. Wrap meta gives the canonical wrapped sym.
+                from src.defi.execution.composed_plan import (
+                    get_wrapped_native_for_chain,
+                )
+
+                _wm = get_wrapped_native_for_chain(chain)
+                if _wm:
+                    _wrapped_sym = _wm[0]
+                    for _st in steps[1:]:
+                        if (
+                            (_st.asset_in or "").upper() == _native_sym
+                            and _st.action in {"approve", "deposit_lp", "supply",
+                                               "add_liquidity", "provide_liquidity"}
+                        ):
+                            _st.asset_in = _wrapped_sym
+    except Exception:
+        # Wrap-prepend is best-effort; fail-soft so adapters that already
+        # handle wrap internally don't double-emit. Real failures surface
+        # via the downstream signability invariant or preflight blockers.
+        pass
+
     for step in steps:
         plan.add_step(step)
 

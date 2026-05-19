@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -23,6 +26,26 @@ class OpportunitySearchRequest:
         self.risk_levels = [str(level).upper() for level in self.risk_levels]
         self.chains = [str(chain).lower() for chain in self.chains]
         self.product_types = [str(kind).lower() for kind in self.product_types]
+        # Defend the APY band: if a parser hands us an inverted (min > max)
+        # band — Pass A found e.g. min_apy=0.5, max_apy=0.48 driving 0
+        # candidates on H11/H14/enso-02 — coerce to the widest interpretation
+        # (min = min(a,b), max = max(a,b)) and log a WARNING. NEVER let an
+        # inverted band reach the candidate filter.
+        if (
+            self.min_apy is not None
+            and self.max_apy is not None
+            and float(self.min_apy) > float(self.max_apy)
+        ):
+            a, b = float(self.min_apy), float(self.max_apy)
+            _log.warning(
+                "apy band inverted, swapping: min_apy=%s > max_apy=%s -> min=%s, max=%s",
+                a,
+                b,
+                min(a, b),
+                max(a, b),
+            )
+            self.min_apy = min(a, b)
+            self.max_apy = max(a, b)
 
 
 @dataclass

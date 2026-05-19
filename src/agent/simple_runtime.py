@@ -233,12 +233,33 @@ def _parse_chains(text: str) -> list[str]:
     return chains
 
 
+# RC17 (Pass A d9bfe2e I01 t1) — cadence stopword list. The bare-symbol
+# extractor `[A-Za-z]{2,10}` captures cadence words like "daily", "weekly",
+# "monthly", "ongoing". These are NEVER asset tickers; they describe the
+# reinvestment cadence. Promoting them to asset_hint mis-routes downstream
+# search (e.g. `asset_hint="DAILY"` produces zero pools).
+_ASSET_HINT_CADENCE_STOPWORDS: frozenset[str] = frozenset({
+    "DAILY", "WEEKLY", "MONTHLY", "YEARLY", "QUARTERLY", "ANNUALLY",
+    "HOURLY", "BIWEEKLY", "ONGOING", "EVERY", "EACH", "ALWAYS",
+    "CONTINUOUSLY", "REGULARLY", "PERIODICALLY", "RECURRING",
+    "ONCE", "TWICE", "ONETIME",
+    # Common non-ticker frequency adverbs that the bare-letter pattern
+    # would otherwise capture.
+    "PER", "TIMES", "TIME",
+})
+
+
 def _parse_asset_hint(text: str) -> str | None:
     match = ASSET_HINT_PATTERN.search(text)
     if not match:
         return None
     symbol = match.group(3).upper()
     if symbol in CHAIN_PATTERNS:
+        return None
+    # RC17 — refuse cadence vocabulary as an asset ticker. The downstream
+    # search treats asset_hint as a hard filter, so a false positive on
+    # "daily" zeros the result set.
+    if symbol in _ASSET_HINT_CADENCE_STOPWORDS:
         return None
     return symbol
 
@@ -534,6 +555,42 @@ _CROSS_CHAIN_YIELD_RE = re.compile(
     r"(?:to|into|on|with|via)\s+(?P<rest>.+?)\s*$",
     re.IGNORECASE,
 )
+
+
+def _detect_cross_chain_universal(message: str) -> tuple[str, dict] | None:
+    """Catch loose cross-chain phrasings the strict regex misses.
+
+    Spec §13 row 4-6 — cross-chain intent should route to composed_plan,
+    NEVER pool_link. Strict `_detect_cross_chain_then_yield` matches the
+    "Bridge X from A to B then supply to <proto>" pattern only. This wrapper
+    fires for looser variants where source is implied or post-action is
+    weakly worded, and emits CROSS_CHAIN_SOURCE_AMBIGUOUS blocker when the
+    source chain cannot be inferred.
+    """
+    if _CROSS_CHAIN_YIELD_RE.search(message.strip()):
+        return None  # let strict detector handle the canonical pattern
+    try:
+        from src.agent.cross_chain import infer_cross_chain_hint
+    except Exception:
+        return None
+    hint = infer_cross_chain_hint(message)
+    if not hint.is_cross_chain or not hint.has_post_action:
+        return None
+    return (
+        "build_yield_execution_plan",
+        {
+            "chain": hint.dest_chain or "ethereum",
+            "protocol": "aave-v3",
+            "action": "supply",
+            "asset_in": "USDC",
+            "amount_in": 0,
+            "extra": {
+                "cross_chain_message": message,
+                "source_chain": hint.source_chain or "",
+                "amount_confirmed": False,
+            },
+        },
+    )
 
 
 def _detect_cross_chain_then_yield(message: str) -> tuple[str, dict] | None:
@@ -2936,6 +2993,13 @@ def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
     asset = match.group("asset").upper()
     if asset.lower() in {"on", "to", "of"}:
         return None
+    # RC7d — Apply the global asset noise filter first so chain-words /
+    # protocol-words / verb-words don't survive even when they pass the
+    # narrower regex group.
+    if asset in _NOISE_ASSET_TOKENS or asset in _NOT_A_SYMBOL:
+        # Fall through to the _CHAIN_WORDS re-extract below if it's a chain.
+        # Otherwise, refuse the detection entirely (verb/protocol leakage).
+        pass
     # Chain words sometimes get captured as the asset when the message form is
     # 'Aave V3 USDC supply 100 Base' — the verb-first sub-regex consumes
     # 'supply 100 Base' and treats Base as asset. v4-H13 caught this. Re-scan
@@ -2948,6 +3012,10 @@ def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
     }
     chain_match = match.groupdict().get("chain")
     chain = (chain_match or "ethereum").lower()
+    # RC7d — when asset is a non-chain noise/verb word, refuse so the LLM
+    # / freeform fallback can clarify, rather than building a wrong plan.
+    if asset in _NOISE_ASSET_TOKENS and asset not in _CHAIN_WORDS:
+        return None
     if asset in _CHAIN_WORDS:
         # Bare chain word captured as asset — promote to chain hint and
         # re-extract the asset from the leading text before 'supply'.
@@ -3913,6 +3981,19 @@ _NOISE_ASSET_TOKENS = {
     "PROCEED", "SIGN", "SIGNING", "ALLOCATE", "ALLOCATION", "DISTRIBUTE",
     "REINVEST", "REINVESTMENT", "REINVESTMENTS", "REBALANCE", "REBALANCING",
     "WALLET", "WALLETS",
+    # RC7d — Chain names that cannot be assets. Pass A H08/H13 captured
+    # asset_in='BASE' from messages where 'on Base' was parsed as
+    # 'on <chain>' but the asset slot was filled by the chain name. By
+    # adding chain names to the noise set, all the _detect_* matchers
+    # that go through this filter automatically reject chain-as-asset.
+    # Note: BNB, AVAX, MATIC, SOL, ARB, OP are LEGITIMATE asset symbols
+    # too (native gas tokens on their respective chains), so we DON'T
+    # add them here — the per-detector logic handles 'on <ambiguous>'
+    # adjacency via the _AMBIGUOUS_CHAIN_OR_ASSET set in _detect_aave_supply.
+    "ETHEREUM", "POLYGON", "ARBITRUM", "OPTIMISM", "BASE", "AVALANCHE",
+    "LINEA", "ZKSYNC", "SCROLL", "MANTLE", "BLAST", "GNOSIS", "CELO",
+    "SONIC", "BERACHAIN", "UNICHAIN", "SOLANA", "BSC", "BINANCE",
+    "MAINNET",
 }
 
 
@@ -4303,6 +4384,90 @@ def _detect_sentinel_chat_tools(message: str) -> tuple[str, dict] | None:
     return None
 
 
+# RC5 (Pass A d9bfe2e I01-I05) — session-key intent detector.
+# Account-abstraction session keys, ZeroDev/Biconomy/Kernel/Nexus session
+# policies, and auto-compound/auto-rebalance toggles are NOT supported as
+# signable actions today. Without this short-circuit, prompts like
+# "Create a Biconomy session key for daily swaps" fell through to the
+# contextual_fallback path, where the LLM happily fabricated `setPolicy(…)`
+# calls against non-existent Kernel v3 entrypoints — a P0 financial-trust
+# violation. Route these prompts to a deterministic refusal that names
+# the SESSION_KEY_NOT_AVAILABLE blocker explicitly.
+_SESSION_KEY_PHRASE_RE = re.compile(
+    r"\b(?:"
+    r"session[-\s]?key(?:s)?"
+    r"|(?:create|set|update|configure|enable|disable|revoke|remove|spin\s+up|"
+    r"set\s+up|configure)\s+(?:a\s+|the\s+)?policy"
+    r"|(?:biconomy|zerodev|kernel|nexus|safe)[-\s]?session"
+    r"|auto[-\s]?compound(?:ing)?"
+    r"|auto[-\s]?rebalanc(?:e|ing)"
+    r"|auto[-\s]?stake(?:ing)?"
+    r"|(?:daily|weekly|hourly)\s+(?:swap|trade|spend)\s+(?:cap|limit|budget)"
+    r"|smart[-\s]?account\s+(?:session|policy|delegate|delegation)"
+    r"|spending\s+(?:policy|limit\s+policy|cap\s+policy)"
+    r"|delegated\s+(?:execution|signer|key)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_session_key_intent(message: str) -> tuple[str, dict] | None:
+    """Match account-abstraction session-key / policy / auto-compound prompts
+    and route them to the `session_key_unavailable` deterministic refusal.
+
+    Returns ``("session_key_unavailable", {...})`` when matched. The runtime
+    dispatcher special-cases this tool_name and short-circuits to a hardcoded
+    refusal response (mirroring how `explain_sentinel_methodology` works),
+    so no real tool implementation is required — and crucially, the LLM is
+    NEVER given a chance to fabricate AA function names like `setPolicy(…)`.
+    """
+    if not message:
+        return None
+    text = message.strip()
+    if not _SESSION_KEY_PHRASE_RE.search(text):
+        return None
+    # Capture the trigger phrase for the response so the refusal can quote
+    # the user's intent ("creating a session key" vs "enabling auto-compound"
+    # vs "setting a daily spend cap policy").
+    trigger_match = _SESSION_KEY_PHRASE_RE.search(text)
+    trigger = (trigger_match.group(0) if trigger_match else "session key").strip()
+    return (
+        "session_key_unavailable",
+        {
+            "trigger_phrase": trigger,
+            "blocker_code": "SESSION_KEY_NOT_AVAILABLE",
+            "original_message": text[:280],
+        },
+    )
+
+
+def _format_session_key_refusal(params: dict) -> str:
+    """Deterministic refusal text for `session_key_unavailable`. Mirrors the
+    shape of `_format_sentinel_methodology_response` — pure-string output
+    that bypasses the LLM contextual_fallback path.
+    """
+    trigger = (params.get("trigger_phrase") or "session key").strip()
+    return (
+        f"**Session keys & auto-policies are not currently signable.** "
+        f"`SESSION_KEY_NOT_AVAILABLE` blocker.\n\n"
+        f"You asked about **{trigger}**. Sentinel does not yet ship a "
+        "deterministic adapter for AA session keys, ZeroDev / Biconomy / "
+        "Kernel / Nexus policy installation, or auto-compound / "
+        "auto-rebalance toggles. Until a verified on-chain oracle and "
+        "tested adapter ship for those flows, the agent will not emit "
+        "calldata for them — fabricating `setPolicy`, `getPolicy`, "
+        "`implementation()`, or `dailySwapLimitUSD` calls would be a "
+        "financial-trust violation (those identifiers do not match real "
+        "Kernel v3 / ZeroDev Kernel / Biconomy SCA function signatures).\n\n"
+        "**What does work today:** one-shot signable transactions via the "
+        "explicit verb forms — e.g. `Supply 100 USDC to Aave V3 on Base`, "
+        "`Stake 1 SOL on Marinade`, `Swap 0.5 ETH to USDC on Uniswap V3`, "
+        "or `Bridge 100 USDC from Ethereum to Base via deBridge`. Each "
+        "produces a signable Execution Plan card backed by real adapter "
+        "calldata."
+    )
+
+
 def _detect_preference_update(message: str) -> tuple[str, dict] | None:
     """Match natural-language preference updates and route to update_preference."""
     text = message.strip()
@@ -4348,6 +4513,16 @@ def _detect_preference_update(message: str) -> tuple[str, dict] | None:
 def detect_intent(message: str) -> tuple[str, dict] | None:
     """Detect intent and extract parameters from user message."""
     message_lower = message.lower()
+
+    # RC5 (Pass A d9bfe2e I01-I05) — session-key / AA-policy / auto-compound
+    # prompts must route to the deterministic refusal BEFORE bootstrap or
+    # any other detector. These prompts have no signable adapter today and
+    # falling through to contextual_fallback lets the LLM fabricate
+    # `setPolicy(...)` calls against non-existent Kernel v3 entrypoints
+    # (P0 financial-trust violation).
+    session_key = _detect_session_key_intent(message)
+    if session_key is not None:
+        return session_key
 
     bootstrap = _detect_bootstrap_alloc(message)
     if bootstrap is not None:
@@ -4609,7 +4784,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     # V7-070 — _detect_lst_to_lp runs before _lst_unwrap so wstETH→ETH/USDC LP
     # phrasings produce a deposit_lp plan instead of falling through to the
     # supply path (which doesn't support two-sided pool targets).
-    for detector in (_detect_cross_chain_then_yield, _detect_v3_nft_refinance, _detect_v2_to_v3_migrate, _detect_claim_compound, _detect_lst_to_lp, _lst_unwrap, _detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_slipstream_lp, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_enso_vault_deposit, _detect_execute_named_proto, _detect_multi_input_lp, _detect_aave_supply, _detect_pendle_mint, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_cross_chain_universal, _detect_cross_chain_then_yield, _detect_v3_nft_refinance, _detect_v2_to_v3_migrate, _detect_claim_compound, _detect_lst_to_lp, _lst_unwrap, _detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_slipstream_lp, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_enso_vault_deposit, _detect_execute_named_proto, _detect_multi_input_lp, _detect_aave_supply, _detect_pendle_mint, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
@@ -5359,12 +5534,59 @@ _PLAN_KEYWORDS = (
 )
 
 
-def _maybe_replay_followup(*, message: str, history: list[dict]) -> str | None:
+def _replay_card_has_signable_step(history_cards: list[dict] | None) -> bool:
+    """RC4 (Pass A d9bfe2e F05 t4 / F07 t4) — return True only if the most
+    recent execution_plan / allocation card in history has at least one step
+    with a non-null `transaction` AND status != "blocked" AND
+    requires_signature is truthy. Used to gate the "approve step 1" prose
+    in `_maybe_replay_followup` — emitting that phrase when the underlying
+    card is BLOCKED or has transaction=null on every step is a financial
+    misdirection (user opens MetaMask and finds nothing to sign).
+    """
+    if not history_cards:
+        return False
+    for hc in reversed(history_cards):
+        ct = (hc.get("card_type") or "").lower()
+        if ct not in {"execution_plan_v3", "execution_plan_v2", "execution_plan", "allocation"}:
+            continue
+        payload = hc.get("payload") or {}
+        status = str(payload.get("status") or "").lower()
+        if status == "blocked":
+            return False
+        # Plan-level requires_signature must be truthy when present.
+        rs = payload.get("requires_signature")
+        if rs is False:
+            return False
+        steps = payload.get("steps") or []
+        if not steps:
+            return False
+        # At least one step must have a non-null transaction object.
+        for st in steps:
+            tx = st.get("transaction") if isinstance(st, dict) else None
+            if tx:
+                return True
+        return False
+    return False
+
+
+def _maybe_replay_followup(
+    *,
+    message: str,
+    history: list[dict],
+    history_cards: list[dict] | None = None,
+) -> str | None:
     """If `message` is a confirmation phrase and history shows a prior plan/allocation,
     return a concise continuation message. Otherwise return None.
 
     This keeps the assistant on-task instead of falling through to the generic
     starter ("Hello! I'm ready to help...") when the user types "proceed".
+
+    RC4 — when `history_cards` is supplied and the latest plan card is
+    BLOCKED, has `requires_signature=False`, or has `transaction=null` on
+    every step, the "approve step 1" prose is replaced with a
+    BLOCKER_NOT_RESOLVED message that points the user back to the deterministic
+    verb form. Emitting "approve step 1" against a blocked card is a financial
+    misdirection — the user would open MetaMask and find nothing to sign.
     """
     if detect_followup_intent(message) is None:
         return None
@@ -5393,6 +5615,22 @@ def _maybe_replay_followup(*, message: str, history: list[dict]) -> str | None:
     body = (last_assistant.get("content") or "").lower()
     if not any(kw in body for kw in _PLAN_KEYWORDS):
         return None
+
+    # RC4 — gate "approve step 1" prose on real card state. If we have no
+    # history_cards to inspect, or the cards we have do not carry a
+    # signable step, suppress the sign-step phrase and emit the BLOCKER
+    # form instead. The caller (`run_ephemeral_turn`) decides whether the
+    # honest-acknowledgement fork further downstream is needed; here we
+    # only ensure we never claim a signable surface that doesn't exist.
+    if not _replay_card_has_signable_step(history_cards):
+        return (
+            "Continuing from the prior plan context. The execution-plan card "
+            "from the earlier turn is not signable as-is — either it was "
+            "blocked, has unresolved prerequisites, or no step has a built "
+            "transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the "
+            "original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) "
+            "so a fresh signable plan is generated."
+        )
 
     return (
         "Confirmed — continuing with the execution plan from the previous step.\n\n"
@@ -7261,7 +7499,9 @@ async def run_ephemeral_turn(
     # before falling through to the keyword intent detector — otherwise
     # "proceed" would never match anything in INTENT_PATTERNS.
     if history:
-        replay = _maybe_replay_followup(message=message, history=history)
+        replay = _maybe_replay_followup(
+            message=message, history=history, history_cards=history_cards
+        )
         if replay is not None:
             collector._step += 1
             collector._queue.append(ThoughtFrame(
@@ -7817,6 +8057,16 @@ async def run_ephemeral_turn(
                 override_weights=llm_weights,
             )
             if alloc_payload:
+                # Single-source-of-truth: re-render the LLM markdown table from
+                # the emitted card payload so row count + $-amounts always agree.
+                # Closes F04/t4, F05/t3, enso-12/t2 dual-reducer disagreement.
+                try:
+                    from src.agent.render.allocation_markdown import (
+                        replace_allocation_table_in_narrative,
+                    )
+                    composed = replace_allocation_table_in_narrative(composed or "", alloc_payload)
+                except Exception:
+                    pass
                 alloc_card_id = str(_uuid4())
                 collector._queue.append(CardFrame(
                     step_index=collector._step,
@@ -7920,6 +8170,17 @@ async def run_ephemeral_turn(
     try:
         final_content = ""
         strategy_composed = False
+        # RC1 (Pass A d9bfe2e) — `final_content_is_deterministic` is set to
+        # True whenever final_content was produced by a deterministic
+        # formatter (tool envelope → `_format_tool_result`,
+        # `_format_session_key_refusal`, etc.) rather than by an LLM
+        # contextual_fallback. The sanitizer uses this flag (alongside
+        # CardFrame presence) to decide whether to inspect prose for
+        # fabrication — deterministic formatter output is by definition
+        # backed by real tool data even when the tool envelope happens to
+        # carry no `card_type` (e.g., research-only `search_defi_opportunities`
+        # results carrying `execution_blockers` text in `data`).
+        final_content_is_deterministic = False
 
         # If we detected an intent, call the tool and format result directly
         if intent:
@@ -8031,6 +8292,27 @@ async def run_ephemeral_turn(
                     yield encode_sse(frame_event_name(frame), frame.model_dump())
                 final_content = _format_sentinel_methodology_response()
                 elapsed = int((__import__('time').monotonic() - started) * 1000)
+                collector.emit_final(final_content, [])
+                for frame in collector.drain():
+                    yield encode_sse(frame_event_name(frame), frame.model_dump())
+                return
+
+            # RC5 (Pass A d9bfe2e I01-I05) — session-key / AA-policy /
+            # auto-compound prompts get a deterministic refusal that names
+            # the `SESSION_KEY_NOT_AVAILABLE` blocker. Bypasses the tool
+            # runner so the LLM never has a chance to fabricate `setPolicy`
+            # / `getPolicy` / `implementation()` against non-existent
+            # Kernel v3 entrypoints.
+            if tool_name == "session_key_unavailable":
+                _emit_thoughts(collector, [
+                    "Detected session-key / AA-policy / auto-compound intent.",
+                    "Routing to deterministic refusal — Sentinel does not yet emit signable "
+                    "calldata for ZeroDev / Biconomy / Kernel / Nexus session installs.",
+                    "Pointing user back to the explicit one-shot verb forms that have backing adapters.",
+                ])
+                for frame in collector.drain():
+                    yield encode_sse(frame_event_name(frame), frame.model_dump())
+                final_content = _format_session_key_refusal(tool_input)
                 collector.emit_final(final_content, [])
                 for frame in collector.drain():
                     yield encode_sse(frame_event_name(frame), frame.model_dump())
@@ -8166,6 +8448,12 @@ async def run_ephemeral_turn(
                             final_content = _format_tool_result(tool_name, env)
                     else:
                         final_content = _format_tool_result(tool_name, env)
+                    # RC1 — deterministic formatter produced the final
+                    # content from a real tool envelope. Mark as backed
+                    # so the sanitizer doesn't treat formatter strings
+                    # like "64.0% APY" / "Risk HIGH" / "Direct execution
+                    # is not supported yet" as LLM fabrications.
+                    final_content_is_deterministic = True
 
                     # Strategy compose hook: when the user asked for a STRATEGY
                     # (not just a pool list), let the LLM compose a multi-section
@@ -8283,6 +8571,15 @@ async def run_ephemeral_turn(
                                             risk_budget=rb,
                                         )
                                         if alloc_payload_exec:
+                                            try:
+                                                from src.agent.render.allocation_markdown import (
+                                                    replace_allocation_table_in_narrative,
+                                                )
+                                                final_content = replace_allocation_table_in_narrative(
+                                                    final_content or "", alloc_payload_exec
+                                                )
+                                            except Exception:
+                                                pass
                                             from uuid import uuid4 as _uuid4
                                             alloc_id = str(_uuid4())
                                             collector._queue.append(CardFrame(
@@ -8300,12 +8597,17 @@ async def run_ephemeral_turn(
                     err_code = (env.error.code if env.error else "tool_error") or "tool_error"
                     err_msg = (env.error.message if env.error else "Tool returned an error.") or "Tool returned an error."
                     final_content = f"I couldn't complete that — **{err_code}**: {err_msg}"
+                    # Error envelope is still deterministic output, not LLM fabrication.
+                    final_content_is_deterministic = True
                 elif isinstance(tool_result, dict):
                     final_content = _format_tool_result(tool_name, tool_result)
+                    final_content_is_deterministic = True
                 else:
                     final_content = str(tool_result)
+                    final_content_is_deterministic = True
             else:
                 final_content = "I couldn't find the data you're looking for. Please try again or rephrase your question."
+                final_content_is_deterministic = True
         else:
             # No intent detected, use LLM for general conversation.
             # When prior history exists, include it so multi-turn context is preserved.
@@ -8428,15 +8730,36 @@ async def run_ephemeral_turn(
             # real card — search/balance/swap-quote/exec-blocked formatters
             # emit CardFrames without populating card_ids_for_final, so the
             # sanitizer was incorrectly firing on legit unsupported_adapter
-            # responses. Treat presence of intent (deterministic tool ran)
-            # as additional signal that the response is backed by tool data.
+            # responses.
             has_queued_card = any(
                 isinstance(f, CardFrame) for f in getattr(collector, "_queue", [])
             )
-            had_intent = bool(intent and intent[0])
+            # RC1 (Pass A d9bfe2e) — DO NOT pass `had_intent` into
+            # `has_real_card`. The prior shape
+            # `has_real_card=… or had_intent` let every continuation turn
+            # with a detected intent bypass `_strip_unbacked_claims`,
+            # rendering all 12 sanitizer regex classes dead code on
+            # continuation turns. The presence of a DETECTED intent says
+            # nothing about whether the FINAL response is backed — intent
+            # could route to contextual_fallback prose if the tool errors
+            # or if the tool list doesn't include the routed tool.
+            #
+            # The new signal is `final_content_is_deterministic` — True
+            # when final_content was produced by a tool envelope or by a
+            # deterministic refusal formatter. This correctly admits real
+            # tool-formatter output (e.g., `_format_tool_result` strings
+            # like "Risk HIGH" / "64.0% APY" backed by a research-only
+            # `search_defi_opportunities` envelope) while still firing
+            # the sanitizer on LLM contextual_fallback prose with the
+            # same shape.
+            had_intent = bool(intent and intent[0])  # noqa: F841 — kept for downstream telemetry
             cleaned, stripped = _strip_unbacked_claims(
                 cleaned,
-                has_real_card=bool(final_card_ids_pre) or has_queued_card or had_intent,
+                has_real_card=(
+                    bool(final_card_ids_pre)
+                    or has_queued_card
+                    or final_content_is_deterministic
+                ),
             )
             if stripped:
                 logger.warning("strip_unbacked_claims: refused unbacked claim in contextual-fallback prose")
@@ -8585,8 +8908,16 @@ _UNBACKED_FAKE_CARD_RE = re.compile(
     # like "Direct execution is not supported yet — when supported, you'll
     # sign step 1...". Require the "Execution Plan above" anchor.
     r'|Sign\s+step\s+\d+\s+in\s+(?:the\s+)?Execution\s+Plan'
-    r'|in\s+(?:the\s+)?Execution\s+Plan\s+above\s+to\s+(?:begin|sign|proceed)',
-    re.IGNORECASE,
+    r'|in\s+(?:the\s+)?Execution\s+Plan\s+above\s+to\s+(?:begin|sign|proceed)'
+    # RC11 (Pass A d9bfe2e F10 t3) — fabricated `**Execution Plan**`
+    # markdown header in pure prose. The deterministic plan formatter emits
+    # `**<title>** — <summary>` from `_format_execution_plan_v3`. When the
+    # LLM hand-rolls an "Execution Plan" header in contextual_fallback
+    # prose with no backing card, it's fake-card impersonation.
+    r"|\*\*\s*Execution\s+Plan\s*\*\*"
+    r"|^#{1,3}\s*Execution\s+Plan\b"
+    r"|^Execution\s+Plan\s*$",
+    re.IGNORECASE | re.MULTILINE,
 )
 _UNBACKED_FAKE_TX_RE = re.compile(
     r'(?:tx\s+|Tx\s*[:—–-]\s*|transaction\s+|submitted:[\s\S]{0,80}?Tx)\s*`?0x[0-9a-fA-F]{4,}'
@@ -8634,6 +8965,43 @@ _UNBACKED_STATE_ASSERT_RE = re.compile(
     r'|\bnow\s+active\b|\bnow\s+live\b|\bin\s+effect\b)',
     re.IGNORECASE | re.DOTALL,
 )
+# RC9 (Pass A d9bfe2e I05) — 12th sanitizer class. Contextual prose
+# fabricates Kernel v3 / ZeroDev / Biconomy / Nexus AA function names that
+# do NOT exist in real account-abstraction implementations: `setPolicy`,
+# `getPolicy`, `implementation()`, `dailySwapLimitUSD`. Also catches
+# fabricated UI flows ("Open Marinade.finance ... enable Auto-compound",
+# "click Confirm in Enso") which claim a dapp surface that the agent has
+# no oracle for. Risk-tier invention is already handled by
+# `_UNBACKED_NUMERIC_YIELD_RE`; this class handles structural function-
+# name + UI-flow inventions.
+_UNBACKED_AA_FABRICATION_RE = re.compile(
+    # Fabricated AA / smart-account function names. These are camelCase
+    # method identifiers that do not exist in real Kernel v3, ZeroDev
+    # Kernel, Biconomy SCA, or Safe Modules — when emitted in prose
+    # without a backing card they are LLM-confabulated.
+    r'\b(?:setPolicy|getPolicy)\b'
+    r'|\bimplementation\s*\(\s*\)'
+    r'|\bdailySwapLimitUSD\b'
+    r'|\bsessionKeyManager\b'
+    r'|\b(?:enable|disable)Session\s*\('
+    # Fabricated UI / dapp flow instructions — agent has no oracle for
+    # whether a target dapp has the "Auto-compound" toggle, the "Confirm"
+    # button text, or a specific dashboard route. Prose that imperatively
+    # tells the user to "Open <protocol>.<tld> and click <action>" outside
+    # a backing card is a fabrication.
+    r'|\bOpen\s+(?:[A-Z][a-z]+\.)?(?:Marinade|Lido|Aave|Compound|Morpho|'
+    r'Pendle|Curve|Uniswap|Sushi|Balancer|Convex|Yearn|Spark|Maple|'
+    r'Stargate|Velodrome|Aerodrome|Jito|Jupiter|Raydium|Orca|Kamino|'
+    r'Meteora|Drift|Sanctum|Enso|Biconomy|ZeroDev|Kernel|Nexus|Safe)'
+    r'\.(?:fi|finance|app|xyz|io|org|com)\b[^\n]*\b(?:enable|activate|click|'
+    r'toggle|confirm|approve|sign)\b'
+    # "click Confirm in <Protocol>" form — even without the .fi domain.
+    r'|\b(?:click|tap|press)\s+(?:the\s+)?["\']?(?:Confirm|Approve|Sign|'
+    r'Execute|Continue|Submit|Send)["\']?\s+(?:button\s+)?(?:in|on|at)\s+'
+    r'(?:the\s+)?(?:Enso|Biconomy|ZeroDev|Kernel|Nexus|Safe|Marinade|Lido|'
+    r'Aave|Compound|Morpho|Pendle|Curve|Uniswap)\b',
+    re.IGNORECASE,
+)
 _UNBACKED_FAKE_FEE_RE = re.compile(
     r'(?:bridge\s+fee\s+(?:for|is|of)|fee\s+(?:for|is|of|≈|~)\s+\d+(?:\.\d+)?\s*ETH'
     r'|fee\s+for\s+0?\.?\d+\s*ETH\s+via\s+deBridge'
@@ -8646,7 +9014,39 @@ _UNBACKED_FAKE_FEE_RE = re.compile(
 # emits Enso/DefiLlama exec-style URLs without a real backing card.
 _UNBACKED_FAKE_URL_RE = re.compile(
     r'https?://app\.enso\.finance/execute\?'
+    # RC15 (Pass A d9bfe2e enso-01 t4 / enso-07 t2-4) — `app.enso.fi/execute?…`
+    # is the LLM-confabulated short-domain variant. Real Enso routes never
+    # surface as a user-clickable execute URL — the agent emits a signable
+    # card instead.
+    r'|https?://app\.enso\.fi/execute\?'
+    # Generic enso execute URL catch-all (any TLD).
+    r'|https?://(?:app\.)?enso\.(?:fi|finance|app|xyz|io|org|com)/execute\b'
     r'|https?://(?:defillama\.com/yields/pool/|app\.morpho\.org/[\w-]+/vault/)',
+    re.IGNORECASE,
+)
+# RC15 (Pass A d9bfe2e B10 / B15 / F08 t2-3) — additional fabricated metric
+# class: Pendle PT maturity dates and Aave contract class names. The agent
+# has no oracle for which PT vintage matures on a given date or which
+# WrappedTokenGatewayVN is deployed on a chain; emitting these strings in
+# contextual prose is a fabrication.
+_UNBACKED_FAKE_CONTRACT_METRIC_RE = re.compile(
+    # Pendle PT maturity prose: "matures on 31 Dec 2025", "maturity:
+    # 2025-12-31", "expires Dec 31 2025". Bare date strings are too broad,
+    # so we anchor on the Pendle/PT/maturity context.
+    r'\b(?:PT[-\s]\w+|Pendle\s+PT[-\s]?\w*|principal\s+token)\b[^\n]{0,80}?'
+    r'(?:matur(?:es?|ity)|expir(?:es?|ation))\b'
+    r'|\b(?:matur(?:es?|ity)|expir(?:es?|ation))\s+(?:on|date|:)\s*'
+    r'\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+20\d{2}\b'
+    # Aave / Compound / Morpho contract-class-name strings ("WrappedTokenGatewayV3",
+    # "L2Pool", "PoolAddressesProvider", "WrappedTokenGatewayV2"). These are
+    # the on-chain contract class names — the agent has no oracle for which
+    # version is canonical on which chain, so prose mentioning them without
+    # a backing card is fabricated.
+    r'|\bWrappedTokenGatewayV[23]\b'
+    r'|\bL2Pool(?:AddressesProvider)?\b'
+    r'|\bPoolAddressesProvider(?:[-\s]?Registry)?\b'
+    # B15 hand-read: "roughly 648 YT" — fabricated YT-token quantity in prose.
+    r'|\broughly\s+\d+(?:[.,]\d+)?\s+YT\b',
     re.IGNORECASE,
 )
 # C05 t3 / D12 t4 hand-read: contextual prose fabricates APY/TVL numerics
@@ -8744,8 +9144,32 @@ def _strip_unbacked_claims(content: str, *, has_real_card: bool) -> tuple[str, b
     prose because a deterministic tool produced an actual card. When the
     fallback ran without a card and we detect any forbidden pattern, we swap
     in a typed refusal directing the user to the deterministic verb form.
+
+    Special case (RC2 — Pass A d9bfe2e enso-06 t2): chain-of-thought
+    scratchpad narration is NEVER user-facing, regardless of card presence.
+    The scratchpad regex runs unconditionally first. All other regexes
+    remain gated on `has_real_card=False`.
     """
-    if has_real_card or not content:
+    if not content:
+        return content, False
+    # RC2 — scratchpad detection runs FIRST, BEFORE the has_real_card
+    # short-circuit. enso-06 t2 hand-read: the model leaked full deliberation
+    # ("We need to follow the system prompt… Let's assume 1 ETH = $2,000")
+    # WITH real cards present. First-person planning monologue is always
+    # internal — never user-facing — so we strip it whether or not a
+    # deterministic tool also fired in this turn.
+    if _UNBACKED_SCRATCHPAD_RE.search(content):
+        refusal = (
+            "I can't confirm that action without a deterministic Sentinel tool "
+            "producing the calldata. Try an explicit verb form — for example "
+            "`Supply 100 USDC to Aave V3 on Base`, `Stake 1 SOL on Marinade`, "
+            "or `Bridge 100 USDC from Ethereum to Base via deBridge`. The "
+            "deterministic adapters emit a signable Execution Plan card; the "
+            "freeform fallback never invents transaction hashes, bridge fees, "
+            "calldata, or session-key state."
+        )
+        return refusal, True
+    if has_real_card:
         return content, False
     hits: list[str] = []
     if _UNBACKED_FAKE_CARD_RE.search(content):
@@ -8765,14 +9189,21 @@ def _strip_unbacked_claims(content: str, *, has_real_card: bool) -> tuple[str, b
         hits.append("fabricated_selector")
     if _UNBACKED_STATE_ASSERT_RE.search(content):
         hits.append("unbacked_state_assertion")
+    # RC9 — 12th class. Fabricated AA function names (`setPolicy`,
+    # `getPolicy`, `implementation()`, `dailySwapLimitUSD`) + fabricated
+    # dapp UI flows ("Open Marinade.finance ... enable Auto-compound").
+    if _UNBACKED_AA_FABRICATION_RE.search(content):
+        hits.append("unbacked_aa_fabrication")
     if _UNBACKED_FAKE_FEE_RE.search(content):
         hits.append("fabricated_fee")
     if _UNBACKED_FAKE_URL_RE.search(content):
         hits.append("fabricated_exec_url")
     if _UNBACKED_FAKE_METRICS_RE.search(content):
         hits.append("fabricated_metrics")
-    if _UNBACKED_SCRATCHPAD_RE.search(content):
-        hits.append("chain_of_thought_scratchpad")
+    # RC15 — Pendle maturity dates + Aave contract-class-name strings
+    # ("WrappedTokenGatewayV3", "L2Pool") in prose without a backing card.
+    if _UNBACKED_FAKE_CONTRACT_METRIC_RE.search(content):
+        hits.append("fabricated_contract_metric")
     if _UNBACKED_NUMERIC_YIELD_RE.search(content):
         hits.append("unbacked_numeric_yield_claim")
     if not hits:
