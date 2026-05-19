@@ -438,6 +438,39 @@ async def build_yield_execution_plan(
         plan.steps = [bridge_step, deposit_step]
         plan._recompute_step_statuses()
         plan._refresh_plan_status()
+        # Fix-wave-3 — §13 spec-scenario blocker scan on the composed-plan
+        # branch. Pass C 58517bf hand-read flagged H07/H08/H09/H10/H15 + E15
+        # as silent fall-throughs in cross-chain plans. We run the scenario
+        # scan BEFORE the RC7a signability gate so a present-but-unsignable
+        # scenario surfaces a structured blocker rather than reaching the
+        # invariant exception. `inventory` is read from `extra` when the
+        # caller doesn't pass the top-level kwarg.
+        try:
+            from src.defi.execution.scenarios import scan_scenario_blockers
+            _composed_inv = (extra_dict_pre or {}).get("inventory")
+            _composed_inv_obj = None
+            if _composed_inv:
+                try:
+                    _composed_inv_obj = _inventory_from_dict(_composed_inv)
+                except Exception:  # noqa: BLE001
+                    _composed_inv_obj = None
+            _composed_blockers = scan_scenario_blockers(
+                steps=plan.steps,
+                inventory=_composed_inv_obj,
+                extra=extra_dict_pre,
+                protocol=protocol,
+                action=action,
+                asset_in=asset_in,
+                chain=chain,
+                user_address=user_address,
+                dst_chain=chain,  # composed-plan dst is the build's `chain` arg
+            )
+            for _b in _composed_blockers:
+                plan.add_blocker(_b)
+        except Exception:  # noqa: BLE001
+            # Scenario scan is best-effort; failure should not block plan
+            # emission. The downstream signability gate still runs.
+            pass
         # RC7a — final invariant gate. Refuse emission if any non-blocked
         # step is missing its transaction. Bridge step + any future
         # pre-bridge wrap step must be signable; only the post-bridge
@@ -806,6 +839,118 @@ async def build_yield_execution_plan(
                 card_type="execution_plan_v3",
                 card_payload=plan_dict,
             )
+
+    # Fix-wave-3 FIX 2 — cross-chain composed_plan FORCE. Pass C E01-E14 +
+    # H04/H06/H09 leaked pool_link link_only cards for cross-chain SUPPLY/
+    # STAKE/LP_MINT intents because the dispatcher only entered the explicit
+    # composed-plan branch when `extra.source_chain` was set. If the caller's
+    # extras carry an EXPLICIT cross-chain indicator AND the post-action is
+    # a yield verb, refuse to fall through to pool_link.
+    #
+    # Definition of "explicit indicator":
+    #   * extra.cross_chain == True, OR
+    #   * extra.is_cross_chain == True, OR
+    #   * extra.bridge_via set (e.g. "debridge", "lifi"), OR
+    #   * extra.source_chain set AND != chain.
+    # cross_chain_message alone is NOT enough — the upper branch at line
+    # ~184 already calls `infer_cross_chain_hint` and emits the source-
+    # ambiguous blocker when the prose actually expresses cross-chain
+    # motion. Re-firing here on bare-string presence would false-trigger
+    # on plain single-chain prompts (test_single_chain_message_unaffected
+    # pin).
+    _extra_xchain = extra or {}
+    _xchain_indicators = (
+        bool(_extra_xchain.get("cross_chain"))
+        or bool(_extra_xchain.get("is_cross_chain"))
+        or bool(_extra_xchain.get("bridge_via"))
+    )
+    _src_indicator = (_extra_xchain.get("source_chain") or "").lower()
+    if _src_indicator and _src_indicator != (chain or "").lower():
+        _xchain_indicators = True
+    _xchain_post_actions = {
+        "supply", "deposit", "stake", "lp_mint", "deposit_lp",
+        "add_liquidity", "provide_liquidity", "lend",
+    }
+    if _xchain_indicators and (action or "").lower() in _xchain_post_actions:
+        # We're past the explicit composed-plan branch (line ~236-513) which
+        # would have caught this when src_chain_hint != chain. Reaching here
+        # means either (a) src_chain_hint == chain (degenerate, drop the
+        # cross_chain flag), (b) source_chain missing → ambiguous, or
+        # (c) caller bridged "via deBridge" without a from_chain. Refuse
+        # pool_link emission with an explicit blocker.
+        _src = (_extra_xchain.get("source_chain") or "").lower()
+        _msg = _extra_xchain.get("cross_chain_message") or ""
+        if _src and _src != (chain or "").lower():
+            # Source IS present but the composed-plan branch wasn't entered —
+            # this is a routing bug. Refuse pool_link and tell the caller.
+            plan = ExecutionPlanV3.new(
+                title="Cross-chain composed plan required",
+                summary=(
+                    f"Cross-chain {action} from {_src} to {chain} via "
+                    f"{protocol} — refusing pool_link fall-through; the "
+                    f"composed-plan branch must be re-entered."
+                ),
+            )
+            plan.add_blocker(ExecutionBlocker(
+                code="COMPOSED_PLAN_INCOMPLETE_TX",
+                severity="blocker",
+                title="Cross-chain intent dropped to pool_link",
+                detail=(
+                    f"Routing detected cross-chain intent (source={_src}, "
+                    f"dest={chain}) with post-action `{action}`, but the "
+                    f"explicit composed-plan branch was not entered. "
+                    f"Refusing to emit a pool_link link_only card — "
+                    f"signing would lose the bridge leg silently. "
+                    f"Re-prompt with explicit `from {_src.title()}` so the "
+                    f"composed-plan branch fires the deBridge DLN quote."
+                ),
+                affected_step_ids=[],
+                cta=f"Retry with explicit source chain (e.g. 'from {_src.title()}').",
+            ))
+            plan_dict = plan.to_dict()
+            return ok_envelope(
+                data={"plan": plan_dict},
+                card_type="execution_plan_v3",
+                card_payload=plan_dict,
+            )
+        # Source missing but a cross-chain indicator IS present — emit the
+        # canonical source-ambiguous blocker (matches the E04-E14 fix
+        # contract).
+        from src.agent.cross_chain import (
+            cross_chain_source_blocker_payload,
+            infer_cross_chain_hint,
+        )
+        _hint = infer_cross_chain_hint(_msg) if _msg else None
+        _dst_for_blocker = (_hint.dest_chain if _hint else None) or chain
+        plan = ExecutionPlanV3.new(
+            title="Cross-chain plan — source chain missing",
+            summary=(
+                "Cross-chain intent detected but the source chain wasn't "
+                "specified. Re-prompt with 'from <chain>'."
+            ),
+        )
+        _bp = cross_chain_source_blocker_payload(
+            dest_chain=_dst_for_blocker, message=_msg or "",
+        )
+        plan.add_blocker(ExecutionBlocker(
+            code=_bp["code"], severity=_bp["severity"], title=_bp["title"],
+            detail=_bp["detail"], affected_step_ids=[], cta=_bp["cta"],
+        ))
+        plan_dict = plan.to_dict()
+        plan_dict["recovery"] = Recovery(
+            action=RecoveryAction.ASK_USER,
+            posture="Ask user for the source chain.",
+            buttons=["Specify source chain", "Cancel"],
+            rationale=(
+                "Cross-chain motion needs both endpoints. Refusing pool_link "
+                "fall-through so the bridge leg is not silently dropped."
+            ),
+        ).to_dict()
+        return ok_envelope(
+            data={"plan": plan_dict},
+            card_type="execution_plan_v3",
+            card_payload=plan_dict,
+        )
 
     # Pool-link gate: consult the canonical `get_exec_capability` helper so
     # the search-card badge and this gate cannot drift. When the helper
@@ -1252,6 +1397,44 @@ async def build_yield_execution_plan(
         blockers = evaluate_preflight(steps=plan.steps, inventory=wallet_inventory)
         for blocker in blockers:
             plan.add_blocker(blocker)
+
+    # Fix-wave-3 — §13 scenario blocker scan on the regular adapter build
+    # path. Covers H10 (LST_ALREADY_DEPOSITED), H11 (NFT_LP_REFINANCE_
+    # INCOMPLETE), H12 (CLAIM_COMPOUND_INCOMPLETE), H14 (V2_TO_V3_MIGRATE_
+    # INCOMPLETE), H15 (WALLET_CHAIN_MISMATCH via extra.wallet_chain_kind)
+    # and E15 (PRICE_IMPACT_TOO_HIGH ≥500 bps). Each detector is fail-soft;
+    # an absent extras flag means the detector skips silently. The dust
+    # detector (H07) is intentionally NOT triggered here — the regular
+    # single-chain path's amounts come straight from user prose and are
+    # routinely sub-$1 for testing; only the composed-plan branch surfaces
+    # DUST_BELOW_THRESHOLD.
+    try:
+        from src.defi.execution.scenarios import scan_scenario_blockers
+        _scenario_inv_obj = None
+        if inventory:
+            try:
+                _scenario_inv_obj = _inventory_from_dict(inventory)
+            except Exception:  # noqa: BLE001
+                _scenario_inv_obj = None
+        _scenario_blockers = scan_scenario_blockers(
+            steps=plan.steps,
+            inventory=_scenario_inv_obj,
+            extra=extra,
+            protocol=protocol,
+            action=action,
+            asset_in=asset_in,
+            chain=chain,
+            user_address=user_address,
+            # Single-chain path: dst == chain.
+            dst_chain=None,
+            enable_dust=False,
+        )
+        for _b in _scenario_blockers:
+            plan.add_blocker(_b)
+    except Exception:  # noqa: BLE001
+        # Scenario scan is best-effort; fail-soft so adapter builds that
+        # already produce valid plans aren't blocked by detector bugs.
+        pass
 
     session_id = getattr(ctx, "session_id", None)
     if session_id:

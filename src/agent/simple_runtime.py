@@ -2968,6 +2968,78 @@ def _detect_multi_input_lp(message: str) -> tuple[str, dict] | None:
     }
 
 
+_LIFECYCLE_BORROW_REPAY_RE = re.compile(
+    # RC6-upstream (Pass C D08/D09/D11 hand-read): user says "repay loan",
+    # "borrow against my deposit", "repay 50 USDC" — must route to
+    # build_yield_execution_plan with action=borrow|repay so the adapter
+    # picks the correct selector (Aave borrow 0xa415bcad, repay 0x573ade81,
+    # Compound v3 withdraw 0xf3fef3a3). Without this detector the
+    # message falls to _detect_aave_supply or contextual_fallback which
+    # stamps action=supply → user signs supply selector when they wanted
+    # borrow → FUNDS LOCKED instead of unlocked. P0 financial loss.
+    r"^\s*(?P<verb>borrow|repay)\s+"
+    r"(?:(?P<amount>[\d,]+(?:\.\d+)?|all|max)\s+)?"
+    r"(?P<asset>[A-Za-z][A-Za-z0-9]{0,9})"
+    r"(?:\s+(?:from|on|against|to|in)\s+"
+    r"(?:(?:my\s+)?(?:position|loan|deposit)\s+(?:on|in)\s+)?"
+    r"(?P<protocol>aave(?:[\s-]?v[23])?|compound(?:[\s-]?v[23])?|"
+    r"morpho(?:[\s-]?blue)?|spark(?:lend)?|maker(?:[\s-]?dao)?|"
+    r"radiant|silo|fluid|sturdy|gearbox|prisma|crv-?usd))?"
+    r"(?:\s+on\s+(?P<chain>ethereum|polygon|arbitrum|optimism|base|avalanche|"
+    r"avax|bsc|bnb|solana|sol|linea|zksync|scroll|mantle|blast|berachain|sonic|"
+    r"gnosis|celo|unichain))?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _detect_lifecycle_borrow_repay(message: str) -> tuple[str, dict] | None:
+    """Spec §13 lifecycle borrow/repay verb detector.
+
+    P0 fix from Pass C D-cat hand-read: without this detector, "repay 50 USDC"
+    fell through to _detect_aave_supply (or contextual_fallback) and stamped
+    action=supply — user signed a SUPPLY transaction when they wanted to
+    REPAY a loan. Different selector, different on-chain semantics, financial
+    loss class bug.
+    """
+    text = message.strip()
+    m = _LIFECYCLE_BORROW_REPAY_RE.match(text)
+    if not m:
+        return None
+    gd = m.groupdict()
+    verb = (gd.get("verb") or "").lower()
+    if verb not in ("borrow", "repay"):
+        return None
+    asset = (gd.get("asset") or "USDC").upper()
+    proto_raw = (gd.get("protocol") or "aave-v3").strip().lower()
+    proto = re.sub(r"\s+", "-", proto_raw)
+    chain = (gd.get("chain") or "ethereum").lower()
+    if chain == "bnb":
+        chain = "bsc"
+    elif chain == "sol":
+        chain = "solana"
+    elif chain == "avax":
+        chain = "avalanche"
+    amount_raw = gd.get("amount")
+    if amount_raw in (None, "all", "max"):
+        amount: int | float | str = 0  # adapter substitutes max-uint sentinel
+    else:
+        amount = amount_raw.replace(",", "")
+    return (
+        "build_yield_execution_plan",
+        {
+            "chain": chain,
+            "protocol": proto,
+            "action": verb,  # NEVER collapse to supply
+            "asset_in": asset,
+            "amount_in": str(amount),
+            "extra": {
+                "action": verb,
+                "amount_confirmed": amount_raw not in (None, "all", "max"),
+            },
+        },
+    )
+
+
 def _detect_aave_supply(message: str) -> tuple[str, dict] | None:
     """Match prompts like 'supply 100 USDC to Aave V3 on Ethereum' / 'execute Aave USDC supply 100'."""
     if not _AAVE_HINT.search(message):
@@ -4411,6 +4483,80 @@ _SESSION_KEY_PHRASE_RE = re.compile(
 )
 
 
+# FIX3 (Pass C 58517bf wave 3) — Refuse-intent acknowledgement detector.
+#
+# Matrix testers send prompts like "this should be blocked", "I expect you
+# to refuse", "test that you refuse", "should refuse this", "you should
+# refuse to do this". Pass C captures (I01 t5, etc.) showed the runtime
+# tried to honor the literal action verb that follows the refuse-stem and
+# shipped a signable execution_plan with 5 Compound supply steps for a
+# message that opened with "should refuse". The right behavior is a
+# deterministic refusal that acknowledges the meta-intent and emits an
+# EXPECTED_REFUSAL_INTENT_ACKED blocker — never a signable card.
+_REFUSE_INTENT_PHRASE_RE = re.compile(
+    r"\b("
+    r"should\s+refuse"
+    r"|i\s+expect\s+you\s+to\s+refuse"
+    r"|expect\s+you\s+to\s+refuse"
+    r"|this\s+should\s+be\s+(?:blocked|refused|rejected)"
+    r"|test\s+(?:that\s+)?you\s+refuse"
+    r"|you\s+should\s+(?:refuse|block|reject)"
+    r"|please\s+refuse"
+    r"|refuse\s+this"
+    r"|verify\s+(?:that\s+)?you\s+refuse"
+    r"|confirm\s+(?:that\s+)?you\s+refuse"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_refuse_intent(message: str) -> tuple[str, dict] | None:
+    """Match `should refuse` / `I expect you to refuse` / `this should be
+    blocked` / `test that you refuse` meta-intent prompts. Routes to the
+    `expected_refusal_acked` deterministic refusal — bypasses every other
+    detector so the LLM cannot fabricate signable calldata for the verb
+    that follows the refuse-stem (Pass C I01 t5: "Stake 0.5 SOL but you
+    should refuse this" was emitting 5 signable Compound supply steps).
+
+    Returns ``("expected_refusal_acked", {...})`` when matched.
+    """
+    if not message:
+        return None
+    text = message.strip()
+    match = _REFUSE_INTENT_PHRASE_RE.search(text)
+    if match is None:
+        return None
+    trigger = match.group(0).strip()
+    return (
+        "expected_refusal_acked",
+        {
+            "trigger_phrase": trigger,
+            "blocker_code": "EXPECTED_REFUSAL_INTENT_ACKED",
+            "original_message": text[:280],
+        },
+    )
+
+
+def _format_expected_refusal_acked(params: dict) -> str:
+    """Deterministic refusal text for `expected_refusal_acked`. Mirrors the
+    shape of `_format_session_key_refusal` — pure-string output that bypasses
+    the LLM contextual_fallback path.
+    """
+    trigger = (params.get("trigger_phrase") or "should refuse").strip()
+    return (
+        f"**Refusal acknowledged.** `EXPECTED_REFUSAL_INTENT_ACKED` blocker.\n\n"
+        f"You signalled `{trigger}` in your prompt — I won't ship any "
+        "signable card for that request. The Sentinel runtime treats a "
+        "refuse-intent meta-phrase as a hard gate: no allocation, no "
+        "execution_plan, no calldata, no placeholder-sized step.\n\n"
+        "If you actually want to proceed, restate the request without the "
+        "refuse stem — e.g. `Supply 100 USDC to Aave V3 on Base`, "
+        "`Stake 1 SOL on Marinade`, or `Swap 0.5 ETH to USDC on Uniswap "
+        "V3`. Each explicit verb form produces a real signable Execution "
+        "Plan card backed by adapter calldata."
+    )
+
+
 def _detect_session_key_intent(message: str) -> tuple[str, dict] | None:
     """Match account-abstraction session-key / policy / auto-compound prompts
     and route them to the `session_key_unavailable` deterministic refusal.
@@ -4513,6 +4659,17 @@ def _detect_preference_update(message: str) -> tuple[str, dict] | None:
 def detect_intent(message: str) -> tuple[str, dict] | None:
     """Detect intent and extract parameters from user message."""
     message_lower = message.lower()
+
+    # FIX3 (Pass C 58517bf wave 3) — Refuse-intent meta-phrase short-circuit.
+    # Runs BEFORE every other detector. When the user signals an explicit
+    # refusal expectation ("should refuse", "expect you to refuse", "test
+    # that you refuse"), no signable verb in the same message reaches the
+    # downstream detectors. Closes I01 t5 (Pass C) — "Stake 0.5 SOL but
+    # you should refuse this" was shipping 5 signable Compound supply
+    # steps despite the refuse stem.
+    refuse_intent = _detect_refuse_intent(message)
+    if refuse_intent is not None:
+        return refuse_intent
 
     # RC5 (Pass A d9bfe2e I01-I05) — session-key / AA-policy / auto-compound
     # prompts must route to the deterministic refusal BEFORE bootstrap or
@@ -4784,7 +4941,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     # V7-070 — _detect_lst_to_lp runs before _lst_unwrap so wstETH→ETH/USDC LP
     # phrasings produce a deposit_lp plan instead of falling through to the
     # supply path (which doesn't support two-sided pool targets).
-    for detector in (_detect_cross_chain_universal, _detect_cross_chain_then_yield, _detect_v3_nft_refinance, _detect_v2_to_v3_migrate, _detect_claim_compound, _detect_lst_to_lp, _lst_unwrap, _detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_slipstream_lp, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_enso_vault_deposit, _detect_execute_named_proto, _detect_multi_input_lp, _detect_aave_supply, _detect_pendle_mint, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_cross_chain_universal, _detect_cross_chain_then_yield, _detect_v3_nft_refinance, _detect_v2_to_v3_migrate, _detect_claim_compound, _detect_lst_to_lp, _lst_unwrap, _detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_slipstream_lp, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_lifecycle_borrow_repay, _detect_enso_vault_deposit, _detect_execute_named_proto, _detect_multi_input_lp, _detect_aave_supply, _detect_pendle_mint, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
@@ -8037,6 +8194,61 @@ async def run_ephemeral_turn(
             payload=prior_card_payload,
         ))
         emitted_card_ids: list[str] = [prior_card_id]
+        # FIX2 (Pass C 58517bf wave 3) — per-PLAN AMOUNT_NOT_CONFIRMED gate.
+        #
+        # When the user message lacks an explicit numeric amount AND the
+        # intent verb is one of the signable deposit verbs
+        # {supply, stake, deposit, lp_mint, allocate, distribute}, refuse
+        # to emit the WHOLE legacy execution_plan / allocation. Prior
+        # behavior placeholder-sized at $1,000 and shipped 5+ signable
+        # Compound/Yearn/Aave supply steps the user did not authorize.
+        # Pass C captures: G06 t2/t4 ($200 Yearn placeholder), I02 t2 ($1000
+        # Compound), I01 t5 ("should refuse" with 5 signable steps emitted),
+        # B09 t4. Gate emits a single AMOUNT_NOT_CONFIRMED blocker frame
+        # instead of any allocation / execution_plan card.
+        _msg_lower_gate = (message or "").lower()
+        _has_explicit_num = bool(
+            re.search(
+                r"\b\d+(?:[.,]\d+)?\s*"
+                r"(?:%|usd|usdc|usdt|dai|eth|sol|bnb|weth|wbtc|matic|"
+                r"avax|arb|op|k|m|million|thousand|\$)",
+                _msg_lower_gate,
+            )
+            or re.search(r"\$\s*\d", _msg_lower_gate)
+            or re.search(r"\b\d+(?:[.,]\d+)?\s+(?:dollars?|cents?)\b", _msg_lower_gate)
+        )
+        _has_deposit_verb = bool(
+            re.search(
+                r"\b(?:supply|stake|deposit|allocate|distribute|lp[\s_-]?mint|"
+                r"deposit_lp|provide\s+liquidity)\b",
+                _msg_lower_gate,
+            )
+        )
+        if amount_hint_val is None and not _has_explicit_num and _has_deposit_verb:
+            _emit_thoughts(collector, [
+                "AMOUNT_NOT_CONFIRMED blocker — user requested a deposit-verb "
+                "intent (supply/stake/deposit/lp_mint/allocate) without an "
+                "explicit numeric amount.",
+                "Refusing to emit a placeholder-sized allocation or "
+                "execution_plan card. The user must restate with an exact "
+                "amount before any signable step is built.",
+            ])
+            for frame in collector.drain():
+                yield encode_sse(frame_event_name(frame), frame.model_dump())
+            blocker_text = (
+                "**AMOUNT_NOT_CONFIRMED.** I won't size and ship a signable "
+                "deposit plan without you stating an exact amount. Restate "
+                "with a concrete number — e.g. `Allocate $250 across the "
+                "top 3 pools`, `Supply 100 USDC to Aave V3 on Base`, or "
+                "`Stake 0.5 SOL on Marinade`. I won't placeholder-size at "
+                "$1,000 (or any other default) because signing such a step "
+                "would deploy capital you did not authorize."
+            )
+            collector.emit_final(blocker_text, [])
+            for frame in collector.drain():
+                yield encode_sse(frame_event_name(frame), frame.model_dump())
+            return
+
         # Always emit a typed allocation card over the SAME pool universe so
         # the front-end's Allocation Proposal panel shows the same pools
         # instead of the generic Aave/Uniswap default that allocate_plan
@@ -8313,6 +8525,31 @@ async def run_ephemeral_turn(
                 for frame in collector.drain():
                     yield encode_sse(frame_event_name(frame), frame.model_dump())
                 final_content = _format_session_key_refusal(tool_input)
+                collector.emit_final(final_content, [])
+                for frame in collector.drain():
+                    yield encode_sse(frame_event_name(frame), frame.model_dump())
+                return
+
+            # FIX3 (Pass C 58517bf wave 3) — Refuse-intent acknowledgement.
+            # Mirrors the session_key_unavailable short-circuit. The detector
+            # matched a meta-intent phrase like "should refuse" / "test that
+            # you refuse" / "this should be blocked". Emit the deterministic
+            # EXPECTED_REFUSAL_INTENT_ACKED blocker with no card; the LLM
+            # never gets a chance to honor the verb that followed the
+            # refuse-stem.
+            if tool_name == "expected_refusal_acked":
+                _emit_thoughts(collector, [
+                    "Detected refuse-intent meta-phrase ('should refuse' / "
+                    "'expect you to refuse' / 'this should be blocked').",
+                    "Routing to deterministic refusal — the user explicitly "
+                    "signalled that any verb in this message must be blocked.",
+                    "No allocation, no execution_plan, no calldata is emitted "
+                    "for this turn — only an EXPECTED_REFUSAL_INTENT_ACKED "
+                    "blocker.",
+                ])
+                for frame in collector.drain():
+                    yield encode_sse(frame_event_name(frame), frame.model_dump())
+                final_content = _format_expected_refusal_acked(tool_input)
                 collector.emit_final(final_content, [])
                 for frame in collector.drain():
                     yield encode_sse(frame_event_name(frame), frame.model_dump())
@@ -8915,6 +9152,12 @@ _UNBACKED_FAKE_CARD_RE = re.compile(
     # LLM hand-rolls an "Execution Plan" header in contextual_fallback
     # prose with no backing card, it's fake-card impersonation.
     r"|\*\*\s*Execution\s+Plan\s*\*\*"
+    # FIX1-I (Pass C H03 wave 3) — extended `**Execution Plan**` variants
+    # with parenthesised qualifier. H03 capture: `**Execution Plan (LI.FI
+    # Bridge → Aave V3 Supply)**`. The original regex required the closing
+    # `**` immediately after `Plan`; this variant allows an optional
+    # `(...)` qualifier between `Plan` and `**`.
+    r"|\*\*\s*Execution\s+Plan\s*\([^)\n]{1,80}\)\s*\*\*"
     r"|^#{1,3}\s*Execution\s+Plan\b"
     r"|^Execution\s+Plan\s*$",
     re.IGNORECASE | re.MULTILINE,
@@ -9134,6 +9377,125 @@ _UNBACKED_NUMERIC_YIELD_RE = re.compile(
     r'|\byield\s+varies\b',
     re.IGNORECASE,
 )
+# ---------------------------------------------------------------------------
+# FIX1 (Pass C 58517bf wave 3) — 13th sanitizer class additions.
+#
+# Eight new sub-classes covering: raw selectors, Solidity function signatures
+# in prose, fabricated wallet balances, fabricated calldata literal, AI-named
+# placeholder addresses, fabricated plan_id refs, MAX_UINT256 prose, and
+# wallet-app UI flow instructions. All only fire when has_real_card=False
+# (the scratchpad-first path is unaffected).
+#
+# Hits from /tmp/v3-deep/passC_58517bf_AGGREGATE.md:
+#   A) H10 t2 `0x2e1a7d4d`, H12 t2/3/4 `0x095ea7b3` / `0xa0712d68`
+#   B) H10 `withdraw(uint256)`, H12 `claim()`/`approve()`/`mint()`
+#   C) H07 `190.132 USDC balance`
+#   D) enso-04 t3 `Calldata: 0x...`
+#   E) enso-04 t3 `0xEnsoRouterBase`
+#   F) enso-05 t3 `plan_ef6095cbc790`
+#   G) I03 t2 `max uint256` / `MAX_UINT256` / `unlimited approval`
+#   H) I04 t3/t4 `Open Phantom`, `tap Revoke`, `Settings → Connected Sites`
+# ---------------------------------------------------------------------------
+
+# (A) Raw 4-byte selector in prose. Word-boundary-anchored 8-hex string. A
+# bare 8-hex sequence is almost certainly an ERC-20/ERC-4626 selector when it
+# appears in prose without a backing card. The existing `_UNBACKED_FAKE_CALLDATA_RE`
+# only catches blobs ≥120 chars and `_UNBACKED_FAKE_SELECTOR_RE` requires the
+# `Calldata:` / `data:` prefix or a selector+padded-args sequence. Pass C
+# captures showed bare `0x2e1a7d4d` / `0x095ea7b3` / `0xa0712d68` in
+# contextual-fallback prose with no leading keyword, no padded args, and no
+# card. This regex closes that gap by treating any 8-hex literal as a fake
+# selector when no card backs the response.
+_UNBACKED_RAW_SELECTOR_RE = re.compile(
+    r'\b0x[a-fA-F0-9]{8}\b(?![a-fA-F0-9])',
+    re.IGNORECASE,
+)
+
+# (B) Solidity function signature literal in prose. The LLM emits
+# `withdraw(uint256)`, `approve(address,uint256)`, `claim()` etc. as if it
+# were guiding the user through manual calldata construction. Only fires on
+# the verb-set used in DeFi adapter calls; restricts to 0-6 args inside the
+# parens.
+_UNBACKED_SOLIDITY_SIG_RE = re.compile(
+    r'\b(?:withdraw|claim|approve|mint|burn|stake|unstake|borrow|repay|deposit|redeem|supply|transfer|transferFrom|safeTransferFrom|swap|swapExactTokensForTokens|exactInputSingle|wrap|unwrap)'
+    r'\s*\(\s*(?:\w+(?:\[\])?(?:\s*,\s*\w+(?:\[\])?){0,5})?\s*\)',
+    re.IGNORECASE,
+)
+
+# (C) Fabricated wallet-balance prose. Numeric followed by token symbol +
+# (balance|in your wallet|on hand|available). H07 capture: `190.132 USDC
+# balance`. The agent has no oracle for live wallet balances in
+# contextual_fallback — every balance must come from a deterministic adapter.
+_UNBACKED_FAKE_BALANCE_RE = re.compile(
+    r'\b\d+(?:\.\d+)?\s+(?:USDC|USDT|DAI|ETH|SOL|BNB|WETH|WBTC|MATIC|AVAX|ARB|OP)'
+    r'\s+(?:balance\b|in\s+(?:your|the)\s+wallet\b|on\s+hand\b|available\b)',
+    re.IGNORECASE,
+)
+
+# (D) Fabricated calldata literal. `Calldata: 0xabcdef12...` / `Calldata =
+# 0x...` in contextual prose. enso-04 t3 capture. The existing
+# `_UNBACKED_FAKE_SELECTOR_RE` already matches `Calldata: 0x[8hex]`; this
+# broadens to ≥8 hex chars (to also catch longer literal blobs) and adds the
+# `data=0x...` form.
+_UNBACKED_FAKE_CALLDATA_LITERAL_RE = re.compile(
+    r'\b(?:Calldata|calldata|data|payload|input)\s*[:=]\s*`?0x[a-fA-F0-9]{8,}`?',
+    re.IGNORECASE,
+)
+
+# (E) AI-placeholder addresses. Camel-case named "addresses" like
+# `0xEnsoRouterBase`, `0xAaveV3Pool`, `0xUniswapV3Manager`. These are NOT
+# real addresses (a real address is 40 hex chars after the 0x); they are
+# AI-confabulated placeholder strings. The 0x prefix followed by a Capital
+# letter then mixed-case identifier (ending in Router/Manager/Pool/Token/
+# Gateway/Vault/Factory/Address/Contract/Adapter/Hub) is the giveaway.
+_UNBACKED_PLACEHOLDER_ADDR_RE = re.compile(
+    r'\b0x(?:Enso|Aave|Uniswap|Compound|Morpho|Balancer|Curve|Pendle|'
+    r'Convex|Yearn|Spark|Maple|Stargate|Velodrome|Aerodrome|Jito|Jupiter|'
+    r'Raydium|Orca|Kamino|Meteora|Drift|Sanctum|Biconomy|ZeroDev|Kernel|'
+    r'Nexus|Safe|Marinade|Lido|Rocket|Frax|Pancake|Sushi|Trader|Camelot|'
+    r'GMX|Radiant|Beefy|Reaper|Vault|Pool|Gateway|Router|Factory)'
+    r'[A-Za-z][A-Za-z0-9]*\b',
+)
+
+# (F) Fabricated `plan_xxxxxx` IDs. The real deterministic plan emitter
+# produces plan_ids via uuid4 — `<8hex>-<4hex>-<4hex>-<4hex>-<12hex>`. A
+# `plan_<6-16 hex>` literal in prose is an AI fabrication and must be
+# refused unless the prose was generated from a real audit_chain inspection
+# (which is itself card-backed).
+_UNBACKED_FAKE_PLAN_ID_RE = re.compile(
+    r'\bplan_[a-f0-9]{6,16}\b',
+    re.IGNORECASE,
+)
+
+# (G) MAX_UINT256 / unlimited-approval prose. The agent never emits
+# `max uint256` / `MAX_UINT256` / `unlimited approval` text directly — these
+# are AI fabrications urging the user to grant blanket approval. I03 t2
+# capture. Approve cards always state an EXACT atomic amount; "unlimited
+# approval" prose is never card-backed.
+_UNBACKED_MAX_UINT_RE = re.compile(
+    r'\bmax\s+uint(?:_?256)?\b'
+    r'|\bMAX[_\s]?UINT[_\s]?(?:256)?\b'
+    r'|\bunlimited\s+approval\b'
+    r'|\bapprove\s+unlimited\b'
+    r'|\binfinite\s+approval\b',
+    re.IGNORECASE,
+)
+
+# (H) Wallet-app UI flow narration. The LLM tells the user to "Open
+# Phantom", "Tap Revoke", "Settings → Connected Sites". The agent has no
+# oracle for the live UI of Phantom/MetaMask/Solflare/Solscan/Etherscan;
+# such instructions are fabricated UI guidance. I04 t3/t4 captures.
+_UNBACKED_WALLET_UI_FLOW_RE = re.compile(
+    r'\b(?:Open|Tap|Click|Press|Launch)\s+'
+    r'(?:Phantom|MetaMask|Solflare|Backpack|Coinbase\s+Wallet|Solscan|'
+    r'Etherscan|Basescan|Arbiscan|Optimistic\s+Etherscan|Polygonscan|'
+    r'BscScan|Snowtrace)\b'
+    r'|\bSettings\s*[→>]+\s*(?:Connected\s+Sites|Revoke|Permissions|Apps|'
+    r'Approvals|Security)\b'
+    r'|\bin\s+(?:Phantom|MetaMask|Solflare|Backpack)\s*,?\s+'
+    r'(?:tap|click|press|open|go\s+to|navigate\s+to)\b',
+    re.IGNORECASE,
+)
 
 
 def _strip_unbacked_claims(content: str, *, has_real_card: bool) -> tuple[str, bool]:
@@ -9214,6 +9576,25 @@ def _strip_unbacked_claims(content: str, *, has_real_card: bool) -> tuple[str, b
         hits.append("fabricated_contract_metric")
     if _UNBACKED_NUMERIC_YIELD_RE.search(content):
         hits.append("unbacked_numeric_yield_claim")
+    # FIX1 (Pass C 58517bf wave 3) — 13th sanitizer class additions.
+    # Eight new sub-classes — only fire when has_real_card=False, so this
+    # block is reached only after the early `if has_real_card` return above.
+    if _UNBACKED_RAW_SELECTOR_RE.search(content):
+        hits.append("raw_4byte_selector")
+    if _UNBACKED_SOLIDITY_SIG_RE.search(content):
+        hits.append("solidity_sig_in_prose")
+    if _UNBACKED_FAKE_BALANCE_RE.search(content):
+        hits.append("fabricated_wallet_balance")
+    if _UNBACKED_FAKE_CALLDATA_LITERAL_RE.search(content):
+        hits.append("fabricated_calldata_literal")
+    if _UNBACKED_PLACEHOLDER_ADDR_RE.search(content):
+        hits.append("placeholder_named_address")
+    if _UNBACKED_FAKE_PLAN_ID_RE.search(content):
+        hits.append("fabricated_plan_id")
+    if _UNBACKED_MAX_UINT_RE.search(content):
+        hits.append("max_uint256_prose")
+    if _UNBACKED_WALLET_UI_FLOW_RE.search(content):
+        hits.append("wallet_ui_flow")
     if not hits:
         return content, False
     refusal = (

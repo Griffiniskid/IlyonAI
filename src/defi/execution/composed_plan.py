@@ -153,14 +153,32 @@ async def snapshot_bridge_quote(
     )
 
 
-def block_step_for_async_fill(step: ExecutionStepV3, *, blocker_code: str = "PENDING_DST_FILL") -> None:
+def block_step_for_async_fill(
+    step: ExecutionStepV3,
+    *,
+    blocker_code: str = "PENDING_DST_FILL",
+    pending: Any | None = None,
+) -> None:
     """Step 2 — mark the deposit step blocked on an async fill.
 
     Mutates the step in place; idempotent.
+
+    When `pending` is a `PendingPrimitive` (from
+    `src.defi.execution.pending`), its `as_blocker_payload()` is stashed
+    on `step.snapshot["pending"]` so the runtime watcher can dispatch by
+    `watch_strategy` without parsing the bare blocker-code string.
     """
     if blocker_code not in step.blocker_codes:
         step.blocker_codes.append(blocker_code)
     step.status = "blocked"
+    if pending is not None and hasattr(pending, "as_blocker_payload"):
+        payload = pending.as_blocker_payload()
+        # Preserve any existing snapshot fields (e.g. bridge quote data);
+        # write the pending primitive under a dedicated key so it round-
+        # trips through ExecutionStepV3.to_dict via the snapshot field.
+        snap = dict(step.snapshot) if step.snapshot else {}
+        snap["pending"] = payload
+        step.snapshot = snap
 
 
 async def watch_for_fill(

@@ -151,6 +151,17 @@ KNOWN_BLOCKER_CODES: frozenset[str] = frozenset({
     "LEDGER_NO_ALT_SUPPORT",       # §13 Row 15 — Ledger/hw wallet can't sign Solana v0 ALT tx
     "DUST_BELOW_THRESHOLD",        # §3 / §6f — position <$1 USD, sweep/leave/increase choice
     "SESSION_KEY_MIRROR_DRIFT",    # §1 inv 5 — on-chain session-key policy diverges from off-chain proposal
+    # Fix-wave-3 — §13 spec-scenario blockers (H08/H09/H10/H11/H12/H14 + E15).
+    # Each one has a dedicated emitter in
+    # src/defi/execution/scenarios/scenario_blockers.py; the build path calls
+    # scan_scenario_blockers() once after `steps` are built.
+    "PARTIAL_ALLOWANCE_REMAINING", # H08 — allowance > 0 but < amount (USDT non-zero-update quirk)
+    "LST_ALREADY_DEPOSITED",       # H10 — wrapped LST already in wallet → skip wrap+swap
+    "NFT_LP_REFINANCE_INCOMPLETE", # H11 — refinance intent → multi-step (collect+close+open) missing
+    "CLAIM_COMPOUND_INCOMPLETE",   # H12 — claim+compound intent → claim_rewards+reinvest missing
+    "V2_TO_V3_MIGRATE_INCOMPLETE", # H14 — V2→V3 migrate intent → remove+add missing
+    "PRICE_IMPACT_TOO_HIGH",       # E15 — step price_impact_bps ≥ 500 → refuse status:ready
+    "COMPOSED_PLAN_INCOMPLETE_TX", # RC7a — composed-plan step missing signable tx
 })
 
 
