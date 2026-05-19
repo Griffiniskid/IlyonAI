@@ -34,7 +34,8 @@ from tests.harness.v4_matrix import (
 STAGING = os.environ.get("STAGING_URL", "https://staging.ilyonai.com")
 EVM_WALLET = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 SOL_WALLET = "5MgZcXp2qmH3jH8b4dZ7BoFvg9YjQRzL3Wb74Vfy839L"
-OUT_ROOT = Path("/tmp/v3-deep/v4")
+_DEFAULT_OUT = Path(__file__).resolve().parents[2] / "docs" / "matrix-runs" / "passA-wave1"
+OUT_ROOT = Path(os.environ.get("MATRIX_OUT_ROOT", str(_DEFAULT_OUT)))
 
 
 def fire_turn(chain: Chain, turn_idx: int, sse_path: Path, timeout: int = 90) -> int:
