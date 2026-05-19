@@ -165,6 +165,68 @@ KNOWN_BLOCKER_CODES: frozenset[str] = frozenset({
 })
 
 
+# Lowercase → canonical UPPER_SNAKE aliases. Surfaced by matrix Pass A
+# wave 1 (BUG-F-{01..05} + BUG-B-various). Upstream emitters hand-mint
+# these strings; the normalizer at `ExecutionPlanV3.add_blocker` maps
+# them to the canonical form so the recovery dispatcher's case-sensitive
+# match succeeds and KNOWN_BLOCKER_CODES validation passes.
+_BLOCKER_CODE_ALIASES: dict[str, str] = {
+    "pool_not_found": "UNSUPPORTED_ADAPTER",
+    "unsupported_chain": "WALLET_CHAIN_MISMATCH",
+    "quote_unavailable": "NULL_ROUTE",
+    "missing_allowance": "APPROVAL_MISSING",
+    "insufficient_balance": "INSUFFICIENT_BALANCE",
+    "gas_top_up": "GAS_TOPUP_REQUIRED",
+    "gas_topup": "GAS_TOPUP_REQUIRED",
+    "adapter_build_failed": "ADAPTER_BUILD_FAILED",
+    "adapter_quote_required": "ADAPTER_QUOTE_REQUIRED",
+    "stale_price": "STALE_PRICE_FEED",
+    "pool_not_initialized": "POOL_NOT_INITIALIZED",
+    "wallet_chain_mismatch": "WALLET_CHAIN_MISMATCH",
+    "wallet_not_connected": "WALLET_CHAIN_MISMATCH",  # alias until distinct code lands
+    "dust_below_threshold": "DUST_BELOW_THRESHOLD",
+}
+
+
+def _normalize_blocker(blocker: "ExecutionBlocker") -> "ExecutionBlocker":
+    """Normalize a blocker's `code` to canonical UPPER_SNAKE form and try
+    to attach recovery enrichment when an alias maps to a known code.
+
+    Lowercase + alias variants pass through to KNOWN_BLOCKER_CODES; the
+    `_recovery` field attaches a typed-recovery suggestion when the
+    blocker's canonical code has a `FailureKind` registered. Failure to
+    import recovery helpers (test envs without `src.defi.recovery`) is
+    swallowed — normalization is the primary contract.
+    """
+    raw = (blocker.code or "").strip()
+    if not raw:
+        return blocker
+    if raw in KNOWN_BLOCKER_CODES:
+        canonical = raw
+    else:
+        canonical = _BLOCKER_CODE_ALIASES.get(raw) or _BLOCKER_CODE_ALIASES.get(raw.lower())
+        if canonical is None:
+            # Last-chance: upper-snake the raw string and accept iff that
+            # matches KNOWN_BLOCKER_CODES — otherwise leave as-is so the
+            # caller can investigate the unknown code.
+            upper = raw.upper()
+            if upper in KNOWN_BLOCKER_CODES:
+                canonical = upper
+            else:
+                return blocker
+    if canonical == blocker.code:
+        return blocker
+    return ExecutionBlocker(
+        code=canonical,
+        severity=blocker.severity,
+        title=blocker.title,
+        detail=blocker.detail,
+        affected_step_ids=list(blocker.affected_step_ids),
+        recoverable=blocker.recoverable,
+        cta=blocker.cta,
+    )
+
+
 @dataclass
 class ExecutionStepV3:
     step_id: str
@@ -304,6 +366,12 @@ class ExecutionPlanV3:
         self._refresh_plan_status()
 
     def add_blocker(self, blocker: ExecutionBlocker) -> None:
+        # Matrix Pass A surfaced 5 P0s in category F where upstream emitters
+        # (execute_pool_position.py:475, build_yield_execution_plan.py:614/640,
+        # swap_simulate.py:150) hand-mint lowercase blocker codes that bypass
+        # KNOWN_BLOCKER_CODES + recovery enrichment. Normalize at this
+        # chokepoint so future emitters don't have to remember.
+        blocker = _normalize_blocker(blocker)
         self.blockers.append(blocker)
         self._recompute_step_statuses()
         if any(b.severity == "blocker" for b in self.blockers):

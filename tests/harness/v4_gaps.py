@@ -22,9 +22,12 @@ EXPECTED_BLOCKED: list[tuple[str, int, str]] = [
     ("D13_raydium_clmm_close", 3, "Phase C Solana close lifecycle deferred — needs raydium-sdk-v2 close_position."),
     ("D14_meteora_dlmm_remove", 4, "Phase C Solana close lifecycle deferred — needs @meteora-ag/dlmm removeLiquidityByRange."),
     ("D15_kamino_lend_withdraw", 3, "Phase C Solana close lifecycle deferred — needs klend-sdk withdraw."),
-    # E — vault registry expansions requiring verified on-chain addresses
-    ("E09_eth_to_arb_morpho", 3, "ERC-4626 vault registry: Morpho Blue MetaMorpho USDC on Arbitrum needs verified address. V5 hard rule forbids guessing."),
-    ("E09_eth_to_arb_morpho", 4, "Same — Arb Morpho USDC vault registry gap."),
+    # E — vault registry expansions requiring verified on-chain addresses.
+    # E09 entries RETIRED 2026-05-20 — Reviewer E findings confirmed Morpho
+    # Blue MetaMorpho USDC Arb is now in src/defi/execution/adapters/erc4626.py:78
+    # (Gauntlet USDC Prime 0x7c574174DA4b2be3f705c6244B4BfA0815a8B3Ed).
+    # E11 still legit — builder never reached vault resolution due to
+    # BUG-E-002 (senderAddress=guest passed to DLN).
     ("E11_eth_to_arb_yearn_weth", 3, "ERC-4626 vault registry: Yearn V3 yvWETH on Arbitrum needs verified address. V5 hard rule forbids guessing."),
     ("E11_eth_to_arb_yearn_weth", 4, "Same — Arb Yearn WETH vault registry gap."),
     # F — Token-2022 hook routing (Phase E.7 deferred)
