@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"ec9f07a8-3efc-47a3-8940-479caefa1528","card_type":"execution_plan","payload":{"sentinel":null,"shield":null,"steps":[{"index":3,"verb":"Supply","amount":"50","asset":"USDC","target":"SMUSD \u00b7 mezo-vaults","chain":"mainnet","router":"Enso","wallet":"MetaMask","gas":"~$6.90","step_id":"alloc_step_3","protocol":"mezo-vaults","pool_id":null,"transaction":null,"blocker":null}],"total_gas":"~$6.90","slippage_cap":"0.5%","wallets":"MetaMask","tx_count":1,"requires_signature":false}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["ec9f07a8-3efc-47a3-8940-479caefa1528"],"elapsed_ms":0,"steps":2}
+
+event: done
+data: {}
+

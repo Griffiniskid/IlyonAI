@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To generate a signable execution plan I need your EVM wallet address (MetaMask, WalletConnect, etc.) connected to both Ethereum and Polygon. Please connect your wallet and resend the request, e.g.:\n\n`Bridge 100 DAI from Ethereum to Polygon via LI.FI then supply to Aave V3 on Polygon`\n\nOnce the wallet is connected I\u2019ll provide the deterministic Execution Plan card ready for signing.","card_ids":[],"elapsed_ms":7941,"steps":3}
+
+event: done
+data: {}
+

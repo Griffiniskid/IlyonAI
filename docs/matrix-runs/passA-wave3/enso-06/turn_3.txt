@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t generate join calldata for the Balancer wstETH/ETH ComposableStable pool on Arbitrum because it isn\u2019t among the pools currently listed. I can only provide calldata for the pools shown in the last \u201cConstraint\u2011Matched DeFi Opportunities\u201d set. Let me know if you\u2019d like calldata for one of those instead.","card_ids":[],"elapsed_ms":7012,"steps":3}
+
+event: done
+data: {}
+

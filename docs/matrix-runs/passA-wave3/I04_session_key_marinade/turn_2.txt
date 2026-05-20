@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Open Marinade Finance, connect your Phantom wallet, and stake\u202f0.1\u202fSOL. Enable the auto\u2011compound feature and set the interval to weekly, then confirm the transaction (keep a tiny SOL buffer for gas). Risk is MEDIUM due to smart\u2011contract exposure; this fits a balanced strategy. Use only the official Marinade UI and never share your recovery phrase.","card_ids":[],"elapsed_ms":5106,"steps":3}
+
+event: done
+data: {}
+

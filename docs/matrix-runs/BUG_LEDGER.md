@@ -274,6 +274,61 @@ See `docs/matrix-runs/passA-wave1/findings-{A,B,C,D,E,F,G,H,I}.md` for per-chain
 
 ---
 
+## Matrix Pass A wave 3 — 2026-05-20, HEAD `4747ec9` (+ err_envelope normalizer LIVE)
+
+**Aggregate Δ (wave 2 → wave 3)**:
+
+| Cat | Wave 2 P0 | Wave 3 P0 | Δ | Wave 2 P1 | Wave 3 P1 | Δ |
+|-----|-----------|-----------|---|-----------|-----------|---|
+| A | 2 | 2 | 0 | 7 | 7 (1 regress + 2 new) | 0 |
+| B | 9 | **11** (+2 NEW) | +2 | 14 | **20** (+6) | +6 |
+| C | 4 | 4 (1 new P0 displaced 1 closed) | 0 | 14 | 15 (+1) | +1 |
+| D | 8 | **9** (+1 NEW) | +1 | 11 | 12 (+1) | +1 |
+| E | 3 | 3 (+1 BUG-E-010 escalated) | 0 | 5 | 6 (+1 — 2 NEW) | +1 |
+| F | 4 | **1** (2 closed by normalizer + 2 self-healed) | **-3** | 6 | 6 (1 new) | 0 |
+| G | 4 | 3 (1 closed TOOL_TIMEOUT regression) | -1 | 9 | 9 (3 closed + 0 new in P1) | 0 |
+| H | 7 | 7 (1 NEW fabricated tx hash) | 0 | 7 | 7 (2 closed + 4 new + 1 partial) | 0 |
+| I | 3 | 3 | 0 | 4 | 5 (+1 cadence-adverb) | +1 |
+| **TOTAL** | **44** | **43** | **-1** | **77** | **87** | **+10** |
+
+**Net wave 3 impact**: -1 P0 / +10 P1. F category major win (-3 P0 via err_envelope normalizer + 2 self-heals). Other categories closed modest amounts but new regressions surfaced.
+
+**CONFIRMED CLOSED by wave-3 hand-read**:
+- BUG-F-05 (F09 `quote_unavailable` → `NULL_ROUTE`) ✓ via err_envelope normalizer
+- BUG-F-06 (F10 `aggregator_circuit_breaker` → `AGGREGATOR_CIRCUIT_BREAKER`) ✓ via err_envelope normalizer + bonus recovery copy
+- G TOOL_TIMEOUT regression fully self-healed (7→0 of 40 turns)
+- G02/G07/G10 explicit-continue resume rail works byte-identical
+- H wave-2 NEWs RECOVERED: chain-name-as-asset parser regression + H15 infra collapse
+- A P1-A-W2-05 LST verb router for `execute_pool_position`
+- A P1-A-W2-07 Rocket Pool reclassified not-a-bug (RP v1.5+ design — rETH token internally routes to RocketDepositPool)
+- F06 t1 timeout regression self-healed
+- F03 wallet-probe timeout self-healed
+
+**NEW regressions in wave 3**:
+- B **massive CoT scratchpad leak** (60+ lines on B14 t4) — wave-2 declared CLOSED P0-B-03 reintroduced in worse form on success path
+- B **cached `executable:false` pool gets real signed tx** (B09 t4 step 2) — executable-gate bypassed at exec-plan emission via cached stub
+- C P0 **scratchpad bleed into final.content** at C07 T2 — multi-paragraph internal monologue leaks alongside allocation table (same family as A P0-A-W3-02 + B P0-B-NEW-01)
+- D NEW P0-D-09 **kamino withdraw silently mislabeled "deposit"** + raw account-list leak
+- H NEW P0-H-NEW-01 **fabricated transaction submission** — H02 t4 final claims "Transaction submitted: 0x3a9f…c1e2 (Base)" with ZERO tool calls in turn. Worst-class failure mode for signing UX.
+- E BUG-E-003 MUTATED — composed plan now status=ready with bridge `transaction:null` (was implicit-blocked)
+- E BUG-E-010 escalated to P0 — raw chain-of-thought leakage bytewise reproduces from wave 2
+
+**Cross-cutting clusters now identified across waves 1-3**:
+1. **Scratchpad/CoT leak into final.content** — affects A, B, C, E categories simultaneously. Single fix at final-renderer chokepoint would close ≥4 P0s. **Highest aggregate-impact fix candidate.**
+2. **Freeform-fallback hallucination** — fabricated tx hashes (H), portfolio state (H), bridge fees (E), pool addresses (C), Pendle maturities (B). Single sentinel-gate strengthening at the freeform `final.content` emit point would close 5+ P0s.
+3. **Plan builder ignores `executable:false`** (B P0s + new B-NEW-02 cached stub bypass) — single alloc→plan translator check closes 4+ P0s.
+4. **`withdraw(amount=0)` → MAX_UINT256 drain risk** (D-P1-14 still LIVE on Yearn + Aave native ETH).
+5. **Cross-chain intent parser** (E: 10/15 chains unchanged across waves) — single parser fix unblocks E.
+6. **Cross-chain `transaction:null` bridge leg with status:ready** (E07 mutated, H06 still).
+7. **§7 funding scenario detectors mostly absent** (H: 12/15 still missing).
+8. **Recovery enricher dispatch missing** (F: every typed code beyond WALLET_CHAIN_MISMATCH gets pool-not-found template).
+9. **err_envelope path doesn't construct cards** (F P1-F-04, P1-F-06 — codes correct in prose but no card).
+10. **Step graph linkage absent in blockers** (F: `affected_step_ids:[]` everywhere).
+
+**Status**: Matrix Pass A wave 3 NOT clean. 43 P0 + 87 P1 remaining. Goal mandates 3 consecutive clean passes; currently 0 of 3 achieved. Fix-loop continues. Realistic timeline: 10-20+ more fix waves × 2-3hr each per matrix cycle.
+
+---
+
 #### BUG-M01 — AIRouter instantiated per agent request (aiohttp session leak + matrix hang)
 - **Surfaced by**: passA-wave1/* (matrix fires hung after ~50 requests on 2026-05-20 ~21:42 UTC; api logs showed "AI Router initialized" on every request + "Unclosed client session/connector" warnings stacking up)
 - **Severity**: P0 (production users hit this on every chat turn — leaks aiohttp ClientSessions; eventually pool exhausts and requests stall; matrix needed to run sequentially with hangs to surface this)

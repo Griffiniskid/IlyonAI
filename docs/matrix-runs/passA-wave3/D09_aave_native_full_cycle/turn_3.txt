@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"supply\", \"amount_in\": 0.05, \"asset_in\": \"ETH\", \"chain\": \"ethereum\", \"protocol\": \"aave-v3\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"ethereum","protocol":"aave-v3","action":"supply","asset_in":"ETH","amount_in":0.05}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"a46c86b3-de87-4903-9da6-7d760868076b","card_type":"execution_plan_v3","payload":{"plan_id":"plan_f53afda9101b","title":"Aave V3 Supply","summary":"Supply 0.05 ETH via Aave V3 on Ethereum.","status":"blocked","risk_gate":"clear","requires_double_confirm":false,"blockers":[{"code":"INSUFFICIENT_BALANCE","severity":"blocker","title":"Not enough WETH","detail":"Need 0.05 WETH, wallet has 0 WETH.","affected_step_ids":[],"recoverable":true,"cta":"Bridge or swap into WETH on ethereum before signing this plan."}],"steps":[{"step_id":"step_1f38d691c7","index":0,"action":"approve","title":"Wrap ETH \u2192 WETH","description":"WETH9-style deposit() at 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2. msg.value carries the native ETH; the contract mints WETH 1:1 to msg.sender. Required because the destination pool/protocol expects ERC20 WETH, not native ETH.","chain":"ethereum","wallet":"MetaMask","protocol":"weth9-wrap","asset_in":"ETH","asset_out":"WETH","amount_in":null,"amount_out":null,"slippage_bps":0,"gas_estimate_usd":1.4,"duration_estimate_s":15,"depends_on":[],"status":"ready","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":1,"to":"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2","data":"0xd0e30db0","value":"0xb1a2bc2ec50000","spender":"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"},"receipt":null,"risk_warnings":["Wrap converts native ETH to WETH 1:1; unwrap is symmetric via withdraw(uint256)."]},{"step_id":"step_91a25184ba","index":1,"action":"supply","title":"Supply native ETH to Aave V3","description":"WrappedTokenGatewayV3.depositETH(0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2, 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, 0) at 0xD322A49006FC828F9B5B37Ab215F99B4E5caB19C. Gateway wraps 0.05 ETH and supplies to Aave V3 Pool atomically. You receive aWETH.","chain":"ethereum","wallet":"MetaMask","protocol":"aave-v3","asset_in":"WETH","asset_out":"aWETH","amount_in":"0.05","amount_out":null,"slippage_bps":0,"gas_estimate_usd":3.2,"duration_estimate_s":15,"depends_on":[],"status":"pending","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":1,"to":"0xD322A49006FC828F9B5B37Ab215F99B4E5caB19C","data":"0x474cf53d00000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e2000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000","value":"0xb1a2bc2ec50000","spender":"0xD322A49006FC828F9B5B37Ab215F99B4E5caB19C"},"receipt":null,"risk_warnings":["Native deposit wraps to WETH inside the gateway \u2014 no separate approve needed.","Withdraw requires WTG3.withdrawETH and a one-time aToken approval to WTG3."]}],"totals":{"estimated_gas_usd":4.6,"estimated_duration_s":30,"signatures_required":2,"chains_touched":["ethereum"],"assets_required":{"WETH":"0.05","ETH":"0.05"}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"**Aave V3 Supply** \u2014 Supply 0.05 ETH via Aave V3 on Ethereum.\nStatus: `blocked` \u00b7 2 signature(s) required.\n\n**Steps**\n\u25b6 Step 0 \u2014 approve on ethereum via weth9-wrap (ready)\n\u00b7 Step 1 \u2014 supply 0.05 WETH on ethereum via aave-v3 (pending)\n\n**Blockers**\n- Not enough WETH: Need 0.05 WETH, wallet has 0 WETH.\n\nNo signing button is shown until every blocker clears.","card_ids":["a46c86b3-de87-4903-9da6-7d760868076b"],"elapsed_ms":5,"steps":5}
+
+event: done
+data: {}
+

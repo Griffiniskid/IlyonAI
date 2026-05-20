@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have the APY for the Yearn WETH vault on Arbitrum in the current data set. You can check the latest rate directly on Yearn.finance or via a DeFi aggregator such as DefiLlama for the most up\u2011to\u2011date figure. (Risk level for Yearn vaults is generally HIGH.)","card_ids":[],"elapsed_ms":27302,"steps":3}
+
+event: done
+data: {}
+

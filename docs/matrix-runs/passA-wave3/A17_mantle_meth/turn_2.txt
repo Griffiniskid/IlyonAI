@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To stake\u202f0.05\u202fETH on Mantle:\n\n1. Connect a Mantle\u2011compatible wallet (e.g., MetaMask) and switch to the Mantle network. \n2. Open the official Mantle staking dApp or a trusted liquid\u2011staking provider on Mantle, approve the contract for\u202f0.05\u202fETH, then submit the stake transaction. \n\nStaking on Mantle carries **MEDIUM** risk\u2014only lock funds you can afford to lose and double\u2011check the contract address before approving.","card_ids":[],"elapsed_ms":4204,"steps":3}
+
+event: done
+data: {}
+

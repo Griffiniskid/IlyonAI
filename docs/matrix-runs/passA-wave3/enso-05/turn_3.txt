@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Multi\u2011step plan for staking your Curve\u202f3pool LP into its gauge**\n\n1. **Approve the LP token** \u2013 Send an ERC\u201120 `approve` transaction from your wallet to the Curve\u202f3pool gauge contract, allowing it to pull the exact amount of LP tokens you intend to stake (the LP you receive after adding 500\u202fUSDC to the 3pool).\n\n2. **Deposit into the gauge** \u2013 Call the gauge\u2019s `deposit(uint256 amount)` function with the approved LP amount. This locks your LP tokens in the gauge and begins accruing CRV gauge rewards (plus any third\u2011party incentives).\n\n3. **Optional \u2013 Enable reward streaming** \u2013 If the gauge supports it, call `set_reward_stream(true)` (or the equivalent) to start automatic CRV distribution to your address.\n\n4. **Monitor & claim** \u2013 Periodically check your earned CRV (or other reward tokens) via the gauge\u2019s `earned(address)` view and call `get_reward()` to claim them to your wallet. You can repeat step\u202f2 to add more LP or step\u202f4 to withdraw when desired.\n\n*Risk note:* Staking LP exposes you to impermanent loss from the underlying 3pool and smart\u2011contract risk of the gauge contract. Consider a conservative position size and review the gauge\u2019s audit status before proceeding.","card_ids":[],"elapsed_ms":17791,"steps":3}
+
+event: done
+data: {}
+

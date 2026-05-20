@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t show a receipt token until the transaction is signed and confirmed on\u2011chain. Please approve\u202fstep\u202f1 (the USDC approve) in your wallet, then the supply step will unlock and the receipt hash will appear in the execution\u2011plan card.","card_ids":[],"elapsed_ms":4551,"steps":3}
+
+event: done
+data: {}
+

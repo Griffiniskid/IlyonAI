@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Open Enso on Arbitrum, select the Uniswap\u202fV3 ARB/ETH\u202f0.3% pool, click **Add Liquidity**, enter **50\u202fARB** (Enso will auto\u2011fill ~0.0306\u202fETH), approve both tokens if needed, then confirm the transaction. \n\n**Risk:** MEDIUM (impermanent loss). **Strategy fit:** balanced. **Safety:** verify the pool address, keep slippage low (~0.5%), approve only the exact amounts shown, and monitor the position after confirmation.","card_ids":[],"elapsed_ms":8308,"steps":3}
+
+event: done
+data: {}
+

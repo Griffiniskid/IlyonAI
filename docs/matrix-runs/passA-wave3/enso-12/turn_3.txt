@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I\u2019m unable to produce the addLiquidity transaction calldata because there\u2019s no deterministic Sentinel adapter for Enso\u2011mediated Uniswap V2 USDC/WETH LP on Ethereum. Please try a direct protocol call (e.g., \u201cSupply 100\u202fUSDC and matching\u202fWETH to Uniswap\u202fV2 on Ethereum\u201d) or use the router\u2019s UI to build the transaction.","card_ids":[],"elapsed_ms":11296,"steps":3}
+
+event: done
+data: {}
+

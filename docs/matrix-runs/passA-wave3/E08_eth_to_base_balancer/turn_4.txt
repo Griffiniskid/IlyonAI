@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Execution is blocked because no EVM wallet is connected. Please connect a wallet (MetaMask/Phantom EVM mode) and resend the exact action, e.g.\u202f\u201cSupply 0.05\u202fwstETH\u202f+\u202f0.05\u202fWETH to Balancer wstETH/WETH on Ethereum\u201d. Once connected, a signable execution plan will be generated.","card_ids":[],"elapsed_ms":18962,"steps":3}
+
+event: done
+data: {}
+

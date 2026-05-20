@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Switch your MetaMask network to Base (Chain\u202fID\u202f8453). If you don\u2019t already have USDC on Base, bridge it from Ethereum using a trusted bridge (e.g., Official Base Bridge or Hop). Once USDC appears in your Base wallet, approve it for the Aave\u202fV3 Base lending pool and then supply the 100\u202fUSDC. This is a medium\u2011risk action\u2014double\u2011check the contract address and keep your seed phrase secure.","card_ids":[],"elapsed_ms":5548,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Steps to bridge 100\u202fDAI from Ethereum to Polygon and then supply it to Aave\u202fV3**\n\n1. **Connect an EVM wallet** (MetaMask, WalletConnect, etc.) to both Ethereum and Polygon networks. \n2. **Bridge the DAI** \n - Open a cross\u2011chain bridge that supports DAI (e.g., Hop Protocol, Synapse, or deBridge). \n - Select **Ethereum \u2192 Polygon**, input **100\u202fDAI**, approve the token spend, and confirm the transaction. \n - Wait for the bridge to finalize (usually a few minutes); you\u2019ll see the DAI appear in your Polygon wallet. \n3. **Supply to Aave\u202fV3 on Polygon** \n - Go to the Aave app, switch the network to **Polygon**. \n - Connect the same wallet, locate the **DAI market**, and click **Supply**. \n - Enter **100\u202fDAI**, approve the Aave contract if needed, and confirm the supply transaction. \n4. **Verify** \u2013 Check your Aave dashboard to confirm the DAI is deposited and accruing supply APY.\n\n**Risk / strategy** \n- Bridging and supplying on Polygon carries **MEDIUM** risk (smart\u2011contract risk on both bridge and Aave). \n- Suitable for a **balanced** strategy if you want yield with moderate exposure. \n\n**Safety tips** \n- Double\u2011check contract addresses (use official bridge and Aave URLs). \n- Start with a small test amount to verify the flow before moving the full 100\u202fDAI. \n- Keep enough MATIC in your Polygon wallet for gas fees on both the bridge and Aave transactions.","card_ids":[],"elapsed_ms":28662,"steps":3}
+
+event: done
+data: {}
+

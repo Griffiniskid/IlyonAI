@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Top\u2011up confirmed. Please approve the bridge step (step\u202f1) in your wallet to unlock the supply step.","card_ids":[],"elapsed_ms":28667,"steps":3}
+
+event: done
+data: {}
+

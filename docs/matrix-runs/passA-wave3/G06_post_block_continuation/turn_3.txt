@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have a Sentinel\u2011verified adapter for Spark\u202fsUSDS, so I can\u2019t build a signable Supply transaction for it. As a fallback, you can supply 100\u202fUSDC to Aave\u202fV3 on Base (or another supported lending market). Let me know if you\u2019d like me to generate that plan instead.","card_ids":[],"elapsed_ms":37303,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"supply\", \"amount_in\": \"200.0\", \"asset_in\": \"USDT\", \"chain\": \"polygon\", \"extra\": {\"action\": \"supply\"}, \"protocol\": \"aave-v3\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"polygon","protocol":"aave-v3","action":"supply","asset_in":"USDT","amount_in":"200.0","extra":{"action":"supply"}}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"f1e74bed-5f9d-414b-abca-3366ee187f73","card_type":"execution_plan_v3","payload":{"plan_id":"plan_22c915b25fdc","title":"Aave V3 Supply","summary":"Supply 200.0 USDT via Aave V3 on Polygon.","status":"blocked","risk_gate":"clear","requires_double_confirm":false,"blockers":[{"code":"INSUFFICIENT_BALANCE","severity":"blocker","title":"Not enough USDT","detail":"Need 200 USDT, wallet has 0 USDT.","affected_step_ids":[],"recoverable":true,"cta":"Bridge or swap into USDT on polygon before signing this plan."},{"code":"GAS_TOPUP_REQUIRED","severity":"blocker","title":"Not enough MATIC for gas","detail":"Need ~70.218640 MATIC (~$6.30 at 1.5\u00d7 headroom), wallet has 0.410000 MATIC.","affected_step_ids":[],"recoverable":true,"cta":"Top up MATIC on polygon before signing (bridge from another chain or fund the wallet)."}],"steps":[{"step_id":"step_d88c48432f","index":1,"action":"approve","title":"Approve USDT for Aave V3 Pool","description":"Approve 200.0 USDT so Aave V3 Pool can pull funds.","chain":"polygon","wallet":"MetaMask","protocol":"aave-v3","asset_in":"USDT","asset_out":null,"amount_in":"200","amount_out":null,"slippage_bps":0,"gas_estimate_usd":1.4,"duration_estimate_s":15,"depends_on":[],"status":"ready","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":137,"to":"0xc2132d05d31c914a87c6611c10748aeb04b58e8f","data":"0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad000000000000000000000000000000000000000000000000000000000bebc200","value":"0x0","spender":"0x794a61358d6845594f94dc1db02a252b5b4814ad"},"receipt":null,"risk_warnings":["Approval allows Aave V3 Pool to pull the exact amount you authorize."]},{"step_id":"step_4b950239b6","index":2,"action":"supply","title":"Supply USDT to Aave V3","description":"Deposit 200.0 USDT into Aave V3 Pool. You receive aUSDT receipt token.","chain":"polygon","wallet":"MetaMask","protocol":"aave-v3","asset_in":"USDT","asset_out":"aUSDT","amount_in":"200.0","amount_out":null,"slippage_bps":0,"gas_estimate_usd":2.8,"duration_estimate_s":15,"depends_on":["step_d88c48432f"],"status":"pending","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":137,"to":"0x794a61358d6845594f94dc1db02a252b5b4814ad","data":"0x617ba037000000000000000000000000c2132d05d31c914a87c6611c10748aeb04b58e8f000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000","value":"0x0","spender":"0x794a61358d6845594f94dc1db02a252b5b4814ad"},"receipt":null,"risk_warnings":["Aave supply APY varies with utilization; treat headline APY as an estimate."]}],"totals":{"estimated_gas_usd":4.2,"estimated_duration_s":30,"signatures_required":2,"chains_touched":["polygon"],"assets_required":{"USDT":"200"}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"**Aave V3 Supply** \u2014 Supply 200.0 USDT via Aave V3 on Polygon.\nStatus: `blocked` \u00b7 2 signature(s) required.\n\n**Steps**\n\u25b6 Step 1 \u2014 approve 200 USDT on polygon via aave-v3 (ready)\n\u00b7 Step 2 \u2014 supply 200.0 USDT on polygon via aave-v3 (pending)\n\n**Blockers**\n- Not enough USDT: Need 200 USDT, wallet has 0 USDT.\n- Not enough MATIC for gas: Need ~70.218640 MATIC (~$6.30 at 1.5\u00d7 headroom), wallet has 0.410000 MATIC.\n\nNo signing button is shown until every blocker clears.","card_ids":["f1e74bed-5f9d-414b-abca-3366ee187f73"],"elapsed_ms":5,"steps":5}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Balancer\u2019s wstETH\u2011WETH V2 pool earns from swap fees plus any BAL incentives, typically giving a low\u2011single\u2011digit\u202f% APY (\u22482\u20115\u202f% depending on volume). \n\n**Risk:** MEDIUM \u2013 you face impermanent loss if the wstETH/WETH price ratio shifts and smart\u2011contract risk of the Balancer vault. \n\n**Strategy fit:** Balanced to aggressive, based on your tolerance for IL. \n\n**Safety tip:** Check the pool\u2019s historical fee APR on DefiLlama or Balancer\u2019s UI, provide liquidity only when the price ratio is stable, and exit if the pool\u2019s share drops sharply. \n\nSince there\u2019s no deterministic Sentinel adapter for this Balancer pool, you\u2019ll need to add liquidity directly via Balancer\u2019s interface (or approve a custom transaction if you have one).","card_ids":[],"elapsed_ms":11343,"steps":3}
+
+event: done
+data: {}
+

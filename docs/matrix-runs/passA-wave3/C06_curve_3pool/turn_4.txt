@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have a deterministic adapter for Curve, so I can\u2019t generate a signable calldata here. To proceed, please use the protocol\u2019s UI or give an explicit command such as \u201cDeposit\u202f100\u202fUSDC into Curve\u202f3pool on Ethereum\u201d.","card_ids":[],"elapsed_ms":4608,"steps":3}
+
+event: done
+data: {}
+

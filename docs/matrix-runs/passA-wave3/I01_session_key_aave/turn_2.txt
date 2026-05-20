@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I need a more specific action to build a signable plan\u2014for example, \u201cSupply\u202fX\u202fUSDC to Aave\u202fV3 on Base\u201d or \u201cRebalance\u202fY\u202fUSDC between Aave\u202fV3 pools.\u201d Please provide the exact asset, amount, and target allocation so I can generate the Execution Plan card.","card_ids":[],"elapsed_ms":24207,"steps":3}
+
+event: done
+data: {}
+

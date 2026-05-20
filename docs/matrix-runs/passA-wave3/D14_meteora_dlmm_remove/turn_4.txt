@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To see your holdings: \n1. Connect your wallet directly to [Meteora's app](https://meteora.ag) \n2. Use a Solana portfolio tracker like Phantom, Solflare, Zerion, or Debank \n3. Check your transaction history on Solscan for DLMM deposit/withdrawal signatures \n\nFor public Meteora DLMM pools (not your personal positions), I can show high-APY opportunities if you specify constraints (e.g., chain, minimum APY, risk tolerance). Would you like that instead?","card_ids":[],"elapsed_ms":40385,"steps":3}
+
+event: done
+data: {}
+

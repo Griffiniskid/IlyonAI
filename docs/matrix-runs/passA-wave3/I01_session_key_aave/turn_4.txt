@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have visibility into your Nexus EIP\u20117702 opt\u2011in status. Please check your wallet\u2019s settings or the Nexus dApp to confirm.","card_ids":[],"elapsed_ms":2192,"steps":3}
+
+event: done
+data: {}
+
