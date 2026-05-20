@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"supply\", \"amount_in\": 0.05, \"asset_in\": \"ETH\", \"chain\": \"ethereum\", \"protocol\": \"kelp\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"ethereum","protocol":"kelp","action":"supply","asset_in":"ETH","amount_in":0.05,"extra":{"user_message":"0.05 ETH"}}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"7c1e3fda-b887-4f58-a389-785203c80934","card_type":"pool_link","payload":{"card_type":"pool_link","title":"Kelp \u00b7 Supply","protocol":"kelp","chain":"ethereum","pool_kind":"v2","pool_symbol":"ETH","pool_id":null,"pool_address":null,"apy_pct":null,"tvl_usd":null,"underlying_tokens":null,"sentinel":{},"url":"https://defillama.com/protocol/kelp","amount":"0.05","asset_in":"ETH","amount_is_usd":false,"research_thesis":null,"exec_status":"link_only","notice":"Kelp V2 pool \u2014 finalize on the protocol app. Direct execution from chat is currently disabled for this pool type because single-token Enso routing was silently depositing the wrong asset for many pools."}}
+
+event: final
+data: {"content":"**Kelp \u00b7 Supply** \u2014 \nStatus: `draft` \u00b7 0 signature(s) required.","card_ids":["7c1e3fda-b887-4f58-a389-785203c80934"],"elapsed_ms":15,"steps":5}
+
+event: done
+data: {}
+

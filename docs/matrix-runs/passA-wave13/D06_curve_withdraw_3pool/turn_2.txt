@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"withdraw\", \"amount_in\": 100.0, \"asset_in\": \"USDC\", \"chain\": \"ethereum\", \"extra\": {\"action\": \"withdraw\"}, \"protocol\": \"curve\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"ethereum","protocol":"curve","action":"withdraw","asset_in":"USDC","amount_in":100.0,"extra":{"action":"withdraw","user_message":"Withdraw 100 USDC from Curve 3pool"}}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"4d73a6ba-33c9-4acd-9c67-bbe87a44a7b0","card_type":"execution_plan_v3","payload":{"plan_id":"plan_7a060e7dd837","title":"Curve Withdraw","summary":"Withdraw 100.0 USDC via Curve on Ethereum.","status":"ready","risk_gate":"clear","requires_double_confirm":false,"blockers":[],"steps":[{"step_id":"step_ad9049cd3e","index":1,"action":"remove_liquidity_one_coin","title":"Withdraw USDC from Curve 3pool","description":"Burn 100.0 LP shares and receive USDC via remove_liquidity_one_coin (pool 0xbebc44782c7db0a1a60cb6fe97d0b483032ff1c7).","chain":"ethereum","wallet":"MetaMask","protocol":"curve","asset_in":"crv-3pool-lp","asset_out":"USDC","amount_in":"100.0","amount_out":null,"slippage_bps":50,"gas_estimate_usd":3.0,"duration_estimate_s":15,"depends_on":[],"status":"ready","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":1,"to":"0xbebc44782c7db0a1a60cb6fe97d0b483032ff1c7","data":"0x1a4d01d20000000000000000000000000000000000000000000000056bc75e2d6310000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000","value":"0x0","spender":"0xbebc44782c7db0a1a60cb6fe97d0b483032ff1c7"},"receipt":null,"risk_warnings":["Single-coin removal incurs Curve's per-pool exit fee (~0.04%)."]}],"totals":{"estimated_gas_usd":3.0,"estimated_duration_s":15,"signatures_required":1,"chains_touched":["ethereum"],"assets_required":{"CRV-3POOL-LP":"100","USDC":"100"}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"**Curve Withdraw** \u2014 Withdraw 100.0 USDC via Curve on Ethereum.\nStatus: `ready` \u00b7 1 signature(s) required.\n\n**Steps**\n\u25b6 Step 1 \u2014 remove_liquidity_one_coin 100.0 crv-3pool-lp on ethereum via curve (ready)\n\nOpen the Execution Plan card above and sign step 1 in your wallet to begin.","card_ids":["4d73a6ba-33c9-4acd-9c67-bbe87a44a7b0"],"elapsed_ms":19,"steps":5}
+
+event: done
+data: {}
+

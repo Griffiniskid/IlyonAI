@@ -1,0 +1,24 @@
+event: thought
+data: {"step_index":1,"content":"Parsed swap intent: {\"amount\": \"2\", \"chain\": \"optimism\", \"token_in\": \"OPTION\", \"token_out\": \"CHOICE\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Resolving token pair, chain, and amount before requesting a route quote."}
+
+event: thought
+data: {"step_index":3,"content":"Checking quote quality: route source, expected output, price impact, gas, and slippage assumptions."}
+
+event: thought
+data: {"step_index":4,"content":"Preparing wallet-safe signing guidance; the agent never touches private keys."}
+
+event: tool
+data: {"step_index":4,"name":"simulate_swap","args":{"token_in":"OPTION","token_out":"CHOICE","amount":"2","chain":"optimism","extra":{"user_message":"Swap option 2 for an Optimism choice"}}}
+
+event: observation
+data: {"step_index":4,"name":"simulate_swap","ok":true,"error":null}
+
+event: final
+data: {"content":"I couldn't complete that \u2014 **NULL_ROUTE**: I couldn't find a live USD price for CHOICE. Use the canonical symbol (e.g. USDC, WETH, SOL) or try a different pair.","card_ids":[],"elapsed_ms":439,"steps":4}
+
+event: done
+data: {}
+

@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"supply\", \"amount_in\": 100.0, \"asset_in\": \"DAI\", \"chain\": \"polygon\", \"protocol\": \"aave-v3\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"polygon","protocol":"aave-v3","action":"supply","asset_in":"DAI","amount_in":100.0,"extra":{"user_message":"100 DAI"}}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"e185f170-eac3-44fc-a9fc-d31a97aa6554","card_type":"execution_plan_v3","payload":{"plan_id":"plan_91b3220a2515","title":"Aave V3 Supply","summary":"Supply 100.0 DAI via Aave V3 on Polygon.","status":"ready","risk_gate":"clear","requires_double_confirm":false,"blockers":[],"steps":[{"step_id":"step_9589ef5220","index":1,"action":"approve","title":"Approve DAI for Aave V3 Pool","description":"Approve 100.0 DAI so Aave V3 Pool can pull funds.","chain":"polygon","wallet":"MetaMask","protocol":"aave-v3","asset_in":"DAI","asset_out":null,"amount_in":"100","amount_out":null,"slippage_bps":0,"gas_estimate_usd":1.4,"duration_estimate_s":15,"depends_on":[],"status":"ready","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":137,"to":"0x8f3cf7ad23cd3cadbd9735aff958023239c6a063","data":"0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad0000000000000000000000000000000000000000000000056bc75e2d63100000","value":"0x0","spender":"0x794a61358d6845594f94dc1db02a252b5b4814ad"},"receipt":null,"risk_warnings":["Approval allows Aave V3 Pool to pull the exact amount you authorize."]},{"step_id":"step_7fe7cd55d4","index":2,"action":"supply","title":"Supply DAI to Aave V3","description":"Deposit 100.0 DAI into Aave V3 Pool. You receive aDAI receipt token.","chain":"polygon","wallet":"MetaMask","protocol":"aave-v3","asset_in":"DAI","asset_out":"aDAI","amount_in":"100.0","amount_out":null,"slippage_bps":0,"gas_estimate_usd":2.8,"duration_estimate_s":15,"depends_on":["step_9589ef5220"],"status":"pending","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":137,"to":"0x794a61358d6845594f94dc1db02a252b5b4814ad","data":"0x617ba0370000000000000000000000008f3cf7ad23cd3cadbd9735aff958023239c6a0630000000000000000000000000000000000000000000000056bc75e2d63100000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000","value":"0x0","spender":"0x794a61358d6845594f94dc1db02a252b5b4814ad"},"receipt":null,"risk_warnings":["Aave supply APY varies with utilization; treat headline APY as an estimate."]}],"totals":{"estimated_gas_usd":4.2,"estimated_duration_s":30,"signatures_required":2,"chains_touched":["polygon"],"assets_required":{"DAI":"100"}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"**Aave V3 Supply** \u2014 Supply 100.0 DAI via Aave V3 on Polygon.\nStatus: `ready` \u00b7 2 signature(s) required.\n\n**Steps**\n\u25b6 Step 1 \u2014 approve 100 DAI on polygon via aave-v3 (ready)\n\u00b7 Step 2 \u2014 supply 100.0 DAI on polygon via aave-v3 (pending)\n\nOpen the Execution Plan card above and sign step 1 in your wallet to begin.","card_ids":["e185f170-eac3-44fc-a9fc-d31a97aa6554"],"elapsed_ms":43465,"steps":5}
+
+event: done
+data: {}
+

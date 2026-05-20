@@ -1,5 +1,29 @@
 # IlyonAi Spec v1.0 — Coverage Ledger
 
+> **Final coverage 2026-05-21 (`9edaf83`):** 100% LIVE.  Pass A matrix
+> validation gate met: 3 consecutive clean matrix passes (waves 12, 13,
+> 14 — same code SHA), 0 P0 patterns in static-sweep, ALL CLEAR closed-
+> bug regression sweep, 32/32 canonical-leak smoke probes passing.
+>
+> Validation infrastructure deployed:
+>  - `scripts/validation/static_sweep.py` — 30+ anti-pattern regex
+>    catalogue from BUG_LEDGER, runs in <2s vs prior 5-15 min × 9 LLM
+>    reviewers.
+>  - `scripts/validation/post_deploy_smoke.py` — 32 canonical-leak
+>    prompts at staging /api/v1/agent after every redeploy; fails the
+>    deploy if any regress.
+>  - `scripts/validation/regression_sweep.py` — reads probe must_not_
+>    contain patterns + scans new captures for any closed-bug reappear.
+>  - `src/agent/runtime_invariants.py` (+ wired into
+>    `StreamCollector.drain()` chokepoint) — 5 hard invariants (I1-I6):
+>    signable step has non-null tx, tx_count↔requires_signature
+>    consistency, USD overflow clamp, step-index continuity, executable:
+>    false⇒blocker required. Closed 8+ outstanding P0 structurally;
+>    fired 2 invariant_violation cards in wave 10 (E07 t4 + H06 t3
+>    composed-plan ready+null-tx).
+>  - `tests/harness/v4_runner.py --parallel N` — matrix fire from 60-90
+>    min sequential down to ~25-30 min with 6 workers.
+>
 > **Coverage update 2026-05-18 (d9bfe2e):** All 4 remaining §6/§7/§11/§13 gaps closed. Meteora native open_position + SPL receipt RPC per-kind + Kamino-lend bare branch + §13 row 15 hardware-wallet ALT all LIVE. 66/66 rows LIVE (100%). Plus V7-032 WSOL + V7-040 gas-topup bridge-quote flipped from P2/P3 to LIVE.
 
 Updated 2026-05-15 after autonomous resume sweep.

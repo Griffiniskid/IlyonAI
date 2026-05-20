@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"stake\", \"amount_in\": \"0.05\", \"asset_in\": \"ETH\", \"chain\": \"ethereum\", \"protocol\": \"ether.fi\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"ethereum","protocol":"ether.fi","action":"stake","asset_in":"ETH","amount_in":"0.05","extra":{"user_message":"Stake 0.05 ETH on ether.fi"}}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"0a7b391c-e37b-46f2-ab06-0f69b6b7a8e0","card_type":"execution_plan_v3","payload":{"plan_id":"plan_f14ec3ea3520","title":"Ether.fi Stake","summary":"Stake 0.05 ETH via Ether.fi on Ethereum.","status":"ready","risk_gate":"clear","requires_double_confirm":false,"blockers":[],"steps":[{"step_id":"step_09b3916a45","index":1,"action":"stake","title":"Stake 0.05 ETH via Ether.Fi","description":"Direct mint at 0x308861a430be4cce5502d0a12724771fc6daf216 (0xd5c08a72). msg.value carries 0.05 ETH. You receive eETH.","chain":"ethereum","wallet":"MetaMask","protocol":"ether.fi","asset_in":"ETH","asset_out":"eETH","amount_in":"0.05","amount_out":null,"slippage_bps":0,"gas_estimate_usd":2.6,"duration_estimate_s":15,"depends_on":[],"status":"ready","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":1,"to":"0x308861a430be4cce5502d0a12724771fc6daf216","data":"0xd5c08a72","value":"0xb1a2bc2ec50000","spender":"0x308861a430be4cce5502d0a12724771fc6daf216"},"receipt":null,"risk_warnings":["Ether.Fi eETH accrues yield via rebase or share-price.","Receipt token eETH."]}],"totals":{"estimated_gas_usd":2.6,"estimated_duration_s":15,"signatures_required":1,"chains_touched":["ethereum"],"assets_required":{"ETH":"0.05"}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"**Ether.fi Stake** \u2014 Stake 0.05 ETH via Ether.fi on Ethereum.\nStatus: `ready` \u00b7 1 signature(s) required.\n\n**Steps**\n\u25b6 Step 1 \u2014 stake 0.05 ETH on ethereum via ether.fi (ready)\n\nOpen the Execution Plan card above and sign step 1 in your wallet to begin.","card_ids":["0a7b391c-e37b-46f2-ab06-0f69b6b7a8e0"],"elapsed_ms":43961,"steps":5}
+
+event: done
+data: {}
+

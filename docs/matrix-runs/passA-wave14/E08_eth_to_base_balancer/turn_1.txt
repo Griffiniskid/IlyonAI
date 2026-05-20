@@ -1,0 +1,24 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"deposit_lp\", \"amount_in\": 0.05, \"asset_in\": \"WETH\", \"chain\": \"base\", \"extra\": {\"action\": \"deposit_lp\", \"source_chain\": \"ethereum\", \"source_token\": \"WETH\"}, \"protocol\": \"balancer-v2\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"base","protocol":"balancer-v2","action":"deposit_lp","asset_in":"WETH","amount_in":0.05,"extra":{"source_chain":"ethereum","source_token":"WETH","action":"deposit_lp","user_message":"Bridge 0.05 WETH from Ethereum to Base then deposit to Balancer"}}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: final
+data: {"content":"I couldn't complete that \u2014 **ADAPTER_QUOTE_REQUIRED**: deBridge DLN quote failed for ethereum\u2192base:","card_ids":[],"elapsed_ms":15093,"steps":4}
+
+event: done
+data: {}
+
