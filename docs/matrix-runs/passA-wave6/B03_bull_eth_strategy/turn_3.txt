@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Unlock / withdrawal times for each bucket**\n\n| Bucket | How you exit | Typical unlock delay |\n|--------|--------------|----------------------|\n| Renzo\u202frenZETH (LRT) | Burn renZETH on the Renzo app to receive underlying ETH | Usually\u202f<\u202f1\u202fhour (often a few minutes) |\n| Lido\u202fstETH | Request withdrawal via Lido portal; tokens returned after the withdrawal queue processes | 1\u20115\u202fdays (queue\u2011dependent) |\n| Uniswap\u202fv3\u202fWETH\u2011ASTEROID LP | Remove liquidity directly from the pool | Instant (one transaction) |\n| Curve\u202fIDAI\u2011IUSDC\u2011IUSDT (stable\u2011coin) | Exit the pool via Curve UI or contract | Instant (one transaction) |\n\nAll positions are non\u2011lock\u2011up; you can withdraw at any time, though Lido stETH may incur a short queue delay. Fees or accrued rewards are claimable when you withdraw.","card_ids":[],"elapsed_ms":13482,"steps":3}
+
+event: done
+data: {}
+

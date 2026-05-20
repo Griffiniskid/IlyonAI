@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Please sign the transaction in your connected wallet; once signed the Execution Plan will move from\u202f`draft`\u202fto\u202f`executed` and the bridge will proceed. No transaction hash or calldata can be generated without your signature. (Risk: MEDIUM; verify you approve only the intended contract.)","card_ids":[],"elapsed_ms":4890,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t confirm that action without a deterministic Sentinel tool producing the calldata and a signed Execution Plan. Please provide a clear, executable command (e.g., \u201cClose Uniswap V3 position\u202ftokenId\u202f12345 with 0\u202fETH and 0\u202fUSDC\u201d) so the adapter can generate a verifiable receipt.","card_ids":[],"elapsed_ms":3619,"steps":3}
+
+event: done
+data: {}
+

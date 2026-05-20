@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Execution Plan Preview**\n\n- **Action:** Supply liquidity (wide range) \n- **Tokens:** 100\u202fAERO\u202f+\u202fmatching\u202fWETH (amount determined by current pool price) \n- **Destination:** Aerodrome V3 AERO/WETH LP on Base via Enso \n- **Estimated gas:** ~0.00045\u202fETH (\u2248\u202f$0.80) \n- **Slippage tolerance:** 0.5\u202f% \n- **Risk level:** MEDIUM (impermanent\u2011loss exposure) \n- **Strategy fit:** balanced (suitable for moderate\u2011risk yield seekers) \n\nReview the details; if they look correct, you can proceed to sign and execute the bundle.","card_ids":[],"elapsed_ms":4202,"steps":3}
+
+event: done
+data: {}
+

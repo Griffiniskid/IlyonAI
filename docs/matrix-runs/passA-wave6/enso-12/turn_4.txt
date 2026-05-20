@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Please phrase the request as an explicit verb command, for example:\n\n**Add liquidity 200\u202fUSDC and matching WETH to the Uniswap\u202fV2 USDC/WETH pool on Ethereum via Enso**\n\nOnce phrased that way, I can generate a ready\u2011to\u2011sign addLiquidity transaction.","card_ids":[],"elapsed_ms":7756,"steps":3}
+
+event: done
+data: {}
+

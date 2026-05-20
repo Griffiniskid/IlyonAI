@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The plan is stuck because you don\u2019t have enough AVAX to pay the gas fees for the approve and supply transactions. The steps require roughly\u202f0.68\u202fAVAX (\u2248\u202f$6.30 with a 1.5\u00d7 safety buffer), but your wallet currently holds only\u202f0.25\u202fAVAX. You\u2019ll need to bridge or acquire more AVAX before the plan can be signed.","card_ids":[],"elapsed_ms":11980,"steps":3}
+
+event: done
+data: {}
+

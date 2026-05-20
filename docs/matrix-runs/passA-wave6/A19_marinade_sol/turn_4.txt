@@ -1,0 +1,27 @@
+event: thought
+data: {"step_index":1,"content":"Parsed request and selected tool `execute_pool_position` with inputs {\"amount\": 1.0, \"amount_is_usd\": false, \"asset_in\": \"SOL\", \"chain\": \"solana\", \"pool\": \"marinade mSOL\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Checking available data sources and risk context before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Preparing a concise result with next-step guidance."}
+
+event: tool
+data: {"step_index":3,"name":"execute_pool_position","args":{"pool":"marinade mSOL","amount":1.0,"asset_in":"SOL","chain":"solana","amount_is_usd":false}}
+
+event: observation
+data: {"step_index":3,"name":"execute_pool_position","ok":true,"error":null}
+
+event: thought
+data: {"step_index":4,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":4,"card_id":"873d1319-a438-446f-b5b4-c44e09013b58","card_type":"execution_plan_v3","payload":{"plan_id":"plan_dc21a770e339","title":"Marinade Liquid Staking Supply","summary":"Marinade Liquid Staking does not support the `supply` verb. Refusing to silently downgrade.","status":"blocked","risk_gate":"clear","requires_double_confirm":false,"blockers":[{"code":"VERB_NOT_SUPPORTED","severity":"blocker","title":"Marinade Liquid Staking can't supply","detail":"`supply` is not in the supported verb set for Marinade Liquid Staking. Supported: stake, unstake, withdraw. Earlier builds would silently fall through to a `supply` step here \u2014 that path is now disabled to prevent verb-downgrade bugs.","affected_step_ids":[],"recoverable":true,"cta":"Use one of: stake, unstake, withdraw \u2014 or pick a protocol that supports `supply` (e.g. Aave V3 / Compound V3 for borrow/repay)."}],"steps":[],"totals":{"estimated_gas_usd":0.0,"estimated_duration_s":0,"signatures_required":0,"chains_touched":[],"assets_required":{}},"research_thesis":null,"strategy_id":null,"recovery":{"action":"ASK_USER","posture":"Marinade Liquid Staking doesn't support `supply` \u2014 pick a different verb or protocol","new_slippage_bps":null,"alternatives":[],"buttons":["Try Stake","Try Unstake","Try Withdraw","Switch to Aave V3","Cancel"],"channels":[],"rationale":"Verb-aware dispatch refused to silently downgrade an unsupported action to supply. No financial-loss path."}}}
+
+event: final
+data: {"content":"**Marinade Liquid Staking Supply** \u2014 Marinade Liquid Staking does not support the `supply` verb. Refusing to silently downgrade.\nStatus: `blocked` \u00b7 0 signature(s) required.\n\n**Blockers**\n- Marinade Liquid Staking can't supply: `supply` is not in the supported verb set for Marinade Liquid Staking. Supported: stake, unstake, withdraw. Earlier builds would silently fall through to a `supply` step here \u2014 that path is now disabled to prevent verb-downgrade bugs.\n\nNo signing button is shown until every blocker clears.","card_ids":["873d1319-a438-446f-b5b4-c44e09013b58"],"elapsed_ms":1259,"steps":4}
+
+event: done
+data: {}
+

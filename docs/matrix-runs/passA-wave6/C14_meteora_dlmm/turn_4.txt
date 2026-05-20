@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Here\u2019s how to execute the\u202f1\u202fSOL\u202f+\u202f100\u202fUSDC deposit into the Raydium\u202fCLMM\u202fSOL\u2011USDC pool (address\u202f`9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM`) with the $16\u2011$24/SOL range:\n\n1. **Bridge** 100\u202fUSDC from Ethereum/Base to Solana (Wormhole/Allbridge), leaving ~0.005\u202fSOL for fees. \n2. **Approve** the Raydium\u202fCLMM contract to spend your USDC in your Solana wallet (Phantom/Solflare). \n3. **Set range** lower\u202f$16/SOL, upper\u202f$24/SOL (\u00b120\u202f% around ~$20). \n4. **Add liquidity**: submit the transaction with 1\u202fSOL\u202f+\u202f100\u202fUSDC within that range, review, and sign.\n\n**Risk:** MEDIUM/HIGH \u2013 price outside $16\u2011$24 causes impermanent loss. \n**Strategy fit:** Balanced \u2013 the \u00b120\u202f% range targets moderate risk\u2011return. \n**Safety tip:** Verify the pool address on Raydium\u2019s official site or verified socials before approving.","card_ids":[],"elapsed_ms":12059,"steps":3}
+
+event: done
+data: {}
+

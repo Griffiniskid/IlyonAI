@@ -323,9 +323,48 @@ async def execute_pool_position(
 ):
     """One-shot pool deposit. `pool` may be a DefiLlama pool UUID or a
     'protocol pair' string like 'raydium-amm SPACEX-WSOL'.
+
+    Matrix Pass A wave 5/6 D05 surfaced D-P0-10b drain-equivalent: prompt
+    "Exit Balancer wsteth-weth with 0.5 BPT" was reaching this tool with
+    `extra.action="exit_pool"` and the adapter built a READY 3-step
+    joinPool DEPOSIT plan. The wave-6 detector dispatch re-order routed
+    most exit-prompts to lifecycle withdraw, but a defensive guard here
+    closes the residual cases where dispatch still selects this tool for
+    a withdraw-flavored intent. Refuse any verb-inverted call early.
     """
+    # Wave-7 D-P0-10b drain-equivalent guard: refuse verb-inverted dispatch.
+    # `execute_pool_position` is a deposit-only tool; an exit/withdraw/remove
+    # verb reaching this entry point means the dispatcher misrouted. Silently
+    # building a joinPool plan would deposit user funds when they meant to
+    # withdraw — same financial-loss class as the wave-3 ERC-4626 / Aave WTG3
+    # / wave-6 Aave V3 ERC20 withdraw(0) drain-guards.
+    _extra_for_guard = extra or {}
+    _action_hint = str(_extra_for_guard.get("action", "")).lower().strip()
+    _EXIT_VERBS = {
+        "exit", "exit_pool", "exitpool",
+        "withdraw", "withdraw_lp", "withdrawlp", "withdraw_liquidity",
+        "remove", "remove_lp", "removelp", "remove_liquidity",
+        "redeem", "redeem_bpt", "redeembpt",
+        "unstake", "liquid_unstake", "unwind",
+        "close", "close_position", "closeposition",
+        "claim", "claim_rewards", "harvest",
+    }
+    if _action_hint in _EXIT_VERBS:
+        return err_envelope(
+            "verb_inverted",
+            f"`execute_pool_position` is a deposit-only tool. The requested "
+            f"action '{_action_hint}' is a withdraw/exit/claim verb — refusing "
+            f"to silently route to a deposit_lp plan, which would deposit "
+            f"funds when the user meant to withdraw. Re-issue as "
+            f"`build_yield_execution_plan` with action='{_action_hint}', or "
+            f"use the lifecycle verb form (e.g. 'Exit <protocol> <pool> with "
+            f"<amount> <token>' / 'Withdraw <amount> <token> from <protocol>').",
+        )
     if not pool:
         return err_envelope("missing_pool", "Provide a pool UUID or 'protocol pair' string.")
+    # Strip whitespace anomalies in pool slug (wave-5 D05 t1 had a trailing
+    # space "balancer-wsteth-weth " that confused downstream resolvers).
+    pool = str(pool).strip()
     amt = _coerce_amount(amount)
     if amt <= 0:
         return err_envelope("invalid_amount", "amount must be a positive decimal value.")

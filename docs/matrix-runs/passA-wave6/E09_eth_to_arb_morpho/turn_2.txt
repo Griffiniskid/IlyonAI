@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To fetch the current highest\u2011APY pool, could you let me know which chain or token you\u2019re interested in (e.g., USDC on Arbitrum, ETH on Mainnet, etc.)?","card_ids":[],"elapsed_ms":17596,"steps":3}
+
+event: done
+data: {}
+

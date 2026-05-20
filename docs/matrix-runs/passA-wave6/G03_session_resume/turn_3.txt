@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To add another 50\u202fUSDC, try an explicit command like:\n\n**Supply 150 USDC to Aave V3 on Ethereum**\n\n(or \u201cApprove 150 USDC then supply 150 USDC to Aave V3 on Ethereum\u201d). \nThe deterministic adapter will then generate a signable Execution Plan card.","card_ids":[],"elapsed_ms":13550,"steps":3}
+
+event: done
+data: {}
+

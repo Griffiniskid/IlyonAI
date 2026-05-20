@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"supply\", \"amount_in\": 0.05, \"asset_in\": \"ETH\", \"chain\": \"ethereum\", \"protocol\": \"ether.fi\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"ethereum","protocol":"ether.fi","action":"supply","asset_in":"ETH","amount_in":0.05}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"3798b268-2b88-4b71-9f57-2f97e61e6fea","card_type":"execution_plan_v3","payload":{"plan_id":"plan_cce4ba2e82c2","title":"Ether.fi Supply","summary":"Ether.fi does not support the `supply` verb. Refusing to silently downgrade.","status":"blocked","risk_gate":"clear","requires_double_confirm":false,"blockers":[{"code":"VERB_NOT_SUPPORTED","severity":"blocker","title":"Ether.fi can't supply","detail":"`supply` is not in the supported verb set for Ether.fi. Supported: stake, unstake, withdraw. Earlier builds would silently fall through to a `supply` step here \u2014 that path is now disabled to prevent verb-downgrade bugs.","affected_step_ids":[],"recoverable":true,"cta":"Use one of: stake, unstake, withdraw \u2014 or pick a protocol that supports `supply` (e.g. Aave V3 / Compound V3 for borrow/repay)."}],"steps":[],"totals":{"estimated_gas_usd":0.0,"estimated_duration_s":0,"signatures_required":0,"chains_touched":[],"assets_required":{}},"research_thesis":null,"strategy_id":null,"recovery":{"action":"ASK_USER","posture":"Ether.fi doesn't support `supply` \u2014 pick a different verb or protocol","new_slippage_bps":null,"alternatives":[],"buttons":["Try Stake","Try Unstake","Try Withdraw","Switch to Aave V3","Cancel"],"channels":[],"rationale":"Verb-aware dispatch refused to silently downgrade an unsupported action to supply. No financial-loss path."}}}
+
+event: final
+data: {"content":"**Ether.fi Supply** \u2014 Ether.fi does not support the `supply` verb. Refusing to silently downgrade.\nStatus: `blocked` \u00b7 0 signature(s) required.\n\n**Blockers**\n- Ether.fi can't supply: `supply` is not in the supported verb set for Ether.fi. Supported: stake, unstake, withdraw. Earlier builds would silently fall through to a `supply` step here \u2014 that path is now disabled to prevent verb-downgrade bugs.\n\nNo signing button is shown until every blocker clears.","card_ids":["3798b268-2b88-4b71-9f57-2f97e61e6fea"],"elapsed_ms":4,"steps":5}
+
+event: done
+data: {}
+

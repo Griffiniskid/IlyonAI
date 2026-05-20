@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Curve\u2019s 3pool on Ethereum lets you deposit USDC single\u2011sided (risk\u202fLOW, conservative fit). Approve the Curve router/contract first, then use the Curve UI to deposit your 100\u202fUSDC. I can\u2019t generate a deterministic execution plan for Curve, so you\u2019ll need to confirm the transaction in your wallet. If you\u2019d like a signable plan, choose a supported protocol (e.g., \u201cSupply 100 USDC to Aave V3 on Base\u201d).","card_ids":[],"elapsed_ms":8023,"steps":3}
+
+event: done
+data: {}
+

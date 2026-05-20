@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Withdrawal from the Orca USDC\u2011SOL pool isn\u2019t currently supported through our automated executor. To withdraw, you\u2019ll need to use the Orca interface directly:\n\n1. Connect your Solana wallet to\u202f[Orca](https://www.orca.so/). \n2. Navigate to your position in the USDC\u2011SOL pool. \n3. Click \u201cWithdraw\u201d and confirm the transaction in your wallet.\n\n**Safety tip:** Double\u2011check the pool address and approve only the exact amount you intend to withdraw to avoid accidental approvals. If you encounter any issues, let me know and I can help troubleshoot.","card_ids":[],"elapsed_ms":7741,"steps":3}
+
+event: done
+data: {}
+

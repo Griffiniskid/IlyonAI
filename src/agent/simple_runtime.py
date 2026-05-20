@@ -6220,8 +6220,35 @@ _FREEFORM_TX_STATE_HALLUCINATION_RE = re.compile(
     # "I'll generate (the|a) (signable )?plan" — E03/E08/E11 t3 promise.
     # Permissive: allow up to 5 modifier tokens (words with optional dots
     # like "LI.FI") between the verb and the noun.
-    r"i'?ll\s+(?:generate|produce|build)\s+(?:\w+(?:\.\w+)*\s+){0,5}"
+    r"i'?ll\s+(?:generate|produce|build|create)\s+(?:\w+(?:\.\w+)*\s+){0,5}"
     r"(?:plan|bridge|transaction|swap)\b|"
+    # Wave-7 — "I can generate a signable Execution Plan" / "I'll create a
+    # ready-to-sign plan to:" — E03/E08/E11 t3 wave-6 evasions.
+    r"i\s+can\s+(?:generate|produce|build|create)\s+(?:\w+(?:\.\w+)*\s+){0,5}"
+    r"(?:plan|bridge|transaction|swap)\b|"
+    r"i'?ll\s+create\s+a\s+ready[-\s]?to[-\s]?sign\s+plan|"
+    # Wave-7 — bare declarative bridge claim. E04 t2: "deBridge DLN is the
+    # bridge used to move USDT from Ethereum to Optimism."
+    r"\b(?:debridge|debridge[-\s]dln|li\.?fi|across|hop|stargate|"
+    r"socket|bungee|squid|wormhole)\s+(?:dln\s+)?is\s+the\s+bridge\s+used\s+to\b|"
+    # Wave-7 — "Execution Plan will move from `draft` to `executed`" +
+    # "bridge will proceed" — E01 t2/t3/t4 freeform state-machine narration.
+    r"(?:execution\s+plan|plan)\s+will\s+"
+    r"(?:move|transition|go|advance|flip)\s+from\s+[`\"']?(?:draft|pending|prompted|building)[`\"']?"
+    r"\s+to\s+[`\"']?(?:executed|signed|complete|ready|broadcast(?:ed)?)[`\"']?|"
+    r"\bthe\s+bridge\s+will\s+proceed\b|"
+    # Wave-7 — "Swap leg – Swap X TOKEN → TOKEN" / "Split confirmed –" /
+    # H02 t2/t3 freeform swap-leg fabrication. Allow optional markdown
+    # bold (`**` wrapper) around the keyword phrases — the actual H02
+    # captures used `**Swap leg** – Swap …` and `**Split confirmed** –`.
+    r"\bswap\s+leg\*{0,2}\s*[-–—:]\s*\*{0,2}\s*swap\s+[\d.]+\s+[A-Z]{2,8}|"
+    r"\bsplit\s+confirmed\*{0,2}\s*[-–—:]|"
+    # Wave-7 — en-dash Execution Plan header (G04 T4 wave-6 evasion).
+    # `**Execution Plan – Supply USDC to Aave V3 (Ethereum)**` uses en-dash
+    # instead of the em-dash + protocol·verb pattern wave-5 caught.
+    r"\*\*\s*Execution\s+Plan\s*[–—-]\s*(?:Supply|Stake|Swap|Bridge|"
+    r"Withdraw|Deposit|Borrow|Repay|Mint|Claim|Compound|Migrate|Exit|"
+    r"Remove|Unstake|Buy|Sell)\b|"
     # "Bridge route: X → Y → Z" — E13 t2/t3 invented route claim.
     r"\bbridge\s+route\s*[:—–-]\s*[A-Z]|"
     # Fabricated wallet holdings — H07 t2 "You already hold 50 USDC, 50 USDT…"
@@ -6240,10 +6267,25 @@ _FREEFORM_TX_STATE_HALLUCINATION_RE = re.compile(
     r"(?:[\s,\n-]+(?:SOL|ETH|USDC|USDT|WBTC|DAI|MATIC|AVAX|BNB)\s*[≈~]\s*\d+\s*%){1,}|"
     # Fabricated protocol schedules — F04 t2 invented Pendle epoch dates
     # ("Pendle's PT-USDe minting epochs open every Thursday at 00:00 UTC…
-    # next epoch starts Thursday 25 Sep 2025").
-    r"\b(?:pendle|sky|spark|aave|maple|curve|lido|rocket[\s-]?pool)'?s?\s+"
+    # next epoch starts Thursday 25 Sep 2025"). Wave-6 regex was too
+    # narrow — required protocol token within 60 chars of the schedule
+    # word. Wave-7 broadens to fire on standalone schedule phrasings.
+    r"\b(?:epochs?|windows?|cooldowns?|unbonding\s+periods?)\s+"
+    r"(?:open|opens?|start|starts?|run|runs?|close|closes?|begin|begins?)"
+    r"\s+(?:every|on|at|next|each)\b|"
+    r"\bnext\s+(?:epoch|window|cooldown|cycle|round|round)\s+"
+    r"(?:starts?|opens?|begins?|runs?)\s+(?:on\s+)?\w+(?:day)?\s+"
+    r"\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*"
+    r"\s+\d{4}|"
+    r"\b(?:pendle|sky|spark|aave|maple|curve|lido|rocket[\s-]?pool|jito|"
+    r"marinade|sanctum|kamino|orca|raydium|meteora|drift|jupiter)'?s?\s+"
     r"[\w\s-]{0,60}?"
-    r"(?:epoch|countdown|window|opens?\s+(?:every|on|at)|starts?\s+at)|"
+    r"(?:epoch|countdown|window|cooldown|unbonding\s+period|"
+    r"opens?\s+(?:every|on|at)|starts?\s+at)|"
+    # Wave-7 — "Discord/announcements" / "live countdown in the … app"
+    # citation patterns (fabricated authority for invented schedules).
+    r"\blive\s+countdown\s+in\s+the\s+\w+\s+app\b|"
+    r"\bdiscord(?:\s*/\s*announcements)?\b\s+for\s+the\s+exact\s+time|"
     # Confirmation prompt without card — F02 t4 "Supply 100 USDC… Confirm
     # if you'd like to proceed" — primes user to "yes" → cascades to fake
     # tx-state next turn. Allow up to 160 chars of intermediate prose
@@ -6284,6 +6326,14 @@ _FREEFORM_IMPERATIVE_UI_HALLUCINATION_RE = re.compile(
     # "$200 daily budget".
     r"\$\d+(?:[.,]\d+)?\s*(?:daily|per\s+day|/day|weekly|per\s+week|/week|"
     r"monthly|per\s+month|/month)\s+(?:cap|budget|allowance|limit)|"
+    # Wave-7 — currency-token-prefixed cap paraphrase. I02 t2 wave-6 used
+    # "$100 USDC per day" / "$20 USDC to each" which the wave-6 cap regex
+    # missed because the token symbol sits between $<num> and per-day.
+    r"\$\d+(?:[.,]\d+)?\s+(?:USDC|USDT|DAI|ETH|SOL|WETH|WBTC|MATIC|AVAX|"
+    r"BNB|USD|EUR)\s+(?:per\s+day|/day|daily|each\s+day|spend\s+cap|"
+    r"daily\s+cap|spend\s+limit)|"
+    r"\bdaily\s+\$\d+(?:[.,]\d+)?\s+(?:USDC|USDT|DAI|ETH|SOL|USD)\s+"
+    r"(?:cap|budget|allowance|spend\s+cap)|"
     # Sign-imperative for AA policies — I05 t3 "Sign the ZeroDev Kernel
     # policy for autonomous rebalancing".
     r"\bsign\s+the\s+(?:zerodev\s+kernel|nexus|biconomy|safe|argent|"
@@ -6313,10 +6363,37 @@ _FREEFORM_HALLUCINATION_REFUSAL = (
 )
 
 
+# Matrix Pass A wave 6 hand-read surfaced sanitizer evasions traced to
+# Unicode whitespace characters in the LLM output: " " (U+202F NARROW NO-BREAK
+# SPACE), " " (U+00A0 NO-BREAK SPACE), figure space (U+2007). These chars
+# defeat `\b` word boundaries and literal `\s` patterns in some regex
+# flavors. E02 t2/t4 wave-6 leaked "0.5 % slippage" + "200 USDC" with U+202F
+# between the digits and units; wave-6 regex additions for these exact phrases
+# failed to fire. Pre-normalize all of these to plain ASCII space at the
+# chokepoint entry so the existing regex set works.
+_UNICODE_SPACE_NORMALIZE_RE = re.compile(
+    r"[      　]"
+)
+
+
+def _normalize_unicode_whitespace(text: str) -> str:
+    """Replace Unicode-flavored whitespace chars with plain ASCII space.
+
+    Matrix Pass A wave 6 surfaced multiple sanitizer regex evasions caused
+    by the LLM emitting " " (U+202F NARROW NO-BREAK SPACE) between numbers
+    and unit/keyword tokens (e.g. "200 USDC", "0.5 %", "0.5 % slippage").
+    `\b` word boundaries and literal space patterns fail across these
+    chars. Pre-normalize before the sanitizer pass."""
+    if not text:
+        return text
+    return _UNICODE_SPACE_NORMALIZE_RE.sub(" ", text)
+
+
 def _strip_freeform_tx_state_hallucinations(
     text: str, *, card_ids: list[str] | None = None
 ) -> str:
-    """Wave-5 chokepoint guard, wave-6 split into two passes.
+    """Wave-5 chokepoint guard, wave-6 split into two passes, wave-7 added
+    Unicode whitespace normalization and additional regex shapes.
 
     Pass 1 (card_ids-GATED) — refuse contextual-fallback prose that asserts
     transaction state (ready / submitted / executed / Current tx / Approvals
@@ -6337,14 +6414,25 @@ def _strip_freeform_tx_state_hallucinations(
     `card_ids` was non-empty so the gated pass returned text unchanged.
     No card type can legitimately back these patterns.
 
+    Wave-7 added a Unicode whitespace pre-normalization pass so " "
+    (U+202F NARROW NO-BREAK SPACE) and friends are coerced to plain ASCII
+    space before the regex set runs. E02 t2/t4 wave-6 leaked because the
+    LLM emitted "200 USDC", "0.5 % slippage" with U+202F that defeated
+    the wave-6 regex `\b` boundaries.
+
     When either pass fires: replaces content with canonical refusal
     pointing user to deterministic verb forms.
     """
     if not text:
         return text
+    # Wave-7: Unicode whitespace pre-normalize. The regex matching below
+    # uses `\s` and `\b` which fail across U+202F / U+00A0 / U+2007 chars.
+    # Normalize once at the chokepoint entry; downstream renderers receive
+    # the original `text` (we only modify the local copy for matching).
+    normalized = _normalize_unicode_whitespace(text)
     # Pass 2 ALWAYS — imperative-UI / named-keeper / invented-cap /
     # sign-AA-policy patterns never have a legitimate card-backed form.
-    if _FREEFORM_IMPERATIVE_UI_HALLUCINATION_RE.search(text):
+    if _FREEFORM_IMPERATIVE_UI_HALLUCINATION_RE.search(normalized):
         return _FREEFORM_HALLUCINATION_REFUSAL
     # Pass 1 — tx-state assertions only fire when no signable card backs
     # them. A non-empty card_ids list means the producer attached at least
@@ -6353,7 +6441,7 @@ def _strip_freeform_tx_state_hallucinations(
     # what reaches a card_id at the producer level.
     if card_ids:
         return text
-    if _FREEFORM_TX_STATE_HALLUCINATION_RE.search(text):
+    if _FREEFORM_TX_STATE_HALLUCINATION_RE.search(normalized):
         return _FREEFORM_HALLUCINATION_REFUSAL
     return text
 

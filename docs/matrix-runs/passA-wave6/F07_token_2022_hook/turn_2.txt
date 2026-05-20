@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The pool \u201cMeteora DAMM v2\u201d isn\u2019t in the live DefiLlama catalog, so I can\u2019t locate a matching liquidity pool to build a transaction. To proceed I need either:\n\n- the exact DefiLlama pool UUID for the Meteora\u202fDAMM\u202fv2 pool you want, **or**\n- a precise protocol\u2011pair reference (e.g., `meteora-damm USDC/USDT` on Solana) that DefiLlama indexes.\n\nWithout that identifier I can\u2019t generate a signable plan, and I won\u2019t auto\u2011route to an alternative pool. Please provide the UUID or the exact protocol\u2011pair, and I\u2019ll create a fresh execution plan for you.","card_ids":[],"elapsed_ms":21697,"steps":3}
+
+event: done
+data: {}
+
