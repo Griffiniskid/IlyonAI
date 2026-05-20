@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The deposit is blocked because the routing service (Enso) can\u2019t find a valid path for a Curve USDC deposit on Ethereum\u2014it\u2019s returning a DNS/lookup error (\u20112\u202fName or service not known). Without a route, no execution plan can be generated, so the transaction remains unavailable. Try again later or choose a different Curve pool that the router can successfully route.","card_ids":[],"elapsed_ms":20238,"steps":3}
+
+event: done
+data: {}
+

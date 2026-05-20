@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"1bc6d978-5274-421c-8495-2f7d582d5dad","card_type":"execution_plan_v3","payload":{"plan_id":"plan_f5dc92a7756e","title":"Aave V3 Supply","summary":"Could not build execution plan for Aave V3 Supply on Base.","status":"blocked","risk_gate":"clear","requires_double_confirm":false,"blockers":[{"code":"ADAPTER_BUILD_FAILED","severity":"blocker","title":"Adapter could not build steps","detail":"Aave V3 adapter has no token metadata for BASE on base.","affected_step_ids":[],"recoverable":true,"cta":"Pool unavailable \u2014 surfacing alternatives"}],"steps":[],"totals":{"estimated_gas_usd":0.0,"estimated_duration_s":0,"signatures_required":0,"chains_touched":[],"assets_required":{}},"research_thesis":null,"strategy_id":null,"recovery":{"action":"ASK_USER","posture":"Pool unavailable \u2014 surfacing alternatives","new_slippage_bps":null,"alternatives":[],"buttons":["Pick alternative","Leave funds in wallet","Swap back to source"],"channels":[],"rationale":"Pool removed / paused / cap reached. Alternatives ranked by APR + similarity. Never auto-route \u2014 you pick."}}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["1bc6d978-5274-421c-8495-2f7d582d5dad"],"elapsed_ms":0,"steps":2}
+
+event: done
+data: {}
+

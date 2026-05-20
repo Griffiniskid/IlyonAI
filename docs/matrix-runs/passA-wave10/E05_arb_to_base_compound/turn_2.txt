@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Please specify the bridge action in an explicit verb form, for example: **Bridge 200\u202fUSDC from Arbitrum to Base via deBridge**. That will let me generate a signable plan with the exact fee details.","card_ids":[],"elapsed_ms":16403,"steps":3}
+
+event: done
+data: {}
+

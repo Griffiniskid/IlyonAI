@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Supplying USDC to Aave V3 on Base yields the interest\u2011bearing receipt token **aUSDC**. After a successful supply transaction, your wallet will hold aUSDC representing your proportional share of the pooled USDC plus accrued interest. \n\n- **Risk level:** MEDIUM (smart\u2011contract risk; stablecoin exposure is low) \n- **Strategy fit:** conservative to balanced (yield\u2011generating, low\u2011volatility) \n- **Safety tip:** Verify the contract address for Aave V3 on Base before approving any spend, and consider starting with a small test amount. \n\nTo actually receive aUSDC, you\u2019ll need to execute a supply transaction (e.g., \u201cSupply 100 USDC to Aave V3 on Base\u201d). Once the transaction is confirmed, the receipt token will appear in your wallet.","card_ids":[],"elapsed_ms":13213,"steps":3}
+
+event: done
+data: {}
+

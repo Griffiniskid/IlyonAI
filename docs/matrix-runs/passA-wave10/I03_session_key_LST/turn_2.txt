@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t sign transactions for you\u2014I only generate the unsigned transaction data (calldata, nonce, gas estimates, etc.) that you can review and sign with your own wallet. Always verify contract addresses and function selectors on a block explorer before signing, and never share your private key or seed phrase. Once signed, you can broadcast the transaction yourself or let me help you submit it. Safety tip: double\u2011check the spender on a block explorer; mistakes can\u2019t be undone.","card_ids":[],"elapsed_ms":6357,"steps":3}
+
+event: done
+data: {}
+

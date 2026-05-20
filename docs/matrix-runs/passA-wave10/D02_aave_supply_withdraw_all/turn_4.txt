@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t confirm the withdrawal until the blocker is resolved. The Aave V3 withdraw adapter requires either a positive amount_in or the flag\u202fextra.withdraw_all=true to withdraw the full aToken balance. Please re\u2011submit the request as, for example:\n\n**Withdraw ALL USDC from Aave V3 on Base**\n\nOnce the adapter can build the plan (showing a \u201cWithdraw ALL\u201d step), I\u2019ll present the signable Execution Plan for you to confirm.","card_ids":[],"elapsed_ms":8757,"steps":3}
+
+event: done
+data: {}
+

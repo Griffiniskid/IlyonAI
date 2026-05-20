@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"If the destination RPC fails, the transaction won\u2019t be broadcast and the step stays pending. You can retry the same step after the node recovers or switch to a backup RPC endpoint in your wallet settings; the plan will advance once a successful receipt is observed.","card_ids":[],"elapsed_ms":4051,"steps":3}
+
+event: done
+data: {}
+

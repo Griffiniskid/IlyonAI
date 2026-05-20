@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The swap simulation timed out because the upstream call (RPC/aggregator) didn\u2019t return within the 20\u2011second limit. This often happens when the token isn\u2019t recognized or liquidity is too thin. Provide the contract address for XYZ123 or try a more liquid pair, and I can retry the simulation.","card_ids":[],"elapsed_ms":22050,"steps":3}
+
+event: done
+data: {}
+

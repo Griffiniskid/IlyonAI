@@ -1,0 +1,24 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"supply\", \"amount_in\": \"100\", \"asset_in\": \"USDC\", \"chain\": \"avalanche\", \"protocol\": \"aave-v3\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"avalanche","protocol":"aave-v3","action":"supply","asset_in":"USDC","amount_in":"100"}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: final
+data: {"content":"I couldn't complete that \u2014 **TOOL_TIMEOUT**: Tool 'build_yield_execution_plan' exceeded its 45s SLO. Upstream call (RPC / Enso / DefiLlama / aggregator) hung \u2014 no execution plan emitted. Retry or pick a different route.","card_ids":[],"elapsed_ms":49746,"steps":4}
+
+event: done
+data: {}
+

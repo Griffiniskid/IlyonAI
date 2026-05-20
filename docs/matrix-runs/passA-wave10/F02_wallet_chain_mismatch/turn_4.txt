@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"You can now deposit 100\u202fUSDC to Aave\u202fV3 on an EVM chain. Your wallet holds enough USDC on Ethereum (\u2248190\u202fUSDC) and Base (\u224814\u202fUSDC); Ethereum offers the deepest liquidity for Aave\u202fV3. Risk: MEDIUM (smart\u2011contract exposure). Verify the Aave V3 USDC market contract for the chosen chain and consider using a hardware wallet for added security.","card_ids":[],"elapsed_ms":14944,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"334e8d5f-ae8d-4c7c-b86f-5164c2d11dc9","card_type":"execution_plan","payload":{"sentinel":null,"shield":null,"steps":[{"index":1,"verb":"Supply","amount":"200","asset":"USDC","target":"ADPUSDC \u00b7 morpho-blue","chain":"eth","router":"Enso","wallet":"MetaMask","gas":"~$4.80","step_id":"alloc_step_1","protocol":"morpho-blue","pool_id":null,"transaction":{"chain_kind":"evm","chain_id":1,"serialized":null,"to":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48","data":"0x095ea7b3000000000000000000000000be53a109b494e5c9f97b9cd39fe969be68bf6204000000000000000000000000000000000000000000000000000000000bebc200","value":"0x0","spender":"0xbe53a109b494e5c9f97b9cd39fe969be68bf6204"},"blocker":null},{"index":2,"verb":"Supply","amount":"200","asset":"USDC","target":"WAVAX-USDC \u00b7 pharaoh-v3","chain":"avax","router":"Enso","wallet":"MetaMask","gas":"~$0.30","step_id":"alloc_step_2","protocol":"pharaoh-v3","pool_id":null,"transaction":null,"blocker":null},{"index":3,"verb":"Supply","amount":"200","asset":"USDC","target":"TON-USD\u20ae \u00b7 tonco","chain":"mainnet","router":"Enso","wallet":"MetaMask","gas":"~$6.90","step_id":"alloc_step_3","protocol":"tonco","pool_id":null,"transaction":null,"blocker":null},{"index":4,"verb":"Supply","amount":"200","asset":"USDC","target":"WETH-GITLAWB \u00b7 uniswap-v4","chain":"base","router":"Enso","wallet":"MetaMask","gas":"~$0.25","step_id":"alloc_step_4","protocol":"uniswap-v4","pool_id":null,"transaction":null,"blocker":null},{"index":5,"verb":"Supply","amount":"200","asset":"USDC","target":"RAVE-USDT \u00b7 uniswap-v4","chain":"eth","router":"Enso","wallet":"MetaMask","gas":"~$4.80","step_id":"alloc_step_5","protocol":"uniswap-v4","pool_id":null,"transaction":null,"blocker":null}],"total_gas":"~$17.05","slippage_cap":"0.5%","wallets":"MetaMask","tx_count":5,"requires_signature":true}}
+
+event: final
+data: {"content":"Confirmed \u2014 continuing with the execution plan from the previous step.\n\nEach step in the plan must be signed in your wallet before the next one unlocks. Open the execution plan card above and approve step 1 to begin; on-chain receipts will gate the follow-up steps.\n\nIf you want to change risk budget, skip a protocol, or rerun the allocation against different chains, just say so and I'll regenerate the plan.","card_ids":["334e8d5f-ae8d-4c7c-b86f-5164c2d11dc9"],"elapsed_ms":5,"steps":2}
+
+event: done
+data: {}
+

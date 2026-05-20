@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The bridge step has a slippage band of\u202f\u2264\u202f0.2\u202f%. The subsequent supply to Aave\u202fV3 on Base adds negligible slippage.","card_ids":[],"elapsed_ms":7183,"steps":3}
+
+event: done
+data: {}
+

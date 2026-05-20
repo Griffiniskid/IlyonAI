@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Here are the maturities for the PT\u2011USDC positions in the $1,000 allocation:\n\n- **Maple Finance PT\u2011USDC** \u2013 maturity data not available in the current snapshot. \n- **Sky Lending PT\u2011USDC** \u2013 maturity data not available in the current snapshot. \n- **Binance\u2011Staked\u2011ETH PT\u2011USDC (first)** \u2013 maturity data not available in the current snapshot. \n- **Binance\u2011Staked\u2011ETH PT\u2011USDC (second)** \u2013 maturity data not available in the current snapshot. \n- **Morpho\u202fBlue PT\u2011USDC** \u2013 **30\u202fJun\u202f2027** (the longest\u2011dated position).","card_ids":[],"elapsed_ms":7867,"steps":3}
+
+event: done
+data: {}
+

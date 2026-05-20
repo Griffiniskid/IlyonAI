@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Please use an explicit verb form, such as \u201cRemove liquidity from Uniswap\u202fV2 USDC\u2011ETH and add to Uniswap\u202fV3 USDC/ETH 0.05%\u201d with the exact amounts, so the adapter can generate a signable Execution Plan.","card_ids":[],"elapsed_ms":7639,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"b293cc83-cc72-475a-82a0-e3969c8296b8","card_type":"allocation","payload":{"sentinel":null,"shield":null,"positions":[{"rank":1,"protocol":"yearn-finance","asset":"USDC","chain":"base","apy":"153.5%","sentinel":49,"risk":"high","fit":"aggressive","weight":20,"usd":"$50","tvl":"$2M","router":"Enso","safety":55,"durability":40,"exit":57,"confidence":40,"flags":["Unaudited","< 180 days live","Elevated APY vs. peers"]},{"rank":2,"protocol":"yearn-finance","asset":"CRVUSDCWETHINV","chain":"eth","apy":"47.3%","sentinel":50,"risk":"high","fit":"aggressive","weight":20,"usd":"$50","tvl":"$22,607","router":"Enso","safety":55,"durability":44,"exit":57,"confidence":40,"flags":["Unaudited","< 180 days live","Elevated APY vs. peers"]},{"rank":3,"protocol":"mezo-vaults","asset":"SMUSD","chain":"mainnet","apy":"27.2%","sentinel":52,"risk":"medium","fit":"aggressive","weight":20,"usd":"$50","tvl":"$7M","router":"Enso","safety":55,"durability":52,"exit":57,"confidence":40,"flags":["Unaudited","< 180 days live","Elevated APY vs. peers"]},{"rank":4,"protocol":"beefy","asset":"USDC-SUSD","chain":"op","apy":"25.9%","sentinel":44,"risk":"high","fit":"aggressive","weight":20,"usd":"$50","tvl":"$165,773","router":"Enso","safety":40,"durability":52,"exit":47,"confidence":40,"flags":["Unaudited","< 180 days live","IL risk","Multi-asset exposure","Elevated APY vs. peers"]},{"rank":5,"protocol":"yearn-finance","asset":"REUSDSFRX","chain":"eth","apy":"20.0%","sentinel":52,"risk":"high","fit":"aggressive","weight":20,"usd":"$50","tvl":"$511,536","router":"Enso","safety":55,"durability":52,"exit":57,"confidence":40,"flags":["Unaudited","< 180 days live"]}],"total_usd":"$250","blended_apy":"~54.8%","chains":4,"weighted_sentinel":49,"risk_mix":{"low":0,"medium":1,"high":4},"combined_tvl":"$9M"}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["b293cc83-cc72-475a-82a0-e3969c8296b8"],"elapsed_ms":4,"steps":2}
+
+event: done
+data: {}
+

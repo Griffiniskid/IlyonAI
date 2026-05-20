@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"95d762fd-d0ec-4808-9d59-be5b57e03bb6","card_type":"invariant_violation","payload":{"kind":"invariant_violation","original_card_type":"execution_plan_v3","original_card_id":"95d762fd-d0ec-4808-9d59-be5b57e03bb6","violations":[{"id":"I1","sev":"P0","detail":"Step 0 has status='ready' and no blocker_codes, but transaction is null. A signable plan must not emit null-tx steps without an explicit blocker.","locator":"steps[0].transaction"}],"message":"This card violated a runtime safety invariant and was refused before emission. The original payload has been logged for review. Please re-issue the request with an explicit verb form."}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["95d762fd-d0ec-4808-9d59-be5b57e03bb6"],"elapsed_ms":0,"steps":2}
+
+event: done
+data: {}
+

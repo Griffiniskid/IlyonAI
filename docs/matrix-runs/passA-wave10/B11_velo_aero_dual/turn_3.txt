@@ -1,0 +1,24 @@
+event: thought
+data: {"step_index":1,"content":"Parsed liquidity-pool search: {\"chain\": \"ethereum\", \"token_a\": \"USDC\", \"token_b\": \"WETH\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Resolving pair defaults and chain scope before searching DEX liquidity."}
+
+event: thought
+data: {"step_index":3,"content":"Ranking pools by liquidity depth, route availability, and exit practicality."}
+
+event: thought
+data: {"step_index":4,"content":"Flagging pool-selection caveats such as pair fragmentation and impermanent-loss exposure."}
+
+event: tool
+data: {"step_index":4,"name":"find_liquidity_pool","args":{"token_a":"USDC","token_b":"WETH","chain":"ethereum"}}
+
+event: observation
+data: {"step_index":4,"name":"find_liquidity_pool","ok":true,"error":null}
+
+event: final
+data: {"content":"I couldn't complete that \u2014 **TOOL_TIMEOUT**: Tool 'find_liquidity_pool' exceeded its 20s SLO. Upstream call (RPC / Enso / DefiLlama / aggregator) hung \u2014 no execution plan emitted. Retry or pick a different route.","card_ids":[],"elapsed_ms":34108,"steps":4}
+
+event: done
+data: {}
+

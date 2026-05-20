@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Please connect your MetaMask (or any EVM wallet) to Ethereum mainnet so I can submit the bridge\u2011and\u2011supply transaction. Once connected, I\u2019ll execute the five\u2011step plan: approve LI.FI, bridge 100\u202fDAI to Polygon, approve Aave V3 Polygon Pool, deposit wDAI, and you\u2019ll receive aDAI. \n\n**Risk:** MEDIUM (bridge + Aave) \n**Strategy fit:** BALANCED \u2013 stablecoin yield. \n**Safety tip:** Verify contract addresses before approving and keep a small MATIC balance for Polygon gas.","card_ids":[],"elapsed_ms":11166,"steps":3}
+
+event: done
+data: {}
+

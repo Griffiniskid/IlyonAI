@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To bridge\u202f0.1\u202fWETH from Ethereum to Arbitrum and then deposit it into the Yearn\u202fWETH vault, I need an EVM wallet address (e.g., MetaMask) to build the deBridge transaction. Please connect your wallet and resend the request.\n\nI don\u2019t have the live APY for the Yearn\u202fWETH vault on Arbitrum in my current data set. You can view the up\u2011to\u2011date rate directly on Yearn.finance or via its DefiLlama pool page. (Yearn vaults are generally considered HIGH\u2011risk.)","card_ids":[],"elapsed_ms":16425,"steps":3}
+
+event: done
+data: {}
+

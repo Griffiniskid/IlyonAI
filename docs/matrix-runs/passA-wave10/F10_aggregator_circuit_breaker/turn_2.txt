@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Yes \u2014 the 1,000,000\u202fUSDC \u2192 ETH swap on Base is still blocked because it exceeds the aggregator\u2019s $500\u202fK size cap. You\u2019ll need to split the trade or add\u202fextra.confirm_megaswap=true\u202ffor a manual mega\u2011swap review.","card_ids":[],"elapsed_ms":12742,"steps":3}
+
+event: done
+data: {}
+
