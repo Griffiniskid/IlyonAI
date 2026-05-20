@@ -1,0 +1,36 @@
+event: thought
+data: {"step_index":1,"content":"Parsed constraint-aware DeFi search: {\"chains\": [\"ethereum\"], \"execution_requested\": true, \"limit\": 8, \"product_types\": [\"pool\"], \"ranking_objective\": \"execution_ready_strategy\", \"risk_levels\": []}."}
+
+event: thought
+data: {"step_index":2,"content":"Separating research, allocation, and execution intent before selecting a tool."}
+
+event: thought
+data: {"step_index":3,"content":"Applying hard APY, risk, chain, and TVL filters from the user's exact request."}
+
+event: thought
+data: {"step_index":4,"content":"Checking execution readiness separately so unsupported pools never get fake signing buttons."}
+
+event: tool
+data: {"step_index":4,"name":"search_defi_opportunities","args":{"risk_levels":[],"product_types":["pool"],"chains":["ethereum"],"ranking_objective":"execution_ready_strategy","execution_requested":true,"limit":8}}
+
+event: observation
+data: {"step_index":4,"name":"search_defi_opportunities","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Parsed constraints: risk=any, target_apy=None, apy_band=(0.0, 10000.0)."}
+
+event: thought
+data: {"step_index":6,"content":"Queried DefiLlama with min_tvl=$10,000 and min_apy=0.0 instead of the legacy $200M/0.5% staking defaults."}
+
+event: thought
+data: {"step_index":7,"content":"Ranked 20092 candidates by execution_ready_strategy; 7 matched the hard constraints and 25 were excluded."}
+
+event: card
+data: {"step_index":7,"card_id":"b9b45348-c6ff-4c89-b616-6c44ac029144","card_type":"defi_opportunities","payload":{"objective":"execution_ready_strategy","target_apy":null,"apy_band":[0.0,10000.0],"risk_levels":[],"chains":["ethereum"],"execution_requested":true,"items":[{"protocol":"sky-lending","symbol":"SUSDS","chain":"ethereum","product_type":"pool","apy":3.65,"apy_base":3.65,"apy_reward":0.0,"tvl_usd":5823846611.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/d8c4eff5-c8a9-46fc-a888-057c4c668e72"},{"label":"sky-lending on DefiLlama","url":"https://defillama.com/protocol/sky-lending"}],"pool_id":"d8c4eff5-c8a9-46fc-a888-057c4c668e72"},{"protocol":"rocket-pool","symbol":"RETH","chain":"ethereum","product_type":"pool","apy":1.99201,"apy_base":1.99201,"apy_reward":0.0,"tvl_usd":2893970567.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/d4b3c522-6127-4b89-bedf-83641cdcd2eb"},{"label":"Open in rocket-pool","url":"https://stake.rocketpool.net"}],"pool_id":"d4b3c522-6127-4b89-bedf-83641cdcd2eb"},{"protocol":"sky-lending","symbol":"WETH","chain":"ethereum","product_type":"pool","apy":0.0,"apy_base":0.0,"apy_reward":0.0,"tvl_usd":961065485.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/51d2f8d4-1fb5-4f6b-938b-e9cd17ca1ceb"},{"label":"sky-lending on DefiLlama","url":"https://defillama.com/protocol/sky-lending"}],"pool_id":"51d2f8d4-1fb5-4f6b-938b-e9cd17ca1ceb"},{"protocol":"sky-lending","symbol":"SDAI","chain":"ethereum","product_type":"pool","apy":1.25,"apy_base":1.25,"apy_reward":0.0,"tvl_usd":236126285.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/c8a24fee-ec00-4f38-86c0-9f6daebc4225"},{"label":"sky-lending on DefiLlama","url":"https://defillama.com/protocol/sky-lending"}],"pool_id":"c8a24fee-ec00-4f38-86c0-9f6daebc4225"},{"protocol":"sky-lending","symbol":"WSTETH","chain":"ethereum","product_type":"pool","apy":0.0,"apy_base":0.0,"apy_reward":0.0,"tvl_usd":231715777.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/ccc467d1-bdf5-4062-81cd-7aed7dd9050b"},{"label":"sky-lending on DefiLlama","url":"https://defillama.com/protocol/sky-lending"}],"pool_id":"ccc467d1-bdf5-4062-81cd-7aed7dd9050b"},{"protocol":"fluid-lending","symbol":"WSTETH","chain":"ethereum","product_type":"pool","apy":0.05,"apy_base":0.05,"apy_reward":0.0,"tvl_usd":203798292.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/69b12bf9-edb6-46d9-b5bc-761cf9efe137"},{"label":"fluid-lending on DefiLlama","url":"https://defillama.com/protocol/fluid-lending"}],"pool_id":"69b12bf9-edb6-46d9-b5bc-761cf9efe137"},{"protocol":"fluid-lending","symbol":"USDC","chain":"ethereum","product_type":"pool","apy":4.95,"apy_base":3.96,"apy_reward":0.99,"tvl_usd":201528388.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/4438dabc-7f0c-430b-8136-2722711ae663"},{"label":"fluid-lending on DefiLlama","url":"https://defillama.com/protocol/fluid-lending"}],"pool_id":"4438dabc-7f0c-430b-8136-2722711ae663"}],"excluded_count":25,"blockers":[]}}
+
+event: final
+data: {"content":"**Constraint-Matched DeFi Opportunities**\n\n1. **Sky Lending** \u2014 SUSDS on ethereum \n APY 3.6% \u00b7 TVL $5,823,846,611 \u00b7 Risk LOW\n Links: [DefiLlama pool](https://defillama.com/yields/pool/d8c4eff5-c8a9-46fc-a888-057c4c668e72) \u00b7 [Protocol on DefiLlama](https://defillama.com/protocol/sky-lending)\n Execution: ready via deterministic\n\n2. **Rocket Pool** \u2014 RETH on ethereum \n APY 2.0% \u00b7 TVL $2,893,970,567 \u00b7 Risk LOW\n Links: [DefiLlama pool](https://defillama.com/yields/pool/d4b3c522-6127-4b89-bedf-83641cdcd2eb)\n Execution: ready via deterministic\n\n3. **Sky Lending** \u2014 WETH on ethereum \n APY 0.0% \u00b7 TVL $961,065,485 \u00b7 Risk LOW\n Links: [DefiLlama pool](https://defillama.com/yields/pool/51d2f8d4-1fb5-4f6b-938b-e9cd17ca1ceb) \u00b7 [Protocol on DefiLlama](https://defillama.com/protocol/sky-lending)\n Execution: ready via deterministic\n\n4. **Sky Lending** \u2014 SDAI on ethereum \n APY 1.2% \u00b7 TVL $236,126,285 \u00b7 Risk LOW\n Links: [DefiLlama pool](https://defillama.com/yields/pool/c8a24fee-ec00-4f38-86c0-9f6daebc4225) \u00b7 [Protocol on DefiLlama](https://defillama.com/protocol/sky-lending)\n Execution: ready via deterministic\n\n5. **Sky Lending** \u2014 WSTETH on ethereum \n APY 0.0% \u00b7 TVL $231,715,777 \u00b7 Risk LOW\n Links: [DefiLlama pool](https://defillama.com/yields/pool/ccc467d1-bdf5-4062-81cd-7aed7dd9050b) \u00b7 [Protocol on DefiLlama](https://defillama.com/protocol/sky-lending)\n Execution: ready via deterministic\n\nExcluded 25 candidates that violated the requested risk, APY, chain, or TVL constraints.\n\nExecution readiness: 7 candidate(s) have adapter support.","card_ids":["b9b45348-c6ff-4c89-b616-6c44ac029144"],"elapsed_ms":16798,"steps":7}
+
+event: done
+data: {}
+

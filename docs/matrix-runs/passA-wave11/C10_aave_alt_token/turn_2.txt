@@ -1,0 +1,36 @@
+event: thought
+data: {"step_index":1,"content":"Parsed constraint-aware DeFi search: {\"chains\": [\"polygon\"], \"limit\": 8, \"max_apy\": 10000.0, \"min_apy\": 0.0, \"product_types\": [\"lending\"], \"ranking_objective\": \"highest_sentinel_score\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Separating research, allocation, and execution intent before selecting a tool."}
+
+event: thought
+data: {"step_index":3,"content":"Applying hard APY, risk, chain, and TVL filters from the user's exact request."}
+
+event: thought
+data: {"step_index":4,"content":"Checking execution readiness separately so unsupported pools never get fake signing buttons."}
+
+event: tool
+data: {"step_index":4,"name":"search_defi_opportunities","args":{"min_apy":0.0,"max_apy":10000.0,"chains":["polygon"],"ranking_objective":"highest_sentinel_score","product_types":["lending"],"limit":8}}
+
+event: observation
+data: {"step_index":4,"name":"search_defi_opportunities","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Parsed constraints: risk=any, target_apy=None, apy_band=(0.0, 10000.0)."}
+
+event: thought
+data: {"step_index":6,"content":"Queried DefiLlama with min_tvl=$10,000 and min_apy=0.0 instead of the legacy $200M/0.5% staking defaults."}
+
+event: thought
+data: {"step_index":7,"content":"Ranked 20094 candidates by highest_sentinel_score; 8 matched the hard constraints and 25 were excluded."}
+
+event: card
+data: {"step_index":7,"card_id":"5635294c-7b30-4404-bd67-f67cc860167f","card_type":"defi_opportunities","payload":{"objective":"highest_sentinel_score","target_apy":null,"apy_band":[0.0,10000.0],"risk_levels":[],"chains":["polygon"],"execution_requested":false,"items":[{"protocol":"morpho-blue","symbol":"RE7WPOL","chain":"polygon","product_type":"lending","apy":49.33156,"apy_base":49.33156,"apy_reward":0.0,"tvl_usd":11027.0,"volume_24h_usd":null,"risk_level":"HIGH","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/466d34d6-cd46-4bcc-b5ef-cc7ecffb3e15"},{"label":"Open in morpho-blue","url":"https://app.morpho.org"}],"pool_id":"466d34d6-cd46-4bcc-b5ef-cc7ecffb3e15"},{"protocol":"compound-v3","symbol":"USDC","chain":"polygon","product_type":"lending","apy":11.27112,"apy_base":11.27112,"apy_reward":0.0,"tvl_usd":160324.0,"volume_24h_usd":null,"risk_level":"HIGH","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/a17d8b32-48cb-4446-aad7-ed4278f144e0"},{"label":"Open in compound-v3","url":"https://app.compound.finance"}],"pool_id":"a17d8b32-48cb-4446-aad7-ed4278f144e0"},{"protocol":"morpho-blue","symbol":"","chain":"polygon","product_type":"lending","apy":9.94897,"apy_base":9.94897,"apy_reward":0.0,"tvl_usd":50070.0,"volume_24h_usd":null,"risk_level":"HIGH","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/50bf9400-a4dc-4f5c-babf-cd858bb52fa7"},{"label":"Open in morpho-blue","url":"https://app.morpho.org"}],"pool_id":"50bf9400-a4dc-4f5c-babf-cd858bb52fa7"},{"protocol":"morpho-blue","symbol":"BBQUSDC","chain":"polygon","product_type":"lending","apy":9.46008,"apy_base":9.46008,"apy_reward":0.0,"tvl_usd":44984.0,"volume_24h_usd":null,"risk_level":"HIGH","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/7f819670-f133-4d88-ac17-962d9a9d29a9"},{"label":"Open in morpho-blue","url":"https://app.morpho.org"}],"pool_id":"7f819670-f133-4d88-ac17-962d9a9d29a9"},{"protocol":"morpho-blue","symbol":"BBQUSDT0","chain":"polygon","product_type":"lending","apy":5.1012,"apy_base":5.1012,"apy_reward":0.0,"tvl_usd":204167.0,"volume_24h_usd":null,"risk_level":"HIGH","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/b3daa975-cf6d-40ba-bf2a-f197d95458ac"},{"label":"Open in morpho-blue","url":"https://app.morpho.org"}],"pool_id":"b3daa975-cf6d-40ba-bf2a-f197d95458ac"},{"protocol":"aave-v3","symbol":"DAI","chain":"polygon","product_type":"lending","apy":5.03693,"apy_base":5.03693,"apy_reward":0.0,"tvl_usd":631577.0,"volume_24h_usd":null,"risk_level":"HIGH","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/c57bdc97-3100-41ff-845f-075363f6f5a4"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"c57bdc97-3100-41ff-845f-075363f6f5a4"},{"protocol":"morpho-blue","symbol":"COMPUSDC","chain":"polygon","product_type":"lending","apy":3.36296,"apy_base":3.36296,"apy_reward":0.0,"tvl_usd":1548161.0,"volume_24h_usd":null,"risk_level":"MEDIUM","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/bab5837b-cbe2-4fec-ac8a-f3362c7ac1d5"},{"label":"Open in morpho-blue","url":"https://app.morpho.org"}],"pool_id":"bab5837b-cbe2-4fec-ac8a-f3362c7ac1d5"},{"protocol":"aave-v3","symbol":"USDC","chain":"polygon","product_type":"lending","apy":3.24271,"apy_base":3.24271,"apy_reward":0.0,"tvl_usd":533667.0,"volume_24h_usd":null,"risk_level":"HIGH","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/37b04faa-95bb-4ccb-9c4e-c70fa167342b"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"37b04faa-95bb-4ccb-9c4e-c70fa167342b"}],"excluded_count":25,"blockers":[]}}
+
+event: final
+data: {"content":"**Constraint-Matched DeFi Opportunities**\n\n1. **Morpho Blue** \u2014 RE7WPOL on polygon \n APY 49.3% \u00b7 TVL $11,027 \u00b7 Risk HIGH\n Links: [DefiLlama pool](https://defillama.com/yields/pool/466d34d6-cd46-4bcc-b5ef-cc7ecffb3e15)\n Execution: ready via deterministic\n\n2. **Compound V3** \u2014 USDC on polygon \n APY 11.3% \u00b7 TVL $160,324 \u00b7 Risk HIGH\n Links: [DefiLlama pool](https://defillama.com/yields/pool/a17d8b32-48cb-4446-aad7-ed4278f144e0)\n Execution: ready via deterministic\n\n3. **Morpho Blue** \u2014 Unknown on polygon \n APY 9.9% \u00b7 TVL $50,070 \u00b7 Risk HIGH\n Links: [DefiLlama pool](https://defillama.com/yields/pool/50bf9400-a4dc-4f5c-babf-cd858bb52fa7)\n Execution: ready via deterministic\n\n4. **Morpho Blue** \u2014 BBQUSDC on polygon \n APY 9.5% \u00b7 TVL $44,984 \u00b7 Risk HIGH\n Links: [DefiLlama pool](https://defillama.com/yields/pool/7f819670-f133-4d88-ac17-962d9a9d29a9)\n Execution: ready via deterministic\n\n5. **Morpho Blue** \u2014 BBQUSDT0 on polygon \n APY 5.1% \u00b7 TVL $204,167 \u00b7 Risk HIGH\n Links: [DefiLlama pool](https://defillama.com/yields/pool/b3daa975-cf6d-40ba-bf2a-f197d95458ac)\n Execution: ready via deterministic\n\nExcluded 25 candidates that violated the requested risk, APY, chain, or TVL constraints.","card_ids":["5635294c-7b30-4404-bd67-f67cc860167f"],"elapsed_ms":2488,"steps":7}
+
+event: done
+data: {}
+

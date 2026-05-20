@@ -9094,6 +9094,16 @@ async def run_ephemeral_turn(
             tool_result = None
             for tool in tools:
                 if tool.name == tool_name:
+                    # Wave-12 — always thread the original user prompt
+                    # through `extra.user_message` so downstream guards
+                    # (build_yield_execution_plan verb-inversion guard,
+                    # execute_pool_position verb-guard, etc.) can detect
+                    # LLM context-bleed where the dispatcher silently
+                    # rewrites action verbs (e.g. Exit → deposit_lp).
+                    if isinstance(tool_input, dict):
+                        _extra = dict(tool_input.get("extra") or {})
+                        _extra.setdefault("user_message", message)
+                        tool_input = {**tool_input, "extra": _extra}
                     collector._queue.append(ToolFrame(
                         step_index=collector._step,
                         name=tool_name,

@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"eef5d7ef-466d-4691-853b-955d8dcbe1dc","card_type":"allocation","payload":{"sentinel":null,"shield":null,"positions":[{"rank":1,"protocol":"morpho-blue","asset":"RE7WPOL","chain":"polygon","apy":"49.3%","sentinel":46,"risk":"high","fit":"aggressive","weight":20,"usd":"$200","tvl":"$11,027","router":"Enso","safety":55,"durability":34,"exit":45,"confidence":40,"flags":["Unaudited","< 180 days live","Elevated APY vs. peers"]},{"rank":2,"protocol":"compound-v3","asset":"USDC","chain":"polygon","apy":"11.3%","sentinel":56,"risk":"high","fit":"aggressive","weight":20,"usd":"$200","tvl":"$160,324","router":"Enso","safety":55,"durability":65,"exit":57,"confidence":40,"flags":["Unaudited","< 180 days live"]},{"rank":3,"protocol":"morpho-blue","asset":"?","chain":"polygon","apy":"9.9%","sentinel":51,"risk":"high","fit":"aggressive","weight":20,"usd":"$200","tvl":"$50,070","router":"Enso","safety":55,"durability":55,"exit":45,"confidence":40,"flags":["Unaudited","< 180 days live"]},{"rank":4,"protocol":"morpho-blue","asset":"BBQUSDC","chain":"polygon","apy":"9.5%","sentinel":56,"risk":"high","fit":"aggressive","weight":20,"usd":"$200","tvl":"$44,984","router":"Enso","safety":55,"durability":65,"exit":57,"confidence":40,"flags":["Unaudited","< 180 days live"]},{"rank":5,"protocol":"morpho-blue","asset":"BBQUSDT0","chain":"polygon","apy":"5.1%","sentinel":56,"risk":"high","fit":"aggressive","weight":20,"usd":"$200","tvl":"$204,167","router":"Enso","safety":55,"durability":65,"exit":57,"confidence":40,"flags":["Unaudited","< 180 days live"]}],"total_usd":"$1,000","blended_apy":"~17.0%","chains":1,"weighted_sentinel":53,"risk_mix":{"low":0,"medium":0,"high":5},"combined_tvl":"$0"}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["eef5d7ef-466d-4691-853b-955d8dcbe1dc"],"elapsed_ms":1,"steps":2}
+
+event: done
+data: {}
+
