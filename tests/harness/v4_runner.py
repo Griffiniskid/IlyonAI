@@ -109,6 +109,13 @@ def main() -> int:
     ap.add_argument("--force", action="store_true", help="overwrite existing captures")
     ap.add_argument("--delay", type=float, default=1.5, help="seconds between turns")
     ap.add_argument("--start-from", help="skip all chains before this chain_id (alphabetical)")
+    ap.add_argument(
+        "--parallel",
+        type=int,
+        default=1,
+        help="run N chains concurrently (wave 8 infra: BUG-M01 singleton "
+        "fix makes parallel runs stable. Recommended: 6-9. 1 = sequential.)",
+    )
     args = ap.parse_args()
 
     if args.list:
@@ -130,8 +137,28 @@ def main() -> int:
     OUT_ROOT.mkdir(parents=True, exist_ok=True)
     if args.start_from:
         chains = [c for c in chains if c.id >= args.start_from]
-    for ch in chains:
-        run_chain(ch, delay_between_turns=args.delay, force=args.force)
+
+    if args.parallel <= 1:
+        for ch in chains:
+            run_chain(ch, delay_between_turns=args.delay, force=args.force)
+    else:
+        # Wave 8 — parallel matrix fire. Each worker runs N chains
+        # sequentially in its own thread to preserve per-chain session_id
+        # ordering. BUG-M01 (singleton aiohttp ClientSession) fix in wave 5
+        # makes concurrent requests stable.
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        chunk_size = max(1, len(chains) // args.parallel)
+        chunks = [chains[i:i + chunk_size] for i in range(0, len(chains), chunk_size)]
+        print(f"\n=== Parallel run: {len(chunks)} workers × ~{chunk_size} chains each\n")
+        def worker(chunk):
+            for ch in chunk:
+                run_chain(ch, delay_between_turns=args.delay, force=args.force)
+            return len(chunk)
+        with ThreadPoolExecutor(max_workers=args.parallel) as pool:
+            futures = [pool.submit(worker, chunk) for chunk in chunks]
+            for f in as_completed(futures):
+                _ = f.result()
+        print(f"\n=== Parallel run complete: {sum(len(c) for c in chunks)} chains\n")
     return 0
 
 
