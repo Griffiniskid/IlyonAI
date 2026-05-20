@@ -98,15 +98,32 @@ class StreamCollector(AsyncCallbackHandler):
         path (allocation / strategy / freeform fallback) returns a
         response that opens with thinking-style prose.
 
+        Wave 4 widened the regex and wired this chokepoint. Wave 5 added
+        the body-scan complement (catches leaks AFTER the first markdown
+        table — A01 t3 4 kB worksheet, B14 t4 700-char monologue) AND a
+        freeform-tx-state-hallucination guard (refuses prose that claims
+        `transaction is ready` / `has been executed` / `Current tx: 0x…`
+        when no signable execution-plan card backs it — H02 t2 fabricated
+        tx hash, F10 t4 "swap has been executed", E10 t2 "submitted",
+        A15 t1/t2 "Your Swell Supply transaction is ready", G08 T2
+        "**Aave V3 · Supply** — Asset: USDC", I05 t1 hallucinated Kernel
+        impl-address narrative).
+
         Defensively strip at the streaming chokepoint so every code path
         that reaches ``emit_final`` is protected regardless of which
-        composition path produced it. The strip function preserves
-        markdown structure (tables, headings, lists) — only leading
-        scratchpad paragraphs and trailing meta-commentary are removed.
+        composition path produced it. The strip functions preserve
+        markdown structure (tables, headings, lists) — only scratchpad
+        paragraphs and unbacked tx-state assertions are removed.
         """
         try:
-            from src.agent.simple_runtime import _strip_strategy_scratchpad
+            from src.agent.simple_runtime import (
+                _strip_freeform_tx_state_hallucinations,
+                _strip_strategy_scratchpad,
+            )
             content = _strip_strategy_scratchpad(content)
+            content = _strip_freeform_tx_state_hallucinations(
+                content, card_ids=card_ids
+            )
         except Exception:  # noqa: BLE001
             # Fail-open: never let the sanitizer crash the final emit.
             pass

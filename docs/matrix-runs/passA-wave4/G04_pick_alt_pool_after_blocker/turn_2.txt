@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t confirm that action without a deterministic Sentinel tool producing the calldata. Please use an explicit verb form, for example:\n\n- **Supply 100 USDC to Aave V3 on Ethereum**\n- **Stake 100 USDC in a specific vault** (provide the vault name or address)\n\nThe deterministic adapters will then generate a signable Execution Plan card. Let me know which pool or protocol you\u2019d like to use, and I\u2019ll prepare the plan.","card_ids":[],"elapsed_ms":25994,"steps":3}
+
+event: done
+data: {}
+

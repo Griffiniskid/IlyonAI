@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Confirmed: fallback to Aave\u202fV3 on Base for supplying 100\u202fUSDC. Would you like me to generate the signable Supply transaction for that plan?","card_ids":[],"elapsed_ms":4902,"steps":3}
+
+event: done
+data: {}
+

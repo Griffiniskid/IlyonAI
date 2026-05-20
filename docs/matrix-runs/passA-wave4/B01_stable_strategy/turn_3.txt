@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed swap intent: {\"amount\": \"2\", \"chain\": \"optimism\", \"token_in\": \"OPTION\", \"token_out\": \"CHOICE\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Resolving token pair, chain, and amount before requesting a route quote."}
+
+event: thought
+data: {"step_index":3,"content":"Checking quote quality: route source, expected output, price impact, gas, and slippage assumptions."}
+
+event: thought
+data: {"step_index":4,"content":"Preparing wallet-safe signing guidance; the agent never touches private keys."}
+
+event: tool
+data: {"step_index":4,"name":"simulate_swap","args":{"token_in":"OPTION","token_out":"CHOICE","amount":"2","chain":"optimism"}}
+
+event: observation
+data: {"step_index":4,"name":"simulate_swap","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated quote output and price impact (0.1%) before presenting the swap card."}
+
+event: card
+data: {"step_index":5,"card_id":"7ec993b6-b667-4505-b0ca-f9540884cfa4","card_type":"swap_quote","payload":{"pay":{"token":"OPTION","amount":"2","symbol":"OPTION"},"receive":{"token":"CHOICE","amount":"212.896977","symbol":"CHOICE"},"rate":"1 OPTION \u2248 106.448489 CHOICE","router":"Multi-DEX (via DexScreener)","price_impact_pct":0.1,"sentinel":{"sentinel":62,"safety":57,"durability":62,"exit":67,"confidence":52,"risk_level":"HIGH","strategy_fit":"aggressive","flags":["Unrecognized router"]},"shield":{"verdict":"RISKY","grade":"C","reasons":["Unrecognized spender"]}}}
+
+event: final
+data: {"content":"**Swap Quote \u2014 2 OPTION \u2192 CHOICE**\n\nEstimated receive: **~212.896977 CHOICE**\nRate: 1 OPTION \u2248 106.448489 CHOICE\nPrice impact: 0.1%\nRoute: Multi-DEX (via DexScreener) (optimism)\n\n*Estimate only; sign inside your wallet to confirm slippage and gas.*","card_ids":["7ec993b6-b667-4505-b0ca-f9540884cfa4"],"elapsed_ms":393,"steps":5}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t produce a signature or signable calldata without a deterministic Sentinel tool and an explicit action (e.g., \u201cSupply 100 USDC to Aave V3 on Base\u201d or \u201cBridge 50 USDC from Ethereum to Polygon via deBridge\u201d). Provide the specific transaction you want to sign, and I\u2019ll generate the Execution Plan card with the signable data.","card_ids":[],"elapsed_ms":10329,"steps":3}
+
+event: done
+data: {}
+

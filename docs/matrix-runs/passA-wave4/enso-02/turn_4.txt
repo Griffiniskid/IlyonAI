@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Go to Enso, confirm the approval for\u202f50\u202fARB and\u202f\u22480.0306\u202fETH, then submit the \u201cIncrease liquidity\u201d transaction. Keep slippage low (~0.5%) and verify the Uniswap\u202fV3 ARB/ETH\u202f0.3% pool address on Arbitrum before signing. Once confirmed on\u2011chain, your position will be updated.","card_ids":[],"elapsed_ms":4978,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t estimate the swap because XYZ123 isn\u2019t a recognized token on Base\u2014I need its contract address or a widely\u2011used symbol (like USDC, WETH, etc.) to fetch a live price and check liquidity. Once you provide that, I can give you the receive amount for 100\u202fXYZ123 \u2192 USDC/USDT.","card_ids":[],"elapsed_ms":5654,"steps":3}
+
+event: done
+data: {}
+

@@ -351,6 +351,72 @@ See `docs/matrix-runs/passA-wave1/findings-{A,B,C,D,E,F,G,H,I}.md` for per-chain
 
 ---
 
+## Matrix Pass A — Wave 4 Δ (HEAD `231c299` → wave-4 captures)
+
+Sequential 532-capture run on staging at HEAD `231c299` (scratchpad-strip
+CHOKEPOINT at `StreamCollector.emit_final` + widened
+`_STRATEGY_SCRATCHPAD_LEAD_RE` + ERC4626/Aave-WTG3 `withdraw(0)` drain
+guards). 9 reviewers hand-read all 9 categories vs wave-3 baseline.
+
+**Closed (wave-3 → wave-4):**
+- D-P1-14a Yearn ERC-4626 `withdraw(amount=0)` drain — refused unless `extra.withdraw_all=true`; description correctly reads "Withdraw ALL" when MAX_UINT256.
+- D-P1-14b Aave V3 WTG3 `withdrawETH(0)` same drain — refused.
+- D-P0-08 borrow verb router — D08 t1 routes correctly to `action=borrow` + WTG3 `approveDelegation` + `borrowETH(0x66514c97…)` (partial; repay still untested).
+- C-N-03 scratchpad bleed in C-category — verified clean across C05/C07/C13/C14/C15.
+- G-STILL-08 raw JSON tail / brace leak — clean across G01 T3/T4 + G03 T3.
+- G-STILL-05 three-source divergence on G06 T2 — card/prose/footer now agree.
+- BUG-F-01..F-04 lowercase blocker codes — all UPPER_SNAKE; plan-side normalizer live.
+- BUG-F-05 err_envelope path codes — `**NULL_ROUTE**`/`**AGGREGATOR_CIRCUIT_BREAKER**` surfaced normalized.
+- BUG-E-002 deBridge guest-guard — holds + expanded to 6 chains; no HTTP 400 leak.
+- BUG-E-001 Pattern B parser preserves `extra.source_chain` — 6/10 chains.
+- H02 t4 cardinal sentinel-gate refusal fires.
+- H10 t2 Lido wrong-selector calldata — clean refuse.
+
+**Mutated (worse or relocated):**
+- **CARDINAL — H02 cardinal hallucinated tx hash MOVED t4 → t2** (`0x3a9f…c1e2 Pending ~12 s`) — chokepoint regex only fires on lead-strings; doesn't body-scan tx-hash patterns. Same defect, different turn.
+- **BUG-E-010 raw CoT leak — MUTATED CHANNEL** (thought → final.content). Wave-4 chokepoint stripped `thought` channel only; E06 t1 `final.content` still bleeds 50+ lines.
+- **A01 t3 scratchpad leak WORSE** — 4 kB leak AFTER markdown table. Lead-anchored sanitizer stopped at first `|` table row.
+- **A15 t1+t2 narrated fake tx ESCALATED** — t2 now claims "Your Swell Supply transaction for 0.05 ETH is ready" with `card_ids:[]`. P1 → P0.
+- **B09 t4 cached-pool-bypass MUTATED** — now also emits hallucinated morpho-blue slugs (`ADPUSDC` + `CSYUSDC`) with byte-identical real signed approval calldata.
+- **C12 T4 PancakeSwap V3 token0/token1 ADDRESS↔SYMBOL inversion** — wave-3 P1 mutated to P0; signable calldata reaches user with addresses not matching symbols.
+- **D-P1-11b continuation re-emit WORSE** — now re-emits full kamino `obligation/lendingMarket/lendingMarketAuthority/reserve/reserveSourceColl` payload, doubling internal-account-list exposure.
+- **G-MUTATED-04 TOOL_TIMEOUT REGRESSION** — wave-3 had 0/40 on Aave V3 first-call; wave-4 has 6/40 first-call timeouts.
+- **NEW-I-01 card↔narrative divergence WORSE** — I02 t3 narrative claims `$100 daily across 8 pools` while card has 5 positions × $200 = $1,000 and APYs disagree.
+
+**New surface (wave-4 only):**
+- **NEW-P0-F-01 / F-02 / F-03** — F10 t4 "swap has been executed", F10 t3 hallucinated quote, F06+F08 t1 `build_yield_execution_plan` 45s SLO regression (was 6ms at wave-3 on same intent).
+- **D-P0-10** Balancer `exit_pool` → `action=deposit_lp` — drain-equivalent (would deposit instead of withdraw).
+- **H-NEW-01 parser regression** — H08/H13 parse "Supply 100 USDC to Aave V3 on Base" as `asset_in:"BASE", chain:"base"`; wave-3 fix re-opened.
+- **H-NEW-03 cross-chain spender leak in freeform** — H08 t3 pairs Base USDC token with Ethereum Aave Pool spender; mixed-chain calldata.
+- **MUTATED-02 H15 wallet-balance infra FULLY RE-OPENED** — wave-3 had this CLOSED; wave-4 hits 45s + 90s SLO + `rate_limited`.
+- **NEW-P0-F-01 freeform tx-state fabrication** observed across A15/B (B11 t4 100% WETH-KELLYCLAUDE recommendation outside alloc)/E10 t2/F10 t3/t4/G08 T2/H02 t2/H09 t2/H14 t3/t4/I05 t1 — clear cross-cluster pattern requiring chokepoint body-scan.
+- **NEW-I-04 hallucinated Kernel impl-address narrative** — I05 t1 invents contract + promises post-sign behavior.
+- **NEW-I-05 spurious allocation card on session-key turn** — I02 t3.
+
+**Net P0 across all cats:** wave-3 ~43 → wave-4 ~45 (3 closed by drain-guards, +5 new freeform fabrications, +1 from PancakeSwap V3 inversion, ~3 from cross-chain regressions). Net P1 ~85 → ~95 (timeout cluster expanded, several P1 escalated to P0).
+
+## Matrix Pass A — Wave 5 fix (commit pending)
+
+Cross-cluster fix shipping in this wave:
+
+#### BUG-W5-01 — Freeform tx-state hallucination guard at streaming chokepoint
+- **Surfaced by**: passA-wave4/A15/B14/E06/E10/F10/G08/H02/H09/I05 + many neighbours.
+- **Severity**: P0 (financial-state fabrication — claims to user that swaps are executed / transactions are ready / approvals are set / tx hash exists, when no signable card backs the claim).
+- **Spec reference**: §11 D.7 (no fabricated execution state) + §6 (signable plans only via deterministic adapters).
+- **Root cause**: `_strip_unbacked_claims` upstream had three gaps: (a) `_UNBACKED_FAKE_TX_RE` required backticks around truncated hashes (`0x3a9f…c1e2` form bypassed); (b) all non-scratchpad regexes were gated on `has_real_card=False`, but any same-turn research/quote card sets `has_queued_card=True` and bypasses the gate even when prose makes tx-state claims that no research card can back; (c) new wave-4 patterns ("**Protocol · Verb** —" structured headers, "transaction for X is ready", "has been executed", "track its progress on BaseScan", "impl address you just created", "Once confirmed X will be supplied") weren't covered by any existing regex.
+- **Fix**: `src/agent/simple_runtime.py` — added `_FREEFORM_TX_STATE_HALLUCINATION_RE` covering 12 observed wave-4 leak shapes + `_strip_freeform_tx_state_hallucinations(text, *, card_ids)` function. Wired into `src/agent/streaming.py::StreamCollector.emit_final` via `card_ids` arg so EVERY producer path is protected (composed_plan/cross_chain/handle_freeform/simple_runtime fallback) regardless of which intent handler ran. When fires: replaces content with canonical refusal pointing to deterministic verb form.
+- **Pin test**: `tests/defi/test_freeform_tx_state_guard_wave5.py` — 19/19; covers H02/A15/E10/F10/G08/I05/C05/H09 leak shapes + positive cases (backed card prose passes through) + end-to-end via StreamCollector.
+
+#### BUG-W5-02 — Scratchpad body-scan complement (lead-anchor gap)
+- **Surfaced by**: passA-wave4/A01 t3 (4 kB worksheet after alloc table) + B14 t4 (700-char "Thus we need to decide weights… Default to even split… We'll set…" mid-document).
+- **Severity**: P0 (CoT leakage exposes internal strategy/weighting logic + arithmetic worksheets to end users).
+- **Spec reference**: §11 D.8 (cryptographic audit trail — no internal deliberation in user-facing transcript).
+- **Root cause**: `_strip_strategy_scratchpad` was lead-anchored — stopped at first markdown heading/table/list-item. Leaks AFTER a markdown table never reached the regex.
+- **Fix**: `src/agent/simple_runtime.py` — added `_BODY_SCRATCHPAD_STRONG_RE` with high-confidence scratchpad-only patterns ("Plug w=…", "Compute amounts:", "Sum:", "DEFAULT to (EVEN|EQUAL|RISK)", "However we", "Thus we (need|must|should)", "The user (didn't|wants|asked)", arithmetic equalities like `14.284*6=85.704`, "Let's (assume|compute|map)", "We'll (set|allocate)", "I think it's acceptable"). Extended `_strip_strategy_scratchpad` to body-scan after lead-strip: skip code fences + table rows, find FIRST strong match, truncate from there onward.
+- **Pin test**: same file, 4 tests covering A01 t3 + B14 t4 shapes + table-row preservation + code-fence preservation.
+
+---
+
 ## Coverage delta tracker
 
 | Snapshot                       | LIVE | PARTIAL | MISSING | SKIP-OK | Source                |

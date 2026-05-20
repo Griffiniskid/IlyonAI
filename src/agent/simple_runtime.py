@@ -6038,6 +6038,147 @@ _STRATEGY_SCRATCHPAD_LEAD_RE = re.compile(
 )
 
 
+# Matrix Pass A wave 4 hand-read: A01 t3 leaked 4 kB of CoT AFTER the
+# allocation markdown table; the lead-anchored sanitizer stopped at the
+# first `|` table row and never reached the trailing scratchpad. B14 t4
+# leaked "Thus we need to decide weights… Default to even split… We'll
+# set… Now compute blended APY…" mid-document.
+#
+# This regex is the STRONG body-scan complement — fires on any non-table
+# line in the body of `final.content` matching a high-confidence
+# scratchpad shape that would only ever appear in internal CoT. Once
+# matched, everything from that line onward is truncated.
+_BODY_SCRATCHPAD_STRONG_RE = re.compile(
+    r"^(?:"
+    r"plug\s+\w+\s*=\s*\d|"           # "Plug w=14.284, w_h=14.296"
+    r"compute(?:\s+\w+){0,3}\s*[:.]|"  # "Compute amounts:" / "Compute blended"
+    r"sum(?:\s+\w+){0,2}\s*[:=]|"      # "Sum APY:" / "Sum:"
+    r"avg(?:erage)?\s*[:=]|"
+    r"default\s+to\s+(?:even|equal|risk)|"
+    r"the\s+instruction[:.]|"
+    r"output\s+format\s*[—:-]|"
+    r"however,?\s+(?:we|i|the|that)\b|"
+    r"thus\s+(?:we\s+(?:need|must|should|can)|produce[:.])|"
+    r"let'?s\s+(?:assume|compute|think|map|allocate|pick|try)|"
+    r"we'?ll\s+(?:set|use|do|map|allocate|compute|assign)|"
+    r"the\s+user\s+(?:didn'?t|did\s+not|said|wants|asked|specified|hasn'?t)|"
+    r"\d+(?:\.\d+)?\s*[*x×]\s*\d+(?:\.\d+)?\s*=\s*\d+(?:\.\d+)?|"  # "14.284*6=85.704"
+    r"i\s+think\s+it'?s\s+acceptable|"
+    r"probably\s+we\b|"
+    r"need\s+to\s+(?:decide|compute|figure|determine)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+# Matrix Pass A wave 4 hand-read: cross-category freeform fallback
+# hallucinations of TX STATE (`is ready` / `has been executed` /
+# `Current tx: 0x3a9f…c1e2` / `**Aave V3 · Supply** — Asset: USDC`)
+# when no signable card was emitted. These slip past the existing
+# `_strip_unbacked_claims` because:
+#   (a) `_UNBACKED_FAKE_TX_RE` only matches truncated tx hashes when
+#       wrapped in backticks (H02 t2 form was bare `0x3a9f…c1e2`)
+#   (b) every regex except `_UNBACKED_SCRATCHPAD_RE` is gated on
+#       `has_real_card=False`, but a same-turn research card sets
+#       `has_queued_card=True` and SKIPS the gate even when the
+#       prose makes tx-state claims that no research card can back
+#   (c) "transaction for X is ready" / "Approvals are set" /
+#       "**Protocol · Verb** —" structured headers are NEW shapes
+#       not present in any prior regex
+#
+# This regex collects all wave-4 observed tx-state phrasings. It is
+# applied at the streaming chokepoint (`StreamCollector.emit_final`)
+# with `card_ids` awareness — only fires when no execution-plan card
+# is attached, so a real signable plan's narration passes through.
+_FREEFORM_TX_STATE_HALLUCINATION_RE = re.compile(
+    # Bare truncated hash form (H02 t2: `0x3a9f…c1e2 Pending ~12 s`)
+    r"\b0x[0-9a-fA-F]{3,}…[0-9a-fA-F]{2,}\b|"
+    # "Current tx: 0x…" / "Tx: 0x…" without backticks
+    r"\b(?:current\s+)?tx\s*[:—–-]\s*`?0x[0-9a-fA-F]{4,}|"
+    # "transaction|draft|plan|approvals (for X) is/are ready/set/in place"
+    r"(?:transaction|draft|plan|approvals?)\s+"
+    r"(?:for\s+[\w$.,\s]{1,80}?\s+)?"
+    r"(?:is|are)\s+(?:ready|set|in\s+place)\b|"
+    # "Review and sign with your wallet" / "Sign each transaction"
+    r"review\s+and\s+sign\s+with\s+your\s+wallet|"
+    r"sign\s+each\s+(?:transaction|step)|"
+    # "Approvals (for|already) (in place|are set|already set)"
+    r"approvals?\s+(?:are\s+|already\s+)(?:set|in\s+place)|"
+    # "has been (executed|submitted|broadcast(ed)|confirmed|delivered|sent)"
+    # WITHOUT a tx hash or explorer URL — the verbs alone are tx-state
+    # assertions that no contextual prose can back.
+    r"(?:has|have)\s+been\s+"
+    r"(?:executed|submitted|broadcast(?:ed)?|confirmed|delivered|sent)\b|"
+    # "track its progress on (Etherscan|BaseScan|...)" (without URL)
+    r"track\s+(?:its|the)\s+progress\s+on\s+"
+    r"(?:etherscan|basescan|arbiscan|optimistic\s+etherscan|polygonscan|"
+    r"bscscan|snowtrace|solscan|explorer\.solana)\b|"
+    # "Once confirmed, X will be supplied/staked/...
+    r"once\s+confirmed,?\s+[\d.]+\s+\w+\s+will\s+be\s+"
+    r"(?:supplied|staked|bridged|deposited|swapped)\b|"
+    # Structured freeform header "**Protocol · Verb** —"
+    # (e.g., "**Aave V3 · Supply** — Asset: USDC")
+    r"^\s*\*\*[A-Z][A-Za-z0-9 ./-]{1,40}\s*·\s*"
+    r"(?:Supply|Stake|Swap|Bridge|Withdraw|Deposit|Borrow|Repay|Mint|"
+    r"Burn|Wrap|Unwrap|Approve|Claim|Compound|Migrate|Refinance|Loop|"
+    r"Exit|Remove|Unstake|Restake|Top[-\s]?up)\s*\*\*\s*[—\-–]|"
+    # "Swap(ping) X TOKEN to TOKEN on Chain (yields|has been|delivers)"
+    r"\bswap(?:ping)?\s+[\d.]+\s+[A-Z]{2,8}\s+to\s+[A-Z]{2,8}\s+"
+    r"on\s+[A-Z][a-z]+\s+(?:yields|has\s+been|delivers|will\s+deliver)\b|"
+    # "Top-up confirmed" / "Wallet has been topped up"
+    r"\btop[-\s]?up\s+(?:confirmed|complete|done)\b|"
+    # "impl address you just created" / "wallet will show that contract"
+    r"\bimpl\s+address\s+(?:you|your)\s+(?:just|now)\s+created|"
+    r"\bwallet\s+will\s+show\s+(?:that|the)\s+contract",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+# Canonical refusal text reused across the existing `_strip_unbacked_claims`
+# sanitizer; keep it identical so the user experience is consistent whether
+# the gate fires upstream (in simple_runtime) or at the streaming chokepoint
+# (in StreamCollector.emit_final).
+_FREEFORM_HALLUCINATION_REFUSAL = (
+    "I can't confirm that action without a deterministic Sentinel tool "
+    "producing the calldata. Try an explicit verb form — for example "
+    "`Supply 100 USDC to Aave V3 on Base`, `Stake 1 SOL on Marinade`, "
+    "or `Bridge 100 USDC from Ethereum to Base via deBridge`. The "
+    "deterministic adapters emit a signable Execution Plan card; the "
+    "freeform fallback never invents transaction hashes, bridge fees, "
+    "calldata, or session-key state."
+)
+
+
+def _strip_freeform_tx_state_hallucinations(
+    text: str, *, card_ids: list[str] | None = None
+) -> str:
+    """Wave-5 chokepoint guard. Refuse contextual-fallback prose that asserts
+    transaction state (ready / submitted / executed / Current tx / Approvals
+    set / **Protocol · Verb** structured header) when no signable execution-
+    plan card backs it.
+
+    Distinct from `_strip_unbacked_claims` upstream which (a) gates most
+    regexes on `has_real_card` and (b) treats any queued card as backing.
+    A research/quote/balance card does NOT back a tx-state claim — only a
+    signable execution-plan card can. The chokepoint check uses `card_ids`
+    (non-empty list of attached card ids) as the backing signal.
+
+    When fires: replaces content with canonical refusal pointing user to
+    deterministic verb forms.
+    """
+    if not text:
+        return text
+    # A non-empty card_ids list means the producer attached at least one
+    # card to the final frame. Trust the producer here — the existing
+    # signability invariants (assert_signable_composed_plan, etc.) gate
+    # what reaches a card_id at the producer level.
+    if card_ids:
+        return text
+    if _FREEFORM_TX_STATE_HALLUCINATION_RE.search(text):
+        return _FREEFORM_HALLUCINATION_REFUSAL
+    return text
+
+
 _AI_SELF_REF_RE = re.compile(
     r"\b(?:as\s+an?\s+AI(?:\s+(?:assistant|model|language\s+model))?|"
     r"I\s+am\s+an?\s+AI(?:\s+(?:assistant|model|language\s+model))?|"
@@ -6061,11 +6202,20 @@ def _scrub_ai_self_refs(text: str) -> str:
 
 
 def _strip_strategy_scratchpad(text: str) -> str:
-    """Strip leading scratchpad paragraphs without touching markdown structure.
+    """Strip scratchpad paragraphs without touching markdown structure.
 
-    `_clean_response` is too aggressive on strategy compose output (eats
-    table rows, bullet lists). This soft pass only peels leading scratchpad
-    paragraphs until the first markdown heading or table row.
+    Lead-strip: peels CoT/strategy paragraphs that appear BEFORE the first
+    markdown heading/table/list-item.
+
+    Body-scan (wave 5): A01 t3 leaked 4 kB of CoT AFTER the allocation
+    markdown table — the lead-anchored pass stopped at the first `|` table
+    row and never reached it. The body-scan pass walks the remaining text
+    (after the lead-strip) and truncates from the first non-table line
+    that matches `_BODY_SCRATCHPAD_STRONG_RE` (high-confidence scratchpad-
+    only shapes like "Plug w=…", "Compute amounts:", arithmetic equalities,
+    "However we", "Thus we need to decide", "The user didn't specify",
+    "DEFAULT to EVEN split", "Let's assume", "We'll set", "I think it's
+    acceptable").
     """
     if not text:
         return text
@@ -6085,7 +6235,34 @@ def _strip_strategy_scratchpad(text: str) -> str:
             continue
         # Non-scratchpad non-markdown line — keep
         break
-    return "\n".join(lines[drop:]).lstrip()
+    cleaned = "\n".join(lines[drop:]).lstrip()
+
+    # Body-scan: find FIRST line matching strong scratchpad pattern, truncate
+    # everything from there onward. Skips markdown table rows and code-fence
+    # lines so legitimate structured content is preserved.
+    body_lines = cleaned.split("\n")
+    in_code_fence = False
+    cut_at = -1
+    for i, ln in enumerate(body_lines):
+        s = ln.strip()
+        if s.startswith("```"):
+            in_code_fence = not in_code_fence
+            continue
+        if in_code_fence:
+            continue
+        if not s:
+            continue
+        # Don't truncate inside a markdown table — table rows can look like
+        # arithmetic when they contain numeric cells, and the lead-strip
+        # already handled scratchpad above the table.
+        if s.startswith("|"):
+            continue
+        if _BODY_SCRATCHPAD_STRONG_RE.match(s):
+            cut_at = i
+            break
+    if cut_at >= 0:
+        cleaned = "\n".join(body_lines[:cut_at]).rstrip()
+    return cleaned
 
 
 async def _compose_strategy_via_llm(

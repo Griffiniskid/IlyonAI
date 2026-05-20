@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"borrow\", \"amount_in\": 0.05, \"asset_in\": \"ETH\", \"chain\": \"ethereum\", \"extra\": {\"action\": \"borrow\"}, \"protocol\": \"aave-v3\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"ethereum","protocol":"aave-v3","action":"borrow","asset_in":"ETH","amount_in":0.05,"extra":{"action":"borrow"}}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"a0af28f6-901e-4ee1-87a8-3cff88ce0c1d","card_type":"execution_plan_v3","payload":{"plan_id":"plan_db6c77dfe82e","title":"Aave V3 Borrow","summary":"Borrow 0.05 ETH via Aave V3 on Ethereum.","status":"ready","risk_gate":"clear","requires_double_confirm":false,"blockers":[],"steps":[{"step_id":"step_47092bdc3c","index":1,"action":"approve","title":"Approve variable debt delegation to WTG3","description":"variableDebtETH.approveDelegation(0xD322A49006FC828F9B5B37Ab215F99B4E5caB19C, 0.05). Allows WrappedTokenGatewayV3 to mint debt on your behalf.","chain":"ethereum","wallet":"MetaMask","protocol":"aave-v3","asset_in":null,"asset_out":null,"amount_in":"0.05","amount_out":null,"slippage_bps":0,"gas_estimate_usd":1.4,"duration_estimate_s":15,"depends_on":[],"status":"ready","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":1,"to":"0xeA51d7853EEFb32b6ee06b1C12E6dcCA88Be0fFE","data":"0xc04a8a10000000000000000000000000d322a49006fc828f9b5b37ab215f99b4e5cab19c00000000000000000000000000000000000000000000000000b1a2bc2ec50000","value":"0x0","spender":"0xD322A49006FC828F9B5B37Ab215F99B4E5caB19C"},"receipt":null,"risk_warnings":["Delegation lets WTG3 incur debt on your behalf \u2014 only the WTG3 address can use it."]},{"step_id":"step_68cd715644","index":2,"action":"borrow","title":"Borrow native ETH via WTG3","description":"WrappedTokenGatewayV3.borrowETH(0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2, 0.05, rateMode=2, referralCode=0). Mints variable debt against your existing collateral. WTG3 unwraps WETH and forwards native ETH to your wallet.","chain":"ethereum","wallet":"MetaMask","protocol":"aave-v3","asset_in":null,"asset_out":"ETH","amount_in":"0.05","amount_out":null,"slippage_bps":0,"gas_estimate_usd":3.0,"duration_estimate_s":15,"depends_on":["step_47092bdc3c"],"status":"pending","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":1,"to":"0xD322A49006FC828F9B5B37Ab215F99B4E5caB19C","data":"0x66514c9700000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e200000000000000000000000000000000000000000000000000b1a2bc2ec5000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000","value":"0x0","spender":"0xD322A49006FC828F9B5B37Ab215F99B4E5caB19C"},"receipt":null,"risk_warnings":["Native borrow REVERTS if collateral health factor drops below 1.0.","Variable-rate debt \u2014 interest accrues continuously. rateMode=2."]}],"totals":{"estimated_gas_usd":4.4,"estimated_duration_s":30,"signatures_required":2,"chains_touched":["ethereum"],"assets_required":{"ETH":"0.05"}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"**Aave V3 Borrow** \u2014 Borrow 0.05 ETH via Aave V3 on Ethereum.\nStatus: `ready` \u00b7 2 signature(s) required.\n\n**Steps**\n\u25b6 Step 1 \u2014 approve on ethereum via aave-v3 (ready)\n\u00b7 Step 2 \u2014 borrow on ethereum via aave-v3 (pending)\n\nOpen the Execution Plan card above and sign step 1 in your wallet to begin.","card_ids":["a0af28f6-901e-4ee1-87a8-3cff88ce0c1d"],"elapsed_ms":5,"steps":5}
+
+event: done
+data: {}
+

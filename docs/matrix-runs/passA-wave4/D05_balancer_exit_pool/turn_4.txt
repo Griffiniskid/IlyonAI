@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"15cf0326-51c2-47fc-96b3-6ee5065de503","card_type":"execution_plan_v3","payload":{"plan_id":"plan_3d67e90911be","title":"Balancer Supply","summary":"Could not build execution plan for Balancer Supply on Ethereum.","status":"blocked","risk_gate":"clear","requires_double_confirm":false,"blockers":[{"code":"ADAPTER_BUILD_FAILED","severity":"blocker","title":"Adapter could not build steps","detail":"Enso /shortcuts/route failed for balancer ETH on ethereum: Client error '422 Unprocessable Entity' for url '<enso api>'\nmozilla.org/en-US/docs/Web/HTTP/Status/422 (Enso returned 422 Unprocessable Entity \u2014 usually means the amount is outside the route's liquidity, or the input token isn't supported on this chain. Try a smaller amount or a different protocol.).","affected_step_ids":[],"recoverable":true,"cta":"Pool unavailable \u2014 surfacing alternatives"}],"steps":[],"totals":{"estimated_gas_usd":0.0,"estimated_duration_s":0,"signatures_required":0,"chains_touched":[],"assets_required":{}},"research_thesis":null,"strategy_id":null,"recovery":{"action":"ASK_USER","posture":"Pool unavailable \u2014 surfacing alternatives","new_slippage_bps":null,"alternatives":[],"buttons":["Pick alternative","Leave funds in wallet","Swap back to source"],"channels":[],"rationale":"Pool removed / paused / cap reached. Alternatives ranked by APR + similarity. Never auto-route \u2014 you pick."}}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["15cf0326-51c2-47fc-96b3-6ee5065de503"],"elapsed_ms":0,"steps":2}
+
+event: done
+data: {}
+

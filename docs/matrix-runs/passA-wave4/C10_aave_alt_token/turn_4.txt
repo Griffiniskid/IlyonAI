@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"f2d8e2a2-8133-4751-bc5c-92b49e44a6d8","card_type":"execution_plan","payload":{"sentinel":null,"shield":null,"steps":[{"index":1,"verb":"Supply","amount":"200","asset":"USDC","target":"RE7WPOL \u00b7 morpho-blue","chain":"polygon","router":"Enso","wallet":"MetaMask","gas":"~$0.08","step_id":"alloc_step_1","protocol":"morpho-blue","pool_id":null,"transaction":null,"blocker":null},{"index":3,"verb":"Supply","amount":"200","asset":"USDC","target":"? \u00b7 morpho-blue","chain":"polygon","router":"Enso","wallet":"MetaMask","gas":"~$0.08","step_id":"alloc_step_3","protocol":"morpho-blue","pool_id":null,"transaction":null,"blocker":null},{"index":4,"verb":"Supply","amount":"200","asset":"USDC","target":"BBQUSDC \u00b7 morpho-blue","chain":"polygon","router":"Enso","wallet":"MetaMask","gas":"~$0.08","step_id":"alloc_step_4","protocol":"morpho-blue","pool_id":null,"transaction":null,"blocker":null}],"total_gas":"~$0.24","slippage_cap":"0.5%","wallets":"MetaMask","tx_count":3,"requires_signature":false}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["f2d8e2a2-8133-4751-bc5c-92b49e44a6d8"],"elapsed_ms":0,"steps":2}
+
+event: done
+data: {}
+

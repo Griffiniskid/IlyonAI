@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t create a deterministic execution plan for depositing into Aerodrome\u202fV1 (vault) because the adapter only supports Aerodrome\u202fSlipstream pools. To proceed, either choose a Slipstream pool (e.g., MSUSD\u2011USDC, USDC\u2011USDT) or give an explicit verb for a supported protocol such as \u201cSupply\u202f100\u202fUSDC to Aave\u202fV3 on Base\u201d. Once you specify a supported action, I\u2019ll output a signable Execution Plan card.","card_ids":[],"elapsed_ms":6250,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Please provide an explicit verb\u2011form action, such as:\n\n- Revoke approval for USDC on Uniswap\u202fV3 on Base \n- Revoke staking position on Lido \n- Revoke bridge allowance for USDC via deBridge \n\nThe deterministic adapters will then generate a signable Execution Plan card.","card_ids":[],"elapsed_ms":2984,"steps":3}
+
+event: done
+data: {}
+

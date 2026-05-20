@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The tool that builds the execution plan timed out because the upstream call (RPC/Enso/DefiLlama/aggregator) hung and didn\u2019t return within the 45\u2011second limit. No plan was generated, so you\u2019ll need to retry the request or try a different route (e.g., a different protocol or chain).","card_ids":[],"elapsed_ms":7191,"steps":3}
+
+event: done
+data: {}
+

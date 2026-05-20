@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"No receipt is available because the withdrawal wasn\u2019t executed\u2014either the amount was zero or the plan was blocked due to a missing\u202f`withdraw_all` flag. To get a receipt, specify a non\u2011zero amount (or enable \u201cwithdraw all\u201d) and I\u2019ll generate a signed execution plan for you.","card_ids":[],"elapsed_ms":3271,"steps":3}
+
+event: done
+data: {}
+

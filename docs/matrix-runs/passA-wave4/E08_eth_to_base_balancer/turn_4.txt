@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To use the wstETH\u2011WETH pool you\u2019ll need an EVM wallet connected. Once connected, you can supply matching amounts of wstETH and WETH to the pool (e.g., on Curve or Balancer) and start earning yield. Please connect your MetaMask/Phantom EVM wallet and resend the exact action, e.g., \u201cSupply 0.05\u202fwstETH\u202f+\u202f0.05\u202fWETH to the wstETH/WETH pool on Ethereum\u201d. Once connected I\u2019ll generate a signable execution plan.","card_ids":[],"elapsed_ms":14838,"steps":3}
+
+event: done
+data: {}
+

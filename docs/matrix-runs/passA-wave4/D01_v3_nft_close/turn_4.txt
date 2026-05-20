@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"No transaction has been executed yet, so there\u2019s no receipt to show. If you\u2019d like to close the position, provide a valid amount (e.g.,\u202f0.01\u202fETH or the corresponding USDC amount) and I\u2019ll generate the signed transaction for you.","card_ids":[],"elapsed_ms":2894,"steps":3}
+
+event: done
+data: {}
+

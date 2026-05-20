@@ -1,0 +1,27 @@
+event: thought
+data: {"step_index":1,"content":"Parsed swap intent: {\"amount_in\": \"1000000000000\", \"chain_id\": 8453, \"from_addr\": \"\", \"token_in\": \"USDC\", \"token_out\": \"ETH\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Resolving token pair, chain, decimals, and amount before requesting an aggregator route."}
+
+event: thought
+data: {"step_index":3,"content":"Choosing aggregator: Jupiter for Solana, Enso for EVM. Validating slippage, route source, and price impact before quoting."}
+
+event: thought
+data: {"step_index":4,"content":"Building an unsigned transaction so Phantom or MetaMask can review the exact spend, gas, and approval."}
+
+event: thought
+data: {"step_index":5,"content":"Preparing wallet-safe signing guidance; the agent never holds keys \u2014 the user signs in their wallet."}
+
+event: tool
+data: {"step_index":5,"name":"build_swap_tx","args":{"chain_id":8453,"token_in":"USDC","token_out":"ETH","amount_in":"1000000000000","from_addr":""}}
+
+event: observation
+data: {"step_index":5,"name":"build_swap_tx","ok":true,"error":null}
+
+event: final
+data: {"content":"I couldn't complete that \u2014 **AGGREGATOR_CIRCUIT_BREAKER**: Swap exceeds $500K size cap ($999,707). Pass extra.confirm_megaswap=true to override, or split into smaller chunks. Mega-swaps require manual review.\n\nRecovery: Step failed \u2014 pick recovery \u2014 Step failure kind=aggregator_circuit_breaker. Surfacing three user-explicit options. Hard rule: never auto-refund-swap-back.","card_ids":[],"elapsed_ms":135,"steps":5}
+
+event: done
+data: {}
+

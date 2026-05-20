@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Aave V3 \u00b7 Supply** \u2014 \nAsset: USDC \nAmount: 99.8\u202fUSDC (post\u2011bridge) \nNetwork: Optimism \nRisk: MEDIUM \nStrategy fit: balanced \nSafety tip: Keep enough OP for gas and monitor your health factor to avoid liquidation.","card_ids":[],"elapsed_ms":19280,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Yes\u2014supplying USDC to Compound\u202fV3 on Base via Enso gives you the **cUSDCv3** ERC\u201120 receipt token, representing your deposited USDC plus accrued interest. It will appear in your wallet once the transaction confirms.","card_ids":[],"elapsed_ms":2658,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To revoke an approval I need:\n\n- Token contract address \n- Spender (contract) address you approved \n- Your wallet address \n- Network/chain ID (e.g., Ethereum\u202f1, Polygon\u202f137, etc.)\n\nPlease provide those details, and I\u2019ll guide you through the revocation transaction. Safety tip: double\u2011check the spender on a block explorer before confirming\u2014mistakes can\u2019t be undone.","card_ids":[],"elapsed_ms":3037,"steps":3}
+
+event: done
+data: {}
+

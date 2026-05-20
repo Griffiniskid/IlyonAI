@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Yearn V3 USDC vault is on Base chain, not Ethereum mainnet (pool ID ea721c71-9a61-481d-aa52-b0198f325c66). Direct execution remains disabled for Yearn v3 vaults in this adapter\u2014no signable transaction can be generated. For deposit, use Yearn's official UI via the DefiLlama link provided earlier. Risk: HIGH (smart contract exposure).","card_ids":[],"elapsed_ms":17603,"steps":3}
+
+event: done
+data: {}
+
