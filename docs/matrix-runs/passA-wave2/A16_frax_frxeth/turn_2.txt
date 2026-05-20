@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I need a more specific command to generate a signable plan. Please use one of these formats:\n\n- `Stake 0.05 ETH on Frax via frxETH mint`\n- `Supply 0.05 ETH to Frax ETH vault`\n\nOnce you provide the exact verb, I\u2019ll return a ready\u2011to\u2011sign Execution Plan. (Risk: MEDIUM for liquid\u2011staking derivatives; consider your strategy fit.)","card_ids":[],"elapsed_ms":5801,"steps":3}
+
+event: done
+data: {}
+

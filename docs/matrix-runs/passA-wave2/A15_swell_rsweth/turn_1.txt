@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Your Swell Supply plan for\u202f0.05\u202fETH is ready as a draft. Review the details, then sign with your wallet to execute. \n- Risk: MEDIUM (ETH staking + restaking\u2011layer slashing). \n- Strategy fit: balanced (base ETH rewards + restaking incentives). \n- Safety tip: verify Swell\u2019s audit reports, start with a small amount, and use a hardware wallet or trusted signer for approval.","card_ids":[],"elapsed_ms":25143,"steps":3}
+
+event: done
+data: {}
+

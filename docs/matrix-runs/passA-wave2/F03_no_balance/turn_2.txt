@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"It\u2019s blocked because the supply step requires\u202f100\u202f000\u202fUSDC, but your wallet currently holds only\u202f190.132\u202fUSDC. You need to add more USDC to the wallet (or lower the supply amount) before the transaction can proceed.","card_ids":[],"elapsed_ms":3699,"steps":3}
+
+event: done
+data: {}
+

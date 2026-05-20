@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t execute the trade without a deterministic Sentinel tool producing the calldata. Please give explicit verb commands (e.g., \u201cBuy 200 PT\u2011USDC on Pendle via \u2026\u201d) or confirm you\u2019d like me to generate the Execution Plan card for the five PT\u2011USDC purchases.","card_ids":[],"elapsed_ms":10843,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t confirm a revocation without a deterministic Sentinel tool producing the calldata. Please give an explicit verb, for example\u202f`Revoke USDC approval for Raydium on Solana`\u202for\u202f`Revoke SOL allowance for Marinade`. The adapter will then emit a signable Execution Plan card.","card_ids":[],"elapsed_ms":4722,"steps":3}
+
+event: done
+data: {}
+

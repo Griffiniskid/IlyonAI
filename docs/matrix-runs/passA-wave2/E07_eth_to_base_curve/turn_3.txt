@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Please provide a single\u2011action verb phrase (e.g.,\u202f`Bridge 100 USDC from Ethereum to Base via deBridge`) so I can generate a signable Execution Plan. After the bridge completes, you can request the Curve deposit as a separate step.","card_ids":[],"elapsed_ms":6032,"steps":3}
+
+event: done
+data: {}
+

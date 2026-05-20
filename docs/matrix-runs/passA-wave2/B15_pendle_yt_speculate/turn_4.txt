@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I need a deterministic verb to build a signed Execution Plan. Please phrase the trade explicitly, for example:\n\n`Swap 500 USDe for YT\u2011USDe\u202f30Jun2027 on Pendle`\n\nOnce you give that command, I\u2019ll generate the signable transaction details for you to approve in your wallet. \n\n**Risk reminder:** YT\u2011USDe positions are HIGH\u2011risk, speculative bets; treat this as a small, aggressive slice of your portfolio and monitor the USDe/YT\u2011USDe price regularly.","card_ids":[],"elapsed_ms":15603,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"supply\", \"amount_in\": 100.0, \"asset_in\": \"USDC\", \"chain\": \"base\", \"protocol\": \"aave-v3\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"base","protocol":"aave-v3","action":"supply","asset_in":"USDC","amount_in":100.0}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"a86417fb-4604-484e-811d-e8bedc1aa2f2","card_type":"execution_plan_v3","payload":{"plan_id":"plan_07434768f4d5","title":"Aave V3 Supply","summary":"Supply 100.0 USDC via Aave V3 on Base.","status":"ready","risk_gate":"clear","requires_double_confirm":false,"blockers":[],"steps":[{"step_id":"step_840a32bd8b","index":1,"action":"approve","title":"Approve USDC for Aave V3 Pool","description":"Approve 100.0 USDC so Aave V3 Pool can pull funds.","chain":"base","wallet":"MetaMask","protocol":"aave-v3","asset_in":"USDC","asset_out":null,"amount_in":"100","amount_out":null,"slippage_bps":0,"gas_estimate_usd":1.4,"duration_estimate_s":15,"depends_on":[],"status":"ready","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":8453,"to":"0x833589fcd6edb6e08f4c7c32d4f71b54bda02913","data":"0x095ea7b3000000000000000000000000a238dd80c259a72e81d7e4664a9801593f98d1c50000000000000000000000000000000000000000000000000000000005f5e100","value":"0x0","spender":"0xa238dd80c259a72e81d7e4664a9801593f98d1c5"},"receipt":null,"risk_warnings":["Approval allows Aave V3 Pool to pull the exact amount you authorize."]},{"step_id":"step_bef44b2f30","index":2,"action":"supply","title":"Supply USDC to Aave V3","description":"Deposit 100.0 USDC into Aave V3 Pool. You receive aUSDC receipt token.","chain":"base","wallet":"MetaMask","protocol":"aave-v3","asset_in":"USDC","asset_out":"aUSDC","amount_in":"100.0","amount_out":null,"slippage_bps":0,"gas_estimate_usd":2.8,"duration_estimate_s":15,"depends_on":["step_840a32bd8b"],"status":"pending","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":8453,"to":"0xa238dd80c259a72e81d7e4664a9801593f98d1c5","data":"0x617ba037000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000","value":"0x0","spender":"0xa238dd80c259a72e81d7e4664a9801593f98d1c5"},"receipt":null,"risk_warnings":["Aave supply APY varies with utilization; treat headline APY as an estimate."]}],"totals":{"estimated_gas_usd":4.2,"estimated_duration_s":30,"signatures_required":2,"chains_touched":["base"],"assets_required":{"USDC":"100"}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"**Aave V3 Supply** \u2014 Supply 100.0 USDC via Aave V3 on Base.\nStatus: `ready` \u00b7 2 signature(s) required.\n\n**Steps**\n\u25b6 Step 1 \u2014 approve 100 USDC on base via aave-v3 (ready)\n\u00b7 Step 2 \u2014 supply 100.0 USDC on base via aave-v3 (pending)\n\nOpen the Execution Plan card above and sign step 1 in your wallet to begin.","card_ids":["a86417fb-4604-484e-811d-e8bedc1aa2f2"],"elapsed_ms":42,"steps":5}
+
+event: done
+data: {}
+

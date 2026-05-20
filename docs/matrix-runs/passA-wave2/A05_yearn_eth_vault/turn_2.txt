@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**AMOUNT_NOT_CONFIRMED.** I won't size and ship a signable deposit plan without you stating an exact amount. Restate with a concrete number \u2014 e.g. `Supply 100 USDC to Yearn V3 USDC vault on Base`, `Deposit 250 USDC to yearn-finance USDC on base`, or `Stake 50 USDC in the top Yearn vault`. I won't placeholder-size at any default amount because signing such a step would deploy capital you did not authorize.","card_ids":[],"elapsed_ms":9531,"steps":3}
+
+event: done
+data: {}
+

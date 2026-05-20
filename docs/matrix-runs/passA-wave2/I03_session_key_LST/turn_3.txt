@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To show the spend cap and selector allowlist I need:\n\n- **Token contract address** \n- **Spender contract address** (the dApp/router you approved) \n- **Your wallet address** (the account holding the token) \n- **Network/chain ID** (e.g., Ethereum\u202f1, Polygon\u202f137, etc.)\n\n**Safety tip:** Verify both addresses on a block explorer before proceeding\u2014incorrect approvals can lead to fund loss. Once you provide the details, I\u2019ll retrieve the current spend cap and the selector allowlist for you.","card_ids":[],"elapsed_ms":10119,"steps":3}
+
+event: done
+data: {}
+

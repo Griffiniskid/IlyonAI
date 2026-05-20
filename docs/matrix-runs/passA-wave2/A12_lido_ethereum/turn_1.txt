@@ -1,0 +1,36 @@
+event: thought
+data: {"step_index":1,"content":"Parsed constraint-aware DeFi search: {\"chains\": [\"ethereum\"], \"execution_requested\": false, \"limit\": 8, \"product_types\": [\"staking\"], \"ranking_objective\": \"highest_sentinel_score\", \"risk_levels\": []}."}
+
+event: thought
+data: {"step_index":2,"content":"Separating research, allocation, and execution intent before selecting a tool."}
+
+event: thought
+data: {"step_index":3,"content":"Applying hard APY, risk, chain, and TVL filters from the user's exact request."}
+
+event: thought
+data: {"step_index":4,"content":"Checking execution readiness separately so unsupported pools never get fake signing buttons."}
+
+event: tool
+data: {"step_index":4,"name":"search_defi_opportunities","args":{"risk_levels":[],"product_types":["staking"],"chains":["ethereum"],"ranking_objective":"highest_sentinel_score","execution_requested":false,"limit":8}}
+
+event: observation
+data: {"step_index":4,"name":"search_defi_opportunities","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Parsed constraints: risk=any, target_apy=None, apy_band=(0.0, 10000.0)."}
+
+event: thought
+data: {"step_index":6,"content":"Queried DefiLlama with min_tvl=$10,000 and min_apy=0.0 instead of the legacy $200M/0.5% staking defaults."}
+
+event: thought
+data: {"step_index":7,"content":"Ranked 20085 candidates by highest_sentinel_score; 4 matched the hard constraints and 25 were excluded."}
+
+event: card
+data: {"step_index":7,"card_id":"1c6d6e35-7bda-4434-a68a-83ed6328111e","card_type":"defi_opportunities","payload":{"objective":"highest_sentinel_score","target_apy":null,"apy_band":[0.0,10000.0],"risk_levels":[],"chains":["ethereum"],"execution_requested":false,"items":[{"protocol":"swell-liquid-staking","symbol":"SWETH","chain":"ethereum","product_type":"liquid staking","apy":2.70654,"apy_base":2.70654,"apy_reward":0.0,"tvl_usd":36061968.0,"volume_24h_usd":null,"risk_level":"MEDIUM","executable":false,"adapter_id":null,"unsupported_reason":"swell-liquid-staking on ethereum: Direct execution disabled for this pool type.","links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/ca2acc2d-6246-44aa-ae91-8725b2c62c7c"},{"label":"swell-liquid-staking on DefiLlama","url":"https://defillama.com/protocol/swell-liquid-staking"}],"pool_id":"ca2acc2d-6246-44aa-ae91-8725b2c62c7c"},{"protocol":"lido","symbol":"STETH","chain":"ethereum","product_type":"liquid staking","apy":2.393,"apy_base":2.393,"apy_reward":0.0,"tvl_usd":18666975969.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/747c1d2a-c668-4682-b9f9-296708a3dd90"},{"label":"Open in lido","url":"https://stake.lido.fi"}],"pool_id":"747c1d2a-c668-4682-b9f9-296708a3dd90"},{"protocol":"bifrost-liquid-staking","symbol":"VETH","chain":"ethereum","product_type":"liquid staking","apy":2.38,"apy_base":2.38,"apy_reward":0.0,"tvl_usd":1279957.0,"volume_24h_usd":null,"risk_level":"MEDIUM","executable":false,"adapter_id":null,"unsupported_reason":"bifrost-liquid-staking on ethereum: Direct execution disabled for this pool type.","links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/eb101287-7f4f-4847-9c16-8b06c2067dc8"},{"label":"bifrost-liquid-staking on DefiLlama","url":"https://defillama.com/protocol/bifrost-liquid-staking"}],"pool_id":"eb101287-7f4f-4847-9c16-8b06c2067dc8"},{"protocol":"stader","symbol":"ETHX","chain":"ethereum","product_type":"liquid staking","apy":2.27399,"apy_base":2.27399,"apy_reward":0.0,"tvl_usd":258251459.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/90bfb3c2-5d35-4959-a275-ba5085b08aa3"},{"label":"Open in stader","url":"https://www.staderlabs.com"}],"pool_id":"90bfb3c2-5d35-4959-a275-ba5085b08aa3"}],"excluded_count":25,"blockers":[]}}
+
+event: final
+data: {"content":"**Constraint-Matched DeFi Opportunities**\n\n1. **Swell Liquid Staking** \u2014 SWETH on ethereum \n APY 2.7% \u00b7 TVL $36,061,968 \u00b7 Risk MEDIUM\n Links: [DefiLlama pool](https://defillama.com/yields/pool/ca2acc2d-6246-44aa-ae91-8725b2c62c7c) \u00b7 [Protocol on DefiLlama](https://defillama.com/protocol/swell-liquid-staking)\n Execution: research-only \u2014 swell-liquid-staking on ethereum: Direct execution disabled for this pool type.\n\n2. **Lido** \u2014 STETH on ethereum \n APY 2.4% \u00b7 TVL $18,666,975,969 \u00b7 Risk LOW\n Links: [DefiLlama pool](https://defillama.com/yields/pool/747c1d2a-c668-4682-b9f9-296708a3dd90)\n Execution: ready via deterministic\n\n3. **Bifrost Liquid Staking** \u2014 VETH on ethereum \n APY 2.4% \u00b7 TVL $1,279,957 \u00b7 Risk MEDIUM\n Links: [DefiLlama pool](https://defillama.com/yields/pool/eb101287-7f4f-4847-9c16-8b06c2067dc8) \u00b7 [Protocol on DefiLlama](https://defillama.com/protocol/bifrost-liquid-staking)\n Execution: research-only \u2014 bifrost-liquid-staking on ethereum: Direct execution disabled for this pool type.\n\n4. **Stader** \u2014 ETHX on ethereum \n APY 2.3% \u00b7 TVL $258,251,459 \u00b7 Risk LOW\n Links: [DefiLlama pool](https://defillama.com/yields/pool/90bfb3c2-5d35-4959-a275-ba5085b08aa3)\n Execution: ready via deterministic\n\nExcluded 25 candidates that violated the requested risk, APY, chain, or TVL constraints.","card_ids":["1c6d6e35-7bda-4434-a68a-83ed6328111e"],"elapsed_ms":1100,"steps":7}
+
+event: done
+data: {}
+

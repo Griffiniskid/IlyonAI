@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Run an Enso \u201cpreview add liquidity\u201d call for the SwapX\u202fV3\u202fSonic S/USDC pool with:\n\n- **Input tokens:** 50\u202fS\u202f+\u202fthe USDC amount that equals 50\u202f\u00d7\u202fcurrent S/USDC price \n- **Range:** a narrow band around that price (e.g., \u00b10.5\u202f% or as tight as you like)\n\nThe preview will return:\n\n1. **Estimated LP\u2011token amount** you\u2019ll receive after minting. \n2. **Exact token approvals** required for S and USDC (only those amounts). \n3. **Suggested minimum\u2011output** (slippage protection) Enso recommends.\n\nAfter you see those numbers, verify the contract addresses, approve only the shown amounts, set low slippage, and then submit the actual \u201cAdd Liquidity\u201d transaction via your wallet through Enso or the SwapX\u202fV3\u202fSonic UI. This remains a medium\u2011risk, balanced\u2011strategy LP\u2014monitor for impermanent loss and keep your range tight.","card_ids":[],"elapsed_ms":40767,"steps":3}
+
+event: done
+data: {}
+

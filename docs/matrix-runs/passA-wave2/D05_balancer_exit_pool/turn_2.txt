@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"deposit_lp\", \"amount_in\": 0.5, \"asset_in\": \"USDC\", \"chain\": \"ethereum\", \"protocol\": \"balancer\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"ethereum","protocol":"balancer","action":"deposit_lp","asset_in":"USDC","amount_in":0.5}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"b195b015-9751-4325-a64e-b256345fe4a6","card_type":"execution_plan_v3","payload":{"plan_id":"plan_c12d433cb23e","title":"Balancer Deposit LP","summary":"Deposit LP 0.5 USDC via Balancer on Ethereum.","status":"ready","risk_gate":"clear","requires_double_confirm":false,"blockers":[],"steps":[{"step_id":"step_178f2d4a05","index":1,"action":"approve","title":"Approve USDC for Balancer Vault","description":"Approve 0.5 USDC so the Balancer Vault can pull funds for the joinPool call.","chain":"ethereum","wallet":"MetaMask","protocol":"balancer","asset_in":"USDC","asset_out":null,"amount_in":"0.5","amount_out":null,"slippage_bps":0,"gas_estimate_usd":1.4,"duration_estimate_s":15,"depends_on":[],"status":"ready","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":1,"to":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48","data":"0x095ea7b3000000000000000000000000ba12222222228d8ba445958a75a0704d566bf2c8000000000000000000000000000000000000000000000000000000000007a120","value":"0x0","spender":"0xBA12222222228d8Ba445958a75a0704d566BF2C8"},"receipt":null,"risk_warnings":["Approval grants Balancer Vault the exact amount you authorize."]},{"step_id":"step_a6489f52f1","index":2,"action":"join_pool","title":"Join Balancer bbausd pool","description":"Single-asset join of 0.5 USDC into Balancer bbausd (3-asset pool). Slippage cap 0.50% on minimum BPT received.","chain":"ethereum","wallet":"MetaMask","protocol":"balancer","asset_in":"USDC","asset_out":"bal-BBAUSD-BPT","amount_in":"0.5","amount_out":null,"slippage_bps":50,"gas_estimate_usd":4.5,"duration_estimate_s":20,"depends_on":["step_178f2d4a05"],"status":"pending","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":1,"to":"0xBA12222222228d8Ba445958a75a0704d566BF2C8","data":"0xb95cac28febb0bbf162e64fb9d0dfe186e517d84c395f016000000000000000000000502000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000006b175474e89094c44da98b954eedeac495271d0f000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000007a1200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000006e7799d37c1c0000000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000007a12000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","value":"0x0","spender":"0xBA12222222228d8Ba445958a75a0704d566BF2C8"},"receipt":null,"risk_warnings":["Single-asset joins incur Balancer's price-impact fee.","BPT represents pooled balance \u2014 redeem to base assets later."]}],"totals":{"estimated_gas_usd":5.9,"estimated_duration_s":35,"signatures_required":2,"chains_touched":["ethereum"],"assets_required":{"USDC":"0.5"}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"**Balancer Deposit LP** \u2014 Deposit LP 0.5 USDC via Balancer on Ethereum.\nStatus: `ready` \u00b7 2 signature(s) required.\n\n**Steps**\n\u25b6 Step 1 \u2014 approve 0.5 USDC on ethereum via balancer (ready)\n\u00b7 Step 2 \u2014 join_pool 0.5 USDC on ethereum via balancer (pending)\n\nOpen the Execution Plan card above and sign step 1 in your wallet to begin.","card_ids":["b195b015-9751-4325-a64e-b256345fe4a6"],"elapsed_ms":87,"steps":5}
+
+event: done
+data: {}
+

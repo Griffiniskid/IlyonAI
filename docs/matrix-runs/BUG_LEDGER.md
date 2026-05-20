@@ -222,6 +222,58 @@ See `docs/matrix-runs/passA-wave1/findings-{A,B,C,D,E,F,G,H,I}.md` for per-chain
 
 ---
 
+## Matrix Pass A wave 2 — 2026-05-20, HEAD `1a785c2` (BUG-M01 + BUG-M02 + blocker normalizer + BUG-E-002 guest-guard LIVE)
+
+**Fix-wave-2 verification**: 3 fixes deployed (singleton AIRouter, projection-jump silent-admit, blocker code normalizer, guest-guard for deBridge).
+
+**Aggregate Δ (wave 1 → wave 2)**:
+
+| Cat | Wave 1 P0 | Wave 2 P0 | Δ | Wave 1 P1 | Wave 2 P1 | Δ |
+|-----|-----------|-----------|---|-----------|-----------|---|
+| A | 2 real | 2 (1 escalated from P1) | 0 | 9 | 7 | -2 |
+| B | 11 | 9 | -2 | 17 | 14 | -3 |
+| C | 5 | 4 | -1 | 13 | 14 | +1 |
+| D | 6 | 8 (1 promoted from P1, 1 new) | +2 | 10 | 11 | +1 |
+| E | 4 | 3 | -1 | 4 | 5 | +1 |
+| F | 5 | 4 (2 closed, 1 new) | -1 | 6 | 6 | 0 |
+| G | 4 | 4 | 0 | 6 | 9 (3 new) | +3 |
+| H | 8 | 7 | -1 | 7 | 7 (1 closed + 1 partial + 2 new) | 0 |
+| I | 3 | 3 | 0 | 3 | 4 (2 new) | +1 |
+| **TOTAL** | **48** | **44** | **-4** | **75** | **77** | **+2** |
+
+**Fix wave 1 closed (verified by wave-2 hand-read)**:
+- TOOL_TIMEOUT cluster eliminated in category A (was 3+ chains, now 0)
+- BUG-F-01 + BUG-F-02 (lowercase blocker codes → canonical via normalizer) — F01 emits UNSUPPORTED_ADAPTER, F02 emits WALLET_CHAIN_MISMATCH with full recovery payload
+- BUG-E-002 guest-guard → 4 cross-chain chains (E03/E08/E11/E15) now emit clean WALLET_CHAIN_MISMATCH blocker (was HTTP 400 with mozilla docs URL leak)
+- BUG-M02 plan projection-jump warnings — gone
+- P0-A-01/02 chain mismatch + 3-identical-approves (closed by upstream churn)
+- 5 cosmetic P1s across categories
+
+**NEW regressions in wave 2 (not caused by fixes)**:
+- TOOL_TIMEOUT cluster (`build_yield_execution_plan` 45s SLO) spread to G (7 turns / 4 chains), D (8+ turns), E (7 turns / 4 chains), F (F06 t1 regressed from 7ms ready → 45s timeout). Suspected: Enso/RPC/aggregator latency in test env.
+- **Intent parser regression** — "Supply 100 to Aave V3 on Base" parses chain name "Base" as asset symbol `asset_in:"BASE"` → ADAPTER_BUILD_FAILED. **Caused H13 to regress from PASS-SLOW to BLOCKED.**
+- **LLM scratchpad leak escalated** — was P1-A-02 single chain wave 1; now systemic across A06+A09 t3 → escalated to P0-A-W2-02.
+- WALLET_CHAIN_MISMATCH used where WALLET_NOT_CONNECTED would be more accurate (BUG-E-009) — UI may auto-prompt "switch network" instead of "connect wallet".
+- Continuation surface re-emits blocked card as if it were the plan (D-P1-11, G STILL-G-06).
+
+**Cross-cutting clusters still unfixed** (carry over from wave 1):
+1. **Plan builder ignores `executable:false` flag** (B P0s broadened) — top remaining priority
+2. **Freeform fallback invents calldata/fees/workflows** — gate works for naked-context turns but misses prior-context cases
+3. **Cross-chain intent parser** drops source_chain (E: 10/15 chains)
+4. **Cross-chain plan emits transaction:null on bridge leg** with status:ready
+5. **Verb/asset/calldata desync in allocation steps** (C, B)
+6. **Balance preflight DAG-walking** for native wraps
+7. **Hallucinated protocol slugs / pool addresses** (B, C, D, H)
+8. **§7 funding scenario detectors mostly absent** (H: 12/15 still)
+9. **Price oracle wrong for chain-bridged assets** (BSC ETH-price still uses BNB; MATIC oracle ~$0.09; AVAX oracle ~$9.09)
+10. **err_envelope normalizer chokepoint** missing (F's quote_unavailable + AGGREGATOR_CIRCUIT_BREAKER don't reach a card)
+11. **withdraw(amount=0) silently rewritten to MAX_UINT256** (D-P1-14 P0 promotion — drain risk)
+12. **borrow/repay verb router missing** (D-P0-08 NEW)
+
+**Status**: Matrix Pass A wave 2 NOT clean. Fix-loop needs to continue until 0 P0/P1 outside EXPECTED_BLOCKED.
+
+---
+
 #### BUG-M01 — AIRouter instantiated per agent request (aiohttp session leak + matrix hang)
 - **Surfaced by**: passA-wave1/* (matrix fires hung after ~50 requests on 2026-05-20 ~21:42 UTC; api logs showed "AI Router initialized" on every request + "Unclosed client session/connector" warnings stacking up)
 - **Severity**: P0 (production users hit this on every chat turn — leaks aiohttp ClientSessions; eventually pool exhausts and requests stall; matrix needed to run sequentially with hangs to surface this)

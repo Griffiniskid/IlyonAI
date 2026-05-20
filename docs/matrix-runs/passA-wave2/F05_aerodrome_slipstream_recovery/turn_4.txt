@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"ae8d1a73-e5c1-411f-adae-1a8b61b691d5","card_type":"execution_plan","payload":{"sentinel":null,"shield":null,"steps":[{"index":1,"verb":"Supply","amount":"21","asset":"USDC","target":"MSUSD-USDC \u00b7 aerodrome-slipstream","chain":"base","router":"Enso","wallet":"MetaMask","gas":"~$0.25","step_id":"alloc_step_1","protocol":"aerodrome-slipstream","pool_id":null,"transaction":null,"blocker":null},{"index":2,"verb":"Supply","amount":"21","asset":"USDC","target":"MSUSD-USDC \u00b7 aerodrome-v1","chain":"base","router":"Enso","wallet":"MetaMask","gas":"~$0.25","step_id":"alloc_step_2","protocol":"aerodrome-v1","pool_id":null,"transaction":null,"blocker":null},{"index":3,"verb":"Supply","amount":"21","asset":"USDC","target":"USDZ-SUSDZ \u00b7 aerodrome-slipstream","chain":"base","router":"Enso","wallet":"MetaMask","gas":"~$0.25","step_id":"alloc_step_3","protocol":"aerodrome-slipstream","pool_id":null,"transaction":null,"blocker":null},{"index":5,"verb":"Supply","amount":"21","asset":"USDC","target":"USDE-USDC \u00b7 aerodrome-slipstream","chain":"base","router":"Enso","wallet":"MetaMask","gas":"~$0.25","step_id":"alloc_step_5","protocol":"aerodrome-slipstream","pool_id":null,"transaction":null,"blocker":null}],"total_gas":"~$1.00","slippage_cap":"0.5%","wallets":"MetaMask","tx_count":4,"requires_signature":false}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["ae8d1a73-e5c1-411f-adae-1a8b61b691d5"],"elapsed_ms":0,"steps":2}
+
+event: done
+data: {}
+

@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"fc5ab5f7-ceb3-401a-9197-39ca91acc528","card_type":"execution_plan_v3","payload":{"plan_id":"plan_0bfce6800cab","title":"Yearn Withdraw","summary":"Withdraw 0 USDC via Yearn on Ethereum.","status":"ready","risk_gate":"clear","requires_double_confirm":false,"blockers":[],"steps":[{"step_id":"step_b8831683f9","index":1,"action":"withdraw","title":"Withdraw USDC from yearn vault","description":"ERC-4626 withdraw(0) \u2014 assets returned to 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.","chain":"ethereum","wallet":"MetaMask","protocol":"yearn","asset_in":"yearn-USDC","asset_out":"USDC","amount_in":"0","amount_out":null,"slippage_bps":0,"gas_estimate_usd":2.0,"duration_estimate_s":15,"depends_on":[],"status":"ready","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":1,"to":"0xbe53a109b494e5c9f97b9cd39fe969be68bf6204","data":"0xb460af94ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","value":"0x0","spender":"0xbe53a109b494e5c9f97b9cd39fe969be68bf6204"},"receipt":null,"risk_warnings":["Vault yearn may impose exit fee or pending-queue delay."]}],"totals":{"estimated_gas_usd":2.0,"estimated_duration_s":15,"signatures_required":1,"chains_touched":["ethereum"],"assets_required":{}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"Confirmed \u2014 continuing with the execution plan from the previous step.\n\nEach step in the plan must be signed in your wallet before the next one unlocks. Open the execution plan card above and approve step 1 to begin; on-chain receipts will gate the follow-up steps.\n\nIf you want to change risk budget, skip a protocol, or rerun the allocation against different chains, just say so and I'll regenerate the plan.","card_ids":["fc5ab5f7-ceb3-401a-9197-39ca91acc528"],"elapsed_ms":1,"steps":2}
+
+event: done
+data: {}
+

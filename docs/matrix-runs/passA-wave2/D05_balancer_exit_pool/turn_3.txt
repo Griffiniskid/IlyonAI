@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The Balancer wstETH\u2011WETH pool on Ethereum isn\u2019t accepting a direct ETH deposit at 0.05\u202fETH via the current route. Try one of these:\n\n- Wrap your ETH to WETH first, then deposit 0.05\u202fWETH into the same pool. \n- Reduce the amount (e.g., 0.01\u202fETH) to see if liquidity constraints ease. \n- Use a different protocol that accepts ETH directly, such as Aave V3 or Curve\u2019s wstETH\u2011WETH pool.\n\nIf you\u2019d like me to build a plan for any of those alternatives, just let me know. (Risk: MEDIUM for Balancer LP; strategy fit depends on your exposure preference.)","card_ids":[],"elapsed_ms":12958,"steps":3}
+
+event: done
+data: {}
+

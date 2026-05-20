@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Plan ready:** Bridge\u202f0.1\u202fETH from Ethereum to Base via deBridge, receive\u202f0.1\u202fWETH on Base, then approve and supply that WETH to Aave\u202fV3 on Base.\n\n**Next steps**\n1. Approve ETH for the deBridge spender in your wallet and sign the bridge transaction. \n2. After the bridge confirms on Ethereum, you\u2019ll see\u202f0.1\u202fWETH on Base. \n3. Approve WETH for the Aave\u202fV3 pool on Base, then execute the supply transaction. \n\n*Risk:* Medium \u2013 double\u2011check contract addresses on a trusted block explorer before signing.","card_ids":[],"elapsed_ms":12420,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,33 @@
+event: thought
+data: {"step_index":1,"content":"Parsed liquidity-pool search: {\"chain\": \"ethereum\", \"token_a\": \"USDC\", \"token_b\": \"WETH\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Resolving pair defaults and chain scope before searching DEX liquidity."}
+
+event: thought
+data: {"step_index":3,"content":"Ranking pools by liquidity depth, route availability, and exit practicality."}
+
+event: thought
+data: {"step_index":4,"content":"Flagging pool-selection caveats such as pair fragmentation and impermanent-loss exposure."}
+
+event: tool
+data: {"step_index":4,"name":"find_liquidity_pool","args":{"token_a":"USDC","token_b":"WETH","chain":"ethereum"}}
+
+event: observation
+data: {"step_index":4,"name":"find_liquidity_pool","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Selected 1 liquidity pools ranked by depth and route usefulness."}
+
+event: thought
+data: {"step_index":6,"content":"Flagged liquidity selection caveats before exposing pool-level details."}
+
+event: card
+data: {"step_index":6,"card_id":"63e4a8b1-bde9-441a-bfaf-de1e67d9c637","card_type":"pool","payload":{"protocol":"uniswap-v3","chain":"ethereum","asset":"USDC/WETH","apy":"12.00%","tvl":"$250,000,000","sentinel":{"sentinel":51,"safety":55,"durability":55,"exit":45,"confidence":40,"risk_level":"HIGH","strategy_fit":"aggressive","flags":["Unaudited","< 180 days live"]}}}
+
+event: final
+data: {"content":"**Liquidity Pools \u2014 USDC/WETH** (1 found)\n\n1. **Uniswap-V3** on Ethereum \u00b7 liquidity $250,000,000\n\n*Deepest pools first. Pair availability varies by DEX.*","card_ids":["63e4a8b1-bde9-441a-bfaf-de1e67d9c637"],"elapsed_ms":3091,"steps":6}
+
+event: done
+data: {}
+

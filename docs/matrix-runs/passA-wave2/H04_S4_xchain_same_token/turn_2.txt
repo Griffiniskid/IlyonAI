@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Bridge Leg (Ethereum \u2192 Solana)** \n- **Asset:** 100\u202fUSDC (ERC\u201120) \n- **Route:** Ethereum Mainnet \u2192 Solana Mainnet via deBridge (DLN) \n- **Estimated bridge fee:** ~0.1\u202f% of amount\u202f+\u202fEthereum gas (\u2248\u202f$0.50\u2013$1.00 at current gas prices) \n- **Typical execution time:** 2\u20135\u202fminutes after confirmation on Ethereum \n- **Risk level:** MEDIUM (bridge smart\u2011contract risk; verify deBridge contract address) \n- **Safety tip:** Always double\u2011check the destination address on Solana and use a hardware wallet or trusted signer for the transaction.","card_ids":[],"elapsed_ms":16042,"steps":3}
+
+event: done
+data: {}
+

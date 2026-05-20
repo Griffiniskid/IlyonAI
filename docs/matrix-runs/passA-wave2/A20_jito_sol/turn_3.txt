@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I need a clear action verb to build a deterministic execution plan. Please use a format like:\n\n- `Stake 1 SOL on Jito`\n- `Unstake 0.5 SOL from Jito`\n- `Withdraw 1 SOL from Jito`\n\nOnce you give the verb, I can generate the signable plan.","card_ids":[],"elapsed_ms":6216,"steps":3}
+
+event: done
+data: {}
+

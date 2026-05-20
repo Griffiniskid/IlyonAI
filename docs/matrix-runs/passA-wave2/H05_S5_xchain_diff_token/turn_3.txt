@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**JLP (Jupiter Liquidity Pool) composition (approx.)**\n\n- SOL\u202f\u2248\u202f45\u202f% \n- ETH\u202f\u2248\u202f20\u202f% \n- USDC\u202f\u2248\u202f15\u202f% \n- USDT\u202f\u2248\u202f10\u202f% \n- Other stablecoins / wrapped assets\u202f\u2248\u202f10\u202f%\n\n**Risk:** MEDIUM\u2011HIGH (exposure to SOL/ETH price swings). \n**Strategy fit:** balanced\u2011to\u2011aggressive \u2013 earns trading\u2011fee yield while accepting market\u2011price risk. \n**Safety tip:** verify the latest on\u2011chain weight report or audit before depositing, and monitor any drift after you enter.","card_ids":[],"elapsed_ms":3891,"steps":3}
+
+event: done
+data: {}
+

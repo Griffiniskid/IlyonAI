@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Unlock / withdrawal times for each bucket**\n\n| Bucket | How you exit | Typical unlock delay |\n|--------|--------------|----------------------|\n| Liquid staking (Lido\u202fstETH / rETH) | Request withdrawal via Lido portal; tokens are returned after the withdrawal queue processes | 1\u20115\u202fdays (depends on queue length) |\n| Renzo liquid restaking token (renZETH) | Burn renZETH on Renzo app to receive underlying ETH | Usually <\u202f1\u202fhour; may be a few minutes if the contract needs to settle |\n| Uniswap\u202fv3\u202fWETH\u2011ASTEROID LP | Remove liquidity directly from the pool | Instant (one transaction) |\n| Uniswap\u202fv3\u202fSERV\u2011WETH LP | Remove liquidity directly from the pool | Instant (one transaction) |\n| Morpho\u2011blue\u202fAUGUSTAUSD lending | Withdraw supplied stable\u2011coin from the Morpho market | Instant (subject to utilization; rarely delayed) |\n| Curve\u202fIDAI\u2011IUSDC\u2011IUSDT pool | Exit the pool via Curve UI or contract | Instant (one transaction) |\n\nAll positions are **non\u2011lock\u2011up**; you can withdraw at any time, though Lido stETH may have a short queue delay. Fees or accrued rewards are claimable when you withdraw.","card_ids":[],"elapsed_ms":7548,"steps":3}
+
+event: done
+data: {}
+

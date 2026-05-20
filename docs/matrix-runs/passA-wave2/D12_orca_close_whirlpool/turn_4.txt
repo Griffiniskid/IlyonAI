@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"You don\u2019t have any active Orca positions at the moment. The earlier USDC\u2011SOL deposit couldn\u2019t be executed (no verified adapter), so no funds are currently locked in any pool. Let me know if you\u2019d like to try a different pool or amount, and I\u2019ll prepare an execution plan.","card_ids":[],"elapsed_ms":24880,"steps":3}
+
+event: done
+data: {}
+

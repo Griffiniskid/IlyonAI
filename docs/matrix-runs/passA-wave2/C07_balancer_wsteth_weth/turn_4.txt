@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t execute that deposit without a deterministic Sentinel adapter for the Balancer wstETH\u2011WETH pool. If you\u2019d like to proceed, please provide an explicit action (e.g., \u201cSupply 0.025\u202fwstETH and 0.025\u202fWETH to Balancer V2 on Ethereum\u201d) so I can check adapter support and generate a signable execution plan. Otherwise you can add liquidity directly via Balancer\u2019s interface.","card_ids":[],"elapsed_ms":5621,"steps":3}
+
+event: done
+data: {}
+

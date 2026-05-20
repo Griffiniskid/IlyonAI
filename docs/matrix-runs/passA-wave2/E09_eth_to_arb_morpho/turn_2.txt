@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Could you specify the chain, asset, and market type you\u2019d like to see (e.g., top USDC lending market on Arbitrum, highest\u2011yield stablecoin pool on Base, etc.)? Once I have those details, I\u2019ll pull the top market for you.","card_ids":[],"elapsed_ms":9486,"steps":3}
+
+event: done
+data: {}
+

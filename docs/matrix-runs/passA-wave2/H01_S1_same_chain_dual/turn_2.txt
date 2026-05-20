@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"d7d56186-0226-499d-9d79-3bd94c8ee583","card_type":"execution_plan","payload":{"sentinel":null,"shield":null,"steps":[{"index":1,"verb":"Supply","amount":"21","asset":"USDC","target":"WETH-GITLAWB \u00b7 uniswap-v4","chain":"base","router":"Enso","wallet":"MetaMask","gas":"~$0.25","step_id":"alloc_step_1","protocol":"uniswap-v4","pool_id":null,"transaction":null,"blocker":null},{"index":2,"verb":"Supply","amount":"21","asset":"USDC","target":"XAU-USDC \u00b7 gmtrade","chain":"sol","router":"Jupiter","wallet":"Phantom","gas":"~$0.01","step_id":"alloc_step_2","protocol":"gmtrade","pool_id":null,"transaction":null,"blocker":null},{"index":3,"verb":"Supply","amount":"21","asset":"USDC","target":"WAVAX-USDC \u00b7 pharaoh-v3","chain":"avax","router":"Enso","wallet":"MetaMask","gas":"~$0.30","step_id":"alloc_step_3","protocol":"pharaoh-v3","pool_id":null,"transaction":null,"blocker":null},{"index":4,"verb":"Supply","amount":"21","asset":"USDC","target":"SOL-USDC \u00b7 gmtrade","chain":"sol","router":"Jupiter","wallet":"Phantom","gas":"~$0.01","step_id":"alloc_step_4","protocol":"gmtrade","pool_id":null,"transaction":null,"blocker":null},{"index":5,"verb":"Supply","amount":"21","asset":"USDC","target":"RAVE-USDT \u00b7 uniswap-v4","chain":"eth","router":"Enso","wallet":"MetaMask","gas":"~$4.80","step_id":"alloc_step_5","protocol":"uniswap-v4","pool_id":null,"transaction":null,"blocker":null}],"total_gas":"~$5.37","slippage_cap":"0.5%","wallets":"MetaMask + Phantom","tx_count":5,"requires_signature":false}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["d7d56186-0226-499d-9d79-3bd94c8ee583"],"elapsed_ms":0,"steps":2}
+
+event: done
+data: {}
+
