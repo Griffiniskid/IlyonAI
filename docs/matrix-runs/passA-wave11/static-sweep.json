@@ -78,15 +78,7 @@
       "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     ]
   },
-  "B01_stable_strategy\\turn_1.txt": {
-    "AP-050": [
-      "gas estimates, and 0.5%"
-    ]
-  },
   "B02_bear_strategy\\turn_1.txt": {
-    "AP-050": [
-      "gas estimates, and 0.5%"
-    ],
     "AP-140": [
       "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
       "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
@@ -94,9 +86,6 @@
     ]
   },
   "B15_pendle_yt_speculate\\turn_1.txt": {
-    "AP-050": [
-      "gas estimates, and 0.5%"
-    ],
     "AP-140": [
       "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
       "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"

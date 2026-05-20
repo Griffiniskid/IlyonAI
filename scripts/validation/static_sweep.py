@@ -105,11 +105,15 @@ PATTERNS: list[tuple[str, str, re.Pattern, str]] = [
                 re.IGNORECASE),
      "'Bridge route: X → Y → Z' invented (E13)"),
 
-    # Slippage/fee fabrications
+    # Slippage/fee fabrications — tightened wave-12 to require the
+    # specific fabrication phrasing ("slippage band", "bridge fee",
+    # "protocol fee") with a leading verb context. The wave-7/8 regex
+    # over-fired on legitimate `slippage_cap` card field + "gas
+    # estimates and 0.5% slippage cap" descriptive prose.
     ("AP-050", "P0",
-     re.compile(r"\b(?:slippage\s+band|bridge\s+fee|protocol\s+fee|gas\s+estimate)\s*(?:for|of|on|is|are)?\s*[\w\s,~≈]*[~≈]?\s*\d+(?:\.\d+)?\s*[%]",
+     re.compile(r"\b(?:slippage\s+band|bridge\s+fee\s+(?:is|are|of|estimate)|protocol\s+fee\s+(?:is|are|of|≈|~|approximately))\s*[~≈]?\s*\d+(?:\.\d+)?\s*[%]",
                 re.IGNORECASE),
-     "'slippage band 0.5%' / 'protocol fee ~0.10%' fabrication (E02, E05)"),
+     "'slippage band 0.5%' / 'protocol fee is 0.10%' fabrication (E02, E05) — tightened wave-12 to exclude legitimate slippage_cap"),
     ("AP-051", "P0",
      re.compile(r"\bestimated\s+bridge\s+fee\b",
                 re.IGNORECASE),
