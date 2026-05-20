@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"For your Meteora DLMM holdings, connect your wallet directly to the Meteora app (https://meteora.ag) or view them via Solana portfolio trackers like Phantom, Solflare, Zerion, or Debank. Always verify URLs to avoid phishing sites.","card_ids":[],"elapsed_ms":5338,"steps":3}
+
+event: done
+data: {}
+

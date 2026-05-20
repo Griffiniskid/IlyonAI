@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"supply\", \"amount_in\": \"100\", \"asset_in\": \"USDC\", \"chain\": \"solana\", \"protocol\": \"aave-v3\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"solana","protocol":"aave-v3","action":"supply","asset_in":"USDC","amount_in":"100"}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"611c30c4-953e-47d6-ae55-4b391bb10ca7","card_type":"execution_plan_v3","payload":{"plan_id":"plan_29ff5beda3e2","title":"Aave V3 Supply","summary":"Aave V3 doesn't run on Solana. Aave V3 is an EVM protocol \u2014 try Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, or Avalanche.","status":"blocked","risk_gate":"clear","requires_double_confirm":false,"blockers":[{"code":"WALLET_CHAIN_MISMATCH","severity":"blocker","title":"Aave V3 not deployed on Solana","detail":"Aave V3 is an EVM-only protocol. It does not exist on Solana. Solana lending equivalents: Kamino Lend, MarginFi. Solana LP equivalents: Raydium, Orca, Meteora.","affected_step_ids":[],"recoverable":true,"cta":"Pick an EVM chain (e.g. Ethereum, Base) for Aave V3, or switch to a Solana-native protocol (Kamino, Raydium, Orca, Marinade)."}],"steps":[],"totals":{"estimated_gas_usd":0.0,"estimated_duration_s":0,"signatures_required":0,"chains_touched":[],"assets_required":{}},"research_thesis":null,"strategy_id":null,"recovery":{"action":"ASK_USER","posture":"Aave V3 isn't deployed on Solana","new_slippage_bps":null,"alternatives":[],"buttons":["Use Kamino on Solana","Use Aave V3 on Base","Use Aave V3 on Ethereum","Cancel"],"channels":[],"rationale":"EVM protocol on Solana chain \u2014 no on-chain deployment exists."}}}
+
+event: final
+data: {"content":"**Aave V3 Supply** \u2014 Aave V3 doesn't run on Solana. Aave V3 is an EVM protocol \u2014 try Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, or Avalanche.\nStatus: `blocked` \u00b7 0 signature(s) required.\n\n**Blockers**\n- Aave V3 not deployed on Solana: Aave V3 is an EVM-only protocol. It does not exist on Solana. Solana lending equivalents: Kamino Lend, MarginFi. Solana LP equivalents: Raydium, Orca, Meteora.\n\nNo signing button is shown until every blocker clears.","card_ids":["611c30c4-953e-47d6-ae55-4b391bb10ca7"],"elapsed_ms":36,"steps":5}
+
+event: done
+data: {}
+

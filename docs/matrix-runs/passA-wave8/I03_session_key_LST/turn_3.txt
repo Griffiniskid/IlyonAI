@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To fetch the current spend cap and selector allowlist, I need the following details:\n\n- Token contract address \n- Spender address (the contract whose allowance you want to check) \n- Your wallet address (for reference) \n- Chain ID (e.g., 1 for Ethereum, 10 for Optimism, etc.)\n\nPlease provide those, and I\u2019ll retrieve the allowance information for you. Always double\u2011check the spender on a block explorer before confirming any changes.","card_ids":[],"elapsed_ms":7307,"steps":3}
+
+event: done
+data: {}
+

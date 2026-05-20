@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The pool \u201cMeteora DAMM v2\u201d isn\u2019t present in the live DefiLlama catalog, so the system can\u2019t locate a matching address or UUID to build a transaction. To proceed, provide the exact DefiLlama pool UUID or a tighter \u201cprotocol\u2011pair\u201d reference (e.g., \u201cmeteora-damm SOL\u2011USDC\u201d). Without that, no signable plan can be generated.","card_ids":[],"elapsed_ms":7213,"steps":3}
+
+event: done
+data: {}
+

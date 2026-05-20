@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"1410f23c-86bf-4886-b36a-ee631fdfb42e","card_type":"execution_plan","payload":{"sentinel":null,"shield":null,"steps":[{"index":1,"verb":"Supply","amount":"200","asset":"USDC","target":"DORY-USDC \u00b7 uniswap-v4","chain":"arb","router":"Enso","wallet":"MetaMask","gas":"~$0.35","step_id":"alloc_step_1","protocol":"uniswap-v4","pool_id":null,"transaction":null,"blocker":null},{"index":2,"verb":"Supply","amount":"200","asset":"USDC","target":"SERV-WETH \u00b7 uniswap-v3","chain":"eth","router":"Enso","wallet":"MetaMask","gas":"~$4.80","step_id":"alloc_step_2","protocol":"uniswap-v3","pool_id":null,"transaction":null,"blocker":null},{"index":3,"verb":"Supply","amount":"200","asset":"USDC","target":"IDAI-IUSDC-IUSDT \u00b7 curve-dex","chain":"eth","router":"Enso","wallet":"MetaMask","gas":"~$4.80","step_id":"alloc_step_3","protocol":"curve-dex","pool_id":null,"transaction":null,"blocker":null},{"index":4,"verb":"Supply","amount":"200","asset":"USDC","target":"ETH-UPEG \u00b7 uniswap-v4","chain":"eth","router":"Enso","wallet":"MetaMask","gas":"~$4.80","step_id":"alloc_step_4","protocol":"uniswap-v4","pool_id":null,"transaction":null,"blocker":null},{"index":5,"verb":"Supply","amount":"200","asset":"USDC","target":"ZBU \u00b7 zeebu","chain":"eth","router":"Enso","wallet":"MetaMask","gas":"~$4.80","step_id":"alloc_step_5","protocol":"zeebu","pool_id":null,"transaction":null,"blocker":null}],"total_gas":"~$19.55","slippage_cap":"0.5%","wallets":"MetaMask","tx_count":5,"requires_signature":false}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["1410f23c-86bf-4886-b36a-ee631fdfb42e"],"elapsed_ms":0,"steps":2}
+
+event: done
+data: {}
+

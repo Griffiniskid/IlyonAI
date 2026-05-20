@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"If the slippage exceeds your 50\u202fbps tolerance, the transaction will revert (or be rejected) before any funds are moved. You\u2019ll still pay the gas for the failed attempt, but no USDC will be bridged or supplied. To succeed, you\u2019d need to either increase the slippage allowance or resubmit when market conditions improve. Risk remains MEDIUM; strategy fit balanced.","card_ids":[],"elapsed_ms":14624,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"`Deposit 0.025\u202fETH\u202fwstETH and 0.025\u202fETH\u202fWETH into the Balancer wstETH\u2011WETH pool on Ethereum`\n\nOnce I have that exact instruction, I can check adapter support and return a signable Execution Plan card. Without it, I cannot invent transaction data or fees.","card_ids":[],"elapsed_ms":32270,"steps":3}
+
+event: done
+data: {}
+

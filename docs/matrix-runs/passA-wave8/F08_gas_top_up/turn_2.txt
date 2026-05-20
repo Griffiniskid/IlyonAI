@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The plan is blocked because you don\u2019t have enough AVAX to pay the gas fees for the two required transactions (approve\u202f+\u202fsupply). The estimate is ~0.673\u202fAVAX (~$6.30 with a 1.5\u00d7 safety margin), but your wallet currently holds only 0.250\u202fAVAX. Bridge additional AVAX (or top up via another source) until you have at least ~0.68\u202fAVAX, then the plan will become signable.","card_ids":[],"elapsed_ms":4302,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The longest\u2011dated position in the allocation is **Morpho\u202fBlue PT\u2011USDC**, maturing **30\u202fJun\u202f2027**. Let me know if you\u2019d like to execute a purchase or need any other details.","card_ids":[],"elapsed_ms":17462,"steps":3}
+
+event: done
+data: {}
+

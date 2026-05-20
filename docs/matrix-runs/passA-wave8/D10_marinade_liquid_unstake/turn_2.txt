@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can't confirm that action without a deterministic Sentinel tool producing the calldata. Try an explicit verb form \u2014 for example `Supply 100 USDC to Aave V3 on Base`, `Stake 1 SOL on Marinade`, or `Bridge 100 USDC from Ethereum to Base via deBridge`. The deterministic adapters emit a signable Execution Plan card; the freeform fallback never invents transaction hashes, bridge fees, calldata, or session-key state.","card_ids":[],"elapsed_ms":49440,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Please provide the Enso router contract address on Berachain and the exact function signature (e.g., `supply(uint256 amount0,uint256 amount1,address to,uint256 deadline)`) for the Kodiak V3 HONEY/WBERA pool. Once I have those details I can generate the calldata for supplying 100\u202fHONEY and the matching amount of WBERA.","card_ids":[],"elapsed_ms":6503,"steps":3}
+
+event: done
+data: {}
+

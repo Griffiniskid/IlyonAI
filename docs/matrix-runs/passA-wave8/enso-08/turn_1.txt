@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Open Enso, connect wallet, select Add liquidity \u2192 USDC/WETH (tick spacing\u202f100), enter 250\u202fUSDC, approve if needed, confirm. After confirmation, view tx hash in wallet or Basescan. Risk: MEDIUM; strategy fit: balanced; safety tip: approve only needed amount, check slippage.","card_ids":[],"elapsed_ms":39549,"steps":3}
+
+event: done
+data: {}
+

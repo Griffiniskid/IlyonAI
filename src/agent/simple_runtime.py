@@ -6211,6 +6211,14 @@ _FREEFORM_TX_STATE_HALLUCINATION_RE = re.compile(
     r"you'?ll\s+(?:receive|get)\s+a\s+(?:tx\s+|transaction\s+)?hash|"
     r"submit\s+the\s+(?:stake|supply|deposit|swap|bridge|approve|withdraw)\s+transaction|"
     r"approve\s+the\s+contract\s+for\s+[\d.]+\s+[A-Z]{2,8}|"
+    # Wave-9 additions — E10/enso-02 t2 leak:
+    # "Approve 50 ARB and ≈0.0306 ETH in Enso, then submit the
+    # 'Increase liquidity' transaction. Once confirmed, your LP-NFT
+    # will reflect…"
+    r"submit\s+the\s+[\"'‘“]?(?:increase|decrease|remove|add|provide)\s+liquidity[\"'’”]?\s+transaction|"
+    r"once\s+confirmed,?\s+[\w\s-]+\s+will\s+(?:reflect|appear|show|update|sync|be\s+credited|be\s+available)|"
+    r"\bdouble[-\s]?check\s+the\s+(?:pool|router|contract|spender)\s+address\s+before\s+signing|"
+    r"approve\s+[\d.]+\s+[A-Z]{2,8}\s+and\s+(?:≈|~|approximately\s+)?[\d.]+\s+[A-Z]{2,8}\s+in\s+[A-Z]\w+|"
     # Fabricated bridge fees / protocol fees / slippage band — E02 t3 / E05 t2
     # / H04 t2 invented bridge cost breakdowns.
     r"\b(?:slippage\s+band|bridge\s+fee|protocol\s+fee|gas\s+estimate)"

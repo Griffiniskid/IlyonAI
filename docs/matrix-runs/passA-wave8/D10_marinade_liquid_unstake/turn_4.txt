@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Confirming: liquid\u2011unstaking\u202f0.5\u202fmSOL via Marinade will return roughly\u202f0.5\u202fSOL plus any accrued staking rewards after the standard 1\u20112\u202fepoch delay. The transaction is low\u2011risk; you\u2019ll just need a small amount of SOL for the fee.","card_ids":[],"elapsed_ms":46185,"steps":3}
+
+event: done
+data: {}
+

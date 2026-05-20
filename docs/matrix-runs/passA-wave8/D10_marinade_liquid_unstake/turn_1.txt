@@ -1,0 +1,24 @@
+event: thought
+data: {"step_index":1,"content":"User wants to allocate / distribute / sign across the previously surfaced pool list."}
+
+event: thought
+data: {"step_index":2,"content":"Reusing 1 pool(s) from the prior turn instead of searching fresh ones."}
+
+event: thought
+data: {"step_index":3,"content":"Distribution amount: $86"}
+
+event: card
+data: {"step_index":3,"card_id":"830684bb-7849-4302-aac9-390790155da6","card_type":"defi_opportunities","payload":{"objective":"constraint_fit_then_risk_adjusted_return","target_apy":null,"apy_band":[null,null],"risk_levels":[],"chains":["solana"],"execution_requested":false,"items":[{"protocol":"marinade-liquid-staking","symbol":"MSOL","chain":"solana","product_type":"liquid staking","apy":5.0235,"apy_base":5.0235,"apy_reward":0.0,"tvl_usd":272669474.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"solana-yield-builder","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/b3f93865-5ec8-4662-90a0-11808e0aa2bd"},{"label":"marinade-liquid-staking on DefiLlama","url":"https://defillama.com/protocol/marinade-liquid-staking"}],"pool_id":"b3f93865-5ec8-4662-90a0-11808e0aa2bd"}],"excluded_count":0,"blockers":[]}}
+
+event: card
+data: {"step_index":3,"card_id":"cf107a4a-5cea-41ed-8306-4ea71b998a21","card_type":"allocation","payload":{"sentinel":null,"shield":null,"positions":[{"rank":1,"protocol":"marinade-liquid-staking","asset":"MSOL","chain":"sol","apy":"5.0%","sentinel":61,"risk":"low","fit":"aggressive","weight":100,"usd":"$86","tvl":"$273M","router":"Jupiter","safety":61,"durability":70,"exit":60,"confidence":48,"flags":["Unaudited","No verified adapter \u2014 research only"]}],"total_usd":"$86","blended_apy":"~5.0%","chains":1,"weighted_sentinel":61,"risk_mix":{"low":1,"medium":0,"high":0},"combined_tvl":"$273M"}}
+
+event: card
+data: {"step_index":3,"card_id":"8494a5aa-689c-432d-b31b-47dd3a8f28be","card_type":"execution_plan","payload":{"sentinel":null,"shield":null,"steps":[{"index":1,"verb":"Stake","amount":"86","asset":"SOL","target":"MSOL \u00b7 marinade-liquid-staking","chain":"sol","router":"Jupiter","wallet":"Phantom","gas":"~$0.01","step_id":"alloc_step_1","protocol":"marinade-liquid-staking","pool_id":null,"transaction":null,"blocker":null}],"total_gas":"~$0.01","slippage_cap":"0.5%","wallets":"Phantom","tx_count":1,"requires_signature":false}}
+
+event: final
+data: {"content":"## Allocation\n| # | Protocol \u00b7 Pair (chain) | Weight % | $ Amount | APY | Risk |\n|---|---|---|---|---|---|\n| 1 | marinade-liquid-staking \u00b7 MSOL (Solana) | 100% | $86 | 5.0% | LOW |","card_ids":["830684bb-7849-4302-aac9-390790155da6","cf107a4a-5cea-41ed-8306-4ea71b998a21","8494a5aa-689c-432d-b31b-47dd3a8f28be"],"elapsed_ms":36409,"steps":3}
+
+event: done
+data: {}
+

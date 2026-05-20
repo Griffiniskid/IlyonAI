@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To generate the signing card for this bundle, please resend the original request, for example:\n\n**Supply 100\u202fAERO\u202f+\u202fmatching\u202fWETH to Aerodrome V3 AERO/WETH LP on Base via Enso**\n\nOnce you do that, I\u2019ll provide the signing card for you to approve and execute.","card_ids":[],"elapsed_ms":28556,"steps":3}
+
+event: done
+data: {}
+

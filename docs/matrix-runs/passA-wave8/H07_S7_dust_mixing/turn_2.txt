@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The swap pieces for a Curve 3pool deposit are three separate supply actions: \n- Supply\u202f50\u202fUSDC to Curve 3pool on Ethereum \n- Supply\u202f50\u202fUSDT to Curve 3pool on Ethereum \n- Supply\u202f50\u202fDAI to Curve 3pool on Ethereum \n\nEach step requires an ERC\u201120 approval followed by a deposit transaction. Risk level is **LOW** (stable\u2011coin pool) and the strategy fits a **conservative** profile. Make sure to approve each token\u2019s spend limit before signing the deposit txs.","card_ids":[],"elapsed_ms":29824,"steps":3}
+
+event: done
+data: {}
+

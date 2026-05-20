@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Try an explicit verb form \u2014 for example `Revoke USDC approval on Uniswap V3 on Ethereum`, `Revoke allowance for SOL on Raydium`, or `Revoke token access for USDC on Aave V3`. The deterministic adapters emit a signable Execution Plan card; the freeform fallback never invents transaction hashes, bridge fees, calldata, or session\u2011key state.","card_ids":[],"elapsed_ms":8055,"steps":3}
+
+event: done
+data: {}
+

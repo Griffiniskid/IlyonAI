@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To execute via deterministic adapter, use explicit format: `Swap 200 USDC for sUSDe then mint PT-sUSDe via Pendle on Ethereum`. Freeform requests cannot generate signing cards. Risk: HIGH (PT-sUSDe price volatility). Only allocate loss-tolerant funds.","card_ids":[],"elapsed_ms":25301,"steps":3}
+
+event: done
+data: {}
+

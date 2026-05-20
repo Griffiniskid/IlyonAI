@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Jupiter JLP (Jupiter Liquidity Pool) composition (approx.)**\n\n| Asset | Approx. weight |\n|-------|----------------|\n| USDC | ~50\u202f% |\n| USDT | ~20\u202f% |\n| SOL | ~15\u202f% |\n| ETH | ~10\u202f% |\n| wBTC | ~5\u202f% |\n\n**Risk level:** MEDIUM \u2013 diversified exposure reduces single\u2011token risk but remains subject to market volatility and smart\u2011contract risk. \n**Strategy fit:** Balanced \u2013 suitable for users seeking yield with moderate risk tolerance. \n**Safety tips:** \n- Review Jupiter\u2019s latest audit reports for the perpetuals contracts. \n- Monitor pool rebalancing; weights can shift with market moves. \n- Consider impermanent\u2011loss impact if withdrawing during large price swings. \n- Only allocate funds you can afford to lose; keep a portion in more stable assets if you prefer lower risk.","card_ids":[],"elapsed_ms":5775,"steps":3}
+
+event: done
+data: {}
+

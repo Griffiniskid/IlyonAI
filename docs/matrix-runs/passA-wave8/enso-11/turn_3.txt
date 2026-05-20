@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Enso \u201cpreview add liquidity\u201d \u2013 SwapX\u202fV3\u202fSonic\u202fS/USDC (50\u202fS\u202f+\u202fmatching USDC, narrow range)** \n\n| Item | Preview output (example) |\n|------|--------------------------|\n| **Estimated LP\u2011token amount** | \u2248\u202f0.842\u202fLP\u2011S/USDC |\n| **Exact token approvals** | \u2022 S:\u202f50.000000\u202fS <br>\u2022 USDC:\u202f1.250000\u202fUSDC *(preview will fill the precise figure)* |\n| **Suggested minimum\u2011output (slippage protection)** | \u2265\u202f0.825\u202fLP\u2011S/USDC |\n| **Range details** | Narrow band around current price, e.g., \u00b10.5\u202f% (exact ticks shown in live preview) |\n| **Gas estimate** | Approx.\u202f80\u2011120\u202fk\u202fgas |\n\n**Next steps**\n\n1. Run the preview in Enso (or SwapX\u202fV3\u202fSonic UI) to get the live numbers. \n2. Approve only the exact S and USDC amounts shown. \n3. Set low slippage (use the suggested minimum\u2011output or a custom low value). \n4. Verify the pool contract address matches the official SwapX\u202fV3\u202fSonic S/USDC pool. \n5. Submit the \u201cAdd Liquidity\u201d transaction in your wallet. \n\n*Risk/strategy:* medium\u2011risk, balanced\u2011strategy LP. Keep the range tight to limit impermanent loss and monitor regularly. Replace the example figures with the live preview output before approving or signing.","card_ids":[],"elapsed_ms":13962,"steps":3}
+
+event: done
+data: {}
+
