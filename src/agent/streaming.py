@@ -89,7 +89,27 @@ class StreamCollector(AsyncCallbackHandler):
         )
 
     def emit_final(self, content: str, card_ids: list[str]) -> None:
-        """Enqueue final + done frames."""
+        """Enqueue final + done frames.
+
+        Matrix Pass A waves 1-3 surfaced the same root cause across
+        categories A/B/C/E: LLM scratchpad (chain-of-thought, internal
+        prompt-engineering instructions, arithmetic worksheets) leaks
+        into the user-facing ``final.content`` whenever a composition
+        path (allocation / strategy / freeform fallback) returns a
+        response that opens with thinking-style prose.
+
+        Defensively strip at the streaming chokepoint so every code path
+        that reaches ``emit_final`` is protected regardless of which
+        composition path produced it. The strip function preserves
+        markdown structure (tables, headings, lists) — only leading
+        scratchpad paragraphs and trailing meta-commentary are removed.
+        """
+        try:
+            from src.agent.simple_runtime import _strip_strategy_scratchpad
+            content = _strip_strategy_scratchpad(content)
+        except Exception:  # noqa: BLE001
+            # Fail-open: never let the sanitizer crash the final emit.
+            pass
         elapsed = int((time.monotonic() - self._started) * 1000)
         self._queue.append(
             FinalFrame(

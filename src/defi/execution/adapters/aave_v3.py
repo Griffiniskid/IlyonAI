@@ -385,7 +385,24 @@ class AaveV3SupplyAdapter:
                     f"Aave V3 WrappedTokenGatewayV3 not registered on {chain_norm}."
                 )
             native_units = _to_unit(request.amount_in, 18)
-            if native_units <= 0:
+            # Matrix Pass A wave 3 D-P1-14 drain-risk fix: amount_in=0
+            # silently rewrote to MAX_UINT256 while description still
+            # read "Withdraw 0 ETH" — user signing a "0 withdraw" would
+            # actually withdraw the entire aToken balance via WTG3 burn.
+            # Now require explicit extra.withdraw_all=true for max
+            # withdrawal; refuse zero/negative otherwise.
+            native_withdraw_all = bool(
+                extra.get("withdraw_all") or extra.get("max")
+            )
+            if native_units <= 0 and not native_withdraw_all:
+                raise ValueError(
+                    "Aave V3 native withdraw via WTG3: amount_in must "
+                    "be > 0. To withdraw the entire aToken balance, "
+                    "pass extra.withdraw_all=true (the description "
+                    "will say 'Withdraw ALL' and calldata will use "
+                    "MAX_UINT256)."
+                )
+            if native_withdraw_all:
                 native_units = (1 << 256) - 1
             atoken_addr = (
                 extra.get("atoken_address")

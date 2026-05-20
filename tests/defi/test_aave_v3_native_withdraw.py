@@ -75,12 +75,29 @@ def test_native_eth_withdraw_encodes_pool_address():
     assert body[24:64] == pool
 
 
-def test_native_withdraw_zero_amount_uses_max_sentinel():
-    """amount=0 → uint256.max for withdraw all aWETH."""
+def test_native_withdraw_zero_amount_requires_explicit_withdraw_all():
+    """Matrix Pass A wave 3 D-P1-14 drain-risk fix.
+
+    Pre-fix: amount=0 silently rewrote to MAX_UINT256 while description
+    read "Withdraw 0 ETH" — signing would drain entire aToken balance.
+
+    Post-fix: amount=0 refused unless extra.withdraw_all=true. With the
+    explicit flag, calldata uses MAX_UINT256 and description says
+    "Withdraw ALL".
+    """
+    import pytest
     a = AaveV3SupplyAdapter()
-    steps = _run(a.build(_native_withdraw_req(amount="0")))
+    # Bare zero refused.
+    with pytest.raises(ValueError, match="amount_in must be > 0"):
+        _run(a.build(_native_withdraw_req(amount="0")))
+
+    # Explicit withdraw_all=true accepted.
+    req_explicit = _native_withdraw_req(amount="0")
+    req_explicit.extra["withdraw_all"] = True
+    steps = _run(a.build(req_explicit))
     data = steps[1].transaction.data
     assert "f" * 64 in data
+    assert "ALL" in steps[1].description
 
 
 def test_native_withdraw_falls_back_to_registry_atoken():

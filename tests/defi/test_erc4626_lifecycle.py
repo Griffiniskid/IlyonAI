@@ -44,19 +44,42 @@ def test_redeem_selector_ba087652():
     assert steps[0].transaction.data.startswith("0xba087652")
 
 
-def test_zero_amount_means_max():
+def test_zero_amount_requires_explicit_withdraw_all():
+    """Matrix Pass A wave 3 D-P1-14 drain-risk fix.
+
+    Pre-fix: amount_in=0 silently rewrote to MAX_UINT256 while
+    description still read "withdraw(0)". User signing "0 withdraw"
+    would drain entire position.
+
+    Post-fix: amount_in=0 raises ValueError unless extra.withdraw_all
+    is explicitly true (in which case description correctly says
+    "Withdraw ALL" + calldata uses MAX_UINT256).
+    """
+    import pytest
     a = ERC4626VaultAdapter()
-    req = YieldBuildRequest(
+    # Bare zero amount must refuse — silent drain-rewrite removed.
+    req_bare_zero = YieldBuildRequest(
         chain="ethereum", protocol="yearn", asset_in="USDC",
         amount_in=Decimal("0"),
         user_address="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         extra={"action": "withdraw"},
     )
-    steps = _run(a.build(req))
+    with pytest.raises(ValueError, match="amount_in must be > 0"):
+        _run(a.build(req_bare_zero))
+
+    # Explicit withdraw_all=true accepts amount_in=0 and uses MAX_UINT256
+    # with a description that calls it out clearly.
+    req_explicit = YieldBuildRequest(
+        chain="ethereum", protocol="yearn", asset_in="USDC",
+        amount_in=Decimal("0"),
+        user_address="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        extra={"action": "withdraw", "withdraw_all": True},
+    )
+    steps = _run(a.build(req_explicit))
     body = steps[0].transaction.data[10:]
-    # 1st 32-byte field is shares/assets — should be uint256.max sentinel.
     amount_hex = body[:64]
     assert int(amount_hex, 16) == (1 << 256) - 1
+    assert "ALL" in steps[0].title or "ALL" in steps[0].description
 
 
 def test_withdraw_redeem_in_supported_actions():

@@ -188,7 +188,24 @@ class ERC4626VaultAdapter:
         action_hint = (extra.get("action") or "").lower()
         if action_hint in {"withdraw", "redeem"}:
             wd_units = _to_unit(request.amount_in, decimals)
-            if wd_units <= 0:
+            # Matrix Pass A wave 3 D-P1-14 drain-risk fix: amount_in=0
+            # silently rewrote to MAX_UINT256 while description still
+            # read "withdraw(0)" — user signing "0 withdraw" would drain
+            # entire position. Now:
+            #   1. Explicit `extra.withdraw_all=true` -> MAX_UINT256
+            #      with description "Withdraw ALL".
+            #   2. amount_in=0 without that flag -> raise ValueError
+            #      (refuse rather than silently rewrite).
+            #   3. amount_in>0 -> as specified.
+            withdraw_all = bool(extra.get("withdraw_all") or extra.get("max"))
+            if wd_units <= 0 and not withdraw_all:
+                raise ValueError(
+                    f"ERC-4626 {action_hint}: amount_in must be > 0. "
+                    f"To withdraw the entire position, pass "
+                    f"extra.withdraw_all=true (the description will say "
+                    f"'Withdraw ALL' and calldata will use MAX_UINT256)."
+                )
+            if withdraw_all:
                 wd_units = (1 << 256) - 1
             sel = "0xba087652" if action_hint == "redeem" else "0xb460af94"
             data = (
@@ -197,12 +214,18 @@ class ERC4626VaultAdapter:
                 + _encode_address(request.user_address)
                 + _encode_address(request.user_address)
             )
+            display_amount = (
+                "ALL (max)" if withdraw_all else str(request.amount_in)
+            )
             step = make_step(
                 index=1,
                 action=action_hint,
-                title=f"{action_hint.title()} {request.asset_in} from {request.protocol} vault",
+                title=(
+                    f"{action_hint.title()} {'ALL' if withdraw_all else request.asset_in} "
+                    f"from {request.protocol} vault"
+                ),
                 description=(
-                    f"ERC-4626 {action_hint}({request.amount_in}) — "
+                    f"ERC-4626 {action_hint}({display_amount}) — "
                     f"{'shares' if action_hint == 'redeem' else 'assets'} returned to "
                     f"{request.user_address}."
                 ),
