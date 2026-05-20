@@ -1,0 +1,36 @@
+event: thought
+data: {"step_index":1,"content":"Parsed constraint-aware DeFi search: {\"asset_hint\": null, \"chains\": [\"optimism\"], \"limit\": 8, \"product_types\": [\"lending\"], \"protocol_filter\": \"aave\", \"ranking_objective\": \"constraint_fit_then_risk_adjusted_return\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Separating research, allocation, and execution intent before selecting a tool."}
+
+event: thought
+data: {"step_index":3,"content":"Applying hard APY, risk, chain, and TVL filters from the user's exact request."}
+
+event: thought
+data: {"step_index":4,"content":"Checking execution readiness separately so unsupported pools never get fake signing buttons."}
+
+event: tool
+data: {"step_index":4,"name":"search_defi_opportunities","args":{"chains":["optimism"],"ranking_objective":"constraint_fit_then_risk_adjusted_return","product_types":["lending"],"limit":8,"asset_hint":null,"protocol_filter":"aave"}}
+
+event: observation
+data: {"step_index":4,"name":"search_defi_opportunities","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Parsed constraints: risk=any, target_apy=None, apy_band=(0.0, 10000.0)."}
+
+event: thought
+data: {"step_index":6,"content":"Queried DefiLlama with min_tvl=$10,000 and min_apy=0.0 instead of the legacy $200M/0.5% staking defaults."}
+
+event: thought
+data: {"step_index":7,"content":"Ranked 265 candidates by constraint_fit_then_risk_adjusted_return; 7 matched the hard constraints and 25 were excluded."}
+
+event: card
+data: {"step_index":7,"card_id":"69a10d12-1676-4642-8d2d-6835e5305faa","card_type":"defi_opportunities","payload":{"objective":"constraint_fit_then_risk_adjusted_return","target_apy":null,"apy_band":[0.0,10000.0],"risk_levels":[],"chains":["optimism"],"execution_requested":false,"items":[{"protocol":"aave-v3","symbol":"WSTETH","chain":"optimism","product_type":"lending","apy":0.00157,"apy_base":0.00157,"apy_reward":0.0,"tvl_usd":22836318.0,"volume_24h_usd":null,"risk_level":"MEDIUM","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/03a0cf78-c2f0-4ce5-85a8-2d5b77349276"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"03a0cf78-c2f0-4ce5-85a8-2d5b77349276"},{"protocol":"aave-v3","symbol":"WBTC","chain":"optimism","product_type":"lending","apy":0.02522,"apy_base":0.02522,"apy_reward":0.0,"tvl_usd":14779090.0,"volume_24h_usd":null,"risk_level":"MEDIUM","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/e053590b-54f1-40aa-ae0d-14e701ca734c"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"e053590b-54f1-40aa-ae0d-14e701ca734c"},{"protocol":"aave-v3","symbol":"WETH","chain":"optimism","product_type":"lending","apy":0.98526,"apy_base":0.98526,"apy_reward":0.0,"tvl_usd":7096493.0,"volume_24h_usd":null,"risk_level":"MEDIUM","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/3e332a41-3a15-41bc-8d5c-438c09609349"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"3e332a41-3a15-41bc-8d5c-438c09609349"},{"protocol":"aave-v3","symbol":"USDC","chain":"optimism","product_type":"lending","apy":2.84045,"apy_base":2.84045,"apy_reward":0.0,"tvl_usd":2131276.0,"volume_24h_usd":null,"risk_level":"MEDIUM","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/0758c3b8-4ffb-4176-b0a9-f446e367db46"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"0758c3b8-4ffb-4176-b0a9-f446e367db46"},{"protocol":"aave-v3","symbol":"USDT","chain":"optimism","product_type":"lending","apy":2.76879,"apy_base":2.76879,"apy_reward":0.0,"tvl_usd":824893.0,"volume_24h_usd":null,"risk_level":"HIGH","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/bde08c85-41c5-4d80-9bb1-0835a4352efa"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"bde08c85-41c5-4d80-9bb1-0835a4352efa"},{"protocol":"aave-v3","symbol":"RETH","chain":"optimism","product_type":"lending","apy":9e-05,"apy_base":9e-05,"apy_reward":0.0,"tvl_usd":729486.0,"volume_24h_usd":null,"risk_level":"HIGH","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/9e28dffc-2773-4c52-8cae-66c16e0eaa00"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"9e28dffc-2773-4c52-8cae-66c16e0eaa00"},{"protocol":"aave-v3","symbol":"OP","chain":"optimism","product_type":"lending","apy":0.10103,"apy_base":0.10103,"apy_reward":0.0,"tvl_usd":499934.0,"volume_24h_usd":null,"risk_level":"HIGH","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/87e476df-2d7c-4ee9-913c-e0d96865ef82"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"87e476df-2d7c-4ee9-913c-e0d96865ef82"}],"excluded_count":25,"blockers":[]}}
+
+event: final
+data: {"content":"**Constraint-Matched DeFi Opportunities**\n\n1. **Aave V3** \u2014 WSTETH on optimism \n APY 0.0% \u00b7 TVL $22,836,318 \u00b7 Risk MEDIUM\n Links: [DefiLlama pool](https://defillama.com/yields/pool/03a0cf78-c2f0-4ce5-85a8-2d5b77349276)\n Execution: ready via deterministic\n\n2. **Aave V3** \u2014 WBTC on optimism \n APY 0.0% \u00b7 TVL $14,779,090 \u00b7 Risk MEDIUM\n Links: [DefiLlama pool](https://defillama.com/yields/pool/e053590b-54f1-40aa-ae0d-14e701ca734c)\n Execution: ready via deterministic\n\n3. **Aave V3** \u2014 WETH on optimism \n APY 1.0% \u00b7 TVL $7,096,493 \u00b7 Risk MEDIUM\n Links: [DefiLlama pool](https://defillama.com/yields/pool/3e332a41-3a15-41bc-8d5c-438c09609349)\n Execution: ready via deterministic\n\n4. **Aave V3** \u2014 USDC on optimism \n APY 2.8% \u00b7 TVL $2,131,276 \u00b7 Risk MEDIUM\n Links: [DefiLlama pool](https://defillama.com/yields/pool/0758c3b8-4ffb-4176-b0a9-f446e367db46)\n Execution: ready via deterministic\n\n5. **Aave V3** \u2014 USDT on optimism \n APY 2.8% \u00b7 TVL $824,893 \u00b7 Risk HIGH\n Links: [DefiLlama pool](https://defillama.com/yields/pool/bde08c85-41c5-4d80-9bb1-0835a4352efa)\n Execution: ready via deterministic\n\nExcluded 25 candidates that violated the requested risk, APY, chain, or TVL constraints.","card_ids":["69a10d12-1676-4642-8d2d-6835e5305faa"],"elapsed_ms":4386,"steps":7}
+
+event: done
+data: {}
+

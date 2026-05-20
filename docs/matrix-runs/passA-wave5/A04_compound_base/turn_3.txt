@@ -1,0 +1,36 @@
+event: thought
+data: {"step_index":1,"content":"Parsed constraint-aware DeFi search: {\"chains\": [\"base\"], \"execution_requested\": true, \"limit\": 8, \"product_types\": [], \"ranking_objective\": \"execution_ready_strategy\", \"risk_levels\": []}."}
+
+event: thought
+data: {"step_index":2,"content":"Separating research, allocation, and execution intent before selecting a tool."}
+
+event: thought
+data: {"step_index":3,"content":"Applying hard APY, risk, chain, and TVL filters from the user's exact request."}
+
+event: thought
+data: {"step_index":4,"content":"Checking execution readiness separately so unsupported pools never get fake signing buttons."}
+
+event: tool
+data: {"step_index":4,"name":"search_defi_opportunities","args":{"risk_levels":[],"product_types":[],"chains":["base"],"ranking_objective":"execution_ready_strategy","execution_requested":true,"limit":8}}
+
+event: observation
+data: {"step_index":4,"name":"search_defi_opportunities","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Parsed constraints: risk=any, target_apy=None, apy_band=(0.0, 10000.0)."}
+
+event: thought
+data: {"step_index":6,"content":"Queried DefiLlama with min_tvl=$10,000 and min_apy=0.0 instead of the legacy $200M/0.5% staking defaults."}
+
+event: thought
+data: {"step_index":7,"content":"Ranked 20113 candidates by execution_ready_strategy; 6 matched the hard constraints and 25 were excluded."}
+
+event: card
+data: {"step_index":7,"card_id":"4d87de58-2c5e-4e74-be04-68306cfc65da","card_type":"defi_opportunities","payload":{"objective":"execution_ready_strategy","target_apy":null,"apy_band":[0.0,10000.0],"risk_levels":[],"chains":["base"],"execution_requested":true,"items":[{"protocol":"morpho-blue","symbol":"CBBTC","chain":"base","product_type":"lending","apy":0.0,"apy_base":0.0,"apy_reward":0.0,"tvl_usd":2381887624.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/7d33d57d-36dc-414b-9538-22a223250468"},{"label":"Open in morpho-blue","url":"https://app.morpho.org"}],"pool_id":"7d33d57d-36dc-414b-9538-22a223250468"},{"protocol":"morpho-blue","symbol":"STEAKUSDC","chain":"base","product_type":"lending","apy":4.64515,"apy_base":4.64515,"apy_reward":0.0,"tvl_usd":465196414.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/7820bd3c-461a-4811-9f0b-1d39c1503c3f"},{"label":"Open in morpho-blue","url":"https://app.morpho.org"}],"pool_id":"7820bd3c-461a-4811-9f0b-1d39c1503c3f"},{"protocol":"morpho-blue","symbol":"GTUSDCP","chain":"base","product_type":"lending","apy":4.64544,"apy_base":4.64544,"apy_reward":0.0,"tvl_usd":371622402.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/e0672197-9f3e-4414-bca5-e6b4c90aa469"},{"label":"Open in morpho-blue","url":"https://app.morpho.org"}],"pool_id":"e0672197-9f3e-4414-bca5-e6b4c90aa469"},{"protocol":"aave-v3","symbol":"CBBTC","chain":"base","product_type":"lending","apy":0.02909,"apy_base":0.02909,"apy_reward":0.0,"tvl_usd":143445444.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/89bc7c4c-d71c-435c-ab28-56c803d51320"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"89bc7c4c-d71c-435c-ab28-56c803d51320"},{"protocol":"morpho-blue","symbol":"WETH","chain":"base","product_type":"lending","apy":0.0,"apy_base":0.0,"apy_reward":0.0,"tvl_usd":129031826.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/660e240a-ab18-43af-9d24-0245828f903f"},{"label":"Open in morpho-blue","url":"https://app.morpho.org"}],"pool_id":"660e240a-ab18-43af-9d24-0245828f903f"},{"protocol":"uniswap-v3","symbol":"WETH-USDC","chain":"base","product_type":"pool","apy":36.13705,"apy_base":36.13705,"apy_reward":0.0,"tvl_usd":126895563.0,"volume_24h_usd":41877914.10445,"risk_level":"MEDIUM","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/b99bcdf5-1350-4269-981e-0e9b5cccb007"},{"label":"Open in uniswap-v3","url":"https://app.uniswap.org/swap"}],"pool_id":"b99bcdf5-1350-4269-981e-0e9b5cccb007"}],"excluded_count":25,"blockers":[]}}
+
+event: final
+data: {"content":"**Constraint-Matched DeFi Opportunities**\n\n1. **Morpho Blue** \u2014 CBBTC on base \n APY 0.0% \u00b7 TVL $2,381,887,624 \u00b7 Risk LOW\n Links: [DefiLlama pool](https://defillama.com/yields/pool/7d33d57d-36dc-414b-9538-22a223250468)\n Execution: ready via deterministic\n\n2. **Morpho Blue** \u2014 STEAKUSDC on base \n APY 4.6% \u00b7 TVL $465,196,414 \u00b7 Risk LOW\n Links: [DefiLlama pool](https://defillama.com/yields/pool/7820bd3c-461a-4811-9f0b-1d39c1503c3f)\n Execution: ready via deterministic\n\n3. **Morpho Blue** \u2014 GTUSDCP on base \n APY 4.6% \u00b7 TVL $371,622,402 \u00b7 Risk LOW\n Links: [DefiLlama pool](https://defillama.com/yields/pool/e0672197-9f3e-4414-bca5-e6b4c90aa469)\n Execution: ready via deterministic\n\n4. **Aave V3** \u2014 CBBTC on base \n APY 0.0% \u00b7 TVL $143,445,444 \u00b7 Risk LOW\n Links: [DefiLlama pool](https://defillama.com/yields/pool/89bc7c4c-d71c-435c-ab28-56c803d51320)\n Execution: ready via deterministic\n\n5. **Morpho Blue** \u2014 WETH on base \n APY 0.0% \u00b7 TVL $129,031,826 \u00b7 Risk LOW\n Links: [DefiLlama pool](https://defillama.com/yields/pool/660e240a-ab18-43af-9d24-0245828f903f)\n Execution: ready via deterministic\n\nExcluded 25 candidates that violated the requested risk, APY, chain, or TVL constraints.\n\nExecution readiness: 6 candidate(s) have adapter support.","card_ids":["4d87de58-2c5e-4e74-be04-68306cfc65da"],"elapsed_ms":6391,"steps":7}
+
+event: done
+data: {}
+

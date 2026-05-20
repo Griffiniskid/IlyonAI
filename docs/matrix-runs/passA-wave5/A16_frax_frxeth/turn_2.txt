@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have a deterministic execution path for staking ETH directly on Frax in the current toolset. You can use one of the supported liquid\u2011staking pools instead (e.g., Lido, Swell, Bifrost, or Stader) or provide a specific contract call via a deterministic adapter if you have one. Let me know which alternative you\u2019d like to proceed with.","card_ids":[],"elapsed_ms":3114,"steps":3}
+
+event: done
+data: {}
+

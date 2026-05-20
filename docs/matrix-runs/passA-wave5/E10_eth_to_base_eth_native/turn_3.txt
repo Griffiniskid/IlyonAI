@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have the WTG3 contract address on Base in my data. Please verify it on a trusted source such as the token\u2019s official website, its verified contract on BaseScan, or the project\u2019s verified social channels before interacting.","card_ids":[],"elapsed_ms":8345,"steps":3}
+
+event: done
+data: {}
+

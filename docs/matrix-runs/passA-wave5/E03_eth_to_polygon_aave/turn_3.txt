@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To bridge 100\u202fDAI from Ethereum to Polygon and supply it to Aave\u202fV3 via LI.FI, I first need your EVM wallet connected so I can build a signable Execution Plan. Once the wallet is linked, I\u2019ll generate the exact LI.FI bridge transaction followed by the Aave V3 supply approval and deposit steps. Please connect your wallet (MetaMask or any EVM\u2011compatible provider) and resend the request.","card_ids":[],"elapsed_ms":33697,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Just resend the pending transaction for step\u202f2 with a sufficient gas fee (or switch to a healthier RPC node). Until that tx is confirmed on\u2011chain, no USDC has left your wallet and the plan stays on step\u202f2. Once the receipt appears, the plan will automatically advance. If you still see timeouts, try a different RPC endpoint or bump the gas price a bit. Your funds remain safe throughout.","card_ids":[],"elapsed_ms":17052,"steps":3}
+
+event: done
+data: {}
+

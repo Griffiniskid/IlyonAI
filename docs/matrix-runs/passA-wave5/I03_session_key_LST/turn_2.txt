@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t generate a signature or signable calldata without a concrete action to sign (e.g., \u201cSupply 100\u202fUSDC to Aave\u202fV3 on Base\u201d or \u201cBridge 50\u202fUSDC from Ethereum to Polygon via deBridge\u201d). Please specify the exact transaction you want to authorize, and I\u2019ll provide the Execution Plan card with the signable data. Always double\u2011check the contract addresses on a block explorer before signing.","card_ids":[],"elapsed_ms":17002,"steps":3}
+
+event: done
+data: {}
+

@@ -4941,7 +4941,20 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     # V7-070 — _detect_lst_to_lp runs before _lst_unwrap so wstETH→ETH/USDC LP
     # phrasings produce a deposit_lp plan instead of falling through to the
     # supply path (which doesn't support two-sided pool targets).
-    for detector in (_detect_cross_chain_universal, _detect_cross_chain_then_yield, _detect_v3_nft_refinance, _detect_v2_to_v3_migrate, _detect_claim_compound, _detect_lst_to_lp, _lst_unwrap, _detect_solana_receipt_deposit, _detect_direct_pool_deposit, _detect_slipstream_lp, _detect_add_liquidity, _detect_lp_with_my, _detect_lifecycle_withdraw, _detect_lifecycle_borrow_repay, _detect_enso_vault_deposit, _detect_execute_named_proto, _detect_multi_input_lp, _detect_aave_supply, _detect_pendle_mint, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    #
+    # Matrix Pass A wave 5 D05 t2 surfaced D-P0-10b drain-equivalent: the
+    # prompt "Exit Balancer wsteth-weth with 0.5 BPT" was matching
+    # `_detect_add_liquidity` (or a sibling deposit-side detector) BEFORE
+    # `_detect_lifecycle_withdraw` got a chance, so the planner emitted a
+    # READY 3-step joinPool DEPOSIT plan instead of the expected exit_pool
+    # path. User signing "Exit" would have deposited 0.05 ETH into the
+    # pool. The withdraw-family detectors (`_detect_lifecycle_withdraw` +
+    # `_detect_lifecycle_borrow_repay`) have very tight regexes anchored
+    # on exit/withdraw/borrow/repay verb stems at start-of-string and
+    # return None for non-withdraw prompts, so moving them ahead of the
+    # deposit detectors carries zero blast radius on deposit flows but
+    # closes the drain-equivalent verb-inversion class.
+    for detector in (_detect_cross_chain_universal, _detect_cross_chain_then_yield, _detect_v3_nft_refinance, _detect_v2_to_v3_migrate, _detect_claim_compound, _detect_lst_to_lp, _lst_unwrap, _detect_solana_receipt_deposit, _detect_lifecycle_withdraw, _detect_lifecycle_borrow_repay, _detect_direct_pool_deposit, _detect_slipstream_lp, _detect_add_liquidity, _detect_lp_with_my, _detect_enso_vault_deposit, _detect_execute_named_proto, _detect_multi_input_lp, _detect_aave_supply, _detect_pendle_mint, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
@@ -6048,6 +6061,16 @@ _STRATEGY_SCRATCHPAD_LEAD_RE = re.compile(
 # line in the body of `final.content` matching a high-confidence
 # scratchpad shape that would only ever appear in internal CoT. Once
 # matched, everything from that line onward is truncated.
+#
+# Wave 5 hand-read surfaced these patterns that escaped the wave-4 set:
+#   - A09 t3 + E06 t1: "We need to allocate $N across the same pools…" —
+#     first-person planning stem after markdown table closed.
+#   - B11 t4 + B13 t4: SECOND `## Allocation` heading after canonical one,
+#     containing override pool (Wave-4 used WETH-KELLYCLAUDE; wave-5 used
+#     ETH-PITCH @ 513.6%). Body-scan should truncate at the second `## Allocation`.
+#   - I added "We need to" / "We must" / "We'll set" / "We can" / "Let's"
+#     family as STRONG patterns so body-scan picks them up regardless of
+#     position in the document.
 _BODY_SCRATCHPAD_STRONG_RE = re.compile(
     r"^(?:"
     r"plug\s+\w+\s*=\s*\d|"           # "Plug w=14.284, w_h=14.296"
@@ -6065,9 +6088,28 @@ _BODY_SCRATCHPAD_STRONG_RE = re.compile(
     r"\d+(?:\.\d+)?\s*[*x×]\s*\d+(?:\.\d+)?\s*=\s*\d+(?:\.\d+)?|"  # "14.284*6=85.704"
     r"i\s+think\s+it'?s\s+acceptable|"
     r"probably\s+we\b|"
-    r"need\s+to\s+(?:decide|compute|figure|determine)\b"
+    r"need\s+to\s+(?:decide|compute|figure|determine)\b|"
+    # Wave-5 additions — A09 t3 / E06 t1 "We need to allocate $N across…",
+    # "I'll choose to show…", "Better to allocate…", "Safer to…".
+    r"we\s+need\s+to\s+(?:allocate|decide|figure|compute|output|produce|"
+    r"split|distribute|spread|cover|consider|return|provide)\b|"
+    r"i'?ll\s+(?:choose|show|use|allocate|produce|pick|set)\b|"
+    r"better\s+to\s+allocate\b|"
+    r"safer\s+to\b|"
+    r"now\s+compute\s+(?:blended|the\s+average|the\s+sum)\b"
     r")",
     re.IGNORECASE,
+)
+
+# Wave 5 hand-read: B11 t4 / B13 t4 / B14 t4 (B-category) all emit a
+# SECOND `## Allocation` heading in `final.content` after the canonical
+# allocation table. The second one carries an override pool not in the
+# alloc card (B11 t4 had `100% ETH-PITCH @ 513.6% APY`). Front-end will
+# render TWO competing alloc tables. Pattern: must truncate from the
+# second `## Allocation` heading onward.
+_SECOND_ALLOCATION_HEADING_RE = re.compile(
+    r"^##\s+(?:Allocation|Reasoning|Blended\s+outcome|Next\s+steps)\b",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 
@@ -6086,10 +6128,38 @@ _BODY_SCRATCHPAD_STRONG_RE = re.compile(
 #       "**Protocol · Verb** —" structured headers are NEW shapes
 #       not present in any prior regex
 #
-# This regex collects all wave-4 observed tx-state phrasings. It is
-# applied at the streaming chokepoint (`StreamCollector.emit_final`)
-# with `card_ids` awareness — only fires when no execution-plan card
-# is attached, so a real signable plan's narration passes through.
+# Wave 5 fix landed a card_ids-gated chokepoint. Wave 5 hand-read of A/E/F/H/I
+# captures surfaced these EVADING SHAPES that escaped the wave-4 regex:
+#   - F10 t3 "Swapping X to Y on Z gives you about N ETH" — used `gives you
+#     about` instead of `yields|delivers` (added below).
+#   - F04 t2 fabricated Pendle epoch dates + "Discord/announcements" source
+#     (added schedule pattern below).
+#   - F02 t4 "Supply 100 USDC… Confirm if you'd like to proceed" — primes
+#     user to type "yes" (added confirmation-without-card below).
+#   - H09 t3 "Top-up confirmed. Please approve…" — pattern matched the
+#     wave-4 regex but had a leading "Please" / following clause; tightened.
+#   - H14 t3/t4 backticked Solidity verbs like `removeLiquidity` `mint`
+#     `swap(uint256,…)` (added backticked-Solidity below).
+#   - H08 t2/t3 bare `0x[40-hex]` spender address in freeform with no card
+#     (added bare-40-hex-address below; gated on card_ids).
+#   - H04 t2 "Estimated bridge fee: ~0.1% of amount" + "Typical execution
+#     time: 2–5 minutes" (added bridge-fee pattern below).
+#   - H07 t2 "You already hold 50 USDC, 50 USDT, and 50 DAI" — fabricated
+#     wallet holdings; H07 t3 "no residual dust remains" (added wallet-state).
+#   - H05 t2 JLP composition table "SOL ≈ 45%, ETH ≈ 20%" (added).
+#   - E02 t3 "slippage band for the Arbitrum Gateway bridge is 0.5%" +
+#     E05 t2 "Protocol fee: ~0.10%" + "Gas on Arbitrum: ~0.0004 ETH" +
+#     "Total ≈ 0.90 USDC" — fabricated slippage/fees (added).
+#   - E03 t3 / E08 t3 / E11 t3 "I'll generate the signable plan" (added).
+#   - E13 t2 / E13 t3 "Bridge route: A → B → C" (added).
+#   - I05 t1 MUTATED "impl address will be the contract address created in
+#     that transaction" + "verify it in your wallet's transaction details"
+#     + "looking up the tx on a block explorer" (added).
+#   - A17 t2 future-tense "you'll receive a transaction hash you can track"
+#     + "submit the stake transaction" + "approve the contract for" (added).
+#   - C05 T1 "Approvals for WETH 0.05 ETH and USDC 100 USDC are already set
+#     for Velodrome CL" — wave-5 ran "are set" but missed "are already set"
+#     (added "already" alternative).
 _FREEFORM_TX_STATE_HALLUCINATION_RE = re.compile(
     # Bare truncated hash form (H02 t2: `0x3a9f…c1e2 Pending ~12 s`)
     r"\b0x[0-9a-fA-F]{3,}…[0-9a-fA-F]{2,}\b|"
@@ -6098,12 +6168,12 @@ _FREEFORM_TX_STATE_HALLUCINATION_RE = re.compile(
     # "transaction|draft|plan|approvals (for X) is/are ready/set/in place"
     r"(?:transaction|draft|plan|approvals?)\s+"
     r"(?:for\s+[\w$.,\s]{1,80}?\s+)?"
-    r"(?:is|are)\s+(?:ready|set|in\s+place)\b|"
+    r"(?:is|are)\s+(?:already\s+)?(?:ready|set|in\s+place)\b|"
     # "Review and sign with your wallet" / "Sign each transaction"
     r"review\s+and\s+sign\s+with\s+your\s+wallet|"
     r"sign\s+each\s+(?:transaction|step)|"
     # "Approvals (for|already) (in place|are set|already set)"
-    r"approvals?\s+(?:are\s+|already\s+)(?:set|in\s+place)|"
+    r"approvals?\s+(?:for\s+[\w$.,\s]{1,80}?\s+)?(?:are\s+|already\s+)+(?:set|in\s+place)|"
     # "has been (executed|submitted|broadcast(ed)|confirmed|delivered|sent)"
     # WITHOUT a tx hash or explorer URL — the verbs alone are tx-state
     # assertions that no contextual prose can back.
@@ -6122,15 +6192,109 @@ _FREEFORM_TX_STATE_HALLUCINATION_RE = re.compile(
     r"(?:Supply|Stake|Swap|Bridge|Withdraw|Deposit|Borrow|Repay|Mint|"
     r"Burn|Wrap|Unwrap|Approve|Claim|Compound|Migrate|Refinance|Loop|"
     r"Exit|Remove|Unstake|Restake|Top[-\s]?up)\s*\*\*\s*[—\-–]|"
-    # "Swap(ping) X TOKEN to TOKEN on Chain (yields|has been|delivers)"
+    # "Swap(ping) X TOKEN to TOKEN on Chain (yields|has been|delivers|gives
+    # you about|nets|returns|for roughly)" — wave-5 F10 t3 used "gives you
+    # about" which mutated past the wave-4 regex.
     r"\bswap(?:ping)?\s+[\d.]+\s+[A-Z]{2,8}\s+to\s+[A-Z]{2,8}\s+"
-    r"on\s+[A-Z][a-z]+\s+(?:yields|has\s+been|delivers|will\s+deliver)\b|"
+    r"on\s+[A-Z][a-z]+\s+"
+    r"(?:yields|has\s+been|delivers|will\s+deliver|gives?\s+you\s+(?:about|roughly|approximately|~)|"
+    r"nets|returns|for\s+(?:about|roughly|approximately|~))\b|"
     # "Top-up confirmed" / "Wallet has been topped up"
-    r"\btop[-\s]?up\s+(?:confirmed|complete|done)\b|"
-    # "impl address you just created" / "wallet will show that contract"
-    r"\bimpl\s+address\s+(?:you|your)\s+(?:just|now)\s+created|"
-    r"\bwallet\s+will\s+show\s+(?:that|the)\s+contract",
+    r"\btop[-\s]?up\s+(?:confirmed|complete|done|completed|successful)\b|"
+    # "impl address" / "Kernel impl address" hallucinations — wave-5 I05 t1
+    # MUTATED past the wave-4 regex; broaden to any "impl address" phrasing.
+    r"\bimpl\s+address\b|"
+    r"\bwallet\s+will\s+show\s+(?:that|the)\s+contract|"
+    r"\bverify\s+it\s+in\s+your\s+wallet'?s?\s+transaction\s+details|"
+    r"\blook(?:ing)?\s+up\s+the\s+tx\s+on\s+a\s+block\s+explorer|"
+    # Future-tense narrated wallet steps (A17 t2)
+    r"you'?ll\s+(?:receive|get)\s+a\s+(?:tx\s+|transaction\s+)?hash|"
+    r"submit\s+the\s+(?:stake|supply|deposit|swap|bridge|approve|withdraw)\s+transaction|"
+    r"approve\s+the\s+contract\s+for\s+[\d.]+\s+[A-Z]{2,8}|"
+    # Fabricated bridge fees / protocol fees / slippage band — E02 t3 / E05 t2
+    # / H04 t2 invented bridge cost breakdowns.
+    r"\b(?:slippage\s+band|bridge\s+fee|protocol\s+fee|gas\s+estimate)"
+    r"\s*(?:for|of|on|is|are)?\s*[\w\s,~≈]*[~≈]?\s*\d+(?:\.\d+)?\s*[%(USDC|ETH|USDT|DAI|SOL|MATIC|AVAX|BNB)]|"
+    r"\bestimated\s+bridge\s+fee\b|"
+    r"\btypical\s+execution\s+time\s*[:—–-]\s*\d|"
+    # "I'll generate (the|a) (signable )?plan" — E03/E08/E11 t3 promise.
+    # Permissive: allow up to 5 modifier tokens (words with optional dots
+    # like "LI.FI") between the verb and the noun.
+    r"i'?ll\s+(?:generate|produce|build)\s+(?:\w+(?:\.\w+)*\s+){0,5}"
+    r"(?:plan|bridge|transaction|swap)\b|"
+    # "Bridge route: X → Y → Z" — E13 t2/t3 invented route claim.
+    r"\bbridge\s+route\s*[:—–-]\s*[A-Z]|"
+    # Fabricated wallet holdings — H07 t2 "You already hold 50 USDC, 50 USDT…"
+    # — must NOT match phrases about "hold" in general (e.g. "BPT tokens
+    # are held by"); require user-second-person + amount.
+    r"\byou\s+(?:already\s+)?hold\s+[\d.]+\s+[A-Z]{2,8}\s*[,]\s*[\d.]+\s+[A-Z]{2,8}|"
+    # "no residual dust remains" / "dust mix confirmed" — H07 t3 fabricated
+    # post-execution state.
+    r"\bdust\s+mix\s+confirmed\b|"
+    r"\bno\s+residual\s+dust(?:\s+remains)?\b|"
+    # JLP composition table — H05 t2 invented Jupiter LP composition. The
+    # tokens may be comma-separated or newline-separated (with bullets), so
+    # the inter-token separator pattern is permissive: comma, newline, or
+    # markdown bullet `\s*-\s*`.
+    r"\b(?:SOL|ETH|USDC|USDT|WBTC|DAI|MATIC|AVAX|BNB)\s*[≈~]\s*\d+\s*%"
+    r"(?:[\s,\n-]+(?:SOL|ETH|USDC|USDT|WBTC|DAI|MATIC|AVAX|BNB)\s*[≈~]\s*\d+\s*%){1,}|"
+    # Fabricated protocol schedules — F04 t2 invented Pendle epoch dates
+    # ("Pendle's PT-USDe minting epochs open every Thursday at 00:00 UTC…
+    # next epoch starts Thursday 25 Sep 2025").
+    r"\b(?:pendle|sky|spark|aave|maple|curve|lido|rocket[\s-]?pool)'?s?\s+"
+    r"[\w\s-]{0,60}?"
+    r"(?:epoch|countdown|window|opens?\s+(?:every|on|at)|starts?\s+at)|"
+    # Confirmation prompt without card — F02 t4 "Supply 100 USDC… Confirm
+    # if you'd like to proceed" — primes user to "yes" → cascades to fake
+    # tx-state next turn. Allow up to 160 chars of intermediate prose
+    # (including periods, parens) between the imperative and the prompt.
+    r"(?:supply|stake|swap|bridge|deposit|withdraw|claim|borrow|repay)\s+"
+    r"[\d.,]+\s+[A-Z]{2,8}[\s\S]{0,160}?\b"
+    r"(?:confirm\s+(?:if\s+you'?d?\s+like\s+to\s+)?proceed|"
+    r"let\s+me\s+know\s+(?:if\s+)?you'?d?\s+like\s+to\s+proceed|"
+    r"would\s+you\s+like\s+(?:to\s+)?proceed|"
+    r"ready\s+to\s+(?:supply|stake|swap|bridge|deposit|withdraw))\b",
     re.IGNORECASE | re.MULTILINE,
+)
+
+
+# Wave-5 I02 t3 hand-read: keeper recommendations like "Enable a keeper-based
+# trigger (e.g., Gelato or Sentinel's autonomous module)" + imperative dApp
+# UI flows like "Open the Nexus dApp" + invented numeric caps like "$500
+# daily cap" / "$200 daily budget" leak THROUGH the chokepoint because
+# `card_ids` is non-empty (defi_opportunities + allocation cards were
+# emitted). A research/allocation card does NOT back third-party-keeper
+# recommendations or imperative dApp UI flows.
+#
+# This regex is the UNGATED complement to `_FREEFORM_TX_STATE_HALLUCINATION_RE`:
+# it fires REGARDLESS of `card_ids` because no card type can legitimately
+# back these patterns.
+_FREEFORM_IMPERATIVE_UI_HALLUCINATION_RE = re.compile(
+    # Imperative dApp UI flows — I01 t2/t4, I04 t2.
+    r"\bopen\s+(?:the\s+|your\s+)?"
+    r"(?:nexus\s+dapp|phantom\s+wallet|metamask|rabby|backpack|coinbase\s+wallet|"
+    r"trust\s+wallet|solflare|safe\s+wallet|ledger\s+live|argent|"
+    r"zerodev\s+app|biconomy\s+app|kernel\s+app)\b|"
+    # Named third-party keepers/automations — I02 t3 "Gelato", "Sentinel's
+    # autonomous module", "keeper-based trigger".
+    r"\b(?:gelato|keep3r|chainlink\s+automation|defender|"
+    r"sentinel'?s?\s+autonomous\s+module|keeper[-\s]based\s+trigger|"
+    r"openzeppelin\s+defender|tenderly\s+actions)\b|"
+    # Invented numeric caps/budgets — I01 t2 "$500 daily cap", I05 t3
+    # "$200 daily budget".
+    r"\$\d+(?:[.,]\d+)?\s*(?:daily|per\s+day|/day|weekly|per\s+week|/week|"
+    r"monthly|per\s+month|/month)\s+(?:cap|budget|allowance|limit)|"
+    # Sign-imperative for AA policies — I05 t3 "Sign the ZeroDev Kernel
+    # policy for autonomous rebalancing".
+    r"\bsign\s+the\s+(?:zerodev\s+kernel|nexus|biconomy|safe|argent|"
+    r"kernel|ercaa|aa)\s+(?:policy|module|session|setup)|"
+    # Imperative wallet-app UI navigation paths — "Open Phantom, locate the
+    # signing request, review, approve" — even if the wallet name didn't
+    # match above.
+    r"\b(?:tap|click|press|navigate\s+to|go\s+to)\s+"
+    r"(?:the\s+)?[\"']?(?:Settings|Connected\s+Sites|Revoke|Permissions|"
+    r"Auto[-\s]?compound|Autonomous\s+Rebalancing|Session\s+Keys?)[\"']?",
+    re.IGNORECASE,
 )
 
 
@@ -6152,24 +6316,39 @@ _FREEFORM_HALLUCINATION_REFUSAL = (
 def _strip_freeform_tx_state_hallucinations(
     text: str, *, card_ids: list[str] | None = None
 ) -> str:
-    """Wave-5 chokepoint guard. Refuse contextual-fallback prose that asserts
+    """Wave-5 chokepoint guard, wave-6 split into two passes.
+
+    Pass 1 (card_ids-GATED) — refuse contextual-fallback prose that asserts
     transaction state (ready / submitted / executed / Current tx / Approvals
-    set / **Protocol · Verb** structured header) when no signable execution-
-    plan card backs it.
+    set / "is ready" / structured "**Protocol · Verb** —" header / bridge-
+    fee fabrications / wallet-state assertions / fabricated protocol
+    schedules / confirmation-prompt without card / "swap X to Y gives you
+    about N") when no signable execution-plan card backs it. A research/
+    quote/balance card does NOT back a tx-state claim — only a signable
+    execution-plan card can. The chokepoint uses `card_ids` (non-empty
+    list of attached card ids) as the backing signal.
 
-    Distinct from `_strip_unbacked_claims` upstream which (a) gates most
-    regexes on `has_real_card` and (b) treats any queued card as backing.
-    A research/quote/balance card does NOT back a tx-state claim — only a
-    signable execution-plan card can. The chokepoint check uses `card_ids`
-    (non-empty list of attached card ids) as the backing signal.
+    Pass 2 (UNGATED — runs regardless of card_ids) — refuse imperative
+    dApp UI flows ("Open the Nexus dApp", "Open Phantom wallet"), named
+    third-party keepers ("Gelato", "Sentinel's autonomous module"),
+    invented numeric caps ("$500 daily cap"), and sign-imperatives for AA
+    policies. Wave-5 I02 t3 surfaced these leaking THROUGH the chokepoint
+    because the same turn emitted defi_opportunities + allocation cards;
+    `card_ids` was non-empty so the gated pass returned text unchanged.
+    No card type can legitimately back these patterns.
 
-    When fires: replaces content with canonical refusal pointing user to
-    deterministic verb forms.
+    When either pass fires: replaces content with canonical refusal
+    pointing user to deterministic verb forms.
     """
     if not text:
         return text
-    # A non-empty card_ids list means the producer attached at least one
-    # card to the final frame. Trust the producer here — the existing
+    # Pass 2 ALWAYS — imperative-UI / named-keeper / invented-cap /
+    # sign-AA-policy patterns never have a legitimate card-backed form.
+    if _FREEFORM_IMPERATIVE_UI_HALLUCINATION_RE.search(text):
+        return _FREEFORM_HALLUCINATION_REFUSAL
+    # Pass 1 — tx-state assertions only fire when no signable card backs
+    # them. A non-empty card_ids list means the producer attached at least
+    # one card to the final frame. Trust the producer here — the existing
     # signability invariants (assert_signable_composed_plan, etc.) gate
     # what reaches a card_id at the producer level.
     if card_ids:
@@ -6240,9 +6419,15 @@ def _strip_strategy_scratchpad(text: str) -> str:
     # Body-scan: find FIRST line matching strong scratchpad pattern, truncate
     # everything from there onward. Skips markdown table rows and code-fence
     # lines so legitimate structured content is preserved.
+    #
+    # Wave 6 also tracks `## Allocation` heading occurrences — B11/B13/B14 t4
+    # emit a SECOND `## Allocation` heading containing an override pool not
+    # in the canonical allocation card; front-end would render TWO competing
+    # tables. Truncate at the SECOND heading.
     body_lines = cleaned.split("\n")
     in_code_fence = False
     cut_at = -1
+    seen_allocation_heading = False
     for i, ln in enumerate(body_lines):
         s = ln.strip()
         if s.startswith("```"):
@@ -6251,6 +6436,16 @@ def _strip_strategy_scratchpad(text: str) -> str:
         if in_code_fence:
             continue
         if not s:
+            continue
+        # Track ## Allocation / ## Reasoning / ## Blended outcome / ## Next
+        # steps headings. Second occurrence of `## Allocation` is the
+        # override-table tell.
+        if s.startswith("##"):
+            if _SECOND_ALLOCATION_HEADING_RE.match(s):
+                if seen_allocation_heading:
+                    cut_at = i
+                    break
+                seen_allocation_heading = True
             continue
         # Don't truncate inside a markdown table — table rows can look like
         # arithmetic when they contain numeric cells, and the lead-strip

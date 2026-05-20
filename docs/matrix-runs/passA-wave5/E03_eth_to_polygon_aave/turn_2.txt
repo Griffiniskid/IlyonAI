@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Steps to bridge 100\u202fDAI from Ethereum to Polygon and supply it to Aave\u202fV3**\n\n1. **Connect wallet** \u2013 Open your MetaMask (or any EVM\u2011compatible wallet) and ensure you\u2019re on the Ethereum mainnet. Approve the LI.FI bridge contract to spend 100\u202fDAI. \n2. **Bridge via LI.FI** \u2013 Use the LI.FI interface (or the deBridge adapter if preferred) to send 100\u202fDAI from Ethereum to Polygon. Confirm the transaction; you\u2019ll receive wrapped DAI (wDAI) on Polygon after the bridge completes (typically <\u202f2\u202fminutes). \n3. **Approve Aave V3** \u2013 On Polygon, approve the Aave V3 Pool contract to spend the bridged wDAI. \n4. **Supply to Aave V3** \u2013 Deposit the wDAI into the Aave V3 DAI market on Polygon. You\u2019ll receive aDAI tokens representing your share plus accrued interest. \n\n**Risk / safety notes** \n- **Risk level:** MEDIUM (bridge smart\u2011contract risk + Aave protocol risk). \n- **Strategy fit:** BALANCED \u2013 you earn yield while retaining exposure to a stablecoin. \n- **Safety tips:** Double\u2011check contract addresses (LI.FI/router, Aave V3 Polygon Pool) before approving; start with a small test amount if you\u2019re new to the bridge; keep enough MATIC for gas on Polygon. \n\nOnce your wallet is connected, the system can generate a signable Execution Plan card for these exact steps.","card_ids":[],"elapsed_ms":28477,"steps":3}
+
+event: done
+data: {}
+

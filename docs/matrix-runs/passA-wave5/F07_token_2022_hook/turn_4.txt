@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"a4360682-4f61-4f7a-89a2-fc39fb7e9cf7","card_type":"execution_plan_v3","payload":{"plan_id":"plan_6f2604440f9e","title":"Pool not found","summary":"Couldn't match `Meteora DAMM` to a DefiLlama pool.","status":"blocked","risk_gate":"clear","requires_double_confirm":false,"blockers":[{"code":"UNSUPPORTED_ADAPTER","severity":"blocker","title":"No matching pool","detail":"`Meteora DAMM` did not match any pool in the live DefiLlama catalog. Try a tighter reference: paste the DefiLlama pool UUID, or use 'protocol pair' (e.g. 'raydium-amm SOL-USDC', 'aave-v3 USDC').\n\nRecovery: Pool unavailable \u2014 surfacing alternatives \u2014 Pool removed / paused / cap reached. Alternatives ranked by APR + similarity. Never auto-route \u2014 you pick.","affected_step_ids":[],"recoverable":true,"cta":"Re-send with a recognized protocol + pair."}],"steps":[],"totals":{"estimated_gas_usd":0.0,"estimated_duration_s":0,"signatures_required":0,"chains_touched":[],"assets_required":{}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["a4360682-4f61-4f7a-89a2-fc39fb7e9cf7"],"elapsed_ms":0,"steps":2}
+
+event: done
+data: {}
+

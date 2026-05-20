@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Open your Phantom wallet, locate the signing request for the session keypair, review the message details, and approve the signature. Only sign if you trust the originating dApp; never share your recovery phrase. Risk is LOW when you verify the request source.","card_ids":[],"elapsed_ms":27787,"steps":3}
+
+event: done
+data: {}
+

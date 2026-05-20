@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"After you sign and submit the ZeroDev Kernel policy, the impl address will be the contract address created in that transaction. You can verify it in your wallet\u2019s transaction details or by looking up the tx on a block explorer.","card_ids":[],"elapsed_ms":19669,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have a wstETH\u2011WETH pool in the current dataset. You can check Curve Finance or Balancer for wstETH/WETH pools on Ethereum (or Base) and review their APY, TVL, and risk before proceeding. If you locate a specific pool, share its details and I\u2019ll help build an execution plan.","card_ids":[],"elapsed_ms":7901,"steps":3}
+
+event: done
+data: {}
+

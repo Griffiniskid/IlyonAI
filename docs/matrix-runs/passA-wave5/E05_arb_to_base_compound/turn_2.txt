@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Bridge fee estimate for 200\u202fUSDC (Arbitrum \u2192 Base via deBridge\u202fDLN):** \n- Protocol fee: ~0.10\u202f% \u2192 \u2248\u202f0.20\u202fUSDC \n- Gas on Arbitrum: ~0.0004\u202fETH \u2192 \u2248\u202f0.70\u202fUSDC (\u2248\u202f$1,750/ETH) \n- **Total \u2248\u202f0.90\u202fUSDC** (\u2248\u202f0.45\u202f% of the amount)\n\n**Risk level:** MEDIUM (cross\u2011chain bridge exposure) \n**Strategy fit:** balanced (moving funds to a yield\u2011supply position) \n\n*Tip:* Verify the exact fee in your wallet before signing; it can fluctuate with network congestion.","card_ids":[],"elapsed_ms":14305,"steps":3}
+
+event: done
+data: {}
+

@@ -688,9 +688,26 @@ class AaveV3SupplyAdapter:
             return [step]
         if action_hint == "withdraw":
             withdraw_units = _to_unit(request.amount_in, decimals)
-            # type(uint256).max = withdraw all. Pass-through when caller asks
-            # "max" / amount=0.
-            if withdraw_units <= 0:
+            # Matrix Pass A wave 5 D02 t3 drain-risk: the ERC20 Aave V3
+            # `pool.withdraw` adapter silently rewrote amount_in=0 to
+            # MAX_UINT256 ("withdraw all") while the description still
+            # read "Withdraw 0 USDC" — user signing a "0 withdraw" plan
+            # would drain the entire aUSDC balance. Same defect class as
+            # the wave-3 drain-guards on ERC-4626 and Aave V3 native WTG3
+            # paths; this is the THIRD adapter in the family. Now require
+            # explicit extra.withdraw_all=true for max withdrawal; refuse
+            # zero/negative otherwise.
+            withdraw_all_explicit = bool(
+                extra.get("withdraw_all") or extra.get("max")
+            )
+            if withdraw_units <= 0 and not withdraw_all_explicit:
+                raise ValueError(
+                    "Aave V3 withdraw: amount_in must be > 0. To withdraw "
+                    "the entire aToken balance, pass extra.withdraw_all=true "
+                    "(the description will say 'Withdraw ALL' and calldata "
+                    "will use MAX_UINT256)."
+                )
+            if withdraw_all_explicit:
                 withdraw_units = (1 << 256) - 1
             withdraw_calldata = (
                 "0x69328dec"

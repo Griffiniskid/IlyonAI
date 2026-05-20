@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Open the Nexus dApp, go to Portfolio, select your Aave\u202fV3 position, tap Settings, turn off Autonomous Rebalancing, and confirm the change. You can also revoke it via your wallet\u2019s connected\u2011app permissions if available.","card_ids":[],"elapsed_ms":7361,"steps":3}
+
+event: done
+data: {}
+

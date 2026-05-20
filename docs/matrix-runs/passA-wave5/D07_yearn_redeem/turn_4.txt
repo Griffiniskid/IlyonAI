@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"No receipt exists because the withdrawal transaction was never signed or submitted\u2014the plan was blocked due to the missing\u202fwithdraw_all\u202fflag. To get a receipt, you need to either specify a non\u2011zero amount or enable the withdraw\u2011all option so a signable plan can be built. Once the plan is signed and executed, the receipt will appear.","card_ids":[],"elapsed_ms":35529,"steps":3}
+
+event: done
+data: {}
+

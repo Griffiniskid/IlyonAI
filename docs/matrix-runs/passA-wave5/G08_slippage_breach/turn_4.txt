@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"If the bridge\u2019s slippage exceeds 50\u202fbps, the transaction will typically revert or be rejected because the amount you receive falls below your minimum\u2011acceptable threshold. You\u2019ll need to increase your slippage tolerance and resubmit, or wait for better market conditions before trying again. Always keep a small gas buffer and double\u2011check the quoted rate before confirming.","card_ids":[],"elapsed_ms":13221,"steps":3}
+
+event: done
+data: {}
+

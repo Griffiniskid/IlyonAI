@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"supply\", \"amount_in\": 0.05, \"asset_in\": \"WETH\", \"chain\": \"base\", \"extra\": {\"range_preset\": \"narrow\"}, \"protocol\": \"aerodrome-slipstream\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"base","protocol":"aerodrome-slipstream","action":"supply","asset_in":"WETH","amount_in":0.05,"extra":{"range_preset":"narrow"}}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"15839cd7-ced3-48ab-adff-f92e8bbde659","card_type":"pool_deposit_v3","payload":{"card_type":"pool_deposit_v3","card_id":"v3-aerodrome-slipstream-WETH","chain":"base","protocol":"aerodrome-slipstream","pool_address":"","pair":{"token0":{"symbol":"WETH","decimals":18,"address":null},"token1":{"symbol":"WETH","decimals":18,"address":null}},"current":{"price_human":"1 WETH \u2248 1.0000 WETH","current_price":1.0,"sqrt_price_x96":null,"tick":null,"tvl_usd":null,"vol_24h_usd":null,"fee_tier_bps":null,"tick_spacing":null},"market":{"base_apr_pct":0.0,"reward_apr_pct":0.0,"cdf_30d":[]},"input_token":{"symbol":"WETH","decimals":18,"address":null},"input_amount_human":"0.05","input_amount_usd":0.05,"initial_range":{"preset":"balanced","lower_pct":-10.0,"upper_pct":10.0},"initial_steps":[],"rebuild_endpoint":"/api/v1/pool/rebuild","protocol_url":"https://aerodrome.finance/liquidity","finalize_externally":true,"notice":"Aerodrome-Slipstream V3 concentrated liquidity \u2014 adjust the range to see live APR / capital efficiency / in-range probability. Range NFT mint currently finalizes on the protocol app (in-chat mint lands in Phase 4)."}}
+
+event: final
+data: {"content":"**Yield Execution Plan** \u2014 \nStatus: `draft` \u00b7 0 signature(s) required.","card_ids":["15839cd7-ced3-48ab-adff-f92e8bbde659"],"elapsed_ms":105,"steps":5}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To execute the top allocation from the stable\u2011yield strategy, please specify the exact action you\u2019d like to take, for example:\n\n**Supply 200\u202fUSDC to Maple on Ethereum**\n\nOnce you provide an explicit verb\u2011based instruction like the one above, the deterministic Sentinel adapter will generate a signable Execution Plan card with the precise calldata, gas estimate, and any bridge fees. Let me know the amount and token you\u2019d like to allocate to Maple (or any other position), and I\u2019ll prepare the transaction for your wallet approval.","card_ids":[],"elapsed_ms":40366,"steps":3}
+
+event: done
+data: {}
+
