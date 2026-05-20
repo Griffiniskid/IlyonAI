@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Bridge\u202f0.1\u202fAVAX to Avalanche (e.g., from Ethereum)** \n\n1. **Choose a bridge** \u2013 official Avalanche Bridge, Synapse, or Hop are reliable options. \n2. **Connect your wallet** (MetaMask, WalletConnect, etc.) on the bridge\u2019s UI. \n3. **Select source chain** (Ethereum) \u2192 **destination chain** (Avalanche C\u2011Chain). \n4. **Enter amount**: 0.1\u202fAVAX (the bridge will show the equivalent in AVAX after fees). \n5. **Approve the token** (if bridging ERC\u201120 wrapped AVAX) \u2013 one transaction, costs a few\u202fUSD in ETH gas. \n6. **Confirm the transfer** \u2013 second transaction on the source chain; after it\u2019s finalized, the AVAX appears on Avalanche (usually\u202f5\u201120\u202fmin). \n\n**Risk level:** MEDIUM (bridge smart\u2011contract risk). \n**Safety tips:** \n- Double\u2011check the bridge URL (official domain). \n- Start with a tiny test amount if you\u2019ve never used that bridge before. \n- Keep enough ETH on Ethereum for gas (\u2248\u202f0.001\u20110.002\u202fETH for approve + transfer). \n\nOnce the 0.1\u202fAVAX arrives, you\u2019ll have ~0.35\u202fAVAX total; add another\u202f0.1\u20110.2\u202fAVAX (or bridge a bit more) to comfortably cover the ~0.68\u202fAVAX needed for the Aave V3 approve\u202f+\u202fsupply steps.","card_ids":[],"elapsed_ms":30838,"steps":3}
+
+event: done
+data: {}
+

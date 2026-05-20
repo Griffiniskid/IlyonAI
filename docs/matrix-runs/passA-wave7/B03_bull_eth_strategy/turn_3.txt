@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Unlock / withdrawal times**\n\n- **Renzo\u202frenZETH (LRT)** \u2013 burn renZETH \u2192 usually\u202f<\u202f1\u202fhour (often a few minutes) \n- **Lido\u202fstETH** \u2013 request withdrawal via Lido portal \u2192 1\u20115\u202fdays (queue\u2011dependent) \n- **Uniswap\u202fv3\u202fWETH\u2011ASTEROID LP** \u2013 remove liquidity \u2192 instant (one transaction) \n- **Curve\u202fIDAI\u2011IUSDC\u2011IUSDT** \u2013 exit the pool \u2192 instant (one transaction) \n\nAll positions are non\u2011lock\u2011up; you can withdraw at any time, though Lido stETH may incur a short queue delay. Fees or accrued rewards are claimable when you withdraw.","card_ids":[],"elapsed_ms":10467,"steps":3}
+
+event: done
+data: {}
+

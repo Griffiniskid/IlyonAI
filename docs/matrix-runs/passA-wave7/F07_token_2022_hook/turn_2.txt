@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Please repeat the exact action you\u2019d like to execute (e.g., \u201cDeposit 100 USDC to Meteora DAMM v2\u201d) so I can generate a fresh, signable plan.","card_ids":[],"elapsed_ms":4942,"steps":3}
+
+event: done
+data: {}
+

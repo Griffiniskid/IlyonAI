@@ -1,0 +1,24 @@
+event: thought
+data: {"step_index":1,"content":"User wants to allocate / distribute / sign across the previously surfaced pool list."}
+
+event: thought
+data: {"step_index":2,"content":"Reusing 1 pool(s) from the prior turn instead of searching fresh ones."}
+
+event: thought
+data: {"step_index":3,"content":"Distribution amount: $84"}
+
+event: card
+data: {"step_index":3,"card_id":"bc7061fd-f059-4cd8-bcb1-942df0f07034","card_type":"defi_opportunities","payload":{"objective":"constraint_fit_then_risk_adjusted_return","target_apy":null,"apy_band":[null,null],"risk_levels":[],"chains":["solana"],"execution_requested":false,"items":[{"protocol":"jito-liquid-staking","symbol":"JITOSOL","chain":"solana","product_type":"liquid staking","apy":5.43,"apy_base":5.43,"apy_reward":0.0,"tvl_usd":849719102.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"solana-yield-builder","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/0e7d0722-9054-4907-8593-567b353c0900"},{"label":"Open in jito-liquid-staking","url":"https://www.jito.network/staking"}],"pool_id":"0e7d0722-9054-4907-8593-567b353c0900"}],"excluded_count":0,"blockers":[]}}
+
+event: card
+data: {"step_index":3,"card_id":"4c314b9f-a215-4262-a762-cc5616c5e89d","card_type":"allocation","payload":{"sentinel":null,"shield":null,"positions":[{"rank":1,"protocol":"jito-liquid-staking","asset":"JITOSOL","chain":"sol","apy":"5.4%","sentinel":66,"risk":"low","fit":"aggressive","weight":100,"usd":"$84","tvl":"$850M","router":"Jupiter","safety":67,"durability":70,"exit":70,"confidence":48,"flags":["Unaudited","No verified adapter \u2014 research only"]}],"total_usd":"$84","blended_apy":"~5.4%","chains":1,"weighted_sentinel":66,"risk_mix":{"low":1,"medium":0,"high":0},"combined_tvl":"$850M"}}
+
+event: card
+data: {"step_index":3,"card_id":"bcf63e58-20c7-44f6-b170-d68c4e6ec18c","card_type":"execution_plan","payload":{"sentinel":null,"shield":null,"steps":[{"index":1,"verb":"Stake","amount":"84","asset":"SOL","target":"JITOSOL \u00b7 jito-liquid-staking","chain":"sol","router":"Jupiter","wallet":"Phantom","gas":"~$0.01","step_id":"alloc_step_1","protocol":"jito-liquid-staking","pool_id":null,"transaction":null,"blocker":null}],"total_gas":"~$0.01","slippage_cap":"0.5%","wallets":"Phantom","tx_count":1,"requires_signature":false}}
+
+event: final
+data: {"content":"## Allocation\n| # | Protocol \u00b7 Pair (chain) | Weight % | $ Amount | APY | Risk |\n|---|---|---|---|---|---|\n| 1 | jito-liquid-staking \u00b7 JITOSOL (Solana) | 100% | $84 | 5.4% | LOW |","card_ids":["bc7061fd-f059-4cd8-bcb1-942df0f07034","4c314b9f-a215-4262-a762-cc5616c5e89d","bcf63e58-20c7-44f6-b170-d68c4e6ec18c"],"elapsed_ms":29145,"steps":3}
+
+event: done
+data: {}
+

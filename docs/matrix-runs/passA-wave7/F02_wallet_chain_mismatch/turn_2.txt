@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Aave\u202fV3 is an EVM\u2011only protocol and isn\u2019t deployed on Solana, so you can\u2019t supply USDC to it there. Use an EVM chain like Ethereum, Base, Polygon, Arbitrum, Optimism, Avalanche, or BSC, or switch to a Solana lending market such as Kamino Lend or MarginFi. Risk: MEDIUM (smart\u2011contract exposure). Always double\u2011check contract addresses and consider a hardware wallet for added security. Let me know if you\u2019d like to proceed on a supported chain.","card_ids":[],"elapsed_ms":4880,"steps":3}
+
+event: done
+data: {}
+

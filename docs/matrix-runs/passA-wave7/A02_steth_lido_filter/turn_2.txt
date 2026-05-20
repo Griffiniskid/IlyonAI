@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**AMOUNT_NOT_CONFIRMED.** I need an exact amount to build a signable staking plan (e.g., \u201cStake 0.3\u202fETH via Lido\u201d or \u201cAllocate $150 across the top 2 ETH staking pools\u201d). Please restate your request with a concrete quantity.","card_ids":[],"elapsed_ms":4781,"steps":3}
+
+event: done
+data: {}
+

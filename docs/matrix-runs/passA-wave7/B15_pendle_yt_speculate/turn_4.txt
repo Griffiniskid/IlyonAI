@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Approve USDe for the Pendle Router with a 500\u202fUSDe spend limit, then swap 500\u202fUSDe for YT\u2011USDe\u202f30Jun2027 on Pendle, and confirm the transaction in your wallet. Remember this is a HIGH\u2011risk, aggressive speculative play; verify liquidity and set an exit plan.","card_ids":[],"elapsed_ms":9723,"steps":3}
+
+event: done
+data: {}
+

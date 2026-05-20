@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"ETH liquid staking tokens (LSTs) let you earn staking rewards while keeping a tradable representation of your ETH\u2014common examples are Lido\u2019s stETH, Rocket Pool\u2019s rETH, and Coinbase\u2019s cbETH. \nRisk level: MEDIUM (smart\u2011contract and slashing exposure); strategy fit: conservative to balanced for yield\u2011focused holders. \nSafety tip: always verify the official contract address before interacting and consider diversifying across multiple LST providers to mitigate single\u2011point failures.","card_ids":[],"elapsed_ms":48715,"steps":3}
+
+event: done
+data: {}
+

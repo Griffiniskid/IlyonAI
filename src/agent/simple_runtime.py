@@ -6338,6 +6338,24 @@ _FREEFORM_IMPERATIVE_UI_HALLUCINATION_RE = re.compile(
     # policy for autonomous rebalancing".
     r"\bsign\s+the\s+(?:zerodev\s+kernel|nexus|biconomy|safe|argent|"
     r"kernel|ercaa|aa)\s+(?:policy|module|session|setup)|"
+    # Wave-8 — I02 t3 wave-7 surfaced currency-token cap paraphrases that
+    # the wave-7 regex missed: "**Daily spend cap:** $100 USDC", "up to
+    # $100 USDC across the five pools", "$20 USDC per pool".
+    r"\*\*\s*daily\s+spend\s+cap\s*:?\s*\*\*\s*\$\d+(?:[.,]\d+)?\s+"
+    r"(?:USDC|USDT|DAI|ETH|SOL|WETH|WBTC|MATIC|AVAX|BNB|USD)|"
+    r"\bup\s+to\s+\$\d+(?:[.,]\d+)?\s+"
+    r"(?:USDC|USDT|DAI|ETH|SOL|WETH|WBTC|MATIC|AVAX|BNB|USD)\s+"
+    r"across\s+(?:the\s+)?(?:\w+\s+){0,3}(?:five|four|three|six|seven|eight|"
+    r"nine|ten|\d+)\s+(?:\w+\s+){0,3}(?:pools?|positions?|venues?|markets?)|"
+    r"\$\d+(?:[.,]\d+)?\s+(?:USDC|USDT|DAI|ETH|SOL)\s+per\s+pool|"
+    # Wave-8 — I02 t3 NEW-I-13 "Policy Signed" narrative fabrication.
+    # Refuse any claim that a policy / session-key was signed; signing is
+    # backed by signature events from the wallet, never by prose.
+    r"\*\*\s*policy\s+signed\b|"
+    r"\bautonomous\s+(?:\w+\s+){1,3}(?:rebalance|rebalancing|allocation|policy)\s+"
+    r"(?:is|was|has\s+been)\s+"
+    r"(?:activated|enabled|signed|configured|set\s+up|in\s+effect|now\s+in\s+effect)\b|"
+    r"\bby\s+signing\s+this\s+policy,?\s+you\s+authoriz(?:e|ed)|"
     # Imperative wallet-app UI navigation paths — "Open Phantom, locate the
     # signing request, review, approve" — even if the wallet name didn't
     # match above.
@@ -6371,6 +6389,8 @@ _FREEFORM_HALLUCINATION_REFUSAL = (
 # between the digits and units; wave-6 regex additions for these exact phrases
 # failed to fire. Pre-normalize all of these to plain ASCII space at the
 # chokepoint entry so the existing regex set works.
+_UNICODE_HYPHEN_NORMALIZE_RE = re.compile("[‑‐]")
+
 _UNICODE_SPACE_NORMALIZE_RE = re.compile(
     r"[      　]"
 )
@@ -6386,7 +6406,11 @@ def _normalize_unicode_whitespace(text: str) -> str:
     chars. Pre-normalize before the sanitizer pass."""
     if not text:
         return text
-    return _UNICODE_SPACE_NORMALIZE_RE.sub(" ", text)
+    out = _UNICODE_SPACE_NORMALIZE_RE.sub(" ", text)
+    # Wave 8 — also normalize U+2011 non-breaking hyphen to ASCII `-`
+    # so patterns like `top[-\s]?up\s+confirmed` match `Top‑up confirmed`.
+    out = _UNICODE_HYPHEN_NORMALIZE_RE.sub("-", out)
+    return out
 
 
 def _strip_freeform_tx_state_hallucinations(

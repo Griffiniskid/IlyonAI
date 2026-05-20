@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t retrieve a live transaction hash, but once you mint the LP via Enso you\u2019ll see the tx hash in your wallet\u2019s activity or on a block explorer such as Basescan. Just follow the steps previously outlined to add liquidity; the hash will appear after confirmation.","card_ids":[],"elapsed_ms":17658,"steps":3}
+
+event: done
+data: {}
+

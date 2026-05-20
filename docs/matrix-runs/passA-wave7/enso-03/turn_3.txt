@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Route:** \n1. **Wrap ETH \u2192 WETH** using the WETH9 contract (native ETH is converted to ERC\u201120 WETH inside the shortcut). \n2. **Supply WETH to Aave V3** on Ethereum via the Enso adapter, which calls Aave\u2019s `supply` function with the wrapped amount.\n\n**Details:** \n- Amount: 0.25\u202fETH \u2192 ~0.25\u202fWETH (1:1 wrap). \n- Risk: MEDIUM (exposure to smart\u2011contract risk of WETH and Aave V3). \n- Strategy fit: BALANCED (earns supply yield while retaining liquidity). \n- Safety tip: Approve only the exact WETH amount needed for the supply tx and revoke the allowance after confirming the transaction.","card_ids":[],"elapsed_ms":8744,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Go to Enso, approve\u202f50\u202fARB and\u202f\u22480.0306\u202fETH, then submit the \u201cIncrease liquidity\u201d transaction for the Uniswap\u202fV3 ARB/ETH\u202f0.3% pool on Arbitrum. Keep slippage around\u202f0.5% and double\u2011check the pool address before signing. Once the tx confirms, your LP\u2011NFT will show the added liquidity.\n\n**Risk:** MEDIUM (impermanent loss). **Strategy fit:** balanced. **Safety:** approve only the exact amounts, verify the pool address, monitor the position after confirmation.","card_ids":[],"elapsed_ms":10147,"steps":3}
+
+event: done
+data: {}
+

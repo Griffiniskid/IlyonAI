@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Here are three ways to unwind your jitoSOL stake:\n\n1. **Native withdrawal via Jito** \u2013 triggers a cooldown (~1\u20112 epochs, 2\u20113\u202fdays) then returns SOL; risk\u202fLOW, fits a conservative strategy. \n2. **Swap jitoSOL for SOL on a DEX (e.g., Jupiter, Raydium)** \u2013 instant liquidity but subject to slippage/price impact; risk\u202fMEDIUM\u2011HIGH, fits balanced/aggressive if you tolerate market impact. \n3. **Supply jitoSOL as collateral on a lending platform (e.g., Solend) to borrow SOL** \u2013 you keep exposure while accessing funds; risk\u202fMEDIUM (smart\u2011contract and liquidation risk), fits a balanced strategy. \n\nSafety tips: verify contract addresses, set reasonable slippage tolerance for swaps, keep enough SOL for transaction fees, and monitor loan\u2011to\u2011value ratios if you borrow.","card_ids":[],"elapsed_ms":5539,"steps":3}
+
+event: done
+data: {}
+

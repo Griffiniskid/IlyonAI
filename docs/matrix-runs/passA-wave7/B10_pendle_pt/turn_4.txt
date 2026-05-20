@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t generate a transaction without a deterministic Sentinel tool that outputs sign\u2011able calldata. Please give me an explicit verb form, for example:\n\n- \u201cBuy $200 of Morpho\u202fBlue PT\u2011USDC on Pendle\u201d\n- \u201cSupply 200\u202fUSDC to Morpho\u202fBlue on Pendle\u201d\n- \u201cSwap 200\u202fUSDC for Morpho\u202fBlue PT\u2011USDC on Pendle\u201d\n\nOnce you provide that, I\u2019ll prepare the Execution Plan card for you to approve in your wallet.","card_ids":[],"elapsed_ms":5025,"steps":3}
+
+event: done
+data: {}
+
