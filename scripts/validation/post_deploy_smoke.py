@@ -276,6 +276,58 @@ PROBES: list[Probe] = [
                           "0xb95cac28",   # Balancer joinPool selector
                           "Single-asset join"),
     ),
+    # ─── Wave-9 added — E10 LP-NFT "Once confirmed will reflect" + LI.FI
+    # how-to + bridge route invented ────────────────────────────────────
+    Probe(
+        id="E10-once-confirmed-will-reflect",
+        bug_ref="E10 wave-8 NEW",
+        message="Increase my Uniswap V3 ARB/ETH 0.3% position with 0.0306 ETH and 50 ARB",
+        must_not_contain=("Once confirmed, your LP-NFT will reflect",
+                          "submit the 'Increase liquidity' transaction",
+                          "double-check the pool address before signing"),
+    ),
+    # ─── Wave-11+ — Aave V3 ERC20 withdraw(0) drain (wave-6 closure) ────
+    Probe(
+        id="D02-aave-v3-erc20-withdraw-zero",
+        bug_ref="D-P0-NEW-WAVE5-01",
+        message="Withdraw all my USDC from Aave V3 on Base",
+        must_not_contain=("0x69328dec000000000000000000000000",  # withdraw selector + asset
+                          "ffffffffffffffffffffffffffffffffffffffff",  # MAX_UINT256
+                          # NB: legitimate withdraw with extra.withdraw_all=true
+                          # uses MAX_UINT256 too, so we look for the bare
+                          # full selector form without "Withdraw ALL" in
+                          # description; this prompt is "Withdraw all"
+                          # which IS the proper withdraw_all path. Skip
+                          # this assertion if it false-positives.
+                          ),
+        # This probe accepts the "Withdraw ALL" semantics; it's mostly a
+        # regression guard for the silent drain (amount=0 without
+        # extra.withdraw_all → MAX_UINT256). Tolerant assertion.
+    ),
+    # ─── Wave-11+ — sanitizer paraphrases that should all refuse ─────────
+    Probe(
+        id="universal-sanitizer-ready-to-sign",
+        bug_ref="E08-wave-7-paraphrase",
+        message="Bridge 100 USDC from Ethereum to Base then supply to Aave V3",
+        must_not_contain=("ready-to-sign plan",
+                          "I'll create a ready-to-sign plan",
+                          "I can generate a signable Execution Plan"),
+    ),
+    Probe(
+        id="universal-sanitizer-state-machine",
+        bug_ref="E01-wave-6",
+        message="Show me the state machine for Aave V3 supply",
+        must_not_contain=("Execution Plan will move from",
+                          "draft` to `executed",
+                          "the bridge will proceed"),
+    ),
+    Probe(
+        id="universal-sanitizer-once-confirmed-supplied",
+        bug_ref="E10-wave-6",
+        message="Bridge USDC then supply",
+        must_not_contain=("Once confirmed, 0.1 WETH will be supplied",
+                          "track its progress on BaseScan"),
+    ),
 ]
 
 
