@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Supply 250 USDC to Yearn Finance USDC on Base (risk\u202fHIGH, aggressive fit). Only allocate funds you can afford to lose.","card_ids":[],"elapsed_ms":32230,"steps":3}
+
+event: done
+data: {}
+

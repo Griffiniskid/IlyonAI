@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t generate a signed transaction without the deterministic Enso adapter output. Please run the Enso adapter for **\u201cOpen a Uniswap V3 USDC/WETH LP on Base\u201d** so it returns a signable Execution Plan (calldata, gas estimate, etc.). Once the tool provides that data, I\u2019ll present the Execution Plan card for you to approve and broadcast.","card_ids":[],"elapsed_ms":10920,"steps":3}
+
+event: done
+data: {}
+

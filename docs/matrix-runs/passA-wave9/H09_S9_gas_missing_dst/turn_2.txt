@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Gas\u2011top\u2011up plan**\n\n| Step | Chain | Approx. gas needed | Suggested top\u2011up |\n|------|-------|-------------------|------------------|\n| 1\ufe0f\u20e3 Bridge USDC (Ethereum \u2192 Avalanche) | Ethereum | ~0.001\u202fETH (~$2) | Add\u202f0.002\u202fETH to cover bridge + retries |\n| 2\ufe0f\u20e3 Supply USDC to Aave\u202fV3 | Avalanche (C\u2011Chain) | ~0.005\u202fAVAX (~$0.15) | Add\u202f0.01\u202fAVAX to cover supply + approvals |\n\n**Action:** Top\u2011up your Ethereum wallet with\u202f0.002\u202fETH and your Avalanche wallet with\u202f0.01\u202fAVAX. Once the funds are in place, approve the bridge transaction; after it confirms, the supply step will be ready to execute.","card_ids":[],"elapsed_ms":7716,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The withdraw action remains blocked\u2014there\u2019s no verified adapter for Orca USDC withdraw on Solana, so I can\u2019t generate a signable transaction. Please try a different action or wait until support is added.","card_ids":[],"elapsed_ms":36045,"steps":3}
+
+event: done
+data: {}
+

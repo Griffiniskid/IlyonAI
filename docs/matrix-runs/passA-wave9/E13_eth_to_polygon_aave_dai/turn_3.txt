@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Bridge route:** Ethereum \u2192 deBridge\u202fDLN \u2192 Polygon (DAI,\u202f100\u202fDAI). \n*Risk:* Medium \u2013 approve only the exact amount and verify the contract address before confirming.","card_ids":[],"elapsed_ms":16843,"steps":3}
+
+event: done
+data: {}
+

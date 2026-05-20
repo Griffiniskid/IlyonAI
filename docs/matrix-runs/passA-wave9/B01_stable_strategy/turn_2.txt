@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"OPTION is an Optimism\u2011based utility token used primarily for governance and fee discounts within its native DEX aggregator ecosystem. Its trading volume is concentrated on Optimism DEXes, giving it moderate liquidity that qualifies as MEDIUM\u2011risk for larger swaps. Always confirm the contract address via the project\u2019s official channels, begin with a small test swap to gauge slippage and gas, and monitor any audit updates before scaling up.","card_ids":[],"elapsed_ms":20449,"steps":3}
+
+event: done
+data: {}
+

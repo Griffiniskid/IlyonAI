@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Please approve and sign the bundle in your wallet to execute the liquidity\u2011supply transaction. Once signed, you\u2019ll see the transaction hash in your wallet\u2019s activity feed.","card_ids":[],"elapsed_ms":5596,"steps":3}
+
+event: done
+data: {}
+

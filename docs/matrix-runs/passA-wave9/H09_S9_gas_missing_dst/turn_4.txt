@@ -1,0 +1,9 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: final
+data: {"content":"Continuing from the prior allocation / execution plan context. To regenerate the signing card, please repeat the original request (e.g. `Supply 100 USDC to Aave V3 on Base`) \u2014 the card frame was not persisted in this session and can't be replayed directly.","card_ids":[],"elapsed_ms":220,"steps":1}
+
+event: done
+data: {}
+

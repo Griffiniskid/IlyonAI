@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Unlock / withdrawal times**\n\n- **Renzo\u202frenZETH (LRT)** \u2013 burn renZETH \u2192 usually\u202f<\u202f1\u202fhour (often a few minutes) \n- **Uniswap\u202fv3\u202fSERV\u2011WETH LP** \u2013 remove liquidity \u2192 instant (one transaction) \n- **Curve\u202fDEX\u202fIDAI\u2011IUSDC\u2011IUSDT** \u2013 exit the pool \u2192 instant (one transaction) \n- **Uniswap\u202fv4\u202fETH\u2011UPEG LP** \u2013 remove liquidity \u2192 instant (one transaction) \n- **Zeebu\u202fZBU** \u2013 unstake/withdraw ZBU \u2192 typically immediate (one\u2011tx claim) \n- **Morpho\u202fBlue\u202fAUGUSTAUSD** \u2013 withdraw supplied asset \u2192 instant (one transaction) \n\nAll positions are non\u2011lock\u2011up; you can withdraw at any time, though Renzo may require a short burn delay and Zeebu may need a claim transaction. Fees or accrued rewards are claimable when you withdraw.","card_ids":[],"elapsed_ms":8417,"steps":3}
+
+event: done
+data: {}
+

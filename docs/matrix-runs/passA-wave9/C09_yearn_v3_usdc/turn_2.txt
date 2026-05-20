@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Here\u2019s an Ethereum\u2011only allocation for 250\u202fUSDC:\n\n| # | Protocol \u00b7 Pair (chain) | Weight % | $ Amount | APY | Risk |\n|---|--------------------------|----------|----------|-----|------|\n| 1 | yearn-finance \u00b7 CRVUSDCWETHINV (Ethereum) | 20% | 50 | 46.8% | HIGH |\n| 2 | yearn-finance \u00b7 REUSDSFRX (Ethereum) | 20% | 50 | 19.9% | HIGH |\n| 3 | beefy \u00b7 OUSD-PMUSD (Ethereum) | 20% | 50 | 18.2% | HIGH |\n| 4 | beefy \u00b7 REUSD-SFRXUSD (Ethereum) | 20% | 50 | 16.9% | HIGH |\n| 5 | yearn-finance \u00b7 FRXMSUSD (Ethereum) | 20% | 50 | 16.7% | HIGH |","card_ids":[],"elapsed_ms":19208,"steps":3}
+
+event: done
+data: {}
+

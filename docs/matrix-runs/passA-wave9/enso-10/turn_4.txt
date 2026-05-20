@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I still need the Enso router contract address on Berachain and the exact function signature you want to call (e.g., `supply(uint256 amount0,uint256 amount1,address to,uint256 deadline)`). Please also provide:\n\n- The recipient address for the LP tokens \n- The deadline timestamp (or block number) you\u2019d like to use \n- Confirmation that you want to supply exactly\u202f100\u202fHONEY and the matching amount of WBERA based on the current pool price (or a specific WBERA amount if you have one).\n\nOnce I have those details I can generate the deterministic calldata for the Kodiak V3 HONEY/WBERA pool via Enso.","card_ids":[],"elapsed_ms":9352,"steps":3}
+
+event: done
+data: {}
+

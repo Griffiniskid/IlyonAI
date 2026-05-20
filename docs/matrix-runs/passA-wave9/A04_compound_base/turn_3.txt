@@ -1,0 +1,24 @@
+event: thought
+data: {"step_index":1,"content":"Parsed constraint-aware DeFi search: {\"chains\": [\"base\"], \"execution_requested\": true, \"limit\": 8, \"product_types\": [], \"ranking_objective\": \"execution_ready_strategy\", \"risk_levels\": []}."}
+
+event: thought
+data: {"step_index":2,"content":"Separating research, allocation, and execution intent before selecting a tool."}
+
+event: thought
+data: {"step_index":3,"content":"Applying hard APY, risk, chain, and TVL filters from the user's exact request."}
+
+event: thought
+data: {"step_index":4,"content":"Checking execution readiness separately so unsupported pools never get fake signing buttons."}
+
+event: tool
+data: {"step_index":4,"name":"search_defi_opportunities","args":{"risk_levels":[],"product_types":[],"chains":["base"],"ranking_objective":"execution_ready_strategy","execution_requested":true,"limit":8}}
+
+event: observation
+data: {"step_index":4,"name":"search_defi_opportunities","ok":true,"error":null}
+
+event: final
+data: {"content":"I couldn't complete that \u2014 **TOOL_TIMEOUT**: Tool 'search_defi_opportunities' exceeded its 30s SLO. Upstream call (RPC / Enso / DefiLlama / aggregator) hung \u2014 no execution plan emitted. Retry or pick a different route.","card_ids":[],"elapsed_ms":35918,"steps":4}
+
+event: done
+data: {}
+

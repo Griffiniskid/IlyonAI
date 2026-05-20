@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"- **Supply 150 USDC to Aave V3 on Ethereum** (to set the total) \n- **Increase supply by 50 USDC on Aave V3 Ethereum** (to add on top of the existing 100)\n\nOnce the command is explicit, the adapter can generate the calldata. Supplying USDC on Aave V3 is generally LOW\u2011risk and fits a conservative strategy. Remember to approve the token first if needed.","card_ids":[],"elapsed_ms":17830,"steps":3}
+
+event: done
+data: {}
+

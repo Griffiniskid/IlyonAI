@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have real\u2011time access to the Sky DAI savings rate (DSR). For the current APY, check the Sky app, the MakerDAO dashboard, or a trusted DeFi analytics site.\n\n- **Risk:** LOW \n- **Strategy fit:** conservative \n- **Safety tip:** Use the official Sky contract and keep your wallet secured.","card_ids":[],"elapsed_ms":10882,"steps":3}
+
+event: done
+data: {}
+

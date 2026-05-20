@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I still need the contract address (or a widely\u2011used symbol) for XYZ123 to check its price and liquidity on Base. Once you provide that, I can confirm the swap details for 100\u202fXYZ123 \u2192 USDC.","card_ids":[],"elapsed_ms":24112,"steps":3}
+
+event: done
+data: {}
+

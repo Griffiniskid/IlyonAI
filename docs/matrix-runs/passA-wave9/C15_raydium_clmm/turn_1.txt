@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"deposit_lp\", \"amount_in\": 1.0, \"asset_in\": \"SOL\", \"chain\": \"solana\", \"extra\": {\"amount_is_usd\": false, \"pool_symbol\": \"SOL-USDC\", \"usd_equivalent\": 1.0}, \"protocol\": \"raydium-clmm\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"solana","protocol":"raydium-clmm","action":"deposit_lp","asset_in":"SOL","amount_in":1.0,"extra":{"pool_symbol":"SOL-USDC","amount_is_usd":false,"usd_equivalent":1.0}}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"e5dcc0c4-df38-451b-9807-f95801a7e4b1","card_type":"execution_plan_v3","payload":{"plan_id":"plan_6d8ddfedf644","title":"Raydium CLMM Deposit LP","summary":"Deposit LP 1.0 SOL via Raydium CLMM on Solana.","status":"blocked","risk_gate":"clear","requires_double_confirm":false,"blockers":[{"code":"INSUFFICIENT_BALANCE","severity":"blocker","title":"Not enough SOL","detail":"Need 1 SOL, wallet has 0 SOL.","affected_step_ids":[],"recoverable":true,"cta":"Bridge or swap into SOL on solana before signing this plan."},{"code":"GAS_TOPUP_REQUIRED","severity":"blocker","title":"Not enough SOL for gas","detail":"Need ~0.000174 SOL (~$0.01 at 1.5\u00d7 headroom), wallet has 0.000000 SOL.","affected_step_ids":[],"recoverable":true,"cta":"Top up SOL on solana before signing (bridge from another chain or fund the wallet)."}],"steps":[{"step_id":"step_d253c5c861","index":1,"action":"prep_swap","title":"Prep swap: 0.5 SOL \u2192 USDC (Raydium CLMM SOL-USDC handoff)","description":"Swap 0.5 SOL into USDC via Jupiter so you hold one side of the SOL-USDC pool. After this swap confirms, click the Raydium link to finish the LP add \u2014 Raydium CLMM direct-sign isn't wired yet for this in-chat flow.","chain":"solana","wallet":"Phantom","protocol":"raydium-clmm","asset_in":"SOL","asset_out":"USDC","amount_in":"0.5","amount_out":null,"slippage_bps":50,"gas_estimate_usd":0.01,"duration_estimate_s":25,"depends_on":[],"status":"ready","blocker_codes":[],"transaction":{"chain_kind":"solana","serialized":"AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQAIEUC7GNv7tzz/nibS6NfRlCXrv4sd0IpQrYLrbLNs+SEDC0gHT3W46jBpye0/BrwyGXgq5M2OXJ03SYJWsZhLnVAaVTx+NF0rQjL9XB2gTjzwllctbeyXv6I2xi7jocdtOE6GmndDa/KV/ya4Mwp0MX+PUE0BCkOJeHa3fDqPur0cWO9nf7VjXmRzcktw4WtkBVQDTqR6HHs/zYiFPEFdMlRlmBj+ABBoZoN0/ti8/hv7TCeUwk+02eOBaYc65tcQIaGqrRAC1Hw/FFnsQRSeMibxJuvWbtupY8G/RmMBWj5w4swNjCZ8SGTshINqeM1e1VDTZoR6e/0c5j9q3Q+tE/P3b3x1Y0er5sXpwPK9HVfDGccbTVdXOjbk9Xj+WMf3vAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAEedVb8jHAbu50xW7OaBUH/bGy3qP0jlECsc2iVrwTjwYYqWvimJoBPRRAJ1+t6SEYf+a1aJAFR9ep9/1bHie5Bt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKk6uJA/tzXKscZ8Wa9IV+32Gwr4MqUKfFnjIZGeDsipvIyXJY9OJInxuz0QKRSODYMLWhOZ2v8QhASOe9jb6fhZtD/6J/XX9kp0wJsfKVh53ksJqzbfyd1RSzIap7OM5ejb4eub5SwlWsn1EPYBTGHhSKZzAwYWkwBTUEZYT0lhwQgKAAUCwFwVAAoACQO+MQAAAAAAAA8GAAUAGQkNAQEJAgAFDAIAAAAAZc0dAAAAAA0BBQERDwYABgAfCQ0BAQsqDQ4ABQQBBhkfCwsQCxsOGhMEAhQRFQ0DEggHCxwOGB4MFhcCASAfDQ0dKcEgmzNB1pyBBAIAAAAaZAABXwBkAQIAZc0dAAAAACyqjwIAAAAAMgAADQMFAAABCQI9whapJMxiYg1Y/S9bROWrjXfldZCFcyME/snbeFkkhAUrKRcWGAMaJSqtEjbc8vFevXUixHicq9pAPIw2TJtWYh4RXchc6hUuZgOZkZYFk5SSmpU="},"receipt":null,"risk_warnings":["Final LP add for SOL-USDC runs on Raydium: https://raydium.io/liquidity-pools/?search=SOL-USDC","Pool sides unknown \u2014 using USDC/SOL fallback heuristic. Verify pool tokens on the protocol app before finalizing."]}],"totals":{"estimated_gas_usd":0.01,"estimated_duration_s":25,"signatures_required":1,"chains_touched":["solana"],"assets_required":{"SOL":"1"}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"**Raydium CLMM Deposit LP** \u2014 Deposit LP 1.0 SOL via Raydium CLMM on Solana.\nStatus: `blocked` \u00b7 1 signature(s) required.\n\n**Steps**\n\u25b6 Step 1 \u2014 prep_swap 0.5 SOL on solana via raydium-clmm (ready)\n\n**Blockers**\n- Not enough SOL: Need 1 SOL, wallet has 0 SOL.\n- Not enough SOL for gas: Need ~0.000174 SOL (~$0.01 at 1.5\u00d7 headroom), wallet has 0.000000 SOL.\n\nNo signing button is shown until every blocker clears.","card_ids":["e5dcc0c4-df38-451b-9807-f95801a7e4b1"],"elapsed_ms":14749,"steps":5}
+
+event: done
+data: {}
+

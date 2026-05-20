@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Got it\u2014go ahead and use a trusted bridge (official Avalanche Bridge, Synapse, or Hop) to move\u202f0.1\u202fAVAX from your source chain to your Avalanche wallet. Double\u2011check the contract address, start with a tiny test amount if you\u2019re unsure, and make sure you have enough gas on the source chain for the bridge transaction. Once the funds arrive, you\u2019ll have enough AVAX to cover the approve\u202f+\u202fsupply gas fees.","card_ids":[],"elapsed_ms":23193,"steps":3}
+
+event: done
+data: {}
+

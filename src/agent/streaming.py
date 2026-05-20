@@ -59,9 +59,36 @@ class StreamCollector(AsyncCallbackHandler):
     # ------------------------------------------------------------------
 
     def drain(self):
-        """Yield and remove all queued frames."""
+        """Yield and remove all queued frames.
+
+        Wave 9 — runtime invariant assertion layer ran here at drain
+        time. Several legacy paths in simple_runtime.py + runtime.py
+        bypass `emit_card` and append CardFrames directly to `_queue`;
+        invariants must fire at egress to catch them. Drain is the
+        single point of egress for all queued frames.
+        """
+        try:
+            from src.agent.runtime_invariants import enforce_card_invariants
+        except Exception:  # noqa: BLE001
+            enforce_card_invariants = None
         while self._queue:
-            yield self._queue.popleft()
+            frame = self._queue.popleft()
+            if enforce_card_invariants is not None and isinstance(frame, CardFrame):
+                try:
+                    new_type, new_payload, _v = enforce_card_invariants(
+                        frame.card_id, frame.card_type, frame.payload
+                    )
+                    if (new_type != frame.card_type) or (new_payload is not frame.payload):
+                        frame = CardFrame(
+                            step_index=frame.step_index,
+                            card_id=frame.card_id,
+                            card_type=new_type,
+                            payload=new_payload,
+                        )
+                except Exception:  # noqa: BLE001
+                    # Fail-open: never let an invariant bug crash drain.
+                    pass
+            yield frame
 
     def emit_card(self, card_id: str, card_type: str, payload: dict) -> None:
         """Enqueue a card frame.

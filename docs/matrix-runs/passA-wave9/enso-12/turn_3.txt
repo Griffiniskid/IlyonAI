@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Approve tokens**\n\n- USDC (0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48) \u2192 Enso Executor (0x\u2026\u200b) :\u202f200\u202f000\u202f000\u202f(6\u202fdecimals) \n- WETH (0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2) \u2192 Enso Executor :\u202f111\u202f000\u202f000\u202f000\u202f000\u202f000\u202f(\u22480.111\u202fWETH, 18\u202fdecimals)\n\n**Add liquidity via Enso**\n\nCall the Enso Executor contract (0x\u2026\u200b) with the `execute` function:\n\n- `actionId`:\u202f0x\u2026\u200b\u202f(Uniswap\u202fV2\u202faddLiquidity USDC/WETH) \n- `payload`:\u202fabi\u2011encoded parameters for Uniswap V2 `addLiquidity` \n - `amountTokenDesired`:\u202f200\u202f000\u202f000\u202fUSDC \n - `amountTokenMin`:\u202f199\u202f000\u202f000\u202fUSDC (0.5\u202f% slippage) \n - `amountETHMin`:\u202f110\u202f000\u202f000\u202f000\u202f000\u202f000\u202fWETH (0.5\u202f% slippage) \n - `to`:\u202fyour wallet address \n - `deadline`:\u202fcurrent timestamp\u202f+\u202f1200\u202fseconds \n\nThe transaction value is\u202f0\u202fETH (only token approvals and call data are needed). Submit the approvals first, then the `execute` call to open the USDC/WETH LP on Uniswap\u202fV2 via Enso. \n\n*Risk:*\u202fHIGH (impermanent loss, smart\u2011contract exposure). *Strategy fit:*\u202faggressive. *Safety:*\u202fverify token contracts, set slippage tolerance, and use a fresh nonce for each tx.","card_ids":[],"elapsed_ms":65454,"steps":3}
+
+event: done
+data: {}
+

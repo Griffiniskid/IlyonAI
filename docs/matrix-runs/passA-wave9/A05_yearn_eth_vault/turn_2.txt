@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Please specify the exact amount of USDC you\u2019d like to deposit into the Yearn V3 USDC vault on Base (e.g.,\u202f`Deposit 200 USDC`). I cannot auto\u2011sign this transaction directly, but once you give the amount I\u2019ll provide the exact steps to approve and deposit via the protocol\u2019s UI.","card_ids":[],"elapsed_ms":12263,"steps":3}
+
+event: done
+data: {}
+

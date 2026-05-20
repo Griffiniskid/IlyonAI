@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"1. Connect your MetaMask (or any EVM wallet) to Ethereum mainnet. \n2. Approve the LI.FI router to spend\u202f100\u202fDAI. \n3. Bridge the DAI to Polygon via LI.FI; you\u2019ll receive wDAI on Polygon. \n4. Approve the Aave V3 Polygon Pool contract to spend the wDAI. \n5. Deposit the wDAI into the Aave V3 DAI market to receive aDAI.","card_ids":[],"elapsed_ms":3271,"steps":3}
+
+event: done
+data: {}
+

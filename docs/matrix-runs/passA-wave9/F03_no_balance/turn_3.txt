@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Try a smaller amount with an explicit verb, for example:\n\n**Supply 100 USDC to Aave V3 on Base**\n\nThat will trigger the deterministic Sentinel tool and give you a signable Execution Plan if your wallet has enough USDC. (Supplying USDC on Aave V3 Base is generally low\u2011risk and fits a conservative strategy; just make sure you have the funds for both the approve and supply steps.)","card_ids":[],"elapsed_ms":50837,"steps":3}
+
+event: done
+data: {}
+

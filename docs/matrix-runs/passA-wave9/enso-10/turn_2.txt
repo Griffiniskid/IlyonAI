@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have the exact Enso router contract address or function signature for Berachain in my current knowledge base. To generate the calldata you\u2019ll need to obtain those details from Enso\u2019s official documentation or a Berachain block explorer (e.g., the router address and the `supply(uint256 amount0,uint256 amount1,address to,uint256 deadline)` signature). Once you share the address and signature, I can produce the deterministic calldata for supplying 100\u202fHONEY and the matching amount of WBERA.","card_ids":[],"elapsed_ms":72766,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Preview \u2013 Swap\u202f\u2192\u202fMint route for 200\u202fUSDC \u2192 Pendle PT\u2011sUSDe (Ethereum, Enso)** \n\n1. **Swap USDC for sUSDe** \n - Approve the DEX spender (Curve\u202f3pool or Uniswap\u202fV3) for 200\u202fUSDC. \n - Execute the swap to receive the equivalent amount of sUSDe. \n\n2. **Mint PT\u2011sUSDe** \n - Approve the Pendle PT\u2011sUSDe contract to receive the sUSDe amount. \n - Call Pendle\u2019s `mint` function (or the Enso\u2011wrapped equivalent) to obtain PT\u2011sUSDe tokens representing the Dec\u20112026 maturity position. \n\n**Risk & safety** \n- PT\u2011sUSDe is a **HIGH\u2011risk** yield product; its price can fluctuate and principal is not guaranteed. \n- Only allocate funds you can afford to lose, verify contract addresses, and set a reasonable slippage tolerance before signing. \n\n*(This is a conceptual preview; no transaction hash or calldata is fabricated.)*","card_ids":[],"elapsed_ms":12222,"steps":3}
+
+event: done
+data: {}
+

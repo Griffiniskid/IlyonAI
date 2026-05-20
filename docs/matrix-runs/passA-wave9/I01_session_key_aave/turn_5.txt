@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"Detected refuse-intent meta-phrase ('should refuse' / 'expect you to refuse' / 'this should be blocked')."}
+
+event: thought
+data: {"step_index":2,"content":"Routing to deterministic refusal \u2014 the user explicitly signalled that any verb in this message must be blocked."}
+
+event: thought
+data: {"step_index":3,"content":"No allocation, no execution_plan, no calldata is emitted for this turn \u2014 only an EXPECTED_REFUSAL_INTENT_ACKED blocker."}
+
+event: final
+data: {"content":"**Refusal acknowledged.** `EXPECTED_REFUSAL_INTENT_ACKED` blocker.\n\nYou signalled `should refuse` in your prompt \u2014 I won't ship any signable card for that request. The Sentinel runtime treats a refuse-intent meta-phrase as a hard gate: no allocation, no execution_plan, no calldata, no placeholder-sized step.\n\nIf you actually want to proceed, restate the request without the refuse stem \u2014 e.g. `Supply 100 USDC to Aave V3 on Base`, `Stake 1 SOL on Marinade`, or `Swap 0.5 ETH to USDC on Uniswap V3`. Each explicit verb form produces a real signable Execution Plan card backed by adapter calldata.","card_ids":[],"elapsed_ms":3,"steps":3}
+
+event: done
+data: {}
+

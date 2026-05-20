@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t show a receipt because the close\u2011position attempt didn\u2019t succeed\u2014no transaction was built or signed. To get a receipt, you\u2019ll need to re\u2011run the close with a valid amount (e.g.,\u202f`Close my Uniswap V3 position tokenId 12345 amount 1.0`). Once the deterministic tool returns a signed Execution Plan, the receipt will be available.","card_ids":[],"elapsed_ms":4183,"steps":3}
+
+event: done
+data: {}
+

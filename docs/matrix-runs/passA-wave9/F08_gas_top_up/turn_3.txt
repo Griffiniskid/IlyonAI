@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Use a trusted bridge such as the official Avalanche Bridge, Synapse, or Hop to move 0.1\u202fAVAX from Ethereum (or another chain) to your Avalanche wallet. Connect your wallet, choose the source chain, enter 0.1\u202fAVAX, approve the token if needed, and confirm the transaction; wait for the funds to appear on Avalanche. This is a MEDIUM\u2011risk move due to bridge smart\u2011contract exposure\u2014start with a tiny test amount, double\u2011check contract addresses, and ensure you have enough gas on the source chain.","card_ids":[],"elapsed_ms":30434,"steps":3}
+
+event: done
+data: {}
+

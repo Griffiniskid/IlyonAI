@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Recovery posture for a failed Aave V3 supply on Base**\n\n- Confirm the USDC approval transaction succeeded and the wallet still holds \u2265\u202f100\u202fUSDC plus enough ETH for gas. \n- Inspect the transaction revert reason (e.g., insufficient allowance, contract paused, out\u2011of\u2011gas). \n- If allowance is adequate, resend the supply call with a higher gas price once network conditions improve. \n- If the approval failed, re\u2011execute the approval transaction before retrying the supply. \n- If the issue persists, reduce the supplied amount or move to a different vault/pool. \n\nRisk stays in the **LOW\u2011MEDIUM** range and avoids unnecessary token loss.","card_ids":[],"elapsed_ms":12709,"steps":3}
+
+event: done
+data: {}
+

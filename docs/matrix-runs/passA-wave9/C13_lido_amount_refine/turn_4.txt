@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"28acaba4-861c-4e93-ab91-e8259b966da6","card_type":"execution_plan_v3","payload":{"plan_id":"plan_f722131389ac","title":"Lido Supply","summary":"Lido does not support the `supply` verb. Refusing to silently downgrade.","status":"blocked","risk_gate":"clear","requires_double_confirm":false,"blockers":[{"code":"VERB_NOT_SUPPORTED","severity":"blocker","title":"Lido can't supply","detail":"`supply` is not in the supported verb set for Lido. Supported: stake, unstake, withdraw. Earlier builds would silently fall through to a `supply` step here \u2014 that path is now disabled to prevent verb-downgrade bugs.","affected_step_ids":[],"recoverable":true,"cta":"Use one of: stake, unstake, withdraw \u2014 or pick a protocol that supports `supply` (e.g. Aave V3 / Compound V3 for borrow/repay)."}],"steps":[],"totals":{"estimated_gas_usd":0.0,"estimated_duration_s":0,"signatures_required":0,"chains_touched":[],"assets_required":{}},"research_thesis":null,"strategy_id":null,"recovery":{"action":"ASK_USER","posture":"Lido doesn't support `supply` \u2014 pick a different verb or protocol","new_slippage_bps":null,"alternatives":[],"buttons":["Try Stake","Try Unstake","Try Withdraw","Switch to Aave V3","Cancel"],"channels":[],"rationale":"Verb-aware dispatch refused to silently downgrade an unsupported action to supply. No financial-loss path."}}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["28acaba4-861c-4e93-ab91-e8259b966da6"],"elapsed_ms":0,"steps":2}
+
+event: done
+data: {}
+
