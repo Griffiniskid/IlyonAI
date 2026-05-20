@@ -23,20 +23,34 @@ from scripts.validation.post_deploy_smoke import PROBES
 
 def scan_wave(wave_dir: Path) -> dict[str, list[tuple[str, str]]]:
     """For each probe, return the list of (file, matched_pattern) for any
-    capture where a `must_not_contain` pattern appears."""
+    capture where a `must_not_contain` pattern appears.
+
+    Wave 12 — strip `user_message`/`cross_chain_message` segments before
+    scanning so we don't false-match on the literal matrix prompt that
+    the harness sent. The sweep only sees the MODEL's output (thoughts +
+    cards + final.content).
+    """
+    import re
+    user_msg_re = re.compile(r'"user_message":"(?:[^"\\]|\\.)*"')
+    cross_msg_re = re.compile(r'"cross_chain_message":"(?:[^"\\]|\\.)*"')
     results: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for turn_file in wave_dir.rglob("turn_*.txt"):
         try:
             body = turn_file.read_text(encoding="utf-8", errors="replace")
         except (OSError, UnicodeError):
             continue
+        body = user_msg_re.sub('"user_message":""', body)
+        body = cross_msg_re.sub('"cross_chain_message":""', body)
         body_lower = body.lower()
+        rel_path = str(turn_file.relative_to(wave_dir))
         for probe in PROBES:
+            # Skip turns outside the probe's scope (default: any turn).
+            if probe.regression_turn_scope:
+                if not any(rel_path.endswith(suffix) for suffix in probe.regression_turn_scope):
+                    continue
             for forbidden in probe.must_not_contain:
                 if forbidden.lower() in body_lower:
-                    results[probe.id].append(
-                        (str(turn_file.relative_to(wave_dir)), forbidden)
-                    )
+                    results[probe.id].append((rel_path, forbidden))
     return results
 
 

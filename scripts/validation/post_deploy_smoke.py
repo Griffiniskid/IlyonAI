@@ -44,6 +44,12 @@ class Probe:
     # Optional: also allow these as valid responses (e.g. structured blocker
     # for tool-routed paths)
     also_acceptable: tuple[str, ...] = ()
+    # Regression sweep: only flag matches in matrix files where the file
+    # path matches one of these turn suffixes. Default (empty) = match
+    # any turn. Use ("turn_1.txt", "turn_2.txt") to scope to first/second
+    # turn (avoiding false-positives on continuation turns that legitimately
+    # replay prior-turn cards).
+    regression_turn_scope: tuple[str, ...] = ()
 
 
 PROBES: list[Probe] = [
@@ -268,6 +274,14 @@ PROBES: list[Probe] = [
     ),
 
     # ─── D-category — Balancer exit drain-equivalent ─────────────────────
+    # Single-turn probe — sends ONLY the "Exit Balancer wsteth-weth with
+    # 0.5 BPT" prompt (no prior deposit context). The regression sweep is
+    # turn-aware via the rglob; only matches in turn_1.txt (the first
+    # response to this prompt) count. D05 t4 continuation legitimately
+    # replays the t1 deposit card (matrix scenario has Deposit at t1,
+    # Exit at t2, Use WETH at t3, Confirm at t4) so it false-positives
+    # on the regression sweep — that's a sweep limitation, not a real
+    # regression. The smoke probe sends t1 only.
     Probe(
         id="D05-balancer-exit-drain",
         bug_ref="D-P0-10b",
@@ -275,6 +289,10 @@ PROBES: list[Probe] = [
         must_not_contain=("Balancer V3 Deposit LP",
                           "0xb95cac28",   # Balancer joinPool selector
                           "Single-asset join"),
+        # D05 matrix scenario has Deposit at t1, Exit at t2, etc. The
+        # legitimate t1 Deposit card carries these patterns; the regression
+        # only counts if Exit prompt (t2) produces them.
+        regression_turn_scope=("turn_2.txt",),
     ),
     # ─── Wave-9 added — E10 LP-NFT "Once confirmed will reflect" + LI.FI
     # how-to + bridge route invented ────────────────────────────────────
@@ -286,24 +304,14 @@ PROBES: list[Probe] = [
                           "submit the 'Increase liquidity' transaction",
                           "double-check the pool address before signing"),
     ),
-    # ─── Wave-11+ — Aave V3 ERC20 withdraw(0) drain (wave-6 closure) ────
-    Probe(
-        id="D02-aave-v3-erc20-withdraw-zero",
-        bug_ref="D-P0-NEW-WAVE5-01",
-        message="Withdraw all my USDC from Aave V3 on Base",
-        must_not_contain=("0x69328dec000000000000000000000000",  # withdraw selector + asset
-                          "ffffffffffffffffffffffffffffffffffffffff",  # MAX_UINT256
-                          # NB: legitimate withdraw with extra.withdraw_all=true
-                          # uses MAX_UINT256 too, so we look for the bare
-                          # full selector form without "Withdraw ALL" in
-                          # description; this prompt is "Withdraw all"
-                          # which IS the proper withdraw_all path. Skip
-                          # this assertion if it false-positives.
-                          ),
-        # This probe accepts the "Withdraw ALL" semantics; it's mostly a
-        # regression guard for the silent drain (amount=0 without
-        # extra.withdraw_all → MAX_UINT256). Tolerant assertion.
-    ),
+    # ─── Aave V3 ERC20 withdraw(0) drain (wave-6 closure) ────────────────
+    # Probe removed wave-12: the legitimate `withdraw_all=true` path
+    # produces MAX_UINT256 calldata with proper "Withdraw ALL" description,
+    # which made this probe a perpetual false-positive (D02 t3 + 5 others
+    # all carry the same `ffff...` hex string legitimately). The actual
+    # silent-drain regression class is detected by the
+    # test_aave_v3_erc20_withdraw_zero_refused_without_withdraw_all pin
+    # test in `tests/defi/test_wave6_fixes.py`.
     # ─── Wave-11+ — sanitizer paraphrases that should all refuse ─────────
     Probe(
         id="universal-sanitizer-ready-to-sign",

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I couldn't reach the language model just now. Try rephrasing the question, or ask about a specific swap, bridge, stake, transfer, or DeFi pool \u2014 those run through the deterministic Sentinel tools and don't rely on the chat fallback.","card_ids":[],"elapsed_ms":28716,"steps":3}
+
+event: done
+data: {}
+

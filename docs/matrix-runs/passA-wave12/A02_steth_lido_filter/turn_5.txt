@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"stake\", \"amount_in\": \"0.5\", \"asset_in\": \"ETH\", \"chain\": \"ethereum\", \"protocol\": \"renzo\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"ethereum","protocol":"renzo","action":"stake","asset_in":"ETH","amount_in":"0.5","extra":{"user_message":"Stake 0.5 ETH on Renzo"}}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"07c5d44c-febf-436f-90b5-caa026330b9e","card_type":"execution_plan_v3","payload":{"plan_id":"plan_b7ad03744e6b","title":"Renzo Stake","summary":"Stake 0.5 ETH via Renzo on Ethereum.","status":"ready","risk_gate":"clear","requires_double_confirm":false,"blockers":[],"steps":[{"step_id":"step_20f8e7342a","index":1,"action":"stake","title":"Stake 0.5 ETH via Renzo","description":"Direct mint at 0x74a09653a083691711cf8215a6ab074bb4e99ef5 (0xfdaf83a3). msg.value carries 0.5 ETH. You receive ezETH.","chain":"ethereum","wallet":"MetaMask","protocol":"renzo","asset_in":"ETH","asset_out":"ezETH","amount_in":"0.5","amount_out":null,"slippage_bps":0,"gas_estimate_usd":2.6,"duration_estimate_s":15,"depends_on":[],"status":"ready","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":1,"to":"0x74a09653a083691711cf8215a6ab074bb4e99ef5","data":"0xfdaf83a3000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","value":"0x6f05b59d3b20000","spender":"0x74a09653a083691711cf8215a6ab074bb4e99ef5"},"receipt":null,"risk_warnings":["Renzo ezETH accrues yield via rebase or share-price.","Receipt token ezETH."]}],"totals":{"estimated_gas_usd":2.6,"estimated_duration_s":15,"signatures_required":1,"chains_touched":["ethereum"],"assets_required":{"ETH":"0.5"}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"**Renzo Stake** \u2014 Stake 0.5 ETH via Renzo on Ethereum.\nStatus: `ready` \u00b7 1 signature(s) required.\n\n**Steps**\n\u25b6 Step 1 \u2014 stake 0.5 ETH on ethereum via renzo (ready)\n\nOpen the Execution Plan card above and sign step 1 in your wallet to begin.","card_ids":["07c5d44c-febf-436f-90b5-caa026330b9e"],"elapsed_ms":19581,"steps":5}
+
+event: done
+data: {}
+

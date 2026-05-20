@@ -1,0 +1,36 @@
+event: thought
+data: {"step_index":1,"content":"Parsed constraint-aware DeFi search: {\"chains\": [\"ethereum\", \"avalanche\"], \"execution_requested\": false, \"limit\": 8, \"product_types\": [], \"protocol_filter\": \"aave-v3\", \"ranking_objective\": \"highest_sentinel_score\", \"risk_levels\": []}."}
+
+event: thought
+data: {"step_index":2,"content":"Separating research, allocation, and execution intent before selecting a tool."}
+
+event: thought
+data: {"step_index":3,"content":"Applying hard APY, risk, chain, and TVL filters from the user's exact request."}
+
+event: thought
+data: {"step_index":4,"content":"Checking execution readiness separately so unsupported pools never get fake signing buttons."}
+
+event: tool
+data: {"step_index":4,"name":"search_defi_opportunities","args":{"risk_levels":[],"product_types":[],"chains":["ethereum","avalanche"],"ranking_objective":"highest_sentinel_score","execution_requested":false,"limit":8,"protocol_filter":"aave-v3","extra":{"user_message":"Pick the top Aave V3 alt"}}}
+
+event: observation
+data: {"step_index":4,"name":"search_defi_opportunities","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Parsed constraints: risk=any, target_apy=None, apy_band=(0.0, 10000.0)."}
+
+event: thought
+data: {"step_index":6,"content":"Queried DefiLlama with min_tvl=$10,000 and min_apy=0.0 instead of the legacy $200M/0.5% staking defaults."}
+
+event: thought
+data: {"step_index":7,"content":"Ranked 234 candidates by highest_sentinel_score; 8 matched the hard constraints and 25 were excluded."}
+
+event: card
+data: {"step_index":7,"card_id":"673eb408-9450-465c-a04c-604699c71fa5","card_type":"defi_opportunities","payload":{"objective":"highest_sentinel_score","target_apy":null,"apy_band":[0.0,10000.0],"risk_levels":[],"chains":["ethereum","avalanche"],"execution_requested":false,"items":[{"protocol":"aave-v3","symbol":"USDC","chain":"ethereum","product_type":"lending","apy":8.72818,"apy_base":4.28818,"apy_reward":4.44,"tvl_usd":47631461.0,"volume_24h_usd":null,"risk_level":"MEDIUM","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/6f00d46b-8735-49ae-9ced-2a0fccc56ad0"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"6f00d46b-8735-49ae-9ced-2a0fccc56ad0"},{"protocol":"aave-v3","symbol":"USDT","chain":"ethereum","product_type":"lending","apy":7.38102,"apy_base":2.81102,"apy_reward":4.57,"tvl_usd":70890366.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/a90d554a-b548-4f50-b03e-9dcb724b7777"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"a90d554a-b548-4f50-b03e-9dcb724b7777"},{"protocol":"aave-v3","symbol":"GHO","chain":"ethereum","product_type":"lending","apy":7.15,"apy_base":0.0,"apy_reward":7.15,"tvl_usd":13991758.0,"volume_24h_usd":null,"risk_level":"MEDIUM","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/bf0660ab-38bf-48a4-9a6c-393ec0e2ff5f"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"bf0660ab-38bf-48a4-9a6c-393ec0e2ff5f"},{"protocol":"aave-v3","symbol":"USDTB","chain":"ethereum","product_type":"lending","apy":5.57057,"apy_base":2.17057,"apy_reward":3.4,"tvl_usd":49973238.0,"volume_24h_usd":null,"risk_level":"MEDIUM","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/baee0253-eb6e-4a08-a579-a2acd4f034b2"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"baee0253-eb6e-4a08-a579-a2acd4f034b2"},{"protocol":"aave-v3","symbol":"WETH","chain":"ethereum","product_type":"lending","apy":5.27351,"apy_base":1.54351,"apy_reward":3.73,"tvl_usd":14607554.0,"volume_24h_usd":null,"risk_level":"MEDIUM","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/82969010-fb6e-4af6-a72c-55c8da9c78cf"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"82969010-fb6e-4af6-a72c-55c8da9c78cf"},{"protocol":"aave-v3","symbol":"USDC","chain":"avalanche","product_type":"lending","apy":5.21648,"apy_base":5.21648,"apy_reward":0.0,"tvl_usd":6030817.0,"volume_24h_usd":null,"risk_level":"MEDIUM","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/c4b05318-88af-4536-a834-f5fc8940d2d3"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"c4b05318-88af-4536-a834-f5fc8940d2d3"},{"protocol":"aave-v3","symbol":"USDE","chain":"ethereum","product_type":"lending","apy":4.49966,"apy_base":1.83756,"apy_reward":2.66211,"tvl_usd":82767982.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/21e1ac8a-b3aa-4576-9506-0b40137721a0"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"21e1ac8a-b3aa-4576-9506-0b40137721a0"},{"protocol":"aave-v3","symbol":"RLUSD","chain":"ethereum","product_type":"lending","apy":4.49763,"apy_base":1.25438,"apy_reward":3.24325,"tvl_usd":131219384.0,"volume_24h_usd":null,"risk_level":"LOW","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/98d07333-f5e4-4a48-8061-cfb4b73ccf79"},{"label":"Open in aave-v3","url":"https://app.aave.com"}],"pool_id":"98d07333-f5e4-4a48-8061-cfb4b73ccf79"}],"excluded_count":25,"blockers":[]}}
+
+event: final
+data: {"content":"**Constraint-Matched DeFi Opportunities**\n\n1. **Aave V3** \u2014 USDC on ethereum \n APY 8.7% \u00b7 TVL $47,631,461 \u00b7 Risk MEDIUM\n Links: [DefiLlama pool](https://defillama.com/yields/pool/6f00d46b-8735-49ae-9ced-2a0fccc56ad0)\n Execution: ready via deterministic\n\n2. **Aave V3** \u2014 USDT on ethereum \n APY 7.4% \u00b7 TVL $70,890,366 \u00b7 Risk LOW\n Links: [DefiLlama pool](https://defillama.com/yields/pool/a90d554a-b548-4f50-b03e-9dcb724b7777)\n Execution: ready via deterministic\n\n3. **Aave V3** \u2014 GHO on ethereum \n APY 7.2% \u00b7 TVL $13,991,758 \u00b7 Risk MEDIUM\n Links: [DefiLlama pool](https://defillama.com/yields/pool/bf0660ab-38bf-48a4-9a6c-393ec0e2ff5f)\n Execution: ready via deterministic\n\n4. **Aave V3** \u2014 USDTB on ethereum \n APY 5.6% \u00b7 TVL $49,973,238 \u00b7 Risk MEDIUM\n Links: [DefiLlama pool](https://defillama.com/yields/pool/baee0253-eb6e-4a08-a579-a2acd4f034b2)\n Execution: ready via deterministic\n\n5. **Aave V3** \u2014 WETH on ethereum \n APY 5.3% \u00b7 TVL $14,607,554 \u00b7 Risk MEDIUM\n Links: [DefiLlama pool](https://defillama.com/yields/pool/82969010-fb6e-4af6-a72c-55c8da9c78cf)\n Execution: ready via deterministic\n\nExcluded 25 candidates that violated the requested risk, APY, chain, or TVL constraints.","card_ids":["673eb408-9450-465c-a04c-604699c71fa5"],"elapsed_ms":16881,"steps":7}
+
+event: done
+data: {}
+
