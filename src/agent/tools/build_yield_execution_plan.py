@@ -152,6 +152,73 @@ async def build_yield_execution_plan(
     research_thesis: str | None = None,
     extra: dict[str, Any] | None = None,
 ):
+    # Wave-11 D-P0-10b verb-inversion guard. Matrix wave-10 D05 t2 surfaced
+    # a context-bleed regression: prompt "Exit Balancer wsteth-weth with 0.5
+    # BPT" was reaching this tool with action="deposit_lp" because the live
+    # LLM-based intent extractor bled t1's deposit context into t2. The
+    # deterministic `detect_intent` parser routes this correctly to
+    # action="exit_pool"; the LLM dispatcher overrides. Resulting in a
+    # READY 3-step joinPool DEPOSIT plan for an EXIT request — drain-
+    # equivalent.
+    #
+    # Defense: refuse any verb-inverted dispatch where the user message
+    # carries an exit/withdraw/remove verb but action is on the deposit
+    # side. user_message arrives via extra (set by the runtime when the
+    # tool is dispatched).
+    _extra_for_verb_guard = extra or {}
+    _user_message = (
+        _extra_for_verb_guard.get("user_message")
+        or _extra_for_verb_guard.get("cross_chain_message")
+        or ""
+    )
+    if _user_message and isinstance(_user_message, str):
+        import re as _re_verb
+        _exit_verb_re = _re_verb.compile(
+            r"^\s*(?:exit|withdraw|remove|redeem|unstake|liquid[-\s]unstake|"
+            r"close|claim|harvest)\b",
+            _re_verb.IGNORECASE,
+        )
+        _deposit_actions = {
+            "supply", "deposit_lp", "add_liquidity", "stake",
+            "deposit", "join_pool", "joinpool", "buy", "lp",
+        }
+        if (
+            _exit_verb_re.match(_user_message)
+            and str(action).lower() in _deposit_actions
+        ):
+            # Reshape into a structured blocker so the user sees a typed
+            # refusal instead of getting silently routed to a deposit.
+            from src.defi.execution.models import ExecutionBlocker
+            plan = ExecutionPlanV3.new(
+                title="Verb inverted — refusing deposit for exit request",
+                summary=(
+                    f"Your prompt starts with an exit/withdraw verb but the "
+                    f"dispatcher selected action={action!r}. Refusing to "
+                    f"silently route a withdraw intent to a deposit plan "
+                    f"(would deposit funds when you meant to withdraw)."
+                ),
+            )
+            plan.add_blocker(ExecutionBlocker(
+                code="VERB_INVERTED",
+                severity="blocker",
+                title="Withdraw intent routed to deposit action — refused",
+                detail=(
+                    f"User prompt: {_user_message[:120]!r}. "
+                    f"Action passed: {action!r}. "
+                    f"Use the lifecycle verb form explicitly (e.g. "
+                    f"'Exit <protocol> <pool> with <amount> <token>') "
+                    f"or re-issue with action=exit_pool / withdraw_lp / "
+                    f"remove_liquidity."
+                ),
+                affected_step_ids=[],
+                cta="Re-issue with withdraw verb",
+            ))
+            return ok_envelope(
+                data={"plan": plan.to_dict()},
+                card_type="execution_plan_v3",
+                card_payload=plan.to_dict(),
+            )
+
     # Resolve user_address early so the composed-plan branch + non-composed
     # path both see the EVM/Solana wallet without raising "wallet missing".
     if not user_address:
