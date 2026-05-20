@@ -323,10 +323,10 @@ def main():
     for probe in PROBES:
         ok, reason, excerpt = fire_probe(probe)
         if ok:
-            print(f"  ✓ {probe.id} [{probe.bug_ref}]")
+            print(f"  PASS{probe.id} [{probe.bug_ref}]")
             passed += 1
         else:
-            print(f"  ✗ {probe.id} [{probe.bug_ref}] — {reason}")
+            print(f"  FAIL{probe.id} [{probe.bug_ref}] — {reason}")
             if excerpt:
                 print(f"    excerpt: …{excerpt}…")
             failed.append((probe, reason, excerpt))
