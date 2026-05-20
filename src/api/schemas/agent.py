@@ -528,6 +528,8 @@ CardType = Literal[
     "text", "no_change",
     "sentinel_token_report", "sentinel_pool_report", "sentinel_whale_feed",
     "sentinel_smart_money_hub", "sentinel_shield_report", "sentinel_entity_card",
+    "invariant_violation",  # wave-8: runtime invariant assertion failure
+    "balance_report",       # wave-8: get_wallet_balance card wrap (was bare JSON)
 ]
 
 

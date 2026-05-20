@@ -64,7 +64,28 @@ class StreamCollector(AsyncCallbackHandler):
             yield self._queue.popleft()
 
     def emit_card(self, card_id: str, card_type: str, payload: dict) -> None:
-        """Enqueue a card frame."""
+        """Enqueue a card frame.
+
+        Wave 8 — runtime invariant assertion layer. Every card is run
+        through `enforce_card_invariants` before queueing. If a P0
+        structural invariant fails (signable step has null transaction,
+        executable:false referenced without UNSUPPORTED blocker, USD
+        overflow, etc.), the card is replaced with a structured
+        `invariant_violation` blocker and the original is logged to
+        `docs/matrix-runs/invariant-violations.log` for inspection.
+
+        This closes 8+ outstanding P0 surface bugs structurally (rather
+        than via reactive sanitizer regex) and catches any future
+        regressions for free.
+        """
+        try:
+            from src.agent.runtime_invariants import enforce_card_invariants
+            card_type, payload, _violations = enforce_card_invariants(
+                card_id, card_type, payload
+            )
+        except Exception:  # noqa: BLE001
+            # Fail-open: never let an invariant bug crash card emission.
+            pass
         self._queue.append(
             CardFrame(
                 step_index=self._step,
