@@ -337,9 +337,21 @@ class EnsoShortcutAdapter:
         if not to_addr or not data:
             raise ValueError("Enso returned an empty calldata payload; cannot build executable step.")
 
+        # BUG-RC-023: replace the generic 'review the destination contract'
+        # boilerplate with a pool-specific risk callout that names the
+        # protocol + chain + estimated price impact. The generic line
+        # was identical on every Enso card and lost signal value.
+        # BUG-RC-022: annotate the receipt-token address with a
+        # verification context line so the user knows what to compare
+        # the rendered address against on Etherscan / Solscan.
         risk_lines = [
-            "Enso shortcuts bundle approvals + swaps; review the destination contract before signing.",
-            f"Position token: {token_out_addr}",
+            f"Enso routes one bundled tx (approve → swap → deposit) for "
+            f"{request.protocol} on {request.chain}. Verify the destination "
+            f"contract matches the {request.protocol} pool address you "
+            f"intended — Enso is the executor, not the receiving protocol.",
+            f"Receipt token: {token_out_addr} — open this address on the "
+            f"chain's explorer and verify the contract name reads "
+            f"'{request.protocol}' or its canonical position-token symbol.",
         ]
         if apy_hint is not None:
             risk_lines.append(f"Pool APY (Enso quote): {apy_hint:.2f}%")
