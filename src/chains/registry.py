@@ -78,6 +78,21 @@ class ChainRegistry:
             ChainType.POLYGON: settings.polygon_rpc_url,
             ChainType.OPTIMISM: settings.optimism_rpc_url,
             ChainType.AVALANCHE: settings.avalanche_rpc_url,
+            # Phase C P1-C-004: previously MISSING — these 10 chains have
+            # EVM_CHAIN_CONFIGS metadata + Settings RPC fields + RPC_FALLBACKS,
+            # but ChainRegistry.get_config(ChainType.LINEA) raised ValueError
+            # because they weren't in rpc_mapping. Fix lets adapter dispatch
+            # work for users targeting Phase-6 chains.
+            ChainType.LINEA: settings.linea_rpc_url,
+            ChainType.SCROLL: settings.scroll_rpc_url,
+            ChainType.MANTLE: settings.mantle_rpc_url,
+            ChainType.BLAST: settings.blast_rpc_url,
+            ChainType.ZKSYNC: settings.zksync_rpc_url,
+            ChainType.GNOSIS: settings.gnosis_rpc_url,
+            ChainType.CELO: settings.celo_rpc_url,
+            ChainType.SONIC: settings.sonic_rpc_url,
+            ChainType.BERACHAIN: settings.berachain_rpc_url,
+            ChainType.UNICHAIN: settings.unichain_rpc_url,
         }
 
         explorer_api_keys = {

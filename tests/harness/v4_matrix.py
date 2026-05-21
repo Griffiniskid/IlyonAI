@@ -1250,7 +1250,7 @@ CATEGORY_F: list[Chain] = [
         category="F",
         notes="Token-2022 hook blocker",
         turns=[
-            Turn("Deposit 100 GLITCH-2022 to Meteora DAMM v2", expect_blockers=["TOKEN_2022_HOOK"]),
+            Turn("Deposit 100 GLITCH-2022 to Meteora DAMM v2", expect_blockers=["TOKEN_2022_HOOK_UNTRUSTED"]),
             Turn("Why?", expect_card="text"),
             Turn("Use USDC instead", expect_card="execution_plan_v3"),
             Turn("Confirm"),
@@ -1283,7 +1283,7 @@ CATEGORY_F: list[Chain] = [
         category="F",
         notes="Aggregator circuit breaker",
         turns=[
-            Turn("Swap 1000000 USDC to ETH on Base", expect_blockers=["AGGREGATOR_CIRCUIT"]),
+            Turn("Swap 1000000 USDC to ETH on Base", expect_blockers=["AGGREGATOR_CIRCUIT_BREAKER"]),
             Turn("Why?", expect_card="text"),
             Turn("Smaller — 100 USDC", expect_card="execution_plan_v3"),
             Turn("Confirm"),
