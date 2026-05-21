@@ -5274,6 +5274,21 @@ export default function MainApp() {
           preflightErr,
         );
       }
+    } else {
+      // Phase C P0-C-001 — REFUSE TO SIGN when the simulator never
+      // stamped this transaction. Previously this fell through to the
+      // legacy chain-aware path below which broadcasts via raw
+      // eth.request({method:"eth_sendTransaction"}) with NO freshness
+      // gate and NO calldata-hash gate. That defeats §11 D.1+D.2 for
+      // any tx the simulator failed to stamp.
+      const msg =
+        "Refusing to sign: this transaction has no simulator metadata " +
+        "(simulated_at / simulated_calldata_hash missing). The runtime " +
+        "must stamp every signable step. Please re-request the plan.";
+      console.warn("[handleSignStep] sim metadata missing — hard refuse", { tx_kind: tx.chain_kind });
+      showToast(msg, "error");
+      try { window.alert(msg); } catch {}
+      return;
     }
     try {
       if (tx.chain_kind === "solana" && tx.serialized) {

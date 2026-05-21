@@ -593,6 +593,159 @@ function ExecutionPlanV2Card({ payload }: { payload: ExecutionPlanV2Payload }) {
   );
 }
 
+/* ── Invariant Violation Card ─────────────────────────────────────────── */
+/*
+ * Phase C P0-C-002 fix: when src/agent/runtime_invariants.py enforces
+ * a P0 refusal (I1 ready+null-tx, I2 tx_count↔requires_signature, I3
+ * USD overflow, I4 step-index continuity, I6 executable:false →
+ * blocker required), it REPLACES the broken payload with an
+ * `invariant_violation` card. Previously this fell through to
+ * FallbackCard rendering raw JSON. Tester now sees a structured
+ * refusal explaining what the runtime layer prevented and what to do.
+ */
+interface InvariantViolationPayload {
+  card_id?: string;
+  card_type?: string;
+  invariants?: Array<{
+    id?: string;          // e.g. "I1"
+    severity?: string;    // "P0" | "P1"
+    detail?: string;      // human-readable explanation
+    locator?: string;     // file:line of the asserting code
+  }>;
+  blocker_code?: string;
+  affected_step_ids?: string[];
+  message?: string;
+  original_card_type?: string;
+}
+
+function InvariantViolationCard({ payload }: { payload: InvariantViolationPayload }) {
+  const violations = payload.invariants ?? [];
+  const original = payload.original_card_type ?? payload.card_type ?? "card";
+  return (
+    <div className="rounded-xl border border-rose-400/40 bg-rose-400/10 p-4 shadow-lg">
+      <div className="flex items-center gap-2 text-sm font-black uppercase tracking-wider text-rose-200">
+        <span className="text-base">⛔</span>
+        Safety override
+      </div>
+      <div className="mt-2 text-sm text-rose-100">
+        The execution layer refused to emit a <span className="font-mono">{original}</span> card
+        because one or more runtime invariants failed. Your wallet was NOT prompted.
+      </div>
+      {payload.message ? (
+        <div className="mt-2 text-xs text-rose-100/85">{payload.message}</div>
+      ) : null}
+      {violations.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          {violations.map((v, i) => (
+            <div key={i} className="rounded-lg border border-rose-300/30 bg-rose-300/5 p-2 text-xs">
+              <div className="flex items-center gap-2 text-rose-100">
+                <span className="rounded bg-rose-400/20 px-1.5 py-0.5 font-mono font-bold">{v.id ?? "?"}</span>
+                <span className="rounded bg-rose-500/20 px-1.5 py-0.5 uppercase font-bold">{v.severity ?? "?"}</span>
+                <span className="text-rose-200/90">{v.locator ?? ""}</span>
+              </div>
+              {v.detail ? <div className="mt-1 text-rose-100/80">{v.detail}</div> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {payload.affected_step_ids && payload.affected_step_ids.length > 0 ? (
+        <div className="mt-2 text-[11px] text-rose-100/60">
+          Affected steps: <span className="font-mono">{payload.affected_step_ids.join(", ")}</span>
+        </div>
+      ) : null}
+      <div className="mt-3 text-xs text-rose-100/70">
+        This is a built-in safeguard — restate the request or try a different amount/protocol.
+      </div>
+    </div>
+  );
+}
+
+/* ── Balance Report Card ──────────────────────────────────────────────── */
+/* Phase C P1-C-003 fix: structured balance_report render (was FallbackCard). */
+interface BalanceReportPayload {
+  wallet_addresses?: string[];
+  balances?: Array<{
+    chain: string;
+    native_symbol: string;
+    native_balance: number;
+    native_usd?: number;
+    tokens?: Array<{ symbol?: string; balance: number; usd_value?: number }>;
+  }>;
+  total_usd?: number;
+  message?: string;
+}
+
+function BalanceReportCard({ payload }: { payload: BalanceReportPayload }) {
+  const balances = payload.balances ?? [];
+  return cardShell(
+    "Wallet Balances",
+    <>
+      <div className="text-xs text-slate-400">Total: <span className="text-slate-200 font-bold">${(payload.total_usd ?? 0).toFixed(2)}</span></div>
+      {balances.map((b, i) => (
+        <div key={i} className="rounded-lg bg-slate-700/30 px-3 py-2 text-xs">
+          <div className="flex justify-between font-semibold text-slate-200">
+            <span>{b.chain}</span>
+            <span className="text-emerald-300">${(b.native_usd ?? 0).toFixed(2)}</span>
+          </div>
+          <div className="text-[11px] text-slate-400">
+            {b.native_balance.toFixed(6).replace(/\.?0+$/, "")} {b.native_symbol || "?"}
+          </div>
+          {(b.tokens ?? [])
+            .filter(t => t && t.symbol && String(t.symbol).trim().length > 0
+                       && String(t.symbol).trim().toLowerCase() !== "undefined"
+                       && String(t.symbol).trim().toLowerCase() !== "null")
+            .map((t, j) => (
+              <div key={j} className="flex justify-between text-[11px] text-slate-300 mt-1">
+                <span>{t.symbol}</span>
+                <span>{t.balance.toFixed(6).replace(/\.?0+$/, "")}</span>
+              </div>
+            ))}
+        </div>
+      ))}
+    </>,
+  );
+}
+
+/* ── Text / no_change refusal Card ────────────────────────────────────── */
+/* Phase C P1-C-003 fix: structured plain-text render. */
+interface TextPayload { content?: string; message?: string }
+
+function TextCard({ payload }: { payload: TextPayload }) {
+  const body = payload.content ?? payload.message ?? "";
+  return (
+    <div className="rounded-xl border border-slate-700/80 bg-slate-800/60 p-4">
+      <div className="text-xs uppercase tracking-wider text-slate-400 mb-1">Agent message</div>
+      <div className="text-sm text-slate-100 whitespace-pre-wrap">{body}</div>
+    </div>
+  );
+}
+
+/* ── Preferences Card ─────────────────────────────────────────────────── */
+/* Phase C P1-C-003 fix: structured preferences render. */
+interface PreferencesPayload {
+  preferences?: Record<string, unknown>;
+  updated_keys?: string[];
+  message?: string;
+}
+
+function PreferencesCard({ payload }: { payload: PreferencesPayload }) {
+  const prefs = payload.preferences ?? {};
+  return cardShell(
+    "Preferences updated",
+    <>
+      {payload.message ? <div className="text-xs text-slate-300">{payload.message}</div> : null}
+      <div className="space-y-1">
+        {Object.entries(prefs).map(([k, v]) => (
+          <div key={k} className="flex justify-between rounded bg-slate-700/30 px-2 py-1 text-[11px]">
+            <span className="text-slate-400 font-mono">{k}</span>
+            <span className="text-slate-200">{String(v)}</span>
+          </div>
+        ))}
+      </div>
+    </>,
+  );
+}
+
 /* ── Fallback ─────────────────────────────────────────────────────────── */
 
 function FallbackCard({ card }: { card: CardFrame }) {
@@ -666,6 +819,23 @@ export function CardRenderer({ card, onStartSigning, onRerunAllocation, onSignSt
       return <PairListCard payload={payload as unknown as PairListPayload} />;
     case "sentinel":
       return <SentinelBreakdownCard sentinel={payload as unknown as SentinelBlock} />;
+    // Phase C P0-C-002 / P1-C-003 — structured renderers for previously
+    // FallbackCard'd types
+    case "invariant_violation":
+      return <InvariantViolationCard payload={payload as unknown as InvariantViolationPayload} />;
+    case "balance_report":
+      return <BalanceReportCard payload={payload as unknown as BalanceReportPayload} />;
+    case "text":
+    case "no_change":
+      return <TextCard payload={payload as unknown as TextPayload} />;
+    case "preferences":
+      return <PreferencesCard payload={payload as unknown as PreferencesPayload} />;
+    case "transfer":
+    case "lp":
+      // Phase C P1-C-003 — transfer/lp share the swap-quote shape closely
+      // enough to reuse SwapQuoteCard as a structured fallback rather than
+      // raw JSON. Custom renderers can split out later if needed.
+      return <SwapQuoteCard payload={payload as unknown as SwapQuotePayload} />;
     default:
       return <FallbackCard card={card} />;
   }
