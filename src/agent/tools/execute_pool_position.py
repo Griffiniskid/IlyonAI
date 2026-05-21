@@ -18,6 +18,12 @@ import aiohttp
 
 from src.agent.tools._base import err_envelope, ok_envelope
 from src.agent.tools.build_yield_execution_plan import build_yield_execution_plan
+# BUG-RC-003 hardening: hoist ExecutionBlocker / ExecutionPlanV3 to
+# module scope so any future branch that references them outside one of
+# the four paired import+use blocks does not trip Python's local-name
+# binding rule (the same UnboundLocalError pattern that hit
+# build_yield_execution_plan.py:191).
+from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
 
 
 _DEFILLAMA_POOL_URL = "https://yields.llama.fi/pool/{pool_id}"
@@ -505,7 +511,6 @@ async def execute_pool_position(
         # already knows how to render execution_plan_v3 blockers (rose
         # banner + CTA), so we re-use it here for unknown-protocol /
         # unknown-pair requests like "Supply 5 USDT to FakeBank on Solana".
-        from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
         plan = ExecutionPlanV3.new(
             title="Pool not found",
             summary=f"Couldn't match `{pool_arg}` to a DefiLlama pool.",
@@ -613,7 +618,6 @@ async def execute_pool_position(
     user_is_solana = _is_solana_pubkey(user_address)
     user_is_evm = isinstance(user_address, str) and user_address.lower().startswith("0x") and len(user_address) == 42
     if is_solana_pool and not user_is_solana:
-        from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
         from src.agent.tools.build_yield_execution_plan import humanize_protocol
         plan = ExecutionPlanV3.new(
             title=f"{humanize_protocol(protocol)} Deposit",
@@ -642,7 +646,6 @@ async def execute_pool_position(
         plan.add_blocker(_blocker)
         return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
     if is_evm_pool and not user_is_evm:
-        from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
         from src.agent.tools.build_yield_execution_plan import humanize_protocol
         plan = ExecutionPlanV3.new(
             title=f"{humanize_protocol(protocol)} Deposit",
@@ -696,7 +699,6 @@ async def execute_pool_position(
         "swissborg",
     }
     if chain.lower() in {"solana", "sol"} and protocol.lower() in _SOLANA_NON_LP_PROTOS:
-        from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3
         from src.agent.tools.build_yield_execution_plan import humanize_protocol
         # Pull the protocol's app URL if known; fall back to DefiLlama.
         try:

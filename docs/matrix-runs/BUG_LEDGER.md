@@ -484,3 +484,37 @@ Started 2026-05-21 against staging `9edaf83` post `spec-complete`.
   - Price-widget `_fetch_prices` call also wrapped in try/except — partial bnbPrice/solPrice no longer breaks the whole response
 - **Pin test**: `IlyonAi-Wallet-assistant-main/server/tests/test_portfolio_cache.py` 4/4 green — first-call-warms-cache, TTL-hit-skips-scanner, 5-concurrent-dedupe-to-≤2-scans, scanner-exception-returns-200-not-5xx.
 - **DEFERRED — Phase A v5 follow-up (LOWER PRIORITY now Gate 4 is green)**: wallet-assistant fix is verified working DIRECT (10×parallel via `docker exec web wget assistant-api:8000/...` → 10×200), but Next.js's rewrite proxy still returns `Failed to proxy ... ECONNRESET` for concurrent forwards. The Caddy + Cloudflare chain handles **sequential** requests fine (probe: 1st 200 in 27.6s, 2nd/3rd 200 in 0.3s — cache hits) but page-mount with 3+ component-fetches → some 500 from Next.js. Root cause is in the Cloudflare→Caddy→Next→uvicorn connection-pool interaction (likely Node.js http.Agent reuses sockets that uvicorn has closed). Filtered as `KNOWN_INFRA` in `scripts/playwright_browser_smoke.py` since Gate 4's scope is frontend-card validation, not Next-proxy tuning. Phase A v4 candidates: (a) add SWR/React-Query dedupe in MainApp/SidebarWalletCard/PortfolioTab so the three components share one fetch, (b) bump uvicorn `--timeout-keep-alive 120`, (c) add Caddy per-upstream pool tuning.
+
+## Tier RC — Real-Conversation Validation (post-tester `AI Bug Convo.md`)
+
+`AI Bug Convo.md` (890-line verbatim chat transcript) surfaced 23 bugs
+during the first real-tester pass after the (rolled-back) `tester-ready`
+V1 tag. Numbered `BUG-RC-001` through `BUG-RC-023`. Tagged here as each
+closes with a pin test + commit.
+
+### BUG-RC-003 — Raw Python `UnboundLocalError: cannot access local variable 'ExecutionBlocker'` leaked to chat (P0)
+- **Surfaced by**: real-tester `AI Bug Convo.md` lines 397, 409 (two consecutive `Execute deposit into pool <uuid>` prompts both returned the literal exception text in the chat response). Also reproduced in matrix `docs/matrix-runs/passA-waveD4/H13_S13_aave_supply/turn_1.txt:20` — meaning the "ALL CLEAR" D4 pass was not actually clean (sweepers did not flag this pattern).
+- **Severity**: P0 — exposes Python stack-trace fragments to end users; breaks the request with zero recovery path; falsely advertises the agent as broken when the underlying tool was actually reachable.
+- **Spec reference**: §11 D.6 (clean-blocker-before-broadcast); §4 (no raw exception text in chat responses).
+- **Root cause**: `src/agent/tools/build_yield_execution_plan.py:191` had `from src.defi.execution.models import ExecutionBlocker` inside the verb-inverted-guard branch, while the same name was ALSO imported at module-level (line 12). Python's scope rule: any `from X import Y` inside a function makes Y function-local for the *entire* function. The cross-chain-source-missing branch at line 269 referenced `ExecutionBlocker` before the verb-inverted branch ran, raising `UnboundLocalError`. The exception was caught upstream and the raw `str(exc)` was piped through `_format_tool_result` (`src/agent/simple_runtime.py:5542`) into chat as `"I wasn't able to fetch that data right now. {error.message}"`.
+- **Fix**: 
+  1. Removed the redundant in-function import at `src/agent/tools/build_yield_execution_plan.py:191` so `ExecutionBlocker` resolves via the module-level import at line 12.
+  2. Hoisted `from src.defi.execution.models import ExecutionBlocker, ExecutionPlanV3` to module-level in `src/agent/tools/execute_pool_position.py:26` and removed the four in-function rebinds (lines 514, 622, 651, 705 pre-edit) so any future branch addition cannot re-trip the same UnboundLocalError shape.
+  3. Defense-in-depth sanitizer at `src/agent/simple_runtime.py::_sanitize_error_message`: any tool-error message containing a standard Python exception signature (`cannot access local variable`, `UnboundLocalError`, `AttributeError`, etc.) is replaced with a clean `INTERNAL_ERROR_CAUGHT` user-facing string. Raw text is still logged on the structured error envelope for ops.
+- **Pin test**: `tests/defi/test_runtime_invariants.py::test_execution_blocker_is_module_level_in_build_yield_execution_plan`, `::test_execution_blocker_is_module_level_in_execute_pool_position`, `::test_sanitize_error_message_replaces_unbound_local`, `::test_sanitize_error_message_replaces_nonetype_attr`, `::test_sanitize_error_message_preserves_clean_text`, `::test_sanitize_error_message_handles_none` — 6 new tests, all green at this commit.
+
+### BUG-RC-006 — `Infinitys` string in SIM_STALE freshness gate (P1)
+- **Surfaced by**: real-tester `AI Bug Convo.md` lines 779, 889 (`SIM_STALE: Simulation is Infinitys old (>30s). Re-quote before signing.`).
+- **Severity**: P1 — visible cosmetic break in the freshness gate; user sees a literal pluralised noun where a finite numeric should be.
+- **Spec reference**: §11 freshness gate (sim age must be a finite numeric).
+- **Root cause**: `web/hooks/useWalletSigning.ts:51` used `${ageSec.toFixed(1)}s` directly. When `ageSec` is `Infinity` (sim timestamp missing or invalid), `Number.toFixed` returns the string `"Infinity"`, which interpolated with the trailing `s` yields `"Infinitys"`.
+- **Fix**: added `formatAgeSec()` helper at `web/hooks/useWalletSigning.ts` that returns `"stale"` for non-finite / negative values, collapses `>=3600s` to `Nh+`, `>=60s` to `Nm Ms`, else `N.Ns`. The freshness gate still fires; only the displayed age changes.
+- **Pin test**: structural — runtime invariant `I12 (time formatting)` added to `src/agent/runtime_invariants.py` walks every payload string field and rejects forbidden tokens (`Infinitys`, `Infinity`, `NaN`, `nan `, ` None `); pin tests `tests/defi/test_runtime_invariants.py::test_i12_infinitys_in_payload_fires`, `::test_i12_nan_in_payload_fires`, `::test_i12_non_finite_float_fires`, `::test_i12_finite_time_string_passes` (4 tests, all green).
+
+### Runtime invariants I7+I8+I10+I12 wired (closes BUG-RC-002 emit-time line of defense and BUG-RC-011 sentinel scoring)
+- **I7 title/payload consistency** — `src/agent/runtime_invariants.py::_i7_title_payload_consistency` — execution_plan_v3 cards whose `title` does not mention the protocol token in `payload.protocol` raise P0 violation. Closes the emit-time fallback for BUG-RC-001 / BUG-RC-002. Pin tests: `test_i7_title_protocol_mismatch_fires`, `test_i7_title_protocol_consistent_passes`, `test_i7_no_protocol_field_skips_check`.
+- **I8 sentinel scoring present** — `_i8_sentinel_scoring_present` — defi_opportunities cards must include `sentinel` block with all 4 axes (safety, durability, exit, confidence) per item. Closes structural part of BUG-RC-011. Pin tests: `test_i8_missing_sentinel_block_fires`, `test_i8_partial_sentinel_fires`, `test_i8_full_sentinel_passes`.
+- **I10 asset-pool match** — `_i10_asset_pool_match` — execution_plan_v3 cards whose `asset_in` ≠ `pool_deposit_token` (when both populated) raise P0. Closes BUG-RC-002. Pin tests: `test_i10_asset_pool_mismatch_fires`, `test_i10_asset_pool_match_passes`.
+- **I12 time formatting** — `_i12_time_formatting` — recursive walk over payload, any string with forbidden tokens (`Infinitys`, `Infinity`, `NaN`, `nan `, ` None `) or any non-finite float field raises P1. Closes BUG-RC-006 backend fallback.
+
+Wave RC-α partial: 2 / 23 BUG-RC items closed in this commit (BUG-RC-003 P0, BUG-RC-006 P1). 21 still open — see RESUME_V11_PROMPT.md / AI Bug Convo.md for the full catalogue.

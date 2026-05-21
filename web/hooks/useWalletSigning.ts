@@ -43,12 +43,40 @@ import {
 
 export const SIM_FRESHNESS_SECONDS = 30;
 
+/**
+ * BUG-RC-006 (I12): SimStaleError must always render a finite numeric
+ * age. When `ageSec` is `Infinity`, `NaN`, or negative (sim was lost /
+ * timestamp clock-skewed), `Number.toFixed` renders "Infinity"/"NaN" and
+ * the template produces "Infinitys old" — a literal pluralised noun in
+ * the user-facing string. Use a finite-check helper that falls back to
+ * a stable "unknown" descriptor and clamps very-large values to a
+ * human-readable upper bound.
+ */
+function formatAgeSec(ageSec: number): string {
+  if (!Number.isFinite(ageSec) || ageSec < 0) {
+    // Sim timestamp missing or clock-skewed — render the freshness gate
+    // without a specific age. The "Re-quote" CTA still applies.
+    return "stale";
+  }
+  if (ageSec >= 3600) {
+    // > 1 hour — collapse to a human-readable bucket rather than 4729.3s
+    const hours = Math.floor(ageSec / 3600);
+    return `${hours}h+`;
+  }
+  if (ageSec >= 60) {
+    const mins = Math.floor(ageSec / 60);
+    const secs = Math.floor(ageSec % 60);
+    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+  }
+  return `${ageSec.toFixed(1)}s`;
+}
+
 export class SimStaleError extends Error {
   readonly code = "SIM_STALE" as const;
   readonly ageSec: number;
   constructor(ageSec: number) {
     super(
-      `SIM_STALE: Simulation is ${ageSec.toFixed(1)}s old (>${SIM_FRESHNESS_SECONDS}s). Re-quote before signing.`,
+      `SIM_STALE: Simulation is ${formatAgeSec(ageSec)} old (>${SIM_FRESHNESS_SECONDS}s). Re-quote before signing.`,
     );
     this.name = "SimStaleError";
     this.ageSec = ageSec;

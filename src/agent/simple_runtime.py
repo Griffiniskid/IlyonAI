@@ -5533,20 +5533,59 @@ def _format_opportunity_search_response(data: dict) -> str:
     return "\n".join(lines).strip()
 
 
+# BUG-RC-003 / I11 defense-in-depth: any tool that lets a raw Python
+# exception text bubble into error.message would otherwise leak to chat
+# via the f-string below. Detect the standard Python error signatures
+# and rewrite to a clean user-facing string. The original message stays
+# on the structured error envelope for logs.
+_RAW_EXCEPTION_PATTERNS = (
+    "cannot access local variable",
+    "UnboundLocalError",
+    "referenced before assignment",
+    "NoneType",
+    "AttributeError",
+    "TypeError:",
+    "ValueError:",
+    "KeyError:",
+    "IndexError:",
+    "Traceback (most recent call last)",
+)
+
+
+def _sanitize_error_message(raw: str | None) -> str:
+    """Return a user-safe error string. If the raw payload contains any
+    Python exception signature, replace it with a stable error code so
+    the chat never shows a partial stack trace. The original raw text is
+    expected to have been logged upstream where the exception was caught.
+    """
+    if not raw:
+        return "Please try again later."
+    text = str(raw)
+    for pat in _RAW_EXCEPTION_PATTERNS:
+        if pat in text:
+            return (
+                "An internal error occurred while processing that request "
+                "(INTERNAL_ERROR_CAUGHT). The team has been notified — "
+                "please re-issue the request, or try a different pool / "
+                "protocol / chain combination."
+            )
+    return text
+
+
 def _format_tool_result(tool_name: str, result) -> str:
     """Format any tool result into natural language."""
     # Handle ToolEnvelope objects
     if hasattr(result, 'ok'):
         if not result.ok:
             error = result.error
-            return f"I wasn't able to fetch that data right now. {error.message if error else 'Please try again later.'}"
+            return f"I wasn't able to fetch that data right now. {_sanitize_error_message(error.message if error else None)}"
         data = result.data if result.data else {}
         card_type = result.card_type if result.card_type else ""
     else:
         # Handle plain dict
         if not result.get("ok", False):
             error = result.get("error", {})
-            return f"I wasn't able to fetch that data right now. {error.get('message', 'Please try again later.')}"
+            return f"I wasn't able to fetch that data right now. {_sanitize_error_message(error.get('message') if isinstance(error, dict) else None)}"
         data = result.get("data", {})
         card_type = result.get("card_type", "")
     

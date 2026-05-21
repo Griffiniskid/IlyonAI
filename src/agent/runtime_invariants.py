@@ -331,12 +331,194 @@ def _i6_executable_false_must_have_blocker(card_type: str, payload: dict) -> lis
     return violations
 
 
+import math
+import re as _re_inv
+
+
+def _i7_title_payload_consistency(card_type: str, payload: dict) -> list[Violation]:
+    """BUG-RC-002: every execution_plan_v3 card whose title mentions a
+    protocol/asset must have those tokens reflected in payload.protocol
+    and payload.asset_in (when both fields are populated). Detects
+    "Fluid Lending Supply — Supply 100 USDC via Fluid Lending on
+    Ethereum" titles whose payload silently routes against a WSTETH
+    pool.
+
+    Soft check: only fires when both `protocol` and the canonical title
+    are populated and disagree on the protocol token. Asset mismatch is
+    caught by I10 (preflight) — I7 is the structural last line of
+    defense at the emit chokepoint.
+    """
+    if card_type not in ("execution_plan_v3", "execution_plan"):
+        return []
+    title = str(payload.get("title") or "")
+    if not title:
+        return []
+    protocol = str(payload.get("protocol") or "").lower().strip()
+    if not protocol:
+        return []
+    # Normalize protocol token (strip "-v3" / "_v3" suffixes for matching)
+    proto_root = _re_inv.sub(r"[-_]?v\d+$", "", protocol)
+    proto_root = proto_root.replace("-", " ").replace("_", " ")
+    title_lower = title.lower()
+    # If protocol root token absent from title at all, that's a mismatch.
+    if proto_root and proto_root not in title_lower:
+        return [
+            Violation(
+                invariant_id="I7",
+                severity="P0",
+                detail=(
+                    f"Card title {title!r} does not reference the protocol "
+                    f"{protocol!r} declared in payload. User would sign a "
+                    f"plan whose surface label disagrees with the routed "
+                    f"protocol — silent intent substitution. Hard refuse."
+                ),
+                locator="title",
+            )
+        ]
+    return []
+
+
+def _i8_sentinel_scoring_present(card_type: str, payload: dict) -> list[Violation]:
+    """BUG-RC-011: every defi_opportunities / pool_link / pool card that
+    references a pool must include a sentinel block with the 4 axes
+    (safety, durability, exit, confidence). Missing sentinel → emit
+    P1 violation; the renderer will show a "scoring unavailable" badge
+    instead of silently dropping the bar.
+    """
+    if card_type not in ("defi_opportunities",):
+        return []
+    items = payload.get("items") or payload.get("opportunities") or []
+    violations: list[Violation] = []
+    for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        sentinel = item.get("sentinel") or item.get("sentinel_scores")
+        if not isinstance(sentinel, dict):
+            violations.append(
+                Violation(
+                    invariant_id="I8",
+                    severity="P1",
+                    detail=(
+                        f"items[{i}] has no sentinel block — opportunity "
+                        f"card emitted without 4-axis scoring. Renderer "
+                        f"will fall back to placeholder bar."
+                    ),
+                    locator=f"items[{i}].sentinel",
+                )
+            )
+            continue
+        required_axes = {"safety", "durability", "exit", "confidence"}
+        present = {str(k).lower() for k in sentinel.keys()}
+        missing = required_axes - present
+        if missing:
+            violations.append(
+                Violation(
+                    invariant_id="I8",
+                    severity="P1",
+                    detail=(
+                        f"items[{i}].sentinel missing axes {sorted(missing)}. "
+                        f"Renderer expects all 4 of safety/durability/exit/"
+                        f"confidence."
+                    ),
+                    locator=f"items[{i}].sentinel",
+                )
+            )
+    return violations
+
+
+def _i10_asset_pool_match(card_type: str, payload: dict) -> list[Violation]:
+    """BUG-RC-002: execution_plan_v3 cards must not route an `asset_in`
+    that disagrees with the pool's declared deposit token. The strong
+    enforcement lives in src/defi/execution/preflight.py
+    (ASSET_POOL_MISMATCH); I10 is the final structural check at the
+    emit chokepoint — catches any preflight bypass.
+    """
+    if card_type not in ("execution_plan_v3", "execution_plan"):
+        return []
+    asset_in = str(payload.get("asset_in") or "").upper().strip()
+    pool_deposit = str(
+        payload.get("pool_deposit_token")
+        or payload.get("expected_asset")
+        or ""
+    ).upper().strip()
+    if not asset_in or not pool_deposit:
+        return []
+    if asset_in != pool_deposit:
+        return [
+            Violation(
+                invariant_id="I10",
+                severity="P0",
+                detail=(
+                    f"asset_in={asset_in!r} does not match pool's expected "
+                    f"deposit token {pool_deposit!r}. User would sign a "
+                    f"plan that coerces their intent to a different asset."
+                ),
+                locator="asset_in",
+            )
+        ]
+    return []
+
+
+def _i12_time_formatting(card_type: str, payload: dict) -> list[Violation]:
+    """BUG-RC-006: any user-facing text field referencing time must
+    contain a finite numeric with a unit (s/m/h/d). Reject `Infinitys`,
+    `nan`, `None`, `Infinity`.
+    """
+    BAD_TOKENS = ("Infinitys", "Infinity", "NaN", "nan ", " None ")
+
+    def walk(node: Any, path: str = "") -> list[Violation]:
+        out: list[Violation] = []
+        if isinstance(node, dict):
+            for k, v in node.items():
+                out.extend(walk(v, f"{path}.{k}" if path else str(k)))
+        elif isinstance(node, list):
+            for i, x in enumerate(node):
+                out.extend(walk(x, f"{path}[{i}]"))
+        elif isinstance(node, str):
+            for tok in BAD_TOKENS:
+                if tok in node:
+                    out.append(
+                        Violation(
+                            invariant_id="I12",
+                            severity="P1",
+                            detail=(
+                                f"Field at {path!r} contains forbidden "
+                                f"time token {tok!r}. Time strings must "
+                                f"be finite (e.g. '30s', '1m 12s')."
+                            ),
+                            locator=path,
+                        )
+                    )
+                    break
+        elif isinstance(node, float):
+            if not math.isfinite(node):
+                out.append(
+                    Violation(
+                        invariant_id="I12",
+                        severity="P1",
+                        detail=(
+                            f"Numeric field at {path!r} is non-finite "
+                            f"({node}). Will format as 'Infinity' / 'NaN' "
+                            f"if interpolated into a UI string."
+                        ),
+                        locator=path,
+                    )
+                )
+        return out
+
+    return walk(payload)
+
+
 _INVARIANTS = [
     _i1_signable_steps_have_transaction,
     _i2_signature_count_consistency,
     _i3_usd_value_overflow,
     _i4_step_index_continuity,
     _i6_executable_false_must_have_blocker,
+    _i7_title_payload_consistency,
+    _i8_sentinel_scoring_present,
+    _i10_asset_pool_match,
+    _i12_time_formatting,
 ]
 
 

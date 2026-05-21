@@ -323,3 +323,240 @@ def test_emit_card_clamps_usd_overflow_in_place():
     # Card still emitted as balance_report (not refused) but USD clamped.
     assert card.card_type == "balance_report"
     assert card.payload["total_usd"] is None
+
+
+# ─── BUG-RC pin tests (Wave RC-α) ─────────────────────────────────────────
+
+
+# I7: title/payload consistency (BUG-RC-002 structural)
+
+
+def test_i7_title_protocol_mismatch_fires():
+    """Title says Fluid Lending but payload.protocol is aave-v3 — silent
+    intent substitution. Hard refuse via P0 violation."""
+    payload = {
+        "title": "Fluid Lending Supply — Supply 100 USDC via Fluid Lending on Ethereum",
+        "protocol": "aave-v3",
+        "asset_in": "USDC",
+        "steps": [],
+    }
+    violations = check_card_invariants("execution_plan_v3", payload)
+    assert any(v.invariant_id == "I7" and v.severity == "P0" for v in violations), (
+        f"expected I7 P0 for protocol mismatch, got {violations}"
+    )
+
+
+def test_i7_title_protocol_consistent_passes():
+    """Title mentions the same protocol as payload.protocol — passes."""
+    payload = {
+        "title": "Aave V3 Supply — Supply 100 USDC via Aave on Ethereum",
+        "protocol": "aave-v3",
+        "asset_in": "USDC",
+        "steps": [],
+    }
+    violations = check_card_invariants("execution_plan_v3", payload)
+    assert not any(v.invariant_id == "I7" for v in violations)
+
+
+def test_i7_no_protocol_field_skips_check():
+    """When payload.protocol is absent, I7 cannot determine intent —
+    skips the check rather than false-positive."""
+    payload = {"title": "Some title", "steps": []}
+    violations = check_card_invariants("execution_plan_v3", payload)
+    assert not any(v.invariant_id == "I7" for v in violations)
+
+
+# I8: sentinel scoring present on defi_opportunities (BUG-RC-011)
+
+
+def test_i8_missing_sentinel_block_fires():
+    payload = {
+        "items": [
+            {"symbol": "USDC", "apy": 5.0, "tvl": 1_000_000},  # no sentinel
+        ],
+    }
+    violations = check_card_invariants("defi_opportunities", payload)
+    assert any(v.invariant_id == "I8" for v in violations)
+
+
+def test_i8_partial_sentinel_fires():
+    payload = {
+        "items": [
+            {
+                "symbol": "USDC",
+                "sentinel": {"safety": 80, "durability": 70},  # missing exit/confidence
+            }
+        ],
+    }
+    violations = check_card_invariants("defi_opportunities", payload)
+    assert any(v.invariant_id == "I8" for v in violations)
+
+
+def test_i8_full_sentinel_passes():
+    payload = {
+        "items": [
+            {
+                "symbol": "USDC",
+                "sentinel": {
+                    "safety": 80,
+                    "durability": 70,
+                    "exit": 90,
+                    "confidence": 75,
+                },
+            }
+        ],
+    }
+    violations = check_card_invariants("defi_opportunities", payload)
+    assert not any(v.invariant_id == "I8" for v in violations)
+
+
+# I10: asset-pool match (BUG-RC-002 emit-time fallback)
+
+
+def test_i10_asset_pool_mismatch_fires():
+    """User asked for USDC but pool's declared deposit token is WSTETH."""
+    payload = {
+        "asset_in": "USDC",
+        "pool_deposit_token": "WSTETH",
+        "steps": [],
+    }
+    violations = check_card_invariants("execution_plan_v3", payload)
+    assert any(v.invariant_id == "I10" and v.severity == "P0" for v in violations)
+
+
+def test_i10_asset_pool_match_passes():
+    payload = {
+        "asset_in": "USDC",
+        "pool_deposit_token": "USDC",
+        "steps": [],
+    }
+    violations = check_card_invariants("execution_plan_v3", payload)
+    assert not any(v.invariant_id == "I10" for v in violations)
+
+
+# I12: time formatting (BUG-RC-006 — Infinitys / NaN / Infinity / None)
+
+
+def test_i12_infinitys_in_payload_fires():
+    payload = {
+        "freshness_message": "SIM_STALE: Simulation is Infinitys old (>30s).",
+        "steps": [],
+    }
+    violations = check_card_invariants("execution_plan_v3", payload)
+    assert any(v.invariant_id == "I12" for v in violations)
+
+
+def test_i12_nan_in_payload_fires():
+    payload = {"eta_str": "ETA: NaN seconds", "steps": []}
+    violations = check_card_invariants("execution_plan_v3", payload)
+    assert any(v.invariant_id == "I12" for v in violations)
+
+
+def test_i12_non_finite_float_fires():
+    payload = {"sim_age_sec": float("inf"), "steps": []}
+    violations = check_card_invariants("execution_plan_v3", payload)
+    assert any(v.invariant_id == "I12" for v in violations)
+
+
+def test_i12_finite_time_string_passes():
+    payload = {
+        "freshness_message": "SIM_STALE: Simulation is 30s old.",
+        "sim_age_sec": 30.0,
+        "steps": [],
+    }
+    violations = check_card_invariants("execution_plan_v3", payload)
+    assert not any(v.invariant_id == "I12" for v in violations)
+
+
+# Sanitizer test (BUG-RC-003 defense-in-depth)
+
+
+def test_sanitize_error_message_replaces_unbound_local():
+    from src.agent.simple_runtime import _sanitize_error_message
+
+    raw = "cannot access local variable 'ExecutionBlocker' where it is not associated with a value"
+    out = _sanitize_error_message(raw)
+    assert "ExecutionBlocker" not in out
+    assert "INTERNAL_ERROR_CAUGHT" in out
+
+
+def test_sanitize_error_message_replaces_nonetype_attr():
+    from src.agent.simple_runtime import _sanitize_error_message
+
+    raw = "AttributeError: 'NoneType' object has no attribute 'symbol'"
+    out = _sanitize_error_message(raw)
+    assert "NoneType" not in out
+    assert "INTERNAL_ERROR_CAUGHT" in out
+
+
+def test_sanitize_error_message_preserves_clean_text():
+    from src.agent.simple_runtime import _sanitize_error_message
+
+    raw = "Rate limited by upstream provider (retry in 30s)."
+    out = _sanitize_error_message(raw)
+    assert out == raw
+
+
+def test_sanitize_error_message_handles_none():
+    from src.agent.simple_runtime import _sanitize_error_message
+
+    out = _sanitize_error_message(None)
+    assert out == "Please try again later."
+
+
+# build_yield_execution_plan: ExecutionBlocker no-longer-local check
+
+
+def test_execution_blocker_is_module_level_in_build_yield_execution_plan():
+    """BUG-RC-003 structural fix: ExecutionBlocker must be module-level
+    in build_yield_execution_plan.py, not re-bound inside the function.
+    A duplicate in-function import would re-introduce UnboundLocalError
+    on branches that don't traverse the import line first."""
+    import importlib
+    import inspect
+
+    mod = importlib.import_module("src.agent.tools.build_yield_execution_plan")
+    assert hasattr(mod, "ExecutionBlocker"), (
+        "ExecutionBlocker must be importable from the module — confirms "
+        "the top-level import is reachable and not shadowed."
+    )
+    func = getattr(mod, "build_yield_execution_plan")
+    src = inspect.getsource(func)
+    # The in-function `from src.defi.execution.models import ExecutionBlocker`
+    # is the exact pattern that trips UnboundLocalError. The comment we
+    # left behind references "import" without the full from-statement
+    # form, so a substring match on the full statement is safe.
+    assert "from src.defi.execution.models import ExecutionBlocker\n" not in src, (
+        "build_yield_execution_plan must not re-import ExecutionBlocker — "
+        "that re-binds it as a function-local and trips UnboundLocalError "
+        "on every branch that references it before the import statement."
+    )
+
+
+def test_execution_blocker_is_module_level_in_execute_pool_position():
+    """Same structural check for execute_pool_position.py."""
+    import importlib
+    import inspect
+
+    mod = importlib.import_module("src.agent.tools.execute_pool_position")
+    assert hasattr(mod, "ExecutionBlocker")
+    assert hasattr(mod, "ExecutionPlanV3")
+    # Walk every function defined in the module and assert none re-import
+    # ExecutionBlocker as function-local.
+    for name in dir(mod):
+        obj = getattr(mod, name)
+        if not callable(obj):
+            continue
+        if not inspect.isfunction(obj):
+            continue
+        if obj.__module__ != mod.__name__:
+            continue
+        try:
+            src = inspect.getsource(obj)
+        except (OSError, TypeError):
+            continue
+        assert "from src.defi.execution.models import ExecutionBlocker" not in src, (
+            f"{name} re-imports ExecutionBlocker as function-local — "
+            f"removes the safety the module-level hoist was supposed to "
+            f"provide."
+        )

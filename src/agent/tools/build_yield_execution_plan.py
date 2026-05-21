@@ -188,7 +188,13 @@ async def build_yield_execution_plan(
         ):
             # Reshape into a structured blocker so the user sees a typed
             # refusal instead of getting silently routed to a deposit.
-            from src.defi.execution.models import ExecutionBlocker
+            # BUG-RC-003 fix: removed redundant in-function import — the
+            # module-level import at line 12 already provides
+            # ExecutionBlocker. A duplicate `from … import …` inside this
+            # function bound the name as a function-local, which made
+            # every other branch that referenced ExecutionBlocker (lines
+            # 269, 422, 472, etc.) raise UnboundLocalError when reached
+            # before this branch.
             plan = ExecutionPlanV3.new(
                 title="Verb inverted — refusing deposit for exit request",
                 summary=(
