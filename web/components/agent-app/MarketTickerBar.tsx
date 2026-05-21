@@ -20,18 +20,28 @@ interface PriceRow {
 }
 
 async function fetchPrices(): Promise<PriceRow[]> {
+  // Proxy through this domain's /api/coingecko/* rewrite (see
+  // web/next.config.js). api.coingecko.com does not return
+  // Access-Control-Allow-Origin for staging.ilyonai.com so the direct
+  // call hits CORS + ERR_FAILED in the browser.
   const ids = COINS.map((c) => c.id).join(",");
-  const r = await fetch(
-    `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,
-    { signal: AbortSignal.timeout(8000) },
-  );
-  if (!r.ok) return [];
-  const data = (await r.json()) as Record<string, { usd: number; usd_24h_change: number }>;
-  return COINS.map((c) => ({
-    symbol: c.symbol,
-    price: data[c.id]?.usd ?? 0,
-    change24h: data[c.id]?.usd_24h_change ?? 0,
-  })).filter((row) => row.price > 0);
+  try {
+    const r = await fetch(
+      `/api/coingecko/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,
+      { signal: AbortSignal.timeout(8000) },
+    );
+    if (!r.ok) return [];
+    const data = (await r.json()) as Record<string, { usd: number; usd_24h_change: number }>;
+    return COINS.map((c) => ({
+      symbol: c.symbol,
+      price: data[c.id]?.usd ?? 0,
+      change24h: data[c.id]?.usd_24h_change ?? 0,
+    })).filter((row) => row.price > 0);
+  } catch {
+    // Network/timeout/parse — silently degrade to no-ticker rather than
+    // surfacing a pageerror that scares the tester.
+    return [];
+  }
 }
 
 function formatPrice(n: number): string {

@@ -32,8 +32,10 @@ export function SidebarMarketList() {
     const ids = COINS.map((c) => c.id).join(",");
     const fetchPrices = async () => {
       try {
+        // Proxy through this domain — direct api.coingecko.com is
+        // CORS-blocked in the browser. See web/next.config.js rewrite.
         const r = await fetch(
-          `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,
+          `/api/coingecko/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,
           { cache: "no-store" },
         );
         if (!r.ok) return;

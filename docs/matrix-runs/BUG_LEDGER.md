@@ -428,3 +428,33 @@ Cross-cluster fix shipping in this wave:
 | Post-Wave-3 (03bd11c)          | 67   | 0       | 0       | 8       | +3 hidden gaps + cleanup; ledger headcount unchanged |
 | Post-validation-gate           | 69 LIVE + 10 SKIP-OK | 0 | 0 | (audit count) | 6-subagent re-audit returned 0 PARTIAL / 0 MISSING / 0 NEW-GAP |
 | Final (target)                 | 75   | 0       | 0       | 0       | + 3 clean matrix passes |
+
+---
+
+## Tester-Ready Phase A — Playwright frontend findings
+
+Started 2026-05-21 against staging `9edaf83` post `spec-complete`.
+
+### BUG-FE-001 — `/ilyon-logo.svg` 404 on every page
+- **Surfaced by**: 2026-05-21 Playwright `docs/playwright-runs/20260521_083415/` (all 5 flows: A01/A02/B01/F03/H03)
+- **Severity**: P1 (broken branding — tester sees missing logo in 3 mount points: auth, intro-nav, sidebar)
+- **Spec reference**: §13 frontend integrity (no broken assets visible to tester)
+- **Root cause**: `web/components/agent-app/MainApp.tsx` references `/ilyon-logo.svg` at lines 4035, 5485, 5646 but `web/public/` only contained `logo.png`. Asset was present in the legacy wallet-assistant clone at `IlyonAi-Wallet-assistant-main/client/public/ilyon-logo.svg` but never copied across during the merge.
+- **Fix**: copied `IlyonAi-Wallet-assistant-main/client/public/ilyon-logo.svg` → `web/public/ilyon-logo.svg`. Commit pending in tester-ready phase A bundle.
+- **Pin test**: Playwright Gate 4 itself — `failed_requests` capture asserts 0 `404 GET /ilyon-logo.svg` in any flow.
+
+### BUG-FE-002 — CoinGecko fetched direct from browser → CORS blocked + Failed-to-fetch pageerror
+- **Surfaced by**: 2026-05-21 Playwright `docs/playwright-runs/20260521_083415/` (A02/B01/F03; any flow that mounts the dashboard ticker / sidebar market list)
+- **Severity**: P1 (sentry-grade — every browser session emits `[pageerror] Failed to fetch` because `MarketTickerBar`, `SidebarMarketList`, and `MainApp` price poller each call `api.coingecko.com` directly. CORS rejects, fetch throws, ticker stays blank)
+- **Spec reference**: §13 frontend integrity, §10 wallet/market UI
+- **Root cause**: three sites called `fetch("https://api.coingecko.com/api/v3/simple/price?...")` without going through the backend. `api.coingecko.com` does not send `Access-Control-Allow-Origin: https://staging.ilyonai.com`, so every browser fetch is blocked + surfaces as unhandled `Failed to fetch` pageerror.
+- **Fix**: added rewrite `{ source: "/api/coingecko/:path*", destination: "https://api.coingecko.com/api/v3/:path*" }` to `web/next.config.js`; rewrote the three sites to call `/api/coingecko/simple/price?...` instead. `MarketTickerBar.fetchPrices` also wrapped in try/catch to silently degrade rather than surface a pageerror on transient failures.
+- **Pin test**: Playwright Gate 4 itself — asserts 0 `Failed to fetch` console errors AND 0 `net::ERR_FAILED` on `api.coingecko.com`. Plus a post_deploy_smoke probe `GET /api/coingecko/simple/price?ids=bitcoin&vs_currencies=usd` returns 200.
+
+### BUG-BE-003 — `/api/portfolio/<sol>,<evm>` returned 500 once (intermittent)
+- **Surfaced by**: 2026-05-21 Playwright `docs/playwright-runs/20260521_083415/F03_no_balance` (single occurrence)
+- **Severity**: P0 if reproducible (portfolio endpoint failure would break the dashboard tab); P2 if intermittent (transient under load)
+- **Spec reference**: §10 wallet/portfolio UI
+- **Root cause**: TBD — direct `curl` against the same URL with the same wallet pair returned 200 + valid JSON ($1.2B test wallet, multi-chain). The 500 was likely a transient race (concurrent first-fetch under Playwright load) or a rate-limit hit. The wallet-assistant container served it correctly post-Playwright.
+- **Fix**: pending follow-up if reproducible after Phase A v1 frontend fix wave. Re-run Playwright will tell.
+- **Pin test**: pending — needs reproduction first.
