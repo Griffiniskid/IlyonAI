@@ -359,6 +359,148 @@ FLOWS: list[Flow] = [
         expect_sign=True,
         note="§11 D.5/D.6 — session-key install with daily cap refinement",
     ),
+
+    # ── Card-type coverage expansion (v4) ────────────────────────────────
+    # Each flow below is engineered to surface a specific CardType so that
+    # Gate 4's "every card type renders" requirement is exercised. Cards
+    # we cannot trigger by user prompt (invariant_violation = backend-only,
+    # sentinel_matrix = composer-only) are left for follow-up.
+
+    Flow(
+        id="cov_swap_quote",
+        prompts=["Quote a swap of 100 USDC to USDT on Ethereum"],
+        expect_cards={"swap_quote"},
+        expect_sign=False,
+        note="Coverage: swap_quote card",
+    ),
+    Flow(
+        id="cov_balance_report",
+        prompts=["Show me my wallet balance across all chains"],
+        expect_cards={"balance", "balance_report"},
+        expect_sign=False,
+        note="Coverage: balance / balance_report card",
+    ),
+    Flow(
+        id="cov_token_price",
+        prompts=["What's the price of BTC?"],
+        expect_cards={"token", "sentinel_token_report"},
+        expect_sign=False,
+        note="Coverage: token / sentinel_token_report card",
+    ),
+    Flow(
+        id="cov_pool_report",
+        prompts=["Is the Lido stETH pool safe?"],
+        expect_cards={"pool", "sentinel_pool_report"},
+        expect_sign=False,
+        note="Coverage: pool / sentinel_pool_report card",
+    ),
+    Flow(
+        id="cov_whale_feed",
+        prompts=["Show me whales on Solana"],
+        expect_cards={"sentinel_whale_feed"},
+        expect_sign=False,
+        note="Coverage: sentinel_whale_feed card",
+    ),
+    Flow(
+        id="cov_smart_money",
+        prompts=["Show me smart money flows on Ethereum"],
+        expect_cards={"sentinel_smart_money_hub"},
+        expect_sign=False,
+        note="Coverage: sentinel_smart_money_hub card",
+    ),
+    Flow(
+        id="cov_shield_report",
+        prompts=["Run a Shield audit on USDC at 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"],
+        expect_cards={"sentinel_shield_report"},
+        expect_sign=False,
+        note="Coverage: sentinel_shield_report card",
+    ),
+    Flow(
+        id="cov_market_overview",
+        prompts=["What's trending in DeFi right now?"],
+        expect_cards={"market_overview"},
+        expect_sign=False,
+        note="Coverage: market_overview card",
+    ),
+    Flow(
+        id="cov_v3_lp_mint",
+        prompts=[
+            "Mint a Uniswap V3 NFT for USDC/WETH 0.05% on Ethereum",
+            "Use $200, full range",
+        ],
+        expect_cards={"pool_deposit_v3", "execution_plan_v3"},
+        expect_sign=True,
+        note="Coverage: pool_deposit_v3 card",
+    ),
+    Flow(
+        id="cov_bridge_only",
+        prompts=["What's the cheapest way to bridge 100 USDC from Ethereum to Polygon?"],
+        expect_cards={"bridge", "execution_plan_v3"},
+        expect_sign=False,
+        note="Coverage: bridge card (info-only, no execute)",
+    ),
+
+    # ── More matrix-derived flows (variation in cluster H + E + D) ────────
+    Flow(
+        id="D02_aave_v3_withdraw",
+        prompts=[
+            "Withdraw all my USDC from Aave V3 on Base",
+        ],
+        expect_cards={"execution_plan_v3"},
+        expect_sign=True,
+        note="D02 — Aave V3 withdraw_all (wave-6 drain-guard pin path)",
+    ),
+    Flow(
+        id="E09_eth_to_arb_morpho",
+        prompts=[
+            "Bridge 200 USDC from Ethereum to Arbitrum and lend on Morpho Blue",
+        ],
+        expect_cards={"execution_plan_v3"},
+        expect_sign=True,
+        note="E09 — cross-chain composed bridge + Morpho supply",
+    ),
+    Flow(
+        id="H07_S7_dust",
+        prompts=[
+            "Combine my dust balances across chains into 100 USDC on Ethereum",
+        ],
+        expect_cards={"execution_plan_v3"},
+        expect_sign=False,
+        note="§7 S7 — dust mixing scenario",
+    ),
+    Flow(
+        id="H15_S15_wrong_wallet",
+        prompts=[
+            "Stake 1 ETH on Lido",
+            "Use my Solana wallet instead",
+        ],
+        expect_cards={"execution_plan_v3"},
+        expect_sign=False,
+        note="§7 S15 — wrong-wallet mismatch → blocker",
+    ),
+    Flow(
+        id="cov_text_refusal_unknown",
+        prompts=["What's the weather like today?"],
+        expect_cards=set(),
+        expect_sign=False,
+        note="Coverage: text/no_change refusal (off-domain prompt)",
+    ),
+
+    # ── §13 27-row edge case representatives ──────────────────────────────
+    Flow(
+        id="row13a_solana_jup",
+        prompts=["Swap 10 SOL for USDC on Jupiter"],
+        expect_cards={"execution_plan_v3", "swap_quote"},
+        expect_sign=True,
+        note="§13 — Solana Jupiter swap",
+    ),
+    Flow(
+        id="row13b_pendle_yt",
+        prompts=["Buy Pendle YT-stETH for $200"],
+        expect_cards={"execution_plan_v3"},
+        expect_sign=False,
+        note="§13 — Pendle YT speculation",
+    ),
 ]
 
 
@@ -375,10 +517,15 @@ LEAK_PATTERNS = [
 
 
 def scan_text_for_leaks(text: str) -> list[str]:
+    """Return labelled hits with ±60-char context for triage."""
     findings = []
     for rx, label in LEAK_PATTERNS:
-        if rx.search(text):
-            findings.append(label)
+        m = rx.search(text)
+        if m:
+            start = max(0, m.start() - 60)
+            end = min(len(text), m.end() + 60)
+            ctx = text[start:end].replace("\n", " ⏎ ").strip()
+            findings.append(f"{label} :: …{ctx}…")
     return findings
 
 
@@ -540,6 +687,13 @@ async def run_flow(browser: Browser, flow: Flow, log_dir: Path) -> dict:
             leaks = scan_text_for_leaks(body_text)
             for leak in leaks:
                 bugs.append(f"BUG-P1: turn{i} — {leak}")
+            # If any leak fired, dump full body HTML so we can find the
+            # offending component in triage.
+            if leaks:
+                body_html = await page.content()
+                (log_dir / f"{flow.id}-t{i}-body.html").write_text(
+                    body_html, encoding="utf-8"
+                )
 
             # For each execution_plan_v3 with a ready step, verify the
             # Sign button (and recovery CTA for any blockers) are rendered.

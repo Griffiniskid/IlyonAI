@@ -3699,19 +3699,25 @@ function BalanceCard({ data }: { data: BalanceData }) {
           <div className="balance-token-list">
             {chain.native_balance > 0 && (
               <div className="balance-token-row">
-                <span className="balance-token-symbol">{chain.native_symbol}</span>
+                <span className="balance-token-symbol">{chain.native_symbol || "?"}</span>
                 <span className="balance-token-amount">{chain.native_balance.toFixed(6).replace(/\.?0+$/, "")}</span>
               </div>
             )}
             {Object.values(
-                chain.tokens.reduce((acc: Record<string, typeof chain.tokens[0]>, tok) => {
-                  const k = tok.symbol.toUpperCase();
-                  if (!acc[k]) acc[k] = tok;
-                  return acc;
-                }, {})
+                chain.tokens
+                  // Drop spam SPL/ERC20 tokens with no usable symbol —
+                  // Moralis/Helius occasionally return entries with
+                  // `symbol: undefined` or empty string. Rendering those
+                  // surfaces literal "undefined" in the sidebar.
+                  .filter(t => t && t.symbol && String(t.symbol).trim().length > 0)
+                  .reduce((acc: Record<string, typeof chain.tokens[0]>, tok) => {
+                    const k = String(tok.symbol).toUpperCase();
+                    if (!acc[k]) acc[k] = tok;
+                    return acc;
+                  }, {})
               ).map((tok, j) => (
                 <div key={j} className="balance-token-row">
-                  <span className="balance-token-symbol">{tok.symbol}</span>
+                  <span className="balance-token-symbol">{tok.symbol || "?"}</span>
                   <span className="balance-token-amount">{tok.balance.toFixed(6).replace(/\.?0+$/, "")}</span>
                 </div>
               ))}
