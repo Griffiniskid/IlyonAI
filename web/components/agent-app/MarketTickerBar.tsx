@@ -20,14 +20,14 @@ interface PriceRow {
 }
 
 async function fetchPrices(): Promise<PriceRow[]> {
-  // Proxy through this domain's /api/coingecko/* rewrite (see
-  // web/next.config.js). api.coingecko.com does not return
-  // Access-Control-Allow-Origin for staging.ilyonai.com so the direct
-  // call hits CORS + ERR_FAILED in the browser.
+  // Route through the backend `/api/v1/prices/simple` proxy
+  // (src/api/routes/prices.py). Direct api.coingecko.com is
+  // CORS-blocked + the Cloudflare edge blocks any path containing
+  // "coingecko"; the backend proxy fetches server-side with caching.
   const ids = COINS.map((c) => c.id).join(",");
   try {
     const r = await fetch(
-      `/api/coingecko/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,
+      `/api/v1/prices/simple?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,
       { signal: AbortSignal.timeout(8000) },
     );
     if (!r.ok) return [];

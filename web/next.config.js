@@ -48,10 +48,6 @@ const nextConfig = {
       { source: "/api/v1/rpc-proxy", destination: `${walletAssistantTarget}/api/v1/rpc-proxy` },
       { source: "/api/v1/bridge-status/:path*", destination: `${walletAssistantTarget}/api/v1/bridge-status/:path*` },
       { source: "/api/portfolio/:path*", destination: `${walletAssistantTarget}/api/portfolio/:path*` },
-      // Phase A — proxy CoinGecko through this domain to satisfy browser
-      // CORS (api.coingecko.com does not send Access-Control-Allow-Origin
-      // for staging.ilyonai.com). Read-only price ticker only.
-      { source: "/api/coingecko/:path*", destination: "https://api.coingecko.com/api/v3/:path*" },
       { source: "/api/:path*", destination: `${apiTarget}/api/:path*` },
       // Solana Actions / Blinks — Phantom dial-actions and Twitter
       // unfurlers hit these directly on the bare domain.

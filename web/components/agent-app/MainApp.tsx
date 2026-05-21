@@ -4522,11 +4522,12 @@ export default function MainApp() {
     const fetchPrices = async () => {
       try {
         const ids = Object.values(CG_IDS).join(",");
-        // Proxy through this domain — direct api.coingecko.com is
-        // CORS-blocked in the browser. See web/next.config.js rewrite
-        // `/api/coingecko/:path*` → `https://api.coingecko.com/api/v3/:path*`.
+        // Route through the backend `/api/v1/prices/simple` proxy
+        // (src/api/routes/prices.py) — Cloudflare edge blocks any path
+        // containing "coingecko", and direct browser → api.coingecko.com
+        // is CORS-blocked.
         const res = await fetch(
-          `/api/coingecko/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,
+          `/api/v1/prices/simple?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,
           { signal: AbortSignal.timeout(8000) }
         );
         if (!res.ok) return;
