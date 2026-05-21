@@ -118,7 +118,7 @@ ERC20_BALANCE_SLOT: dict[tuple[str, str], int] = {
     ("polygon", "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359"): 9,     # USDC native
     ("polygon", "0xc2132d05d31c914a87c6611c10748aeb04b58e8f"): 0,     # USDT
     ("polygon", "0x7ceb23fd6bc0add59e62ac25578270cff1b9f619"): 0,     # WETH
-    ("polygon", "0x8f3cf7ad23cdb6f43c5bafa6dac98ad8fa56dcef"): 0,     # DAI (Phase B run-1 found 3 supplies blocked on DAI)
+    ("polygon", "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063"): 0,     # DAI (run-1 typo had wrong addr — this is the canonical maker DAI on Polygon)
     ("polygon", "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"): 0,     # USDC.e (bridged)
     # BSC
     ("bsc", "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d"): 1,         # USDC bep20
