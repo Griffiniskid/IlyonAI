@@ -6949,6 +6949,21 @@ _REAMOUNT_CONTINUATION_RE = re.compile(
     r"actually\s+\$?\d)\b[^.!?\n]{0,80}\$?\d",
     re.IGNORECASE,
 )
+# BUG-RC-004: re-quote / refresh-sim handler. The user sees a SIM_STALE
+# warning and types 'Re quote please', 're-quote', 'refresh', 'redo
+# quote', 'refresh sim'. Without this regex the message falls through
+# to the generic fallback and the agent suggests an unrelated example
+# prompt (BUG-RC-020 chain cascade). Match unambiguous refresh verbs
+# only — don't false-match plain 'quote' which is too ambiguous.
+_REQUOTE_CONTINUATION_RE = re.compile(
+    r"\b(re[\s-]?quote(?:\s+please)?|re[\s-]?simulate|"
+    r"refresh\s+(?:the\s+)?(?:sim(?:ulation)?|quote|plan)|"
+    r"redo\s+(?:the\s+)?(?:quote|sim|plan)|"
+    r"update\s+(?:the\s+)?(?:quote|sim|simulation)|"
+    r"re[\s-]?fresh(?:\s+please)?|"
+    r"new\s+quote)\b",
+    re.IGNORECASE,
+)
 # Vague follow-up: "do that", "do it", "go ahead", "yes"
 _VAGUE_CONTINUATION_RE = re.compile(
     r"^\s*(do\s+(?:that|it|this|the\s+thing)|go\s+ahead|yes|yep|yeah|please|let'?s\s+do\s+it|all\s+right|alright|ok)\s*[.!?]*\s*$",
@@ -8648,7 +8663,47 @@ async def run_ephemeral_turn(
             m_chain = _LP_CHAIN_SWITCH_RE.search(message.strip())
             m_tok = _LP_TOKEN_SWITCH_RE.search(message.strip())
 
-            if m_amt or m_chain or m_tok:
+            # BUG-RC-004: re-quote / refresh-sim form. User typed
+            # 're-quote', 'refresh sim', 'redo the quote' etc. with no
+            # other delta — re-issue the prior plan unchanged so the
+            # SSE re-emits with a fresh simulation timestamp. Without
+            # this, the message falls through to generic fallback and
+            # the agent suggests an unrelated example prompt
+            # (cascading into BUG-RC-001 / BUG-RC-020).
+            m_requote = _REQUOTE_CONTINUATION_RE.search(message.strip())
+            if (
+                m_requote
+                and not (m_amt or m_chain or m_tok)
+                and prior_protocol
+                and prior_chain
+                and prior_asset_in
+            ):
+                # Mirror the no-delta refresh as a fresh build call.
+                _requote_action = "supply"
+                if prior_protocol in {"curve", "curve-dex", "balancer", "balancer-v2",
+                                       "balancer-v3"}:
+                    _requote_action = "deposit_lp"
+                elif prior_protocol in {"lido", "rocket-pool", "rocketpool",
+                                         "ether.fi", "etherfi", "frax", "frax-ether",
+                                         "stader"}:
+                    _requote_action = "stake"
+                prior_intent_override = (
+                    "build_yield_execution_plan",
+                    {
+                        "chain": prior_chain,
+                        "protocol": prior_protocol,
+                        "action": _requote_action,
+                        "asset_in": prior_asset_in,
+                        "amount_in": prior_amount,
+                        "extra": {
+                            "user_message": message,
+                            "requote": True,
+                        },
+                    },
+                )
+                prior_pools_for_dist = []
+
+            if prior_intent_override is None and (m_amt or m_chain or m_tok):
                 new_amount = prior_amount
                 new_chain = prior_chain
                 new_asset_in = prior_asset_in
