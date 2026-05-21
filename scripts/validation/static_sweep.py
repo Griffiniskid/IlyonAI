@@ -251,11 +251,30 @@ PATTERNS: list[tuple[str, str, re.Pattern, str]] = [
 
 
 def scan_file(path: Path) -> dict:
-    """Return {pattern_id: [hit_snippets]} for any pattern matching the file."""
+    """Return {pattern_id: [hit_snippets]} for any pattern matching the file.
+
+    Wave 12 — strip tool_input args + `user_message` fields BEFORE scanning.
+    Those carry the literal user prompts (which are matrix test fixtures),
+    not the model's response. False positives on AP-090 etc. when the user
+    prompt itself contains the canonical-leak phrase.
+    """
     try:
         body = path.read_text(encoding="utf-8", errors="replace")
     except (OSError, UnicodeError):
         return {}
+    # Strip `"user_message":"..."` segments + tool ToolFrame args blocks
+    # so the sweep only sees the MODEL's output (thoughts + cards + final),
+    # not the literal user-provided prompt that the matrix harness sent.
+    body = re.sub(
+        r'"user_message":"(?:[^"\\]|\\.)*"',
+        '"user_message":""',
+        body,
+    )
+    body = re.sub(
+        r'"cross_chain_message":"(?:[^"\\]|\\.)*"',
+        '"cross_chain_message":""',
+        body,
+    )
     hits: dict[str, list[str]] = {}
     for pid, _sev, regex, _desc in PATTERNS:
         matches = regex.findall(body)

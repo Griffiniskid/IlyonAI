@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **AISentinel** (18147 symbols, 27957 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **IlyonAI** (32368 symbols, 52966 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -24,10 +24,10 @@ This project is indexed by GitNexus as **AISentinel** (18147 symbols, 27957 rela
 
 | Resource | Use for |
 |----------|---------|
-| `gitnexus://repo/AISentinel/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/AISentinel/clusters` | All functional areas |
-| `gitnexus://repo/AISentinel/processes` | All execution flows |
-| `gitnexus://repo/AISentinel/process/{name}` | Step-by-step execution trace |
+| `gitnexus://repo/IlyonAI/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/IlyonAI/clusters` | All functional areas |
+| `gitnexus://repo/IlyonAI/processes` | All execution flows |
+| `gitnexus://repo/IlyonAI/process/{name}` | Step-by-step execution trace |
 
 ## CLI
 
