@@ -533,6 +533,197 @@ def test_execution_blocker_is_module_level_in_build_yield_execution_plan():
     )
 
 
+# BUG-RC-005 — bare-token allocation intent (no $ sign)
+
+
+def test_alloc_bare_token_routes_to_allocate_strategy():
+    """BUG-RC-005: 'allocate 10k USDT' must classify as allocate_strategy
+    even without the $ sign that _AMOUNT_ASSET_RE used to require."""
+    from src.agent.intent.defi_intent import parse_defi_intent
+
+    intent = parse_defi_intent("allocate 10k USDT with highest scoring opportunities")
+    assert intent.intent == "allocate_strategy"
+    assert intent.amount_usd == 10_000.0
+    assert intent.asset_hint == "USDT"
+
+
+def test_alloc_bare_token_distribute_across_pools():
+    """The real-tester phrase from AI Bug Convo.md line 169 — must yield
+    allocate_strategy, not search_defi_opportunities."""
+    from src.agent.intent.defi_intent import parse_defi_intent
+
+    intent = parse_defi_intent(
+        "Can you pick 4 best pools out of those in your opinion and "
+        "distribute and allocate 40 usdt on sol across them?"
+    )
+    assert intent.intent == "allocate_strategy"
+    assert intent.amount_usd == 40.0
+    assert intent.asset_hint == "USDT"
+
+
+def test_alloc_bare_token_deploy_form():
+    from src.agent.intent.defi_intent import parse_defi_intent
+
+    intent = parse_defi_intent("deploy 100 USDC into Aave")
+    assert intent.intent == "allocate_strategy"
+    assert intent.amount_usd == 100.0
+    assert intent.asset_hint == "USDC"
+
+
+# BUG-RC-002 — ASSET_POOL_MISMATCH preflight in execute_pool_position
+
+
+def test_asset_pool_mismatch_refuses_usdc_against_wsteth_pool():
+    """BUG-RC-002 root case: user typed USDC, dispatcher landed on a
+    WSTETH-only pool. Must refuse with ASSET_POOL_MISMATCH blocker,
+    not silently coerce."""
+    import asyncio
+    from unittest.mock import patch
+    import importlib
+    mod = importlib.import_module("src.agent.tools.execute_pool_position")
+
+    async def fake_fetch_pool_meta(pool_id):
+        # Single-token WSTETH vault (e.g., Fluid Lending WSTETH).
+        return {
+            "chain": "Ethereum",
+            "project": "fluid-lending",
+            "symbol": "WSTETH",
+            "underlyingTokens": ["0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0"],
+            "pool": "69b12bf9-aaaa-bbbb-cccc-ddddeeeeffff",
+            "tvlUsd": 100_000_000,
+            "apy": 3.5,
+        }
+
+    class FakeCtx:
+        wallet = "0x" + "a" * 40
+        evm_wallet = "0x" + "a" * 40
+        solana_wallet = None
+
+    with patch.object(mod, "_fetch_pool_meta", fake_fetch_pool_meta):
+        result = asyncio.run(
+            mod.execute_pool_position(
+                FakeCtx(),
+                pool="69b12bf9-aaaa-bbbb-cccc-ddddeeeeffff",
+                amount=100,
+                asset_in="USDC",  # user explicitly named USDC
+                amount_is_usd=True,
+            )
+        )
+    ok = result.ok if hasattr(result, "ok") else result["ok"]
+    assert ok is True
+    data = result.data if hasattr(result, "data") else result["data"]
+    plan = data["plan"]
+    blockers = plan.get("blockers") or []
+    codes = [b.get("code") for b in blockers]
+    assert "ASSET_POOL_MISMATCH" in codes, (
+        f"expected ASSET_POOL_MISMATCH blocker, got codes={codes}"
+    )
+
+
+def test_asset_pool_match_allows_usdc_against_usdc_pool():
+    """Sanity: USDC ask against a USDC market must NOT trip the
+    mismatch guard (otherwise legitimate Aave V3 USDC supply breaks)."""
+    import asyncio
+    from unittest.mock import patch
+    import importlib
+    mod = importlib.import_module("src.agent.tools.execute_pool_position")
+
+    async def fake_fetch_pool_meta(pool_id):
+        return {
+            "chain": "Base",
+            "project": "aave-v3",
+            "symbol": "USDC",
+            "underlyingTokens": ["0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"],
+            "pool": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "tvlUsd": 50_000_000,
+            "apy": 4.5,
+        }
+
+    class FakeCtx:
+        wallet = "0x" + "b" * 40
+        evm_wallet = "0x" + "b" * 40
+        solana_wallet = None
+
+    with patch.object(mod, "_fetch_pool_meta", fake_fetch_pool_meta):
+        result = asyncio.run(
+            mod.execute_pool_position(
+                FakeCtx(),
+                pool="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                amount=100,
+                asset_in="USDC",
+                amount_is_usd=True,
+            )
+        )
+    ok = result.ok if hasattr(result, "ok") else result["ok"]
+    assert ok is True
+    data = result.data if hasattr(result, "data") else result["data"]
+    plan = data["plan"]
+    blockers = plan.get("blockers") or []
+    codes = [b.get("code") for b in blockers]
+    assert "ASSET_POOL_MISMATCH" not in codes
+
+
+def test_asset_pool_match_stables_interchangeable():
+    """USDT supply against USDC pool: both stables, Jupiter/Curve will
+    bridge. Must NOT raise ASSET_POOL_MISMATCH.
+
+    The function may error downstream when it tries to actually build a
+    plan (the registry isn't fully mocked), but the key assertion is
+    that if there IS a plan, ASSET_POOL_MISMATCH is NOT one of its
+    blockers. We tolerate non-plan responses as long as they're not the
+    ASSET_POOL_MISMATCH refuse path.
+    """
+    import asyncio
+    from unittest.mock import patch
+    import importlib
+    mod = importlib.import_module("src.agent.tools.execute_pool_position")
+
+    async def fake_fetch_pool_meta(pool_id):
+        return {
+            "chain": "Ethereum",
+            "project": "compound-v3",
+            "symbol": "USDC",
+            "underlyingTokens": ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"],
+            "pool": "stable-bridge-test",
+            "tvlUsd": 20_000_000,
+            "apy": 6.0,
+        }
+
+    class FakeCtx:
+        wallet = "0x" + "c" * 40
+        evm_wallet = "0x" + "c" * 40
+        solana_wallet = None
+
+    with patch.object(mod, "_fetch_pool_meta", fake_fetch_pool_meta):
+        result = asyncio.run(
+            mod.execute_pool_position(
+                FakeCtx(),
+                pool="stable-bridge-test",
+                amount=50,
+                asset_in="USDT",  # user named USDT, pool is USDC
+                amount_is_usd=True,
+            )
+        )
+    data = result.data if hasattr(result, "data") else result.get("data") if isinstance(result, dict) else {}
+    plan = data.get("plan") if isinstance(data, dict) else None
+    if plan:
+        blockers = plan.get("blockers") or []
+        codes = [b.get("code") for b in blockers]
+        assert "ASSET_POOL_MISMATCH" not in codes, (
+            f"USDT→USDC pool must not be refused (both stables); got {codes}"
+        )
+
+
+def test_alloc_bare_token_rejects_non_crypto_noun():
+    """Whitelist guard: 'with 5 dogs' must NOT register as an alloc
+    amount/asset (would be a false positive)."""
+    from src.agent.intent.defi_intent import parse_defi_intent
+
+    intent = parse_defi_intent("walking with 5 dogs in the park")
+    # No allocation verb + 'dogs' not in token whitelist → no amount.
+    assert intent.amount_usd is None
+
+
 def test_execution_blocker_is_module_level_in_execute_pool_position():
     """Same structural check for execute_pool_position.py."""
     import importlib

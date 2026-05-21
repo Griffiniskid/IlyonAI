@@ -62,6 +62,22 @@ _BARE_AMOUNT_USD_RE = re.compile(
     r"|([\d,]+(?:\.\d+)?)\s*(million|billion|[kKmM])?\s*\$)",
     re.IGNORECASE,
 )
+# BUG-RC-005 — "allocate 10k USDT", "distribute 40 usdt across 4 pools",
+# "deploy 100 USDC" etc. carry no dollar sign. Without an amount the
+# downstream `allocation_requested` gate falls False and the dispatcher
+# falls through to search_defi_opportunities, silently dropping the
+# user's intent to allocate. Match unambiguous allocation/deployment
+# verbs followed by an amount + a recognised crypto symbol. The token
+# whitelist guards against false positives like "with 5 dogs".
+_BARE_ALLOC_TOKEN_RE = re.compile(
+    r"\b(?:allocate|distribute|invest|deploy|put|across)\s+"
+    r"([\d,]+(?:\.\d+)?)\s*([kKmM])?\s+(?:of\s+)?"
+    r"(?P<asset>USD|USDC|USDT|DAI|ETH|WETH|BTC|WBTC|SOL|WSOL|MATIC|"
+    r"BNB|WBNB|AVAX|WAVAX|FRAX|BUSD|TUSD|LUSD|FDUSD|USDS|USDE|SUSDE|"
+    r"RETH|WSTETH|STETH|JITOSOL|MSOL|BNSOL|DZSOL|JUPSOL|DSOL|PSOL|"
+    r"COMP|AAVE|UNI|CRV|MKR|SUSHI|LDO|RPL|FXS|CVX|BAL|RDNT)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -325,6 +341,26 @@ def _parse_amount_and_asset(text: str) -> tuple[float | None, str | None]:
         if asset and asset.lower() in _CHAIN_ALIASES:
             asset = None
         return amount, asset
+    # BUG-RC-005 — bare-token allocation form: "allocate 10k USDT",
+    # "distribute 40 usdt across 4 pools", "deploy 100 USDC". Must fire
+    # BEFORE the bare $X fallback below so "USDC" / "USDT" become the
+    # asset hint (the dollar-only fallback returns asset=None and the
+    # downstream allocator picks the wrong stable).
+    alloc_token = _BARE_ALLOC_TOKEN_RE.search(text)
+    if alloc_token:
+        raw = alloc_token.group(1).replace(",", "")
+        try:
+            amount = float(raw)
+        except ValueError:
+            amount = None
+        if amount is not None:
+            suffix = (alloc_token.group(2) or "").lower()
+            if suffix == "k":
+                amount *= 1_000
+            elif suffix == "m":
+                amount *= 1_000_000
+            asset = alloc_token.group("asset").upper()
+            return amount, asset
     # Bare "$X" / "X$" / "$50 million" fallback — only fires when no anchored
     # verb was found. Lets "Build me a strategy with $1500 USDC", "I have $50
     # million USDC", and "Execute deposit ... with 10$" all surface an amount.

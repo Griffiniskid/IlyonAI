@@ -583,6 +583,68 @@ async def execute_pool_position(
 
     final_asset_in = asset_in or _pick_asset_in(meta)
 
+    # BUG-RC-002 — ASSET_POOL_MISMATCH preflight. When the user explicitly
+    # supplied `asset_in` (e.g., "Supply 100 USDC ..."), refuse if it does
+    # not match the pool's declared symbol legs. Catches the case where
+    # the dispatcher silently coerced a USDC ask into a WSTETH deposit
+    # against an unrelated pool. Auto-picked asset (user didn't specify)
+    # is always allowed because the picker already chose from the pool's
+    # own legs.
+    if asset_in:  # only fire when user explicitly named an asset
+        _user_asset = str(asset_in).upper().strip()
+        _pool_sym = str(meta.get("symbol") or "").upper()
+        _pool_legs: set[str] = set()
+        for _sep in ("-", "/", "_"):
+            if _sep in _pool_sym:
+                _pool_legs.update(_p.strip() for _p in _pool_sym.split(_sep) if _p.strip())
+                break
+        if not _pool_legs and _pool_sym:
+            _pool_legs.add(_pool_sym)
+        # A user-named stable is interchangeable with other listed stables
+        # in the pool when the pool itself is a stable basket (3CRV, USDe
+        # vault, etc.) — Jupiter / Curve will route the swap. We only
+        # refuse when the user named a non-pool asset against a pool that
+        # has zero overlap with the stable basket.
+        if (
+            _pool_legs
+            and _user_asset
+            and _user_asset not in _pool_legs
+            and not (
+                _user_asset in _STABLE_TICKERS
+                and any(leg in _STABLE_TICKERS for leg in _pool_legs)
+            )
+        ):
+            plan = ExecutionPlanV3.new(
+                title=f"Asset/pool mismatch — refused",
+                summary=(
+                    f"You asked for {_user_asset} but the pool {pool_symbol} "
+                    f"on {chain} accepts {sorted(_pool_legs)}. Refusing to "
+                    f"coerce your intent into a different asset."
+                ),
+            )
+            _blocker = ExecutionBlocker(
+                code="ASSET_POOL_MISMATCH",
+                severity="blocker",
+                title=f"{_user_asset} does not match pool {pool_symbol}",
+                detail=(
+                    f"Your request named {_user_asset!r} as the deposit "
+                    f"asset, but the pool {pool_symbol!r} on {chain} "
+                    f"actually accepts {sorted(_pool_legs)!r}. Either "
+                    f"(a) re-issue with one of the pool's expected "
+                    f"assets, or (b) ask for a {_user_asset} pool "
+                    f"directly. Refusing to silently coerce your asset."
+                ),
+                affected_step_ids=[],
+                recoverable=True,
+                cta=f"Re-issue with a {_user_asset} pool, or one of {sorted(_pool_legs)}.",
+            )
+            plan.add_blocker(_blocker)
+            return ok_envelope(
+                data={"plan": plan.to_dict()},
+                card_type="execution_plan_v3",
+                card_payload=plan.to_dict(),
+            )
+
     # USD-denominated amount → native units conversion. When the user typed
     # "$100" or "with 100 USDC" but the pool's primary asset is non-stable
     # (WSOL, ETH, BTC, etc.), the raw amount must be re-denominated into the
