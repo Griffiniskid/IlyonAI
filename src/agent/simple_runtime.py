@@ -8372,7 +8372,32 @@ async def run_ephemeral_turn(
         # PRIOR USER MESSAGES for an explicit "<protocol> <pair>" mention
         # like "Raydium AMM SPACEX-WSOL" and prefer that hint.
         if prior_intent_override is None and history_cards:
-            top_match = _LP_TOP_ONE_RE.search(message.strip())
+            # BUG-RC-005 guard: when the message clearly asks for
+            # multi-pool DISTRIBUTION / ALLOCATION ("distribute across",
+            # "allocate across", "split across N pools", "pick N best
+            # pools and distribute", etc.), DO NOT fall into the top-one
+            # picker — which would parse "pick 4 best pools" as 'pick
+            # $4 with unit BEST' and silently route to single-pool
+            # execute. Let the allocation path downstream handle it.
+            _MULTI_POOL_ALLOC_RE = re.compile(
+                r"\b("
+                r"distribute\s+(?:and\s+)?(?:allocate\s+)?\$?[\d.]+\s*[a-z]*\s+(?:across|over|among|between)"
+                r"|allocate\s+(?:and\s+)?(?:distribute\s+)?\$?[\d.]+\s*[a-z]*\s+(?:across|over|among|between)"
+                r"|split\s+\$?[\d.]+\s*[a-z]*\s+across"
+                r"|pick\s+\d+\s+(?:best|top|safest|highest)?\s*pool"
+                r"|across\s+(?:those|these|them|the)\s+(?:pool|\d+\s+pool)"
+                r"|across\s+\d+\s+(?:of\s+them|pool)"
+                r"|distribute\s+(?:and\s+)?allocate"
+                r"|allocate\s+(?:and\s+)?distribute"
+                r")",
+                re.IGNORECASE,
+            )
+            if _MULTI_POOL_ALLOC_RE.search(message):
+                # Suppress top-one match so allocation routes through
+                # parse_defi_intent (allocate_strategy) instead.
+                top_match = None
+            else:
+                top_match = _LP_TOP_ONE_RE.search(message.strip())
             # Refuse top-one sticky when the user explicitly named a protocol
             # in THIS turn (e.g. "Stake 0.5 ETH on Renzo"). v4-A02 caught
             # the sticky overriding the explicit pin: turn 5 routed to
