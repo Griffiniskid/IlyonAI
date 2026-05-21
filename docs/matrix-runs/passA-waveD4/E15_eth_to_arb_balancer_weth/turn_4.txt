@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have the wstETH\u2011WETH Balancer Arbitrum pool in the current list of surfaced opportunities, and I can\u2019t fetch new pool data. Please choose from the previously listed pools or provide a different instruction that matches those options.","card_ids":[],"elapsed_ms":28494,"steps":3}
+
+event: done
+data: {}
+

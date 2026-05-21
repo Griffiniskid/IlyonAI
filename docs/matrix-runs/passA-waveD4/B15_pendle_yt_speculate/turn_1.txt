@@ -1,0 +1,24 @@
+event: thought
+data: {"step_index":1,"content":"Parsed intent: allocate $500 across staking + yield, balanced risk-weighted across supported chains."}
+
+event: thought
+data: {"step_index":2,"content":"Preparing live opportunity search across DefiLlama and the Sentinel DeFi intelligence engine."}
+
+event: thought
+data: {"step_index":3,"content":"Applying hard filters before ranking: minimum TVL, sufficient operating history, sane APY, and supported chain coverage."}
+
+event: thought
+data: {"step_index":4,"content":"Scoring candidates with Sentinel dimensions: Safety x Yield durability x Exit liquidity x Confidence."}
+
+event: tool
+data: {"step_index":4,"name":"allocate_plan","args":{"usd_amount":500.0,"risk_budget":"balanced","extra":{"user_message":"Build me a Pendle YT speculation strategy $500"}}}
+
+event: observation
+data: {"step_index":4,"name":"allocate_plan","ok":true,"error":null}
+
+event: final
+data: {"content":"I couldn't complete that \u2014 **TOOL_TIMEOUT**: Tool 'allocate_plan' exceeded its 60s SLO. Upstream call (RPC / Enso / DefiLlama / aggregator) hung \u2014 no execution plan emitted. Retry or pick a different route.","card_ids":[],"elapsed_ms":61543,"steps":4}
+
+event: done
+data: {}
+

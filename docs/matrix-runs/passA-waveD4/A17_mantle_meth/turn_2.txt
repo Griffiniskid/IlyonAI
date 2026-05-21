@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I\u2019m unable to generate a signed execution plan for staking ETH on Mantle because there\u2019s no deterministic adapter for that chain/action. You can stake ETH on Ethereum via Lido (STETH), Swell (SWETH), Bifrost (VETH), or Stader (ETHX)\u2014all ready for deterministic execution. If you have a specific Mantle contract in mind, please provide the exact call data or use a supported bridge/provider.","card_ids":[],"elapsed_ms":64593,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Bridge 0.1\u202fWETH from Ethereum to Arbitrum using the Arbitrum native bridge or a trusted router like Across. \nOnce the WETH arrives on Arbitrum, approve the Balancer wstETH\u2011WETH pool contract and deposit the WETH (you\u2019ll receive wstETH\u2011WETH LP tokens). \n\nRisk: HIGH (impermanent loss & smart\u2011contract exposure). \nStrategy fit: Aggressive yield seeker. \nSafety tips: verify the pool address on DefiLlama, set a limited approval, and review slippage before confirming. \n\nYou can locate the exact wstETH\u2011WETH Balancer pool on Arbitrum via DefiLlama (search \u201cwstETH\u2011WETH Balancer Arbitrum\u201d) for the pool ID and links.","card_ids":[],"elapsed_ms":33748,"steps":3}
+
+event: done
+data: {}
+

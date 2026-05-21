@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"ETH liquid staking tokens (LSTs) let you earn staking rewards while keeping your ETH liquid. Popular options include stETH (Lido), rETH (Rocket Pool), and cbETH (Coinbase). \n\n- **Risk:** Generally MEDIUM \u2013 smart\u2011contract risk of the staking protocol plus market\u2011price risk of the token vs. ETH. \n- **Strategy fit:** Balanced to aggressive, depending on your comfort with protocol risk. \n- **Safety tip:** Verify the contract address, check audit reports, and consider diversifying across multiple LSTs to reduce single\u2011point exposure.","card_ids":[],"elapsed_ms":31561,"steps":3}
+
+event: done
+data: {}
+

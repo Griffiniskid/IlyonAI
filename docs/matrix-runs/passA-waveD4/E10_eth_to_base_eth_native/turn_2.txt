@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t execute the plan without a deterministic Sentinel tool generating the calldata. Please give an explicit command, for example:\n\n- `Supply 0.1 ETH to Aave V3 on Base`\n- `Bridge 0.1 ETH from Ethereum to Base then supply to Aave V3`\n\nOnce you provide a clear verb\u2011based instruction, I\u2019ll produce the signable Execution Plan card.","card_ids":[],"elapsed_ms":14953,"steps":3}
+
+event: done
+data: {}
+

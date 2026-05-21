@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To sign a transaction, you must use a deterministic Sentinel tool that produces a signable Execution Plan card; free\u2011form requests cannot generate calldata, transaction hashes, bridge fees, or session\u2011key state. Provide an explicit action (e.g., \u201cSupply 100 USDC to Aave V3 on Base\u201d) to obtain a verifiable plan.","card_ids":[],"elapsed_ms":32010,"steps":3}
+
+event: done
+data: {}
+

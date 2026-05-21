@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"You can bridge 0.1\u202fAVAX from Ethereum to Avalanche using the official Avalanche Bridge (or a trusted alternative like Hop or Celer). Connect your wallet, select Ethereum \u2192 Avalanche, enter 0.1\u202fAVAX, approve the ERC\u201120 spend, then confirm the deposit; the funds usually appear within a few minutes. \n\n**Risk:** MEDIUM \u2013 bridge contracts hold funds temporarily, so verify you\u2019re on the official URL and double\u2011check the contract address before approving. \n**Safety tip:** For a first try, bridge a smaller test amount (e.g., 0.01\u202fAVAX) to confirm everything works before moving the full 0.1\u202fAVAX. Once the AVAX arrives, you\u2019ll have enough gas to supply USDC to Aave V3.","card_ids":[],"elapsed_ms":15766,"steps":3}
+
+event: done
+data: {}
+

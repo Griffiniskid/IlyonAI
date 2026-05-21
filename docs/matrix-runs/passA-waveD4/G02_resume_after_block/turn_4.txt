@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Confirm: approve USDC and sign the supply transaction for\u202f100\u202fUSDC on Aave\u202fV3\u202fOptimism. Risk\u202fMEDIUM (smart\u2011contract); verify the contract address and consider a hardware wallet.","card_ids":[],"elapsed_ms":13735,"steps":3}
+
+event: done
+data: {}
+

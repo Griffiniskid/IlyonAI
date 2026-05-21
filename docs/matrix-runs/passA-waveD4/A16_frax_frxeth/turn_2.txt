@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To stake 0.05\u202fETH on Frax, approve exactly 0.05\u202fETH for the Frax ETH vault, deposit to receive frxETH, and optionally stake the frxETH in the sfrxETH vault to earn yield. Risk: MEDIUM (audited but newer protocol); fits a balanced strategy. Safety tip: double\u2011check the contract address on Etherscan, approve only the exact amount, and retain enough ETH for gas fees.","card_ids":[],"elapsed_ms":63485,"steps":3}
+
+event: done
+data: {}
+

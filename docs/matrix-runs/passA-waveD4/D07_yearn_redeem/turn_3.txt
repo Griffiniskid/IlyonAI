@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Redemption for the Yearn USDC vault isn\u2019t available right now\u2014direct execution is disabled. You\u2019ll need to use the Yearn interface or try again later when the adapter is ready. Let me know if you\u2019d like help with anything else.","card_ids":[],"elapsed_ms":10157,"steps":3}
+
+event: done
+data: {}
+

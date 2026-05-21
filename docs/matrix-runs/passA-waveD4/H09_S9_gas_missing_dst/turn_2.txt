@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Gas Top\u2011up Plan** \u2013 To execute the bridge\u2011then\u2011supply flow you\u2019ll need a small AVAX balance for the Avalanche transaction and a tiny ETH balance for the Ethereum bridge fee.\n\n- Estimated Ethereum bridge gas: ~0.001\u202fETH (\u2248\u202f$2) \u2013 ensure your wallet holds at least this amount. \n- Estimated Avalanche supply gas: ~0.005\u202fAVAX (\u2248\u202f$0.15) \u2013 top\u2011up to 0.01\u202fAVAX for a safety buffer.\n\nRisk: **MEDIUM** (bridge + contract exposure). \nStrategy fit: **balanced** (small gas cost vs. yield). \nSafety tip: approve only the exact 100\u202fUSDC for the bridge and Aave contracts, and verify the deBridge and Aave V3 addresses before signing.","card_ids":[],"elapsed_ms":24376,"steps":3}
+
+event: done
+data: {}
+

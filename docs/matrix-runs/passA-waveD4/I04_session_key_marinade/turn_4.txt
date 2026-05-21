@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Sure\u2014what exactly would you like to revoke? For example, the Marinade auto\u2011compound allowance, a specific token approval, or another setting. Let me know the target and I\u2019ll help you build the revoke request.","card_ids":[],"elapsed_ms":13248,"steps":3}
+
+event: done
+data: {}
+

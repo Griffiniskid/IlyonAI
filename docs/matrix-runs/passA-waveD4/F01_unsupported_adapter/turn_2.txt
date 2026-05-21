@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"- Search again with a different protocol \n- Show top USDC pools by APR \n- View DefiLlama USDC category \n- Cancel","card_ids":[],"elapsed_ms":8351,"steps":3}
+
+event: done
+data: {}
+

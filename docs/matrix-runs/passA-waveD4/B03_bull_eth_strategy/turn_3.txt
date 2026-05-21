@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"All of the positions in the current allocation can be withdrawn instantly\u2014there\u2019s no mandatory lock\u2011up period. You can remove liquidity or redeem your stake at any time and receive the underlying tokens plus any accrued fees or interest. Reward\u2011claiming (if applicable) is optional and doesn\u2019t lock your principal. Always double\u2011check the specific contract UI for rare early\u2011exit fees, but none of these standard pools impose a lock\u2011up.","card_ids":[],"elapsed_ms":17839,"steps":3}
+
+event: done
+data: {}
+

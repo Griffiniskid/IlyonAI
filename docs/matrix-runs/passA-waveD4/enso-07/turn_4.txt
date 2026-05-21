@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Please provide an explicit verb form for the deterministic adapter, e.g.:\n\n`Swap 200 USDC to sUSDe on Curve then mint PT\u2011sUSDe via Enso`\n\nOnly with that can I generate a signable Execution Plan. Risk remains HIGH due to smart\u2011contract exposure.","card_ids":[],"elapsed_ms":22206,"steps":3}
+
+event: done
+data: {}
+

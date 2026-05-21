@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have the spend\u2011cap or selector\u2011allowlist details in this session. If you can share the specific contract addresses or context you\u2019d like checked, I\u2019ll look them up for you.","card_ids":[],"elapsed_ms":46940,"steps":3}
+
+event: done
+data: {}
+

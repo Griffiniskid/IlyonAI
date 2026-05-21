@@ -1,0 +1,24 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"close_position\", \"amount_in\": 0, \"asset_in\": \"NFT\", \"chain\": \"ethereum\", \"extra\": {\"action\": \"close_position\", \"token_id\": 12345}, \"protocol\": \"uniswap-v3\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"ethereum","protocol":"uniswap-v3","action":"close_position","asset_in":"NFT","amount_in":0,"extra":{"action":"close_position","token_id":12345,"user_message":"Close my Uniswap V3 position tokenId 12345"}}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: final
+data: {"content":"I couldn't complete that \u2014 **invalid_amount**: amount_in must be a positive decimal value.","card_ids":[],"elapsed_ms":122,"steps":4}
+
+event: done
+data: {}
+

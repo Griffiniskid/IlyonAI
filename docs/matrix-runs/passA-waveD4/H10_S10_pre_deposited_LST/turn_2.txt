@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t generate the unwrap transaction without a deterministic request. Please phrase it as an explicit action, for example: `Unwrap 0.05 stETH to ETH on Lido` or `Withdraw 0.05 stETH from Lido to ETH`. Once you give that command, I\u2019ll return the signable Execution Plan card.","card_ids":[],"elapsed_ms":10224,"steps":3}
+
+event: done
+data: {}
+

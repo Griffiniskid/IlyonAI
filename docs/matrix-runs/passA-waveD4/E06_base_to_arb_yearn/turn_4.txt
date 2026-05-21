@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have the live APY for the Yearn V3 USDC vault on Arbitrum in my data. You can check the current rate on DefiLlama (search \u201cYearn V3 USDC Arbitrum\u201d) or directly in the Yearn app. Yearn vaults on Arbitrum are generally **HIGH** risk, so only deposit funds you\u2019re comfortable losing. To bridge 150 USDC from Base to Arbitrum, use a trusted cross\u2011chain bridge (e.g., Hop, Celer, or the official Arbitrum Bridge), approve the USDC contract, then deposit into the vault.","card_ids":[],"elapsed_ms":17748,"steps":3}
+
+event: done
+data: {}
+

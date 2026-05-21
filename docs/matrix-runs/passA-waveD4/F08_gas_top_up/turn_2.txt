@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The **build_yield_execution_plan** tool hit its 45\u2011second limit because the upstream call (RPC, Enso, DefiLlama, or another aggregator) didn\u2019t return a response in time. This is usually a temporary network or latency glitch, not an issue with your request.\n\n**What to try**\n- Retry the same command; a second attempt often succeeds.\n- If it keeps timing out, bridge a tiny amount of AVAX first (to cover gas) or try a slightly different route (e.g., supply via a different vault). Once the plan builds, you\u2019ll sign the approve and supply transactions to start earning yield.","card_ids":[],"elapsed_ms":10509,"steps":3}
+
+event: done
+data: {}
+
