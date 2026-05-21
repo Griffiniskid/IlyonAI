@@ -247,6 +247,45 @@ PATTERNS: list[tuple[str, str, re.Pattern, str]] = [
      re.compile(r"(?:supply|stake|swap|bridge|deposit|withdraw|claim|borrow|repay)\s+[\d.,]+\s+[A-Z]{2,8}[\s\S]{0,160}?\b(?:confirm\s+(?:if\s+you'?d?\s+like\s+to\s+)?proceed|let\s+me\s+know\s+(?:if\s+)?you'?d?\s+like\s+to\s+proceed|would\s+you\s+like\s+(?:to\s+)?proceed|ready\s+to\s+(?:supply|stake|swap|bridge|deposit|withdraw))\b",
                 re.IGNORECASE),
      "'Supply 100 USDC. Confirm if you'd like to proceed' precursor (F02 t4)"),
+
+    # ─── Tier RC — Real-Conversation Validation patterns ──────────────
+    # BUG-RC-006: Infinitys / NaN / Infinity / nan in time strings.
+    ("AP-RC-001", "P0",
+     re.compile(r"Infinitys?\s+old|\bNaN\s+(?:second|minute|hour|day|s\b|m\b|h\b|d\b)|"
+                r"\bInfinity\s+(?:second|minute|hour|day|s\b|m\b|h\b|d\b)",
+                re.IGNORECASE),
+     "BUG-RC-006: Infinitys/NaN/Infinity in time-formatted UI string"),
+
+    # BUG-RC-003: raw Python exception text leaked to chat.
+    ("AP-RC-002", "P0",
+     re.compile(r"cannot access local variable|UnboundLocalError|"
+                r"AttributeError: 'NoneType'|TypeError:\s+'[A-Z]|"
+                r"Traceback \(most recent call last\)|UnhandledPromiseRejection|"
+                r"NoneType has no attribute"),
+     "BUG-RC-003: raw Python exception text in agent response"),
+
+    # BUG-RC-014: literal markdown `**bold**` rendered to user (in agent
+    # response content, not in tool args / user messages).
+    ("AP-RC-003", "P1",
+     re.compile(r'"content"\s*:\s*"[^"]*\*\*[A-Z][^*\n]{1,60}\*\*'),
+     "BUG-RC-014: literal **bold** markdown in 'content' field (should render as HTML)"),
+
+    # BUG-RC-007: duplicated `Excluded N candidates` paragraph in same
+    # response. The substring scan only flags one occurrence per file
+    # (use the report dedupe step to surface count > 1).
+    ("AP-RC-005", "P1",
+     re.compile(r"Excluded\s+\d+\s+candidate(?:\(s\))?\s+that\s+violated"),
+     "BUG-RC-007: 'Excluded N candidates' line — verify only emitted once per response"),
+
+    # BUG-RC-002 / BUG-RC-001 echo: card title contains 'Fluid Lending'
+    # while payload.protocol = aave-v3 (or vice versa). This is best
+    # caught by I7 at the runtime layer; here we surface any obvious
+    # cross-protocol contamination in the same SSE frame.
+    ("AP-RC-006", "P0",
+     re.compile(r'"protocol"\s*:\s*"aave[\s-]?v?\d?"[\s\S]{0,300}"title"\s*:\s*"[^"]*Fluid'
+                r'|"protocol"\s*:\s*"fluid[\s-]?lending?"[\s\S]{0,300}"title"\s*:\s*"[^"]*Aave',
+                re.IGNORECASE),
+     "BUG-RC-001/002: card title declares one protocol but payload.protocol is another"),
 ]
 
 
