@@ -118,6 +118,8 @@ ERC20_BALANCE_SLOT: dict[tuple[str, str], int] = {
     ("polygon", "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359"): 9,     # USDC native
     ("polygon", "0xc2132d05d31c914a87c6611c10748aeb04b58e8f"): 0,     # USDT
     ("polygon", "0x7ceb23fd6bc0add59e62ac25578270cff1b9f619"): 0,     # WETH
+    ("polygon", "0x8f3cf7ad23cdb6f43c5bafa6dac98ad8fa56dcef"): 0,     # DAI (Phase B run-1 found 3 supplies blocked on DAI)
+    ("polygon", "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"): 0,     # USDC.e (bridged)
     # BSC
     ("bsc", "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d"): 1,         # USDC bep20
     ("bsc", "0x55d398326f99059ff775485246999027b3197955"): 1,         # USDT bep20
@@ -205,7 +207,10 @@ def start_anvil(chain: str, port: int) -> subprocess.Popen:
     ]
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     fork_url = f"http://127.0.0.1:{port}"
-    for _ in range(60):
+    # Some chains (arbitrum) have slower fork-init; default 30s wasn't
+    # enough on run-1 → all 6 arbitrum plans got infra-failed. 120s is
+    # generous but harmless since each plan replay is fast once forked.
+    for _ in range(240):
         try:
             req = urllib.request.Request(
                 fork_url,
@@ -217,7 +222,7 @@ def start_anvil(chain: str, port: int) -> subprocess.Popen:
         except Exception:
             time.sleep(0.5)
     proc.terminate()
-    raise RuntimeError(f"anvil for {chain} did not start within 30s")
+    raise RuntimeError(f"anvil for {chain} did not start within 120s")
 
 
 def rpc(url: str, method: str, params: list, timeout: float = 30.0) -> dict:
