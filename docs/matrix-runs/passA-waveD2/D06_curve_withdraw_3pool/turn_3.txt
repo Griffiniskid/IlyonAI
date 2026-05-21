@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The withdrawal plan already uses a single\u2011sided exit (remove\u202fliquidity\u202fone\u202fcoin). Sign step\u202f1 in your wallet to withdraw 100\u202fUSDC from Curve\u202f3pool on Ethereum. Risk remains LOW.","card_ids":[],"elapsed_ms":10380,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t execute the transaction for you. Please approve 100\u202fHONEY and the matching amount of WBERA in your wallet, then use Enso\u2019s Kodiak V3 LP router (or a compatible interface like Rabby) to submit the add\u2011liquidity transaction yourself. Double\u2011check the contract addresses before approving. (Risk: MEDIUM for LP positions; Strategy fit: balanced/aggressive.)","card_ids":[],"elapsed_ms":21573,"steps":3}
+
+event: done
+data: {}
+

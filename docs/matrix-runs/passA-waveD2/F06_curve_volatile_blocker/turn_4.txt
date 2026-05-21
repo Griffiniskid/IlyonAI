@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Curve\u2019s 3pool (USDC\u2011USDT\u2011DAI) on Ethereum is a classic stable\u2011coin pool \u2013 APY ~2\u20113%, TVL >\u202f$1\u202fB, risk **LOW**, suited for a **conservative** strategy. If you\u2019re open to a bit more yield with ETH exposure, the Curve stETH/ETH pool offers APY ~4\u20115% with **MEDIUM** risk. Always approve the contract in your wallet first and verify the transaction on\u2011chain before depositing.","card_ids":[],"elapsed_ms":38499,"steps":3}
+
+event: done
+data: {}
+

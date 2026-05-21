@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t revoke anything without knowing exactly which approval or transaction you want to cancel. Please give a concrete action, for example:\n\n- \u201cRevoke USDC approval for Marinade on Solana\u201d\n- \u201cRevoke SOL allowance for Raydium AMM\u201d\n- \u201cRevoke the Marinade auto\u2011compound setting\u201d\n\nOnce you specify the target, I can help you construct the revoke request.","card_ids":[],"elapsed_ms":38184,"steps":3}
+
+event: done
+data: {}
+

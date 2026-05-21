@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Confirming: you\u2019ll unstake\u202f0.5\u202fmSOL from Marinade liquid staking. After the unbonding period you\u2019ll receive the equivalent SOL (plus any accrued rewards). Risk remains LOW. Let me know if you\u2019d like to proceed or need estimated timing.","card_ids":[],"elapsed_ms":41385,"steps":3}
+
+event: done
+data: {}
+

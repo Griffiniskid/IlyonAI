@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t show a receipt because no transaction was actually executed\u2014there\u2019s no signed plan or on\u2011chain data to reference. To get a verifiable receipt, please re\u2011issue the withdrawal with an explicit exit verb (e.g., \u201cExit PancakeSwap V2 BNB\u2011USDT with 10 LP\u201d) so the deterministic adapter can generate a signable Execution Plan. Once signed and submitted, the receipt will appear in the plan card.","card_ids":[],"elapsed_ms":24935,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"deposit_lp\", \"amount_in\": 0.5, \"asset_in\": \"USDC\", \"chain\": \"\", \"protocol\": \"balancer\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"","protocol":"balancer","action":"deposit_lp","asset_in":"USDC","amount_in":0.5,"extra":{"user_message":"Exit Balancer wsteth-weth with 0.5 BPT"}}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"a9f15b0b-6ab4-43ad-9454-cb4418862baa","card_type":"execution_plan_v3","payload":{"plan_id":"plan_3b00439c2a0b","title":"Verb inverted \u2014 refusing deposit for exit request","summary":"Your prompt starts with an exit/withdraw verb but the dispatcher selected action='deposit_lp'. Refusing to silently route a withdraw intent to a deposit plan (would deposit funds when you meant to withdraw).","status":"blocked","risk_gate":"clear","requires_double_confirm":false,"blockers":[{"code":"VERB_INVERTED","severity":"blocker","title":"Withdraw intent routed to deposit action \u2014 refused","detail":"User prompt: 'Exit Balancer wsteth-weth with 0.5 BPT'. Action passed: 'deposit_lp'. Use the lifecycle verb form explicitly (e.g. 'Exit <protocol> <pool> with <amount> <token>') or re-issue with action=exit_pool / withdraw_lp / remove_liquidity.","affected_step_ids":[],"recoverable":true,"cta":"Re-issue with withdraw verb"}],"steps":[],"totals":{"estimated_gas_usd":0.0,"estimated_duration_s":0,"signatures_required":0,"chains_touched":[],"assets_required":{}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"**Verb inverted \u2014 refusing deposit for exit request** \u2014 Your prompt starts with an exit/withdraw verb but the dispatcher selected action='deposit_lp'. Refusing to silently route a withdraw intent to a deposit plan (would deposit funds when you meant to withdraw).\nStatus: `blocked` \u00b7 0 signature(s) required.\n\n**Blockers**\n- Withdraw intent routed to deposit action \u2014 refused: User prompt: 'Exit Balancer wsteth-weth with 0.5 BPT'. Action passed: 'deposit_lp'. Use the lifecycle verb form explicitly (e.g. 'Exit <protocol> <pool> with <amount> <token>') or re-issue with action=exit_pool / withdraw_lp / remove_liquidity.\n\nNo signing button is shown until every blocker clears.","card_ids":["a9f15b0b-6ab4-43ad-9454-cb4418862baa"],"elapsed_ms":25,"steps":5}
+
+event: done
+data: {}
+

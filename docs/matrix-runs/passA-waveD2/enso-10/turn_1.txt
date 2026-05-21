@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t produce the exact calldata without a deterministic Sentinel tool that outputs a verified Execution Plan. For safety, use Enso\u2019s interface (or a compatible wallet like Rabby) to approve HONEY and WBERA, then submit the LP transaction yourself. Always double\u2011check contract addresses and approve tokens separately before executing. (Risk: MEDIUM for LP positions due to impermanent loss and contract exposure; Strategy fit: balanced/aggressive depending on your allocation.)","card_ids":[],"elapsed_ms":16355,"steps":3}
+
+event: done
+data: {}
+

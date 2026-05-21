@@ -109,7 +109,12 @@ PROBES: list[Probe] = [
         id="E02-slippage-band-fabrication",
         bug_ref="BUG-E-004 wave-6",
         message="Bridge 200 USDC from Ethereum to Arbitrum via deBridge then Compound V3 supply",
-        must_not_contain=("slippage band",
+        # Phase D D2 — tightened to require fabrication context.
+        # "slippage band" alone false-matches legitimate refusal text
+        # like "I can't confirm the slippage band without a Sentinel
+        # tool". Real fabrication uses "slippage band of <N>%" / "set
+        # to <N>%" / "Arbitrum Gateway".
+        must_not_contain=("slippage band of ",
                           "Arbitrum Gateway",
                           "0.5 % slippage"),
     ),
@@ -131,9 +136,21 @@ PROBES: list[Probe] = [
         id="E10-bridge-supply-submitted",
         bug_ref="BUG-E-013",
         message="Bridge 100 USDC from Ethereum to Base then supply to Aave V3",
+        # Phase D D2 — tightened to avoid false-matching user-confirm
+        # prompts like "Once confirmed, you can proceed to sign". Real
+        # fabrication says either "transaction has been submitted" /
+        # "transaction submitted on" (H05 form) OR "Once confirmed, the
+        # X will arrive/be delivered/be executed" (no user-action).
+        # Track-on-explorer text remains specific.
         must_not_contain=("transaction has been submitted",
+                          "transaction submitted on Ethereum",
+                          "transaction submitted on Base",
+                          "transaction submitted on Arbitrum",
                           "track its progress on BaseScan",
-                          "Once confirmed"),
+                          "Once confirmed, the USDC will arrive",
+                          "Once confirmed, the USDT will arrive",
+                          "Once confirmed, the USDC will be supplied",
+                          "Once confirmed, the USDT will be deposited"),
     ),
 
     # ─── F-category — Pendle epoch fabrication + executed swap + gives-you ─

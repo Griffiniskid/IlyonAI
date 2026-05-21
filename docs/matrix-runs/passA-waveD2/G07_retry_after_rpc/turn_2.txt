@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"If the destination RPC fails, the transaction simply isn\u2019t broadcast. You can retry with a higher gas fee or switch to another RPC endpoint. Most wallets let you resend the same nonce after a timeout. Make sure you have enough native gas on the destination chain and consider using a reliable RPC provider or a fallback service. This may cause a delay but doesn\u2019t jeopardize fund safety as long as the transaction hasn\u2019t been sent.","card_ids":[],"elapsed_ms":15878,"steps":3}
+
+event: done
+data: {}
+

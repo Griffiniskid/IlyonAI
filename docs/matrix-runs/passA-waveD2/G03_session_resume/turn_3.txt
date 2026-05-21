@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To add another 50\u202fUSDC to your Aave V3 Base position, try the explicit command:\n\n**Supply 50 USDC to Aave V3 on Base**\n\nThis will increase your total supplied USDC to 200. \nRisk:\u202fLOW (supplying stablecoin on Aave V3 is generally low\u2011risk). \nStrategy fit:\u202fconservative\u2011balanced. \nSafety tip:\u202fensure you have enough Base\u2011network ETH for gas and double\u2011check the contract address before confirming.","card_ids":[],"elapsed_ms":37235,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t confirm the slippage band without a deterministic Sentinel tool producing the calldata. Please issue an explicit command such as\u202f`Bridge 100 USDC from Ethereum to Base via deBridge`\u202fto get a signable Execution Plan that includes the slippage details.","card_ids":[],"elapsed_ms":18398,"steps":3}
+
+event: done
+data: {}
+

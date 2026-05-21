@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Top 3 markets by TVL (from the previously surfaced list)** \n\n| # | Protocol \u00b7 Pair (chain) | TVL | APY | Risk |\n|---|--------------------------|-----|-----|------|\n| 1 | morpho\u2011blue \u00b7 AUGUSTAUSD (Ethereum) | $8,034,803 | 103.6% | HIGH |\n| 2 | morpho\u2011blue \u00b7 AUGUSTAUSDV2 (Ethereum) | $8,034,752 | 100.9% | HIGH |\n| 3 | gmtrade \u00b7 USDJPY\u2011USDC (Solana) | $2,462,860 | 95.5% | HIGH |\n\nAll three are HIGH\u2011risk, aggressive\u2011fit opportunities. Let me know if you\u2019d like to dive deeper into any of them or adjust the allocation.","card_ids":[],"elapsed_ms":83841,"steps":3}
+
+event: done
+data: {}
+

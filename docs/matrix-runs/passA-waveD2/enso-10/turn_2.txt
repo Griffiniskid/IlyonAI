@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To add liquidity, approve 100 HONEY and the equivalent amount of WBERA in your wallet, then use Enso\u2019s Kodiak V3 LP router to mint the position. Verify the contract addresses before approving. (Risk: MEDIUM; Strategy fit: balanced/aggressive.)","card_ids":[],"elapsed_ms":45251,"steps":3}
+
+event: done
+data: {}
+

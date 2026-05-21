@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"supply\", \"amount_in\": \"0.05\", \"asset_in\": \"ETH\", \"chain\": \"arbitrum\", \"protocol\": \"aave-v3\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"arbitrum","protocol":"aave-v3","action":"supply","asset_in":"ETH","amount_in":"0.05","extra":{"user_message":"Supply 0.05 ETH to Aave V3"}}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"ba2e4bc1-1e34-464f-87a6-82c62b01f2cf","card_type":"execution_plan_v3","payload":{"plan_id":"plan_cc72c5426b4d","title":"Aave V3 Supply","summary":"Supply 0.05 ETH via Aave V3 on Arbitrum.","status":"ready","risk_gate":"clear","requires_double_confirm":false,"blockers":[],"steps":[{"step_id":"step_673212e93b","index":0,"action":"approve","title":"Wrap ETH \u2192 WETH","description":"WETH9-style deposit() at 0x82af49447d8a07e3bd95bd0d56f35241523fbab1. msg.value carries the native ETH; the contract mints WETH 1:1 to msg.sender. Required because the destination pool/protocol expects ERC20 WETH, not native ETH.","chain":"arbitrum","wallet":"MetaMask","protocol":"weth9-wrap","asset_in":"ETH","asset_out":"WETH","amount_in":null,"amount_out":null,"slippage_bps":0,"gas_estimate_usd":1.4,"duration_estimate_s":15,"depends_on":[],"status":"ready","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":42161,"to":"0x82af49447d8a07e3bd95bd0d56f35241523fbab1","data":"0xd0e30db0","value":"0xb1a2bc2ec50000","spender":"0x82af49447d8a07e3bd95bd0d56f35241523fbab1"},"receipt":null,"risk_warnings":["Wrap converts native ETH to WETH 1:1; unwrap is symmetric via withdraw(uint256)."]},{"step_id":"step_7e138e5138","index":1,"action":"supply","title":"Supply native ETH to Aave V3","description":"WrappedTokenGatewayV3.depositETH(0x794a61358d6845594f94dc1db02a252b5b4814ad, 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, 0) at 0xB5Ee21786D28c5Ba61661550879475976B707099. Gateway wraps 0.05 ETH and supplies to Aave V3 Pool atomically. You receive aWETH.","chain":"arbitrum","wallet":"MetaMask","protocol":"aave-v3","asset_in":"WETH","asset_out":"aWETH","amount_in":"0.05","amount_out":null,"slippage_bps":0,"gas_estimate_usd":3.2,"duration_estimate_s":15,"depends_on":[],"status":"pending","blocker_codes":[],"transaction":{"chain_kind":"evm","chain_id":42161,"to":"0xB5Ee21786D28c5Ba61661550879475976B707099","data":"0x474cf53d000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000","value":"0xb1a2bc2ec50000","spender":"0xB5Ee21786D28c5Ba61661550879475976B707099"},"receipt":null,"risk_warnings":["Native deposit wraps to WETH inside the gateway \u2014 no separate approve needed.","Withdraw requires WTG3.withdrawETH and a one-time aToken approval to WTG3."]}],"totals":{"estimated_gas_usd":4.6,"estimated_duration_s":30,"signatures_required":2,"chains_touched":["arbitrum"],"assets_required":{"WETH":"0.05","ETH":"0.05"}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"**Aave V3 Supply** \u2014 Supply 0.05 ETH via Aave V3 on Arbitrum.\nStatus: `ready` \u00b7 2 signature(s) required.\n\n**Steps**\n\u25b6 Step 0 \u2014 approve on arbitrum via weth9-wrap (ready)\n\u00b7 Step 1 \u2014 supply 0.05 WETH on arbitrum via aave-v3 (pending)\n\nOpen the Execution Plan card above and sign step 1 in your wallet to begin.","card_ids":["ba2e4bc1-1e34-464f-87a6-82c62b01f2cf"],"elapsed_ms":65,"steps":5}
+
+event: done
+data: {}
+

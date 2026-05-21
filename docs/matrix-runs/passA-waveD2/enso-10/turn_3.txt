@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t generate the exact calldata without a deterministic Sentinel tool. Please use Enso\u2019s interface (or a compatible wallet like Rabby) to approve 100\u202fHONEY and the matching WBERA, then submit the LP transaction yourself. Always verify contract addresses before approving. (Risk: MEDIUM for LP positions; Strategy fit: balanced/aggressive.)","card_ids":[],"elapsed_ms":22407,"steps":3}
+
+event: done
+data: {}
+

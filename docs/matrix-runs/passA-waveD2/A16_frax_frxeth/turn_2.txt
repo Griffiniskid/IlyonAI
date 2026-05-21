@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To get frxETH from 0.05\u202fETH on Frax:\n\n1. Open the Frax Finance app (or use the Frax ETH vault contract directly). \n2. Connect your wallet and approve the ETH token for the Frax ETH vault (approve exactly 0.05\u202fETH). \n3. Deposit 0.05\u202fETH into the vault; you\u2019ll receive frxETH in your wallet. \n4. Do **not** stake the frxETH further if you only want frxETH (skip the sfrxETH step).\n\nRisk: MEDIUM (audited but newer protocol). Safety tip: double\u2011check the contract address on Etherscan, approve only the exact amount, and ensure you have enough ETH for gas.","card_ids":[],"elapsed_ms":24525,"steps":3}
+
+event: done
+data: {}
+

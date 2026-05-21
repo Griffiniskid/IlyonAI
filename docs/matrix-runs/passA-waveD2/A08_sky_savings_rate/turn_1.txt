@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Sky DAI savings (DSR) currently offers an APY of roughly **3.5\u202f%**. It\u2019s a **LOW\u2011risk** option suited for a **conservative** strategy. Always verify the latest rate on the Sky/MakerDAO governance portal before depositing.","card_ids":[],"elapsed_ms":5000,"steps":3}
+
+event: done
+data: {}
+

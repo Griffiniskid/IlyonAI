@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**JLP (Jupiter Liquidity Pool)** \n- No mandatory lock\u2011up; you can deposit and withdraw USDC\u2011equivalent JLP at any time. \n- Withdrawals are processed instantly, but a small withdrawal fee (\u22480.1\u20110.3\u202f%) may apply if you exit within a short window (typically <24\u202fh) to protect the pool from flash\u2011loan attacks. \n\n**Sanctum\u202fINF** \n- INF is a liquid staking derivative; staking SOL to mint INF has no fixed lock\u2011up period. \n- To redeem the underlying SOL you must go through an unbonding process that usually takes 1\u20112 Solana epochs (~2\u20114\u202fdays), after which you can withdraw your SOL plus accrued rewards. \n- No early\u2011exit penalties beyond the standard unbonding delay. \n\n**Safety tip** \n- Always verify the current fee/unbonding parameters on the official Jupiter JLP and Sanctum INF interfaces before depositing, as they can be updated by governance. \n- Consider keeping a small buffer of USDC to cover any withdrawal fees or unexpected delays.","card_ids":[],"elapsed_ms":38403,"steps":3}
+
+event: done
+data: {}
+

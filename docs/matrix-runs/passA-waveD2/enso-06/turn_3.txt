@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t generate the join calldata without the Balancer wstETH/ETH ComposableStable pool\u2019s contract address (or Enso adapter details) and the exact amounts of wstETH and ETH you want to deposit, plus any slippage tolerance. Please provide those parameters, and I\u2019ll build the deterministic calldata for you.","card_ids":[],"elapsed_ms":17719,"steps":3}
+
+event: done
+data: {}
+

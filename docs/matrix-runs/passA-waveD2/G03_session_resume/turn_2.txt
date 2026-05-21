@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I couldn't complete that \u2014 **TOOL_TIMEOUT**: Tool 'build_yield_execution_plan' exceeded its 45s SLO. Upstream call (RPC / Enso / DefiLlama / aggregator) hung \u2014 no execution plan emitted. Retry or pick a different route.","card_ids":[],"elapsed_ms":40277,"steps":3}
+
+event: done
+data: {}
+

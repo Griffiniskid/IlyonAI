@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have the YT\u2011USDe options listed in our conversation yet, so I can\u2019t pick the longest maturity. Could you share the available maturities or let me know which specific YT\u2011USDe contracts you\u2019re considering?","card_ids":[],"elapsed_ms":26603,"steps":3}
+
+event: done
+data: {}
+

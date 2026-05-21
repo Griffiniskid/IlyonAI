@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Swell LRT options**\n\n- **swETH** \u2013 Liquid restaking token representing staked ETH + restaking rewards on Ethereum mainnet. \n *Risk:* MEDIUM\u2003*Strategy fit:* balanced \n *Safety tip:* Verify the official Swell contract address before approving any swap or stake.","card_ids":[],"elapsed_ms":33131,"steps":3}
+
+event: done
+data: {}
+

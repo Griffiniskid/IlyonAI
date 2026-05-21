@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Got it\u2014let\u2019s proceed with depositing 100\u202fUSDC into a Meteora\u202fDAMM\u202fv2 vault. Please share the DefiLlama pool UUID (or the exact protocol\u2011pair name) for the USDC\u2011pair vault you\u2019d like to use, and I\u2019ll prepare the deposit transaction.","card_ids":[],"elapsed_ms":3394,"steps":3}
+
+event: done
+data: {}
+

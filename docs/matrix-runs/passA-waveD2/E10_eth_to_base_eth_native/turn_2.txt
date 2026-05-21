@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have the WTG3 token address for Base in my current data. You can look it up on a Base block explorer (e.g., BaseScan) or a token data site like CoinGecko/CoinMarketCap by searching for \u201cWTG3\u201d and filtering to the Base network. Always verify the contract address from official sources before interacting.","card_ids":[],"elapsed_ms":25248,"steps":3}
+
+event: done
+data: {}
+

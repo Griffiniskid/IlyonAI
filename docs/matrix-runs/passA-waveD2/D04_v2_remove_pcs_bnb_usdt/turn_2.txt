@@ -1,0 +1,30 @@
+event: thought
+data: {"step_index":1,"content":"Parsed direct yield execution: {\"action\": \"supply\", \"amount_in\": 10.0, \"asset_in\": \"LP\", \"chain\": \"bsc\", \"protocol\": \"pancakeswap-v2\"}."}
+
+event: thought
+data: {"step_index":2,"content":"Confirming adapter coverage and producing real unsigned approve + supply calldata."}
+
+event: thought
+data: {"step_index":3,"content":"Running wallet preflight (balance / gas / allowance) before exposing any signing button."}
+
+event: thought
+data: {"step_index":4,"content":"Emitting an ExecutionPlanV3 card with per-step status; later steps unlock only after on-chain receipt."}
+
+event: tool
+data: {"step_index":4,"name":"build_yield_execution_plan","args":{"chain":"bsc","protocol":"pancakeswap-v2","action":"supply","asset_in":"LP","amount_in":10.0,"extra":{"user_message":"Withdraw 10 LP from PancakeSwap V2 BNB-USDT"}}}
+
+event: observation
+data: {"step_index":4,"name":"build_yield_execution_plan","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Validated tool result and converted it into a risk-aware answer with user-facing next steps."}
+
+event: card
+data: {"step_index":5,"card_id":"146da090-9edb-49d3-b31a-4c503ed40112","card_type":"execution_plan_v3","payload":{"plan_id":"plan_0f410b9315a1","title":"Verb inverted \u2014 refusing deposit for exit request","summary":"Your prompt starts with an exit/withdraw verb but the dispatcher selected action='supply'. Refusing to silently route a withdraw intent to a deposit plan (would deposit funds when you meant to withdraw).","status":"blocked","risk_gate":"clear","requires_double_confirm":false,"blockers":[{"code":"VERB_INVERTED","severity":"blocker","title":"Withdraw intent routed to deposit action \u2014 refused","detail":"User prompt: 'Withdraw 10 LP from PancakeSwap V2 BNB-USDT'. Action passed: 'supply'. Use the lifecycle verb form explicitly (e.g. 'Exit <protocol> <pool> with <amount> <token>') or re-issue with action=exit_pool / withdraw_lp / remove_liquidity.","affected_step_ids":[],"recoverable":true,"cta":"Re-issue with withdraw verb"}],"steps":[],"totals":{"estimated_gas_usd":0.0,"estimated_duration_s":0,"signatures_required":0,"chains_touched":[],"assets_required":{}},"research_thesis":null,"strategy_id":null}}
+
+event: final
+data: {"content":"**Verb inverted \u2014 refusing deposit for exit request** \u2014 Your prompt starts with an exit/withdraw verb but the dispatcher selected action='supply'. Refusing to silently route a withdraw intent to a deposit plan (would deposit funds when you meant to withdraw).\nStatus: `blocked` \u00b7 0 signature(s) required.\n\n**Blockers**\n- Withdraw intent routed to deposit action \u2014 refused: User prompt: 'Withdraw 10 LP from PancakeSwap V2 BNB-USDT'. Action passed: 'supply'. Use the lifecycle verb form explicitly (e.g. 'Exit <protocol> <pool> with <amount> <token>') or re-issue with action=exit_pool / withdraw_lp / remove_liquidity.\n\nNo signing button is shown until every blocker clears.","card_ids":["146da090-9edb-49d3-b31a-4c503ed40112"],"elapsed_ms":5,"steps":5}
+
+event: done
+data: {}
+

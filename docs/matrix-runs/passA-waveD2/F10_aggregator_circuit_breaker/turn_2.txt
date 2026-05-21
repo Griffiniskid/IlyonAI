@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The swap was blocked because the aggregator enforces a\u202f$500\u202fK maximum per transaction. Your\u202f1,000,000\u202fUSDC (~$1\u202fM) exceeds that limit, triggering the\u202fAGGREGATOR_CIRCUIT_BREAKER. To proceed you can either split the swap into smaller chunks (e.g., two\u202f$500\u202fK trades) or, if you\u2019ve reviewed the risks, add\u202fextra.confirm_megaswap=true\u202fto override the cap (manual review required for mega\u2011swaps).","card_ids":[],"elapsed_ms":9473,"steps":3}
+
+event: done
+data: {}
+

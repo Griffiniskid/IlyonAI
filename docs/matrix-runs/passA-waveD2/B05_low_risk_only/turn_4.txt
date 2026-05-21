@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I still need a concrete, verb\u2011based instruction (e.g., \u201cSupply 150 USDC to Aave V3 on Base\u201d or \u201cStake 0.5 ETH on Lido\u201d) to generate a signable Execution Plan. Without that, I can\u2019t execute anything. Please provide the specific action you\u2019d like to run.","card_ids":[],"elapsed_ms":48078,"steps":3}
+
+event: done
+data: {}
+
