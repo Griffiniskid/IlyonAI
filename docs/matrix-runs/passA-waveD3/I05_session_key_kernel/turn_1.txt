@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To configure ZeroDev Kernel for $200\u2011daily rebalancing, specify the token, target chain, and the allocation you want (e.g., 50% USDC, 50% wETH on Arbitrum). The risk level will depend on the pools you select\u2014choose conservative pools for lower risk or aggressive ones for higher yield. Let me know the details and I\u2019ll outline the setup steps.","card_ids":[],"elapsed_ms":42737,"steps":3}
+
+event: done
+data: {}
+

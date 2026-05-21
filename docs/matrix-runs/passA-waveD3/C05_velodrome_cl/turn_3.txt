@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I don\u2019t have a deterministic adapter for a Velodrome\u202fCL\u202fWETH\u2011USDC deposit with a custom range, so I can\u2019t generate a signable execution plan for that action. You\u2019ll need to approve and deposit directly through the Velodrome UI (or another trusted interface) after setting your desired price range. If you\u2019d like a deterministic plan for a different protocol or action, just let me know.","card_ids":[],"elapsed_ms":46549,"steps":3}
+
+event: done
+data: {}
+

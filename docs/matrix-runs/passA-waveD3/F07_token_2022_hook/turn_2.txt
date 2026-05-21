@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The DefiLlama catalog doesn\u2019t show an active Meteora\u202fDAMM\u202fv2 vault that pairs GLITCH\u20112022 with any other token. This usually means:\n\n- GLITCH\u20112022 isn\u2019t currently paired in a live DAMM\u202fv2 vault on Meteora, \n- The pool may have been paused, removed, or reached its deposit cap, or \n- The token\u2019s symbol or contract address differs slightly from what\u2019s indexed.\n\nTo proceed, you\u2019ll need the exact DefiLlama pool UUID (or the precise protocol\u2011pair name, e.g., \u201cmeteora-damm-v2 GLITCH\u20112022/USDC\u201d) for a vault that\u2019s live and accepting deposits. Once you share that, I can prepare the transaction.","card_ids":[],"elapsed_ms":29885,"steps":3}
+
+event: done
+data: {}
+

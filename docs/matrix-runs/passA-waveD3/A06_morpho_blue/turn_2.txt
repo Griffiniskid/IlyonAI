@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Top market (highest APY) \u2013 150\u202fUSDC allocation**\n\n| Protocol \u00b7 Pair (chain) | Amount | APY | TVL | Risk | Execution note |\n|--------------------------|--------|-----|-----|------|----------------|\n| Saturn\u202f\u00b7\u202fSUSDAT (Ethereum) | 150\u202fUSDC | 234.9\u202f% | $106,158,204 | HIGH | Research\u2011only \u2013 no Sentinel deterministic adapter; deposit via the official Saturn app (saturn.money) on Ethereum. |\n\n**Safety tips**\n- Verify the Saturn contract address in your wallet before signing any transaction.\n- Use a modest slippage tolerance (e.g., 0.5\u202f%) when supplying USDC.\n- Ensure you\u2019re connected to the Ethereum mainnet and that the Saturn UI shows the correct SUSDAT market.","card_ids":[],"elapsed_ms":21699,"steps":3}
+
+event: done
+data: {}
+

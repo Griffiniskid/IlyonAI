@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Route:** \n1. **Wrap ETH \u2192 wETH** (Enso\u2019s native\u2011ETH wrap shortcut). \n2. **Supply wETH \u2192 Aave V3** on Ethereum mainnet.","card_ids":[],"elapsed_ms":6801,"steps":3}
+
+event: done
+data: {}
+

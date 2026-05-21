@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t confirm a revoke action without a deterministic Sentinel tool that produces a signable Execution Plan. Please give an explicit request, for example\u202f\u201cRevoke USDC approval for the Uniswap V3 router on Ethereum\u201d or \u201cRevoke WETH allowance for contract\u202f0x\u2026 on Base\u201d. The deterministic adapters will then return a verifiable plan; the free\u2011form fallback never invents calldata, transaction hashes, or fees.","card_ids":[],"elapsed_ms":39759,"steps":3}
+
+event: done
+data: {}
+

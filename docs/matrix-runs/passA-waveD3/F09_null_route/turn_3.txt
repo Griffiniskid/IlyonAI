@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t execute the swap because \u201cXYZ123\u201d isn\u2019t a recognized token in our price feeds, so I can\u2019t determine a live USD value for it. Please provide a valid source token symbol (e.g., WETH, USDC, USDT) and try again, such as `Swap 100 WETH to USDT on Base`. If you meant a different token, let me know its correct symbol.","card_ids":[],"elapsed_ms":38566,"steps":3}
+
+event: done
+data: {}
+

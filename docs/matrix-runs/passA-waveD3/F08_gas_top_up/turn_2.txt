@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The **build_yield_execution_plan** tool exceeded its time limit because the upstream RPC/aggregator call (RPC, Enso, DefiLlama, etc.) hung and didn\u2019t return a response within 45\u202fseconds. This is a temporary connectivity or latency issue, not a problem with your request.\n\n**What to do next**\n- Retry the same command; often a second attempt succeeds.\n- If it keeps timing out, try a slightly different route (e.g., supply via a different vault or bridge a small amount of AVAX first to cover gas, then re\u2011run the supply plan).\n\nThe approve step itself is low\u2011risk; it only authorizes the Aave V3 contract to pull up to the specified USDC amount. Once the execution plan builds successfully, you\u2019ll sign the approve transaction, then the supply transaction to start earning yield.","card_ids":[],"elapsed_ms":11242,"steps":3}
+
+event: done
+data: {}
+

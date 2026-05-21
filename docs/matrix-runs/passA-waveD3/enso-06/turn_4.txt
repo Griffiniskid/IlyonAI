@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"- Balancer wstETH/ETH ComposableStable pool address on Arbitrum \n- Enso adapter identifier (or the exact Enso contract you\u2019ll use) \n- Exact deposit amounts (you\u2019ve noted\u202f0.1\u202fwstETH\u202f+\u202fmatching\u202fETH) \n- Desired slippage tolerance (if any)\n\nOnce you provide those, I\u2019ll output the deterministic calldata ready for signing.","card_ids":[],"elapsed_ms":14990,"steps":3}
+
+event: done
+data: {}
+

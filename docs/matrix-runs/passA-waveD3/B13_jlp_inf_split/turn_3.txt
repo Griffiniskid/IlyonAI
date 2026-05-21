@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**JLP (Jupiter Liquidity Pool)**\n- No mandatory lock\u2011up; deposits and withdrawals are instant.\n- A small withdrawal fee (~0.1\u20110.3\u202f%) may apply if you exit within ~24\u202fh to deter flash\u2011loan attacks.\n\n**Sanctum\u202fINF**\n- Staking SOL to mint INF has no fixed lock\u2011up.\n- Redeeming SOL requires an unbonding period of 1\u20112 Solana epochs (~2\u20114\u202fdays) before you can withdraw SOL plus rewards.\n- No early\u2011exit penalties beyond the standard unbonding delay.","card_ids":[],"elapsed_ms":23461,"steps":3}
+
+event: done
+data: {}
+

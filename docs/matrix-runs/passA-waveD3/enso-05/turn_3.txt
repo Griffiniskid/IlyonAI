@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I\u2019m unable to build a deterministic multi\u2011step plan for adding 500\u202fUSDC to Curve\u202f3pool via Enso at the moment\u2014the upstream call timed out. Please try the request again or choose a different route (e.g., a direct Curve deposit or another aggregator).","card_ids":[],"elapsed_ms":24701,"steps":3}
+
+event: done
+data: {}
+

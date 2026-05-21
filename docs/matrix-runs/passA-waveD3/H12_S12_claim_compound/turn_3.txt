@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Please confirm the exact action you\u2019d like executed, e.g.:\n\n**Claim COMP from Compound V3 on Ethereum** (and optionally the amount to supply back). \n\nOnce phrased as an explicit verb, I can generate the deterministic claim leg for you.","card_ids":[],"elapsed_ms":25736,"steps":3}
+
+event: done
+data: {}
+

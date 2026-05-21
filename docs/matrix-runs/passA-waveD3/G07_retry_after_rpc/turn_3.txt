@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t retry a step without a deterministic Sentinel plan that provides the exact calldata. Please give an explicit command, such as:\n\n- `Bridge 100 USDC from Ethereum to Base via deBridge`\n- `Supply 100 USDC to Aave V3 on Base`\n- Or another specific action you\u2019d like to execute.","card_ids":[],"elapsed_ms":18978,"steps":3}
+
+event: done
+data: {}
+

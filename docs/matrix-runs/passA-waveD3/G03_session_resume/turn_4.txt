@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Supply 50\u202fUSDC to Aave\u202fV3 on Ethereum. \nRisk:\u202fLOW (supplying a stablecoin on Aave\u202fV3 is generally low\u2011risk). \nStrategy fit:\u202fconservative\u2011balanced. \nSafety tip:\u202fmake sure you have enough ETH for gas and double\u2011check the contract address before confirming.","card_ids":[],"elapsed_ms":37986,"steps":3}
+
+event: done
+data: {}
+

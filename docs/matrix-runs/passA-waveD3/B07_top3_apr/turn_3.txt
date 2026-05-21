@@ -1,0 +1,10 @@
+event: thought
+data: {"step_index":1,"content":"User wants to allocate / distribute / sign across the previously surfaced pool list."}
+
+event: thought
+data: {"step_index":2,"content":"Reusing 8 pool(s) from the prior turn instead of searching fresh ones."}
+
+event: thought
+data: {"step_index":3,"content":"Distribution amount: $300"}
+
+curl: (28) Operation timed out after 90074 milliseconds with 335 bytes received

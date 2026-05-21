@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Tell me the token, target chain, and desired split (e.g., 50% USDC, 50% wETH on Arbitrum). Once I have that, I\u2019ll outline the ZeroDev Kernel setup and note the risk level based on the pools you choose.","card_ids":[],"elapsed_ms":19711,"steps":3}
+
+event: done
+data: {}
+

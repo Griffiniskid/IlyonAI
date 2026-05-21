@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t display the bridge fee without a deterministic execution plan. Please repeat the bridge request (e.g., `Bridge 0.1 ETH from Arbitrum to Base then deposit to Uniswap V3 ETH-USDC`) so the plan can be generated and the fee shown.","card_ids":[],"elapsed_ms":34124,"steps":3}
+
+event: done
+data: {}
+

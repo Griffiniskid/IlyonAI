@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"6e22607b-da5d-4e2f-a757-66ee260e27e3","card_type":"allocation","payload":{"sentinel":null,"shield":null,"positions":[{"rank":1,"protocol":"sky-lending","asset":"SUSDS","chain":"eth","apy":"3.6%","sentinel":76,"risk":"low","fit":"aggressive","weight":20,"usd":"$20","tvl":"$5.7B","router":"Enso","safety":75,"durability":80,"exit":92,"confidence":48,"flags":["Unaudited"]},{"rank":2,"protocol":"uniswap-v4","asset":"USDC-1XUSDC","chain":"arb","apy":"0.0%","sentinel":66,"risk":"low","fit":"aggressive","weight":20,"usd":"$20","tvl":"$2.0B","router":"Enso","safety":60,"durability":80,"exit":72,"confidence":48,"flags":["Unaudited","IL risk","Multi-asset exposure"]},{"rank":3,"protocol":"sky-lending","asset":"SUSDS","chain":"arb","apy":"3.6%","sentinel":66,"risk":"low","fit":"aggressive","weight":20,"usd":"$20","tvl":"$359M","router":"Enso","safety":61,"durability":80,"exit":72,"confidence":48,"flags":["Unaudited"]},{"rank":4,"protocol":"sky-lending","asset":"SDAI","chain":"eth","apy":"1.2%","sentinel":66,"risk":"low","fit":"aggressive","weight":20,"usd":"$20","tvl":"$236M","router":"Enso","safety":61,"durability":80,"exit":72,"confidence":48,"flags":["Unaudited"]},{"rank":5,"protocol":"fluid-lending","asset":"USDC","chain":"eth","apy":"5.0%","sentinel":61,"risk":"low","fit":"aggressive","weight":20,"usd":"$20","tvl":"$199M","router":"Enso","safety":55,"durability":80,"exit":57,"confidence":48,"flags":["Unaudited"]}],"total_usd":"$100","blended_apy":"~2.7%","chains":2,"weighted_sentinel":67,"risk_mix":{"low":5,"medium":0,"high":0},"combined_tvl":"$8.5B"}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["6e22607b-da5d-4e2f-a757-66ee260e27e3"],"elapsed_ms":0,"steps":2}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The receipt token for Marinade liquid staking is **mSOL** (Marinade Staked SOL). It represents your staked SOL plus accrued rewards and can be used in other DeFi protocols while still earning staking yield. Risk remains LOW.","card_ids":[],"elapsed_ms":65499,"steps":3}
+
+event: done
+data: {}
+

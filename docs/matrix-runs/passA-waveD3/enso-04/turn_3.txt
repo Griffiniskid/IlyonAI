@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Execution Plan Preview**\n\n- **Action:** Supply USDC to Compound\u202fV3 on Base via Enso \n- **Amount:** 300\u202fUSDC \n- **Receipt Token:** cUSDCv3 \n- **Protocol:** Compound\u202fV3 \n- **Chain:** Base \n- **Estimated Gas:** ~120\u202fk\u202funits \n- **Approval Needed:** USDC spend allowance (if not already set) \n- **Safety Tip:** Verify the USDC and cUSDCv3 contract addresses on Base before signing.","card_ids":[],"elapsed_ms":33388,"steps":3}
+
+event: done
+data: {}
+

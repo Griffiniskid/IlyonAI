@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t generate a signable policy or spend\u2011cap confirmation until the exact supply actions are locked in. Please confirm the five $20 USDC supplies (one per pool) and any slippage tolerance you\u2019d like to apply, e.g.:\n\n- Supply 20 USDC to Compound V3 USDC on Polygon \n- Supply 20 USDC to Compound V3 USDC on Scroll \n- Supply 20 USDC to Compound V3 USDC on Ethereum \n- Supply 20 USDC to Compound V3 USDC on Optimism \n- Supply 20 USDC to Compound V3 USDC on Base \n\nOnce you confirm those (and optionally a slippage %), I\u2019ll produce the deterministic Execution Plan card for you to sign.","card_ids":[],"elapsed_ms":26171,"steps":3}
+
+event: done
+data: {}
+

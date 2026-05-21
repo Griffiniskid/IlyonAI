@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"If the destination RPC fails, the transaction simply isn\u2019t broadcast to the network. You can:\n\n- Resend the same transaction with a higher gas price (speed\u2011up) or a new nonce.\n- Switch to a different RPC endpoint or use a fallback service (e.g., Infura, Alchemy, QuickNode, or a public RPC).\n- Ensure you have enough native gas (ETH on Ethereum, ETH on Base) to cover the retry.\n\nAs long as the transaction hasn\u2019t been sent, your funds remain safe; a failed RPC only causes a delay, not a loss. If the tx was already broadcast but stuck, you can replace it with a higher\u2011fee transaction or cancel it via your wallet.","card_ids":[],"elapsed_ms":15298,"steps":3}
+
+event: done
+data: {}
+

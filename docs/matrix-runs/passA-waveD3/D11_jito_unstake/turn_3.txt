@@ -1,0 +1,27 @@
+event: thought
+data: {"step_index":1,"content":"Parsed a multi-step execution request and decomposed it into ordered actions."}
+
+event: thought
+data: {"step_index":2,"content":"Resolving dependencies between steps so later actions wait for prior receipts or received amounts."}
+
+event: thought
+data: {"step_index":3,"content":"Checking chain, token, protocol, and spender assumptions before any wallet prompt exists."}
+
+event: thought
+data: {"step_index":4,"content":"Applying Sentinel and Shield gates before exposing any signing path."}
+
+event: thought
+data: {"step_index":5,"content":"Composing an execution plan card with per-step status, gas, wallet requirements, and dependency locks."}
+
+event: thought
+data: {"step_index":6,"content":"Built 1-step execution graph with receipt gates, wallet requirements, and Sentinel risk state."}
+
+event: card
+data: {"step_index":6,"card_id":"f9e780ba-aa40-4e6e-8755-e23d81bb7018","card_type":"execution_plan_v2","payload":{"sentinel":null,"shield":null,"plan_id":"f9e780ba-aa40-4e6e-8755-e23d81bb7018","title":"Stake JITOSOL on Via Secondary Market On Jupiter","steps":[{"step_id":"stake","order":1,"action":"stake","params":{"token":"JITOSOL","amount":"0.5","protocol":"via-secondary-market-on-jupiter","chain_id":1,"amount_usd":0.5},"depends_on":[],"resolves_from":{},"sentinel":{"sentinel":66,"safety":67,"durability":70,"exit":70,"confidence":48,"risk_level":"MEDIUM","strategy_fit":"aggressive","flags":["Unaudited"]},"shield_flags":[],"estimated_gas_usd":8.0,"estimated_duration_s":30,"status":"ready","tx_hash":null,"receipt":null,"error":null}],"total_steps":1,"total_gas_usd":8.0,"total_duration_estimate_s":30,"blended_sentinel":66,"requires_signature_count":1,"risk_warnings":[],"risk_gate":"clear","requires_double_confirm":false,"chains_touched":["1"],"user_assets_required":{}}}
+
+event: final
+data: {"content":"I prepared a 1-step execution plan. Review the full plan, then sign each step in order; follow-up actions stay locked until the prior on-chain receipt confirms.","card_ids":["f9e780ba-aa40-4e6e-8755-e23d81bb7018"],"elapsed_ms":3,"steps":6}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":[],"elapsed_ms":51760,"steps":3}
+
+event: done
+data: {}
+

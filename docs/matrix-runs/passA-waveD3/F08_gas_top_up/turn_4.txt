@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"You can bridge 0.1\u202fAVAX from Ethereum to Avalanche using the official Avalanche Bridge (or a trusted alternative like Hop or Celer). Here\u2019s a quick rundown:\n\n1. **Open the bridge** \u2013 go to https://bridge.avax.network/ and connect your wallet (MetaMask, WalletConnect, etc.).\n2. **Select direction** \u2013 Ethereum \u2192 Avalanche, choose AVAX as the asset, and enter **0.1\u202fAVAX**.\n3. **Approve** \u2013 sign the ERC\u201120 approval transaction so the bridge contract can pull the tokens from your wallet.\n4. **Deposit** \u2013 confirm the deposit; the bridge will lock the AVAX on Ethereum and mint an equivalent amount on Avalanche.\n5. **Wait** \u2013 usually a few minutes (depending on Ethereum congestion). Once complete, you\u2019ll see the AVAX in your Avalanche wallet.\n\n**Risk:** MEDIUM \u2013 bridge contracts hold funds temporarily; always verify you\u2019re on the official bridge URL and double\u2011check the contract address before approving. \n**Safety tip:** For a first try, consider bridging a smaller test amount (e.g., 0.01\u202fAVAX) to confirm everything works before moving the full 0.1\u202fAVAX. Once the AVAX arrives, you\u2019ll have enough to cover gas for the Aave V3 supply transaction.","card_ids":[],"elapsed_ms":33415,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can help with that. To act on it, try a specific verb \u2014 swap, bridge, stake, transfer, or 'find pools' \u2014 with the amount and token. For example: `bridge 0.1 SOL to ETH chain` or `swap 1 SOL to USDC`.","card_ids":[],"elapsed_ms":10425,"steps":3}
+
+event: done
+data: {}
+
