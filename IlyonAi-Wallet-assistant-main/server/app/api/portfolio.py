@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -17,6 +18,33 @@ from app.agents.crypto_agent import MORALIS_API_KEY, _scan_single_address  # sha
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Concurrent-request dedupe + 30s TTL cache.
+#
+# Phase A (Playwright tester-ready validation) found that 5 concurrent
+# requests for the same wallet all returned 500 — the wallet-assistant
+# fans out to ~15 RPCs + Moralis + Binance for prices, and the parallel
+# httpx clients + RPC connection storm overloaded somewhere. Sequential
+# requests after that work fine.
+#
+# Fix: per-wallet asyncio.Lock so concurrent requests for the same wallet
+# share the first request's work, plus a short TTL cache so repeat fetches
+# within 30 s reuse the last successful payload. Cache keyed by the raw
+# `{wallet_address}` path segment (already lower-cased by clients).
+# ---------------------------------------------------------------------------
+
+_PORTFOLIO_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_PORTFOLIO_LOCKS: dict[str, asyncio.Lock] = {}
+_PORTFOLIO_TTL = 30.0  # seconds
+
+
+def _portfolio_lock(key: str) -> asyncio.Lock:
+    lock = _PORTFOLIO_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _PORTFOLIO_LOCKS[key] = lock
+    return lock
 
 # ---------------------------------------------------------------------------
 # Chain config — mirrors crypto_agent._BALANCE_CHAINS with UI metadata
@@ -449,8 +477,9 @@ def _to_portfolio_format(chain_dicts: list[dict[str, Any]]) -> list[dict[str, An
 # Endpoint
 # ---------------------------------------------------------------------------
 
-@router.get("/portfolio/{wallet_address:path}")
-async def get_portfolio(wallet_address: str) -> dict[str, Any]:
+async def _build_portfolio(wallet_address: str) -> dict[str, Any]:
+    """Inner builder — the actual fan-out + format. Always returns a payload,
+    never raises. Errors per-address are logged and skipped."""
     addresses = [part.strip() for part in wallet_address.split(",") if part.strip()]
     if not addresses:
         addresses = [wallet_address]
@@ -469,13 +498,65 @@ async def get_portfolio(wallet_address: str) -> dict[str, Any]:
     tokens.sort(key=lambda t: t["valueUsd"], reverse=True)
     total_usd = sum(t.get("valueUsd", 0.0) for t in tokens)
 
-    # Fetch live prices for the stats widget (BNB Price / SOL Price cards)
-    async with httpx.AsyncClient() as client:
-        prices = await _fetch_prices(client)
+    # Fetch live prices for the stats widget (BNB Price / SOL Price cards).
+    # Wrapped — must not break the whole portfolio response.
+    bnb_price = 0.0
+    sol_price = 0.0
+    try:
+        async with httpx.AsyncClient() as client:
+            prices = await _fetch_prices(client)
+        bnb_price = prices.get("BNBUSDT", 0.0)
+        sol_price = prices.get("SOLUSDT", 0.0)
+    except Exception as exc:
+        logger.warning("Portfolio price-widget fetch failed: %s", exc)
 
     return {
         "totalUsd": round(total_usd, 2),
-        "bnbPrice": prices.get("BNBUSDT", 0.0),
-        "solPrice": prices.get("SOLUSDT", 0.0),
+        "bnbPrice": bnb_price,
+        "solPrice": sol_price,
         "tokens": tokens,
     }
+
+
+@router.get("/portfolio/{wallet_address:path}")
+async def get_portfolio(wallet_address: str) -> dict[str, Any]:
+    """Cached + concurrency-deduped wrapper.
+
+    Phase A revealed 5 concurrent requests for the same wallet ALL returned
+    500 (RPC/Moralis/Binance fan-out overload). We:
+      1. Serve from 30 s in-memory cache on a hit (no fan-out at all)
+      2. On a miss, take an asyncio.Lock keyed by wallet_address so concurrent
+         callers wait for the first one to populate the cache rather than
+         all firing the fan-out in parallel
+      3. Wrap the inner builder so a hard exception never returns 5xx —
+         returns a zero-balance shape instead
+    """
+    cache_key = wallet_address.strip().lower()
+    now = time.monotonic()
+    cached = _PORTFOLIO_CACHE.get(cache_key)
+    if cached and now - cached[0] < _PORTFOLIO_TTL:
+        return cached[1]
+
+    async with _portfolio_lock(cache_key):
+        # Double-checked locking — another caller may have populated while
+        # we waited.
+        cached = _PORTFOLIO_CACHE.get(cache_key)
+        if cached and time.monotonic() - cached[0] < _PORTFOLIO_TTL:
+            return cached[1]
+        try:
+            payload = await _build_portfolio(wallet_address)
+            _PORTFOLIO_CACHE[cache_key] = (time.monotonic(), payload)
+            return payload
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Portfolio builder hard failure for %s: %s", cache_key, exc)
+            # Serve a stale cache if any, else a zero-balance placeholder.
+            if cached:
+                return cached[1]
+            return {
+                "totalUsd": 0.0,
+                "bnbPrice": 0.0,
+                "solPrice": 0.0,
+                "tokens": [],
+                "partial": True,
+                "error": "scan_failed",
+            }
