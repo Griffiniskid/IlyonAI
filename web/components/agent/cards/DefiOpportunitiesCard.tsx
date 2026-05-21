@@ -143,11 +143,14 @@ export function DefiOpportunitiesCard({ payload }: Props) {
         )}
       </div>
 
-      {payload.excluded_count > 0 && (
-        <div className="mt-3 text-xs text-slate-400">
-          Excluded {payload.excluded_count} candidates that violated requested risk, APY, chain, or TVL constraints.
-        </div>
-      )}
+      {/* BUG-RC-007 / BUG-RC-021: footer removed. The natural-language
+          chat response from src/agent/simple_runtime.py::_format_opportunity_search_response
+          already includes 'Excluded N candidates that violated the requested
+          risk, APY, chain, or TVL constraints.' as the canonical sentence.
+          Rendering it again here produced a verbatim duplicate paragraph
+          in every search response (AI Bug Convo.md lines 29+163,
+          249+385, 593+713) and a wording drift ('violated requested' vs
+          'violated the requested') across the two sites. */}
 
       {payload.blockers && payload.blockers.length > 0 && (
         <div className="mt-4 rounded-2xl border border-rose-300/30 bg-rose-300/5 p-3">

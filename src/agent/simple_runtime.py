@@ -5495,6 +5495,23 @@ def _format_opportunity_search_response(data: dict) -> str:
             f"{candidate.get('symbol') or 'Unknown'} on {candidate.get('chain') or 'unknown'}  "
         )
         lines.append(f"   APY {apy_text} · TVL {tvl_text} · Risk {candidate.get('risk_level') or 'UNKNOWN'}")
+        # BUG-RC-010: yield-trap warning when APY > 100%. Pools at 100%+
+        # APY are nearly always thin-liquidity / new-emissions traps —
+        # the user needs a callout, not just a HIGH-risk tag. AI Bug
+        # Convo.md showed gmtrade XAU-USDC at 208% / SOL-USDC at 189%
+        # surfaced as "best" with only a generic HIGH-risk label.
+        try:
+            _apy_f = float(apy)
+            if _apy_f > 100.0:
+                lines.append(
+                    f"   ⚠ Yield-trap signal: {_apy_f:.0f}% APY is "
+                    f"well above sustainable. Most pools quoting >100% "
+                    f"are thin-liquidity short-term emissions; the "
+                    f"realised 30d APY is often a fraction of this. "
+                    f"Verify the historical APY chart before sizing."
+                )
+        except (TypeError, ValueError):
+            pass
         urls = candidate.get("source_urls") or {}
         link_parts: list[str] = []
         if urls.get("defillama_pool"):

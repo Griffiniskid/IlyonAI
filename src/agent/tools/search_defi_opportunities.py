@@ -476,12 +476,19 @@ async def search_defi_opportunities(
     effective_product_types = list(product_types or [])
     if protocol_filter and effective_product_types and len(effective_product_types) <= 2:
         effective_product_types = []
+    # BUG-RC-009: 0% APY pools must not surface as "best". When the
+    # caller does not specify a min_apy, apply an implicit 0.01% floor
+    # so the ranker drops pools whose APY is literally zero (sky-lending
+    # WETH / Sky-lending WSTETH surfaced as #3 and #5 "best" yield pools
+    # with 0.0% APY in the AI Bug Convo.md transcript). Explicit
+    # min_apy=0 still allowed for users who want to inspect 0% positions.
+    _effective_min_apy = 0.01 if min_apy is None else min_apy
     request = OpportunitySearchRequest(
         risk_levels=risk_levels or [],
         chains=canonical_chains,
         product_types=effective_product_types,
         target_apy=target_apy,
-        min_apy=0.0 if min_apy is None else min_apy,
+        min_apy=_effective_min_apy,
         max_apy=max_apy_cap,
         min_tvl=min_tvl_floor,
         ranking_objective=ranking_objective,

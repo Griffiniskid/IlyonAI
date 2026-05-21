@@ -116,7 +116,12 @@ function AssistantParagraphs({
   return (
     <div className="space-y-3">
       {reasoning && reasoning.steps > 0 && (
-        <ReasoningAccordion steps={reasoning.steps} time={reasoning.time} expanded lines={reasoning.lines} />
+        // BUG-RC-018: reasoning trace ('Parsed direct yield execution',
+        // 'Confirming adapter coverage', etc.) was rendering EXPANDED
+        // by default — flooded the chat with internal step lines that
+        // the user has no use for. Collapse by default; user can click
+        // to expand.
+        <ReasoningAccordion steps={reasoning.steps} time={reasoning.time} lines={reasoning.lines} />
       )}
       {items}
     </div>

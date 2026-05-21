@@ -293,25 +293,42 @@ export function ExecutionPlanV3Card({ payload, onSignStep }: Props) {
               <div className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{payload.research_thesis}</div>
             )}
           </div>
-          <div className="flex items-center gap-3 rounded-3xl border border-amber-300/25 bg-amber-300/10 px-4 py-3">
-            <Wallet className="h-7 w-7 text-amber-200" />
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-amber-100/60">Signatures</div>
-              <div className="text-3xl font-black text-white">{totals.signatures_required ?? steps.length}</div>
+          {/* BUG-RC-012: when status=blocked, suppress the Signatures
+              chip — '0' is meaningless on a refused plan and the
+              blocker list below already tells the user what to do. */}
+          {payload.status !== "blocked" && (
+            <div className="flex items-center gap-3 rounded-3xl border border-amber-300/25 bg-amber-300/10 px-4 py-3">
+              <Wallet className="h-7 w-7 text-amber-200" />
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.18em] text-amber-100/60">Signatures</div>
+                <div className="text-3xl font-black text-white">{totals.signatures_required ?? steps.length}</div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-4">
-          <StatTile label="Status" value={payload.status} />
-          <StatTile label="Risk gate" value={payload.risk_gate} />
-          <StatTile label="Total Gas" value={totals.estimated_gas_usd ? `$${totals.estimated_gas_usd.toFixed(2)}` : "-"} />
-          <StatTile
-            label="Chains"
-            value={(totals.chains_touched || []).join(" + ") || "-"}
-            sub={`${totals.estimated_duration_s ?? 0}s ETA`}
-          />
-        </div>
+        {/* BUG-RC-012: the Status/Risk-gate/Total-Gas/Chains tile grid
+            is informative for ready plans but shows '0' / '-' / 'clear'
+            placeholders on blocked plans — the AI Bug Convo.md tester
+            saw a 'Risk gate: clear' tile on a blocked card that
+            contradicted the blocker. Render only the Status tile when
+            blocked. */}
+        {payload.status === "blocked" ? (
+          <div className="mt-5 grid gap-3 md:grid-cols-1">
+            <StatTile label="Status" value={payload.status} />
+          </div>
+        ) : (
+          <div className="mt-5 grid gap-3 md:grid-cols-4">
+            <StatTile label="Status" value={payload.status} />
+            <StatTile label="Risk gate" value={payload.risk_gate} />
+            <StatTile label="Total Gas" value={totals.estimated_gas_usd ? `$${totals.estimated_gas_usd.toFixed(2)}` : "-"} />
+            <StatTile
+              label="Chains"
+              value={(totals.chains_touched || []).join(" + ") || "-"}
+              sub={`${totals.estimated_duration_s ?? 0}s ETA`}
+            />
+          </div>
+        )}
       </div>
 
       {payload.blockers && payload.blockers.length > 0 && (
