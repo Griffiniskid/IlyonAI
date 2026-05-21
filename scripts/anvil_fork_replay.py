@@ -340,7 +340,16 @@ def replay_chain(chain: str, plans: list[dict[str, Any]], port: int) -> dict[str
     plan_results: list[dict[str, Any]] = []
     try:
         fund_wallet(url, chain)
-        pre_approve_routers(url, chain)
+        # NOTE on pre-approvals: an earlier iteration pre-approved Enso/
+        # Permit2/1inch/Aave/V3-NPM as MAX_UINT256 to remove the
+        # "first-time-user-no-allowance" false-positive. That broke 2
+        # plans whose own approve(spender, N) reverts when current
+        # allowance is non-zero (classic USDT race). Net effect: 17→15.
+        # Removed — leaving fresh-wallet baseline. The 7 baseline failures
+        # are all upstream-allowance-required (Enso/etherfi/V3) NOT
+        # structural calldata bugs (no token0/token1 inversion, no
+        # exit-as-deposit, no withdraw(0) drain — those would be the P0
+        # patterns Gate 5 was designed to catch).
         for i, plan in enumerate(plans, 1):
             snap_resp = rpc(url, "evm_snapshot", [])
             snap = snap_resp.get("result")
@@ -358,7 +367,6 @@ def replay_chain(chain: str, plans: list[dict[str, Any]], port: int) -> dict[str
             if snap:
                 rpc(url, "evm_revert", [snap])
                 fund_wallet(url, chain)
-                pre_approve_routers(url, chain)
     finally:
         proc.terminate()
         try:
