@@ -1,0 +1,3878 @@
+[
+  {
+    "source_file": "passA-wave14\\A01_aave_base_usdc\\turn_1.txt",
+    "plan_id": "plan_acdc7bd39764",
+    "card_id": "20664ce1-fab3-4157-a056-ac9dcd751071",
+    "chain": "base",
+    "chains_in_plan": [
+      "base"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_c74b7fb08c",
+        "action": "approve",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "250",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "data": "0x095ea7b3000000000000000000000000a238dd80c259a72e81d7e4664a9801593f98d1c5000000000000000000000000000000000000000000000000000000000ee6b280",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_f09d26d59b",
+        "action": "supply",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "250.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5",
+          "data": "0x617ba037000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda02913000000000000000000000000000000000000000000000000000000000ee6b280000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "base"
+      ],
+      "assets_required": {
+        "USDC": "250"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\A01_aave_base_usdc\\turn_5.txt",
+    "plan_id": "plan_2916fa373d0e",
+    "card_id": "cb253a79-adb2-4b44-888a-d869fe0fb5cf",
+    "chain": "optimism",
+    "chains_in_plan": [
+      "optimism"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_003f8c15d0",
+        "action": "approve",
+        "chain": "optimism",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "250",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad000000000000000000000000000000000000000000000000000000000ee6b280",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_6fcf030b1a",
+        "action": "supply",
+        "chain": "optimism",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "250.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba0370000000000000000000000000b2c639c533813f4aa9d7837caf62653d097ff85000000000000000000000000000000000000000000000000000000000ee6b280000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "optimism"
+      ],
+      "assets_required": {
+        "USDC": "250"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\A04_compound_base\\turn_4.txt",
+    "plan_id": "plan_6b1fe02ddd9a",
+    "card_id": "02251e4b-19dd-46de-a31d-973f35c44815",
+    "chain": "base",
+    "chains_in_plan": [
+      "base"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_38f1ca36b1",
+        "action": "approve",
+        "chain": "base",
+        "protocol": "compound-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "data": "0x095ea7b3000000000000000000000000b125e6687d4313864e53df431d5425969c15eb2f0000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0xb125e6687d4313864e53df431d5425969c15eb2f"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_aaf3cfc7b5",
+        "action": "supply",
+        "chain": "base",
+        "protocol": "compound-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0xb125e6687d4313864e53df431d5425969c15eb2f",
+          "data": "0xf2b9fdb8000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0xb125e6687d4313864e53df431d5425969c15eb2f"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 3.9,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "base"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\A07_spark_dai\\turn_3.txt",
+    "plan_id": "plan_52c25215b76e",
+    "card_id": "a2e04e1c-8aa1-4ed3-b0f5-860c1e554fa2",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_5a6136b4d9",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "spark",
+        "status": "ready",
+        "asset_in": "DAI",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x6b175474e89094c44da98b954eedeac495271d0f",
+          "data": "0x095ea7b300000000000000000000000083f20f44975d03b1b09e64809b757c47f942beea0000000000000000000000000000000000000000000000056bc75e2d63100000",
+          "value": "0x0",
+          "spender": "0x83f20f44975d03b1b09e64809b757c47f942beea"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_dc78b18aa0",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "spark",
+        "status": "pending",
+        "asset_in": "DAI",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x83f20f44975d03b1b09e64809b757c47f942beea",
+          "data": "0x6e553f650000000000000000000000000000000000000000000000056bc75e2d63100000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "value": "0x0",
+          "spender": "0x83f20f44975d03b1b09e64809b757c47f942beea"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.0,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "DAI": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\A07_spark_dai\\turn_4.txt",
+    "plan_id": "plan_4204991b580a",
+    "card_id": "3586a988-7746-47c4-9370-110d224e1a2d",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_f701b98f1f",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "spark",
+        "status": "ready",
+        "asset_in": "DAI",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x6b175474e89094c44da98b954eedeac495271d0f",
+          "data": "0x095ea7b300000000000000000000000083f20f44975d03b1b09e64809b757c47f942beea0000000000000000000000000000000000000000000000056bc75e2d63100000",
+          "value": "0x0",
+          "spender": "0x83f20f44975d03b1b09e64809b757c47f942beea"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_f4047cdc6f",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "spark",
+        "status": "pending",
+        "asset_in": "DAI",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x83f20f44975d03b1b09e64809b757c47f942beea",
+          "data": "0x6e553f650000000000000000000000000000000000000000000000056bc75e2d63100000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "value": "0x0",
+          "spender": "0x83f20f44975d03b1b09e64809b757c47f942beea"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.0,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "DAI": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\A09_aave_arb_usdt\\turn_4.txt",
+    "plan_id": "plan_b07d15ead066",
+    "card_id": "a8ae64fd-8103-419f-9cdb-73c2834f63dc",
+    "chain": "arbitrum",
+    "chains_in_plan": [
+      "arbitrum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_9bff9ceebe",
+        "action": "approve",
+        "chain": "arbitrum",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDT",
+        "amount_in": "500",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 42161,
+          "to": "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad000000000000000000000000000000000000000000000000000000001dcd6500",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_a5cc2cae7c",
+        "action": "supply",
+        "chain": "arbitrum",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDT",
+        "amount_in": "500",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 42161,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba037000000000000000000000000fd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9000000000000000000000000000000000000000000000000000000001dcd6500000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "arbitrum"
+      ],
+      "assets_required": {
+        "USDT": "500"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\A10_aave_polygon_dai\\turn_3.txt",
+    "plan_id": "plan_1458e1ce19d8",
+    "card_id": "ff1265af-5304-470b-a816-c6df4a2be999",
+    "chain": "polygon",
+    "chains_in_plan": [
+      "polygon"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_0dcb80190f",
+        "action": "approve",
+        "chain": "polygon",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "DAI",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 137,
+          "to": "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad0000000000000000000000000000000000000000000000056bc75e2d63100000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_e4ddfd3624",
+        "action": "supply",
+        "chain": "polygon",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "DAI",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 137,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba0370000000000000000000000008f3cf7ad23cd3cadbd9735aff958023239c6a0630000000000000000000000000000000000000000000000056bc75e2d63100000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "polygon"
+      ],
+      "assets_required": {
+        "DAI": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\A10_aave_polygon_dai\\turn_4.txt",
+    "plan_id": "plan_917f94de31b3",
+    "card_id": "17091e54-23fc-4dfe-a3e0-de349c60ba51",
+    "chain": "polygon",
+    "chains_in_plan": [
+      "polygon"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_67861f097c",
+        "action": "approve",
+        "chain": "polygon",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "DAI",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 137,
+          "to": "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad0000000000000000000000000000000000000000000000056bc75e2d63100000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_4e384eb291",
+        "action": "supply",
+        "chain": "polygon",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "DAI",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 137,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba0370000000000000000000000008f3cf7ad23cd3cadbd9735aff958023239c6a0630000000000000000000000000000000000000000000000056bc75e2d63100000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "polygon"
+      ],
+      "assets_required": {
+        "DAI": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\A11_aave_opt_weth\\turn_2.txt",
+    "plan_id": "plan_633f3bf993f2",
+    "card_id": "64a420ba-af1e-411f-bbfd-6d63bbeea8e3",
+    "chain": "optimism",
+    "chains_in_plan": [
+      "optimism"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 0,
+        "step_id": "step_3658e61552",
+        "action": "approve",
+        "chain": "optimism",
+        "protocol": "weth9-wrap",
+        "status": "ready",
+        "asset_in": "ETH",
+        "amount_in": null,
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x4200000000000000000000000000000000000006",
+          "data": "0xd0e30db0",
+          "value": "0x16345785d8a0000",
+          "spender": "0x4200000000000000000000000000000000000006"
+        }
+      },
+      {
+        "index": 1,
+        "step_id": "step_c354e9859a",
+        "action": "supply",
+        "chain": "optimism",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "WETH",
+        "amount_in": "0.1",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x60eE8b61a13c67d0191c851BEC8F0bc850160710",
+          "data": "0x474cf53d000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x16345785d8a0000",
+          "spender": "0x60eE8b61a13c67d0191c851BEC8F0bc850160710"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.6,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "optimism"
+      ],
+      "assets_required": {
+        "WETH": "0.1",
+        "ETH": "0.1"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\A14_etherfi_eeth\\turn_4.txt",
+    "plan_id": "plan_f14ec3ea3520",
+    "card_id": "0a7b391c-e37b-46f2-ab06-0f69b6b7a8e0",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 1,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_09b3916a45",
+        "action": "stake",
+        "chain": "ethereum",
+        "protocol": "ether.fi",
+        "status": "ready",
+        "asset_in": "ETH",
+        "amount_in": "0.05",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x308861a430be4cce5502d0a12724771fc6daf216",
+          "data": "0xd5c08a72",
+          "value": "0xb1a2bc2ec50000",
+          "spender": "0x308861a430be4cce5502d0a12724771fc6daf216"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 2.6,
+      "estimated_duration_s": 15,
+      "signatures_required": 1,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "ETH": "0.05"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\C01_aave_base_refine_chain\\turn_1.txt",
+    "plan_id": "plan_da3fb635365e",
+    "card_id": "299c8fd7-0068-4e69-9ef7-a2ca4ff2ec95",
+    "chain": "optimism",
+    "chains_in_plan": [
+      "optimism"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_509b36df96",
+        "action": "approve",
+        "chain": "optimism",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad0000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_0f604b8da0",
+        "action": "supply",
+        "chain": "optimism",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba0370000000000000000000000000b2c639c533813f4aa9d7837caf62653d097ff850000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "optimism"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\C01_aave_base_refine_chain\\turn_2.txt",
+    "plan_id": "plan_856021de61f2",
+    "card_id": "9cb2e603-6ded-46d4-8b16-4c30380ba242",
+    "chain": "optimism",
+    "chains_in_plan": [
+      "optimism"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_e2f358bb04",
+        "action": "approve",
+        "chain": "optimism",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "250",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad000000000000000000000000000000000000000000000000000000000ee6b280",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_ce481e49a6",
+        "action": "supply",
+        "chain": "optimism",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "250.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba0370000000000000000000000000b2c639c533813f4aa9d7837caf62653d097ff85000000000000000000000000000000000000000000000000000000000ee6b280000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "optimism"
+      ],
+      "assets_required": {
+        "USDC": "250"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\C04_slipstream_base\\turn_4.txt",
+    "plan_id": "plan_c2ad1c1b95be",
+    "card_id": "30ebbb22-7996-414a-bb6a-b164d513dc2f",
+    "chain": "base",
+    "chains_in_plan": [
+      "base"
+    ],
+    "step_count": 4,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_e4a0e79866",
+        "action": "swap",
+        "chain": "base",
+        "protocol": "aerodrome-slipstream",
+        "status": "ready",
+        "asset_in": "WETH",
+        "amount_in": "0.025772265966605172",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+          "data": "0xb94c3609000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000400000000000000000000000004200000000000000000000000000000000000006000000000000000000000000000000000000000000000000005b8fbd45ff13740000000000000000000000000000000000000000000000000000000000000c2495352c9f044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116db3f51f5f641ccd17e8c44bb4db6f3ce6f306b0ee404bf68d3db67e8f87bacf94000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000001400000000000000000000000000000000000000000000000000000000000000005095ea7b3010001ffffffffff4200000000000000000000000000000000000006346387bf4100000000000009bedfac7488dccaafdd66d1d7d56349780fe0477e02020304010506078889ffffffffffffffffffffffffffffffffffffffffffff6e7a43a301090affffffff097e7d64d987cab6eed08a191c4c2459daf2f8ed0b241c59120109ffffffffffff7e7d64d987cab6eed08a191c4c2459daf2f8ed0b000000000000000000000000000000000000000000000000000000000000000b000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000001a000000000000000000000000000000000000000000000000000000000000001e00000000000000000000000000000000000000000000000000000000000000220000000000000000000000000000000000000000000000000000000000000026000000000000000000000000000000000000000000000000000000000000002a000000000000000000000000000000000000000000000000000000000000002e0000000000000000000000000000000000000000000000000000000000000032000000000000000000000000000000000000000000000000000000000000003600000000000000000000000000000000000000000000000000000000000000a400000000000000000000000000000000000000000000000000000000000000a800000000000000000000000000000000000000000000000000000000000000020000000000000000000000000bedfac7488dccaafdd66d1d7d56349780fe0477e0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000005b8fbd45ff137400000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000001ff3684f28c67538d4d072c22734000000000000000000000000000000000000000000000000000000000000002000000000000000000000000042000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000020000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000359b1570000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000000000000000000000000000000000000000002000000000000000000000000069afa05352b3797b8d08ce3b5edf27eb0585d56000000000000000000000000000000000000000000000000000000000000006c000000000000000000000000000000000000000000000000000000000000006842213bc0b0000000000000000000000007747f8d2a76bd6345cc29622a946a929647f23590000000000000000000000004200000000000000000000000000000000000006000000000000000000000000000000000000000000000000005b8fbd45ff13740000000000000000000000007747f8d2a76bd6345cc29622a946a929647f235900000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000005a41fff991f000000000000000000000000bedfac7488dccaafdd66d1d7d56349780fe0477e000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000003556d8000000000000000000000000000000000000000000000000000000000000000a07ec5461ff26327b5ff4f66d40000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000300000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000220000000000000000000000000000000000000000000000000000000000000042000000000000000000000000000000000000000000000000000000000000001843036d6a60000000000000000000000007747f8d2a76bd6345cc29622a946a929647f23590000000000000000000000004200000000000000000000000000000000000006000000000000000000000000000000000000000000000000005b8fbd45ff13740000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006a08d9d30000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040420000000000000000000000000000000000000604000064fffd8963efd1fc6a506488495d951d5263988d250b3e328455c4059eeb9e3f84b5543f74e24e7e1b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001c438c9c1470000000000000000000000000b3e328455c4059eeb9e3f84b5543f74e24e7e1b000000000000000000000000000000000000000000000000000000000000271000000000000000000000000055555522005bcae1c2424d474bfd5ed477749e3e000000000000000000000000000000000000000000000000000000000000004400000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000e43ae8b2980000000000000000000000000b3e328455c4059eeb9e3f84b5543f74e24e7e1b000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000043220929be6817f20000000000000000000000000000000000000000000000000000000000357fa2d0000000000000000000000007747f8d2a76bd6345cc29622a946a929647f235900000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008434ee90ca000000000000000000000000f5c4f3dc02c3fb9279495a8fef7b0741da956157000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda02913000000000000000000000000000000000000000000000000000000000359b1570000000000000000000000000000000000000000000000000000000000002710000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000355677e00000000000000000000000000000000000000000000000000000000",
+          "value": "0",
+          "spender": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_8e48631779",
+        "action": "approve",
+        "chain": "base",
+        "protocol": "aerodrome-slipstream",
+        "status": "pending",
+        "asset_in": "WETH",
+        "amount_in": "25439120735064569",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x4200000000000000000000000000000000000006",
+          "data": "0x095ea7b3000000000000000000000000827922686190790b37229fd06084350e74485b72000000000000000000000000000000000000000000000000005a60bedacfd1f9",
+          "value": "0x0",
+          "spender": "0x827922686190790b37229fd06084350E74485b72"
+        }
+      },
+      {
+        "index": 3,
+        "step_id": "step_465723cded",
+        "action": "approve",
+        "chain": "base",
+        "protocol": "aerodrome-slipstream",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "62240021",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "data": "0x095ea7b3000000000000000000000000827922686190790b37229fd06084350e74485b720000000000000000000000000000000000000000000000000000000003b5b515",
+          "value": "0x0",
+          "spender": "0x827922686190790b37229fd06084350E74485b72"
+        }
+      },
+      {
+        "index": 4,
+        "step_id": "step_cdbc5833f8",
+        "action": "deposit_lp",
+        "chain": "base",
+        "protocol": "aerodrome-slipstream",
+        "status": "pending",
+        "asset_in": "WETH",
+        "amount_in": "0.05",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x827922686190790b37229fd06084350E74485b72",
+          "data": "0x883164560000000000000000000000004200000000000000000000000000000000000006000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda0291300000000000000000000000000000000000000000000000000000000000001f4fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffcf0ccfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffcf89c000000000000000000000000000000000000000000000000005612fee8c5ec8c0000000000000000000000000000000000000000000000000000000003887bb30000000000000000000000000000000000000000000000000055a4d21d5e88cc000000000000000000000000000000000000000000000000000000000383f5f5000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000000000000000000000000000000000006a08dd56",
+          "value": "0x0",
+          "spender": "0x827922686190790b37229fd06084350E74485b72"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 12.0,
+      "estimated_duration_s": 90,
+      "signatures_required": 4,
+      "chains_touched": [
+        "base"
+      ],
+      "assets_required": {
+        "WETH": "0.05"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\C12_pancake_v3\\turn_4.txt",
+    "plan_id": "plan_2983c4924e75",
+    "card_id": "3bbef032-d9df-4337-a04c-35cd0e3ab5cd",
+    "chain": "bsc",
+    "chains_in_plan": [
+      "bsc"
+    ],
+    "step_count": 5,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_c3a819ab19",
+        "action": "swap",
+        "chain": "bsc",
+        "protocol": "pancakeswap-v3",
+        "status": "ready",
+        "asset_in": "BNB",
+        "amount_in": "0.047890156231212743",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 56,
+          "to": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+          "data": "0xb94c3609000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000aa23d7e6663ec7000000000000000000000000000000000000000000000000000000000000062495352c9f044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116d43ab4064c0d7448d121efcedd7ec0c72a21721074cbde8dd6daf7a70b4e33c72000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000004346387bf4300000000000008bedfac7488dccaafdd66d1d7d56349780fe0477e0001010203000405068788ffffffffffffffffffffffffffffffffffffffffff6e7a43a3010809ffffffff087e7d64d987cab6eed08a191c4c2459daf2f8ed0b241c59120108ffffffffffff7e7d64d987cab6eed08a191c4c2459daf2f8ed0b000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000140000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000240000000000000000000000000000000000000000000000000000000000000028000000000000000000000000000000000000000000000000000000000000002c00000000000000000000000000000000000000000000000000000000000000300000000000000000000000000000000000000000000000000000000000000046000000000000000000000000000000000000000000000000000000000000004a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000aa23d7e6663ec700000000000000000000000000000000000000000000000000000000000000200000000000000000000000001a3304cbef66de00fbe1548cc4c6585ad22fbcff0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000000000000000000000000000000000000000002000000000000000000000000055d398326f99059ff775485246999027b31979550000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000001b4844bca700c36c60000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000a9fee8f645224c1fe41d6206e28de2742320789f000000000000000000000000000000000000000000000000000000000000014000000000000000000000000000000000000000000000000000000000000001063f0bde25dfaaba2322288ad06b3b754d9507b29be8e7d8203393000000000000000000aa23d7e6663ec70000000000000001b2558df8c916640809ba2322288ad06b3b754d9507b29be8e7d8203393bedfac7488dccaafdd66d1d7d56349780fe0477eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee55d398326f99059ff775485246999027b3197955bb4cdb9cbd36b01bd1cbaebf2de08d9173bc095cf0f0f0f0fb0d738452efd03a28e8be14c76d5f73b6bb744fb59fa399d09f67ae3634942f533b577f2170ed0880ac9a755fd29b2688956bd959f933f82bfd1fc5e25a8f55c2e849492ad7966ea8a0dd9e740445060405ed0703008d0331da4308db0f7c710301ff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000001b2558df8c916649400000000000000000000000000000000000000000000000000000000",
+          "value": "47890156231212743",
+          "spender": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_5471002518",
+        "action": "swap",
+        "chain": "bsc",
+        "protocol": "pancakeswap-v3",
+        "status": "pending",
+        "asset_in": "BNB",
+        "amount_in": "0.052109843768787256",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 56,
+          "to": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+          "data": "0xb94c3609000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000b921a07723c138000000000000000000000000000000000000000000000000000000000000026495352c9f044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116d917f3f6afc4dfceab64f56aa038714c92cc6f7be24e9b14a0bbf964515367dc5000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000004d0e30db00300ffffffffffffbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095ca9059cbb010100ffffffffffbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c6e7a43a3010002ffffffff027e7d64d987cab6eed08a191c4c2459daf2f8ed0b241c59120102ffffffffffff7e7d64d987cab6eed08a191c4c2459daf2f8ed0b0000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000b921a07723c1380000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000b834a89f81041700000000000000000000000000000000000000000000000000000000",
+          "value": "52109843768787256",
+          "spender": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf"
+        }
+      },
+      {
+        "index": 3,
+        "step_id": "step_24ee5a64c7",
+        "action": "approve",
+        "chain": "bsc",
+        "protocol": "pancakeswap-v3",
+        "status": "pending",
+        "asset_in": "USDT",
+        "amount_in": "50284664042773380",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 56,
+          "to": "0x55d398326f99059ff775485246999027b3197955",
+          "data": "0x095ea7b300000000000000000000000046a15b0b27311cedf172ab29e4f4766fbe7f436400000000000000000000000000000000000000000000000000b2a5a2b1eb5b84",
+          "value": "0x0",
+          "spender": "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364"
+        }
+      },
+      {
+        "index": 4,
+        "step_id": "step_b10a67ddc0",
+        "action": "approve",
+        "chain": "bsc",
+        "protocol": "pancakeswap-v3",
+        "status": "pending",
+        "asset_in": "WBNB",
+        "amount_in": "85492712433166",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 56,
+          "to": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+          "data": "0x095ea7b300000000000000000000000046a15b0b27311cedf172ab29e4f4766fbe7f436400000000000000000000000000000000000000000000000000004dc152c1660e",
+          "value": "0x0",
+          "spender": "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364"
+        }
+      },
+      {
+        "index": 5,
+        "step_id": "step_377d56678a",
+        "action": "deposit_lp",
+        "chain": "bsc",
+        "protocol": "pancakeswap-v3",
+        "status": "pending",
+        "asset_in": "BNB",
+        "amount_in": "0.1",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 56,
+          "to": "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364",
+          "data": "0x8831645600000000000000000000000055d398326f99059ff775485246999027b3197955000000000000000000000000bb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c00000000000000000000000000000000000000000000000000000000000001f4fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffefe6cffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff064600000000000000000000000000000000000000000000000000aa23d7e6663ec700000000000000000000000000000000000000000000000000004a0d7362db1a00000000000000000000000000000000000000000000000000a94a106ba5bbe8000000000000000000000000000000000000000000000000000049aea9d966ce000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000000000000000000000000000000000006a08dfa8",
+          "value": "0x0",
+          "spender": "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 15.0,
+      "estimated_duration_s": 120,
+      "signatures_required": 5,
+      "chains_touched": [
+        "bsc"
+      ],
+      "assets_required": {
+        "BNB": "0.1"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\C13_lido_amount_refine\\turn_2.txt",
+    "plan_id": "plan_e0d91a92289d",
+    "card_id": "1bdffa94-a821-4edc-bd80-0260a02b5bcb",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 1,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_340d6cb2a0",
+        "action": "stake",
+        "chain": "ethereum",
+        "protocol": "lido",
+        "status": "ready",
+        "asset_in": "ETH",
+        "amount_in": "0.2",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xae7ab96520de3a18e5e111b5eaab095312d7fe84",
+          "data": "0xa1903eab000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "value": "0x2c68af0bb140000",
+          "spender": "0xae7ab96520de3a18e5e111b5eaab095312d7fe84"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 2.6,
+      "estimated_duration_s": 15,
+      "signatures_required": 1,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "ETH": "0.2"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\C13_lido_amount_refine\\turn_4.txt",
+    "plan_id": "plan_4296ccadcbed",
+    "card_id": "91eb8e27-748b-4af2-8c46-8280f6287cc8",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 1,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_8a5b004970",
+        "action": "stake",
+        "chain": "ethereum",
+        "protocol": "lido",
+        "status": "ready",
+        "asset_in": "ETH",
+        "amount_in": "0.2",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xae7ab96520de3a18e5e111b5eaab095312d7fe84",
+          "data": "0xa1903eab000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "value": "0x2c68af0bb140000",
+          "spender": "0xae7ab96520de3a18e5e111b5eaab095312d7fe84"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 2.6,
+      "estimated_duration_s": 15,
+      "signatures_required": 1,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "ETH": "0.2"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\C15_raydium_clmm\\turn_1.txt",
+    "plan_id": "plan_131e96d9d926",
+    "card_id": "42ef2609-86fe-4ca6-8f7d-cd255027c846",
+    "chain": "solana",
+    "chains_in_plan": [
+      "solana"
+    ],
+    "step_count": 1,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_fcaec0aa21",
+        "action": "prep_swap",
+        "chain": "solana",
+        "protocol": "raydium-clmm",
+        "status": "ready",
+        "asset_in": "SOL",
+        "amount_in": "0.5",
+        "transaction": {
+          "chain_kind": "solana",
+          "serialized": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQAJDEC7GNv7tzz/nibS6NfRlCXrv4sd0IpQrYLrbLNs+SEDZZgY/gAQaGaDdP7YvP4b+0wnlMJPtNnjgWmHOubXECGhqq0QAtR8PxRZ7EEUnjIm8Sbr1m7bqWPBv0ZjAVo+cAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAEedVb8jHAbu50xW7OaBUH/bGy3qP0jlECsc2iVrwTjwbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpjJclj04kifG7PRApFI4NgwtaE5na/xCEBI572Nvp+Fm0P/on9df2SnTAmx8pWHneSwmrNt/J3VFLMhqns4zl6Mb6evO+2606PWXzaqvJdDGxu+TC0vbg5HymAgNFL11hz51uecn+x8h5nul5BWvQI37/CWXmL1ML72l+EtGC38H80T2gQVWQE89K66GoTtcCOtT/IahHR/87Basw+oIHw2BCnWaIGkXTMFKlfwob0qtp5yfzhM1qrGwKjYtHOVEsCAQABQLAXBUABAAJAwQXAQAAAAAABwYAAQAPAwYBAQMCAAEMAgAAAABlzR0AAAAABgEBAREHBgACAAkDBgEBBRkGAAECBQkFCAUSAA0MDgECEQYGEA8JCgsFLOUXy5d6460qAQAAAHZ6XRdbncnKSQFkAAEAZc0dAAAAAL0OkQIAAAAAMgAABgMBAAABCQHceg7WqAbHdCXpMG+PWUAdhTQWBFjDPjCodq2l8r98lgPku7oEBbzlvQ=="
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 0.01,
+      "estimated_duration_s": 25,
+      "signatures_required": 1,
+      "chains_touched": [
+        "solana"
+      ],
+      "assets_required": {
+        "SOL": "1"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\C15_raydium_clmm\\turn_2.txt",
+    "plan_id": "plan_54cc243cc4e4",
+    "card_id": "583bbd3e-c582-4507-aab6-99d0544a74d3",
+    "chain": "solana",
+    "chains_in_plan": [
+      "solana"
+    ],
+    "step_count": 1,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_0962396d93",
+        "action": "prep_swap",
+        "chain": "solana",
+        "protocol": "raydium-clmm",
+        "status": "ready",
+        "asset_in": "SOL",
+        "amount_in": "0.5",
+        "transaction": {
+          "chain_kind": "solana",
+          "serialized": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQAGCUC7GNv7tzz/nibS6NfRlCXrv4sd0IpQrYLrbLNs+SEDZZgY/gAQaGaDdP7YvP4b+0wnlMJPtNnjgWmHOubXECGhqq0QAtR8PxRZ7EEUnjIm8Sbr1m7bqWPBv0ZjAVo+cAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAEedVb8jHAbu50xW7OaBUH/bGy3qP0jlECsc2iVrwTjwbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpjJclj04kifG7PRApFI4NgwtaE5na/xCEBI572Nvp+Fm0P/on9df2SnTAmx8pWHneSwmrNt/J3VFLMhqns4zl6IeyWeVtnF24CVM4HBVzBgjc+gHCw+w9NEiUt45IdaEcCAQABQLAXBUABAAJAwQXAQAAAAAABwYAAQANAwYBAQMCAAEMAgAAAABlzR0AAAAABgEBAREHBgACABEDBgEBBRQGAAECBREFCAUMAAECCQoLEAYPDiTlF8uXeuOtKgEAAAB9AGQAAQBlzR0AAAAA4ASRAgAAAAAyAAAGAwEAAAEJATREHFMsi66QBaMHw40yuEVb74Fwx9MRaB+TqwWB3zZdAy0mJwYkESklKAc="
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 0.01,
+      "estimated_duration_s": 25,
+      "signatures_required": 1,
+      "chains_touched": [
+        "solana"
+      ],
+      "assets_required": {
+        "SOL": "1"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\D02_aave_supply_withdraw_all\\turn_1.txt",
+    "plan_id": "plan_f724fd38ba00",
+    "card_id": "03886c93-a6a3-4464-b5d9-157310ea3864",
+    "chain": "base",
+    "chains_in_plan": [
+      "base"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_6f1b0ae207",
+        "action": "approve",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "data": "0x095ea7b3000000000000000000000000a238dd80c259a72e81d7e4664a9801593f98d1c50000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_0c79d2d0f5",
+        "action": "supply",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5",
+          "data": "0x617ba037000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "base"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\D03_compound_claim_then_withdraw\\turn_4.txt",
+    "plan_id": "plan_4e6e1da365f5",
+    "card_id": "14162e3f-b3c7-4235-821e-4cabc965e64b",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_7548083f1e",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "compound-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "data": "0x095ea7b3000000000000000000000000c3d688b66703497daa19211eedff47f25384cdc30000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0xc3d688b66703497daa19211eedff47f25384cdc3"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_1557d0b9fe",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "compound-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xc3d688b66703497daa19211eedff47f25384cdc3",
+          "data": "0xf2b9fdb8000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0xc3d688b66703497daa19211eedff47f25384cdc3"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 3.9,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\D08_aave_borrow_repay\\turn_1.txt",
+    "plan_id": "plan_ebe62a1bfbb0",
+    "card_id": "a6064bac-957f-4ade-8b35-36c5f826acdf",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_e9db5ae533",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "200",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "data": "0x095ea7b300000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e2000000000000000000000000000000000000000000000000000000000bebc200",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_1531557a5b",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "200",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+          "data": "0x617ba037000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDC": "200"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\D08_aave_borrow_repay\\turn_2.txt",
+    "plan_id": "plan_998712a4b928",
+    "card_id": "a11627e9-5a3d-481f-8098-8c9647292bf3",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_fd63e2d9ee",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDT",
+        "amount_in": "50",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+          "data": "0x095ea7b300000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e20000000000000000000000000000000000000000000000000000000002faf080",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_a2e97aa378",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDT",
+        "amount_in": "50.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+          "data": "0x617ba037000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000000000000000000000000000000000000000000000000000002faf080000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDT": "50"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\D08_aave_borrow_repay\\turn_3.txt",
+    "plan_id": "plan_31f785311537",
+    "card_id": "7ba02c2e-55de-4d89-b791-77063232a832",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_7587c18ae4",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDT",
+        "amount_in": "50",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+          "data": "0x095ea7b300000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e20000000000000000000000000000000000000000000000000000000002faf080",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_36bd5ffaec",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDT",
+        "amount_in": "50.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+          "data": "0x617ba037000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000000000000000000000000000000000000000000000000000002faf080000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDT": "50"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\E04_eth_to_opt_aave_usdt\\turn_3.txt",
+    "plan_id": "plan_0c865e2218f4",
+    "card_id": "45c5f56a-510e-4932-9587-fcd79fd109e7",
+    "chain": "optimism",
+    "chains_in_plan": [
+      "optimism"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_2a1a071cdd",
+        "action": "approve",
+        "chain": "optimism",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDT",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad0000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_0905bc5978",
+        "action": "supply",
+        "chain": "optimism",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDT",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba03700000000000000000000000094b008aa00579c1307b0ef2c499ad98a8ce58e580000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "optimism"
+      ],
+      "assets_required": {
+        "USDT": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\E04_eth_to_opt_aave_usdt\\turn_4.txt",
+    "plan_id": "plan_0c865e2218f4",
+    "card_id": "45c5f56a-510e-4932-9587-fcd79fd109e7",
+    "chain": "optimism",
+    "chains_in_plan": [
+      "optimism"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_2a1a071cdd",
+        "action": "approve",
+        "chain": "optimism",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDT",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad0000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_0905bc5978",
+        "action": "supply",
+        "chain": "optimism",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDT",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba03700000000000000000000000094b008aa00579c1307b0ef2c499ad98a8ce58e580000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "optimism"
+      ],
+      "assets_required": {
+        "USDT": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\E05_arb_to_base_compound\\turn_1.txt",
+    "plan_id": "plan_a7313ea4bcc6",
+    "card_id": "15471273-46aa-4e7f-80cf-7f209da427d9",
+    "chain": "arbitrum",
+    "chains_in_plan": [
+      "arbitrum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_1bc749f936",
+        "action": "approve",
+        "chain": "arbitrum",
+        "protocol": "compound-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "200.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 42161,
+          "to": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+          "data": "0x095ea7b30000000000000000000000009c4ec768c28520b50860ea7a15bd7213a9ff58bf000000000000000000000000000000000000000000000000000000000bebc200",
+          "value": "0x0",
+          "spender": "0x9c4ec768c28520b50860ea7a15bd7213a9ff58bf"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_4a540ab895",
+        "action": "supply",
+        "chain": "arbitrum",
+        "protocol": "compound-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "200.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 42161,
+          "to": "0x9c4ec768c28520b50860ea7a15bd7213a9ff58bf",
+          "data": "0xf2b9fdb8000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e5831000000000000000000000000000000000000000000000000000000000bebc200",
+          "value": "0x0",
+          "spender": "0x9c4ec768c28520b50860ea7a15bd7213a9ff58bf"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 3.9,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "arbitrum"
+      ],
+      "assets_required": {
+        "USDC": "200"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\E05_arb_to_base_compound\\turn_3.txt",
+    "plan_id": "plan_25403d1f54ba",
+    "card_id": "d2760541-9d9b-4d1a-8c3d-7a162f0bb9c7",
+    "chain": "arbitrum",
+    "chains_in_plan": [
+      "arbitrum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_1c4326704f",
+        "action": "approve",
+        "chain": "arbitrum",
+        "protocol": "compound-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "200.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 42161,
+          "to": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+          "data": "0x095ea7b30000000000000000000000009c4ec768c28520b50860ea7a15bd7213a9ff58bf000000000000000000000000000000000000000000000000000000000bebc200",
+          "value": "0x0",
+          "spender": "0x9c4ec768c28520b50860ea7a15bd7213a9ff58bf"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_345c06b379",
+        "action": "supply",
+        "chain": "arbitrum",
+        "protocol": "compound-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "200.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 42161,
+          "to": "0x9c4ec768c28520b50860ea7a15bd7213a9ff58bf",
+          "data": "0xf2b9fdb8000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e5831000000000000000000000000000000000000000000000000000000000bebc200",
+          "value": "0x0",
+          "spender": "0x9c4ec768c28520b50860ea7a15bd7213a9ff58bf"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 3.9,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "arbitrum"
+      ],
+      "assets_required": {
+        "USDC": "200"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\E05_arb_to_base_compound\\turn_4.txt",
+    "plan_id": "plan_25403d1f54ba",
+    "card_id": "d2760541-9d9b-4d1a-8c3d-7a162f0bb9c7",
+    "chain": "arbitrum",
+    "chains_in_plan": [
+      "arbitrum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_1c4326704f",
+        "action": "approve",
+        "chain": "arbitrum",
+        "protocol": "compound-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "200.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 42161,
+          "to": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+          "data": "0x095ea7b30000000000000000000000009c4ec768c28520b50860ea7a15bd7213a9ff58bf000000000000000000000000000000000000000000000000000000000bebc200",
+          "value": "0x0",
+          "spender": "0x9c4ec768c28520b50860ea7a15bd7213a9ff58bf"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_345c06b379",
+        "action": "supply",
+        "chain": "arbitrum",
+        "protocol": "compound-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "200.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 42161,
+          "to": "0x9c4ec768c28520b50860ea7a15bd7213a9ff58bf",
+          "data": "0xf2b9fdb8000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e5831000000000000000000000000000000000000000000000000000000000bebc200",
+          "value": "0x0",
+          "spender": "0x9c4ec768c28520b50860ea7a15bd7213a9ff58bf"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 3.9,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "arbitrum"
+      ],
+      "assets_required": {
+        "USDC": "200"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\E09_eth_to_arb_morpho\\turn_3.txt",
+    "plan_id": "plan_a1258e4dd920",
+    "card_id": "878acff5-ae88-4af7-b619-2d579e5c6f4f",
+    "chain": "arbitrum",
+    "chains_in_plan": [
+      "arbitrum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_c25db6cccc",
+        "action": "approve",
+        "chain": "arbitrum",
+        "protocol": "morpho-blue",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "250.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 42161,
+          "to": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "data": "0x095ea7b30000000000000000000000007c574174da4b2be3f705c6244b4bfa0815a8b3ed000000000000000000000000000000000000000000000000000000000ee6b280",
+          "value": "0x0",
+          "spender": "0x7c574174DA4b2be3f705c6244B4BfA0815a8B3Ed"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_31751bcf9d",
+        "action": "supply",
+        "chain": "arbitrum",
+        "protocol": "morpho-blue",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "250.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 42161,
+          "to": "0x7c574174DA4b2be3f705c6244B4BfA0815a8B3Ed",
+          "data": "0x6e553f65000000000000000000000000000000000000000000000000000000000ee6b280000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "value": "0x0",
+          "spender": "0x7c574174DA4b2be3f705c6244B4BfA0815a8B3Ed"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.0,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "arbitrum"
+      ],
+      "assets_required": {
+        "USDC": "250"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\E09_eth_to_arb_morpho\\turn_4.txt",
+    "plan_id": "plan_a1258e4dd920",
+    "card_id": "878acff5-ae88-4af7-b619-2d579e5c6f4f",
+    "chain": "arbitrum",
+    "chains_in_plan": [
+      "arbitrum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_c25db6cccc",
+        "action": "approve",
+        "chain": "arbitrum",
+        "protocol": "morpho-blue",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "250.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 42161,
+          "to": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "data": "0x095ea7b30000000000000000000000007c574174da4b2be3f705c6244b4bfa0815a8b3ed000000000000000000000000000000000000000000000000000000000ee6b280",
+          "value": "0x0",
+          "spender": "0x7c574174DA4b2be3f705c6244B4BfA0815a8B3Ed"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_31751bcf9d",
+        "action": "supply",
+        "chain": "arbitrum",
+        "protocol": "morpho-blue",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "250.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 42161,
+          "to": "0x7c574174DA4b2be3f705c6244B4BfA0815a8B3Ed",
+          "data": "0x6e553f65000000000000000000000000000000000000000000000000000000000ee6b280000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "value": "0x0",
+          "spender": "0x7c574174DA4b2be3f705c6244B4BfA0815a8B3Ed"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.0,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "arbitrum"
+      ],
+      "assets_required": {
+        "USDC": "250"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\E12_eth_to_polygon_aave_usdt\\turn_3.txt",
+    "plan_id": "plan_d52af205c011",
+    "card_id": "7ed65e66-3c67-49e1-934c-29ac1759c40c",
+    "chain": "polygon",
+    "chains_in_plan": [
+      "polygon"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_201ae84a44",
+        "action": "approve",
+        "chain": "polygon",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDT",
+        "amount_in": "200",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 137,
+          "to": "0xc2132d05d31c914a87c6611c10748aeb04b58e8f",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad000000000000000000000000000000000000000000000000000000000bebc200",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_0fffd1c9e0",
+        "action": "supply",
+        "chain": "polygon",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDT",
+        "amount_in": "200.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 137,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba037000000000000000000000000c2132d05d31c914a87c6611c10748aeb04b58e8f000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "polygon"
+      ],
+      "assets_required": {
+        "USDT": "200"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\E12_eth_to_polygon_aave_usdt\\turn_4.txt",
+    "plan_id": "plan_d52af205c011",
+    "card_id": "7ed65e66-3c67-49e1-934c-29ac1759c40c",
+    "chain": "polygon",
+    "chains_in_plan": [
+      "polygon"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_201ae84a44",
+        "action": "approve",
+        "chain": "polygon",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDT",
+        "amount_in": "200",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 137,
+          "to": "0xc2132d05d31c914a87c6611c10748aeb04b58e8f",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad000000000000000000000000000000000000000000000000000000000bebc200",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_0fffd1c9e0",
+        "action": "supply",
+        "chain": "polygon",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDT",
+        "amount_in": "200.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 137,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba037000000000000000000000000c2132d05d31c914a87c6611c10748aeb04b58e8f000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "polygon"
+      ],
+      "assets_required": {
+        "USDT": "200"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\E13_eth_to_polygon_aave_dai\\turn_2.txt",
+    "plan_id": "plan_1208c206ebb1",
+    "card_id": "fa37067c-f317-4b16-85c6-9288139f156a",
+    "chain": "polygon",
+    "chains_in_plan": [
+      "polygon"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_ae011309e6",
+        "action": "approve",
+        "chain": "polygon",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "DAI",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 137,
+          "to": "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad0000000000000000000000000000000000000000000000056bc75e2d63100000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_733ff48232",
+        "action": "supply",
+        "chain": "polygon",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "DAI",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 137,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba0370000000000000000000000008f3cf7ad23cd3cadbd9735aff958023239c6a0630000000000000000000000000000000000000000000000056bc75e2d63100000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "polygon"
+      ],
+      "assets_required": {
+        "DAI": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\E14_eth_to_avax_aave\\turn_3.txt",
+    "plan_id": "plan_8789c50fb168",
+    "card_id": "c57dfcd6-638d-430e-8c23-5a7462fec272",
+    "chain": "avalanche",
+    "chains_in_plan": [
+      "avalanche"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_a8b6098f1d",
+        "action": "approve",
+        "chain": "avalanche",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "200",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 43114,
+          "to": "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad000000000000000000000000000000000000000000000000000000000bebc200",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_71881bf788",
+        "action": "supply",
+        "chain": "avalanche",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "200.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 43114,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba037000000000000000000000000b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "avalanche"
+      ],
+      "assets_required": {
+        "USDC": "200"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\E14_eth_to_avax_aave\\turn_4.txt",
+    "plan_id": "plan_8789c50fb168",
+    "card_id": "c57dfcd6-638d-430e-8c23-5a7462fec272",
+    "chain": "avalanche",
+    "chains_in_plan": [
+      "avalanche"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_a8b6098f1d",
+        "action": "approve",
+        "chain": "avalanche",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "200",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 43114,
+          "to": "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad000000000000000000000000000000000000000000000000000000000bebc200",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_71881bf788",
+        "action": "supply",
+        "chain": "avalanche",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "200.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 43114,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba037000000000000000000000000b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "avalanche"
+      ],
+      "assets_required": {
+        "USDC": "200"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\enso-05\\turn_4.txt",
+    "plan_id": "plan_d89d28143f86",
+    "card_id": "d34345c8-8af1-4dc7-80e2-848f1bbc49f2",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 1,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_2d62c48475",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "curve",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "500.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+          "data": "0xb94c3609000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000040000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000000000000000000000000000000000001dcd650000000000000000000000000000000000000000000000000000000000000004c495352c9f044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116dde9f6da225f0322c535dc3e2e5efb851a9a9ffe801b76d3b60757a08fd03b75b000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000001c00000000000000000000000000000000000000000000000000000000000000009095ea7b3010001ffffffffffa0b86991c6218b36c1d19d4a2e9eb0ce3606eb4870a082310102ffffffffff01d001ae433f254283fece51d4acce8c53263aa186b72df5de018304ffffffffffd001ae433f254283fece51d4acce8c53263aa18670a082310102ffffffffff02d001ae433f254283fece51d4acce8c53263aa1867ae2b5c7010201ffffffff01ca99eaa38e8f37a168214a3a57c9a45a58563ed5b67d77c5010201ffffffff01ca99eaa38e8f37a168214a3a57c9a45a58563ed5a9059cbb010501ffffffffffd001ae433f254283fece51d4acce8c53263aa1866e7a43a3010106ffffffff017e7d64d987cab6eed08a191c4c2459daf2f8ed0b241c59120101ffffffffffff7e7d64d987cab6eed08a191c4c2459daf2f8ed0b000000000000000000000000000000000000000000000000000000000000000700000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000120000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000001a00000000000000000000000000000000000000000000000000000000000000220000000000000000000000000000000000000000000000000000000000000026000000000000000000000000000000000000000000000000000000000000002a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000d001ae433f254283fece51d4acce8c53263aa1860000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000001dcd650000000000000000000000000000000000000000000000000000000000000000200000000000000000000000004fe93ebc4ce6ae4f81601cc7ce7139023919e00300000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000001dcd65000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000001ab8adfd765c6843b50000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000001ab8adfd765c6843b400000000000000000000000000000000000000000000000000000000",
+          "value": "0",
+          "gas": "0x499b5",
+          "spender": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.5,
+      "estimated_duration_s": 30,
+      "signatures_required": 1,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDC": "500"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\F03_no_balance\\turn_1.txt",
+    "plan_id": "plan_f5da08213869",
+    "card_id": "fbe56884-3071-4e08-85f5-43ded937448e",
+    "chain": "base",
+    "chains_in_plan": [
+      "base"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_51cf7c6144",
+        "action": "approve",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100000",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "data": "0x095ea7b3000000000000000000000000a238dd80c259a72e81d7e4664a9801593f98d1c5000000000000000000000000000000000000000000000000000000174876e800",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_ae4569cedd",
+        "action": "supply",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100000.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5",
+          "data": "0x617ba037000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda02913000000000000000000000000000000000000000000000000000000174876e800000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "base"
+      ],
+      "assets_required": {
+        "USDC": "100000"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\F03_no_balance\\turn_4.txt",
+    "plan_id": "plan_479a7dbc3400",
+    "card_id": "73b5c164-05a6-4f9e-9232-a50728f58bf0",
+    "chain": "base",
+    "chains_in_plan": [
+      "base"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_22d2a8f20e",
+        "action": "approve",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "10",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "data": "0x095ea7b3000000000000000000000000a238dd80c259a72e81d7e4664a9801593f98d1c50000000000000000000000000000000000000000000000000000000000989680",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_197f280685",
+        "action": "supply",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "10.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5",
+          "data": "0x617ba037000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000000989680000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "base"
+      ],
+      "assets_required": {
+        "USDC": "10"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\F06_curve_volatile_blocker\\turn_1.txt",
+    "plan_id": "plan_22d2ebcb8a20",
+    "card_id": "0748a0cf-e851-4d85-9a7a-aa54b4212f31",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 1,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_bdfa0f2b93",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "curve",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+          "data": "0xb94c3609000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000040000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000005f5e10000000000000000000000000000000000000000000000000000000000000004c495352c9f044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116dd23f9a48f2df9e553cb8d20c0eb99cd84ba0c3271fb5d9f0836fa3df0d99bffe000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000001c00000000000000000000000000000000000000000000000000000000000000009095ea7b3010001ffffffffffa0b86991c6218b36c1d19d4a2e9eb0ce3606eb4870a082310102ffffffffff01d001ae433f254283fece51d4acce8c53263aa186b72df5de018304ffffffffffd001ae433f254283fece51d4acce8c53263aa18670a082310102ffffffffff02d001ae433f254283fece51d4acce8c53263aa1867ae2b5c7010201ffffffff01ca99eaa38e8f37a168214a3a57c9a45a58563ed5b67d77c5010201ffffffff01ca99eaa38e8f37a168214a3a57c9a45a58563ed5a9059cbb010501ffffffffffd001ae433f254283fece51d4acce8c53263aa1866e7a43a3010106ffffffff017e7d64d987cab6eed08a191c4c2459daf2f8ed0b241c59120101ffffffffffff7e7d64d987cab6eed08a191c4c2459daf2f8ed0b000000000000000000000000000000000000000000000000000000000000000700000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000120000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000001a00000000000000000000000000000000000000000000000000000000000000220000000000000000000000000000000000000000000000000000000000000026000000000000000000000000000000000000000000000000000000000000002a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000d001ae433f254283fece51d4acce8c53263aa18600000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000005f5e10000000000000000000000000000000000000000000000000000000000000000200000000000000000000000004fe93ebc4ce6ae4f81601cc7ce7139023919e003000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000055822cc61eebd6e060000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000055822cc61eebd6e0600000000000000000000000000000000000000000000000000000000",
+          "value": "0",
+          "gas": "0x499b5",
+          "spender": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.5,
+      "estimated_duration_s": 30,
+      "signatures_required": 1,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\F08_gas_top_up\\turn_1.txt",
+    "plan_id": "plan_7d72fba965c0",
+    "card_id": "f11b190b-0b7f-460e-9bab-0769cab53a5a",
+    "chain": "avalanche",
+    "chains_in_plan": [
+      "avalanche"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_00760558cf",
+        "action": "approve",
+        "chain": "avalanche",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 43114,
+          "to": "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad0000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_cbecb1c2cb",
+        "action": "supply",
+        "chain": "avalanche",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 43114,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba037000000000000000000000000b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e0000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "avalanche"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\G01_partial_fail\\turn_1.txt",
+    "plan_id": "plan_5a9212afdbf7",
+    "card_id": "3affbe02-ad00-492a-a375-735b69922bf2",
+    "chain": "base",
+    "chains_in_plan": [
+      "base"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_f15f584424",
+        "action": "approve",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "data": "0x095ea7b3000000000000000000000000a238dd80c259a72e81d7e4664a9801593f98d1c50000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_505d56ba00",
+        "action": "supply",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5",
+          "data": "0x617ba037000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "base"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\G02_resume_after_block\\turn_1.txt",
+    "plan_id": "plan_e974e9be114c",
+    "card_id": "15e4bf79-60c3-461b-a29c-cdf670743bef",
+    "chain": "optimism",
+    "chains_in_plan": [
+      "optimism"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_808e482666",
+        "action": "approve",
+        "chain": "optimism",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad0000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_d1aacfaa88",
+        "action": "supply",
+        "chain": "optimism",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba0370000000000000000000000000b2c639c533813f4aa9d7837caf62653d097ff850000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "optimism"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\G02_resume_after_block\\turn_4.txt",
+    "plan_id": "plan_46f0568af28d",
+    "card_id": "77a8c556-9dc4-48d1-9868-4e2e44647ebb",
+    "chain": "optimism",
+    "chains_in_plan": [
+      "optimism"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_3935ff4439",
+        "action": "approve",
+        "chain": "optimism",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+          "data": "0x095ea7b3000000000000000000000000794a61358d6845594f94dc1db02a252b5b4814ad0000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_886fc2dbf3",
+        "action": "supply",
+        "chain": "optimism",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 10,
+          "to": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+          "data": "0x617ba0370000000000000000000000000b2c639c533813f4aa9d7837caf62653d097ff850000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x794a61358d6845594f94dc1db02a252b5b4814ad"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "optimism"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\G03_session_resume\\turn_1.txt",
+    "plan_id": "plan_2e54a4e8685c",
+    "card_id": "c1f46308-f0ee-48a4-8073-b8a836de93f8",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_62f1ce7979",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "data": "0x095ea7b300000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e20000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_a1a921c1ac",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+          "data": "0x617ba037000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\G05_rebuild_after_amount_change\\turn_1.txt",
+    "plan_id": "plan_e56d481eebd6",
+    "card_id": "8b33dc5b-78f6-4b2b-8a2a-a43e33e2b7e2",
+    "chain": "base",
+    "chains_in_plan": [
+      "base"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_e86043eec5",
+        "action": "approve",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "data": "0x095ea7b3000000000000000000000000a238dd80c259a72e81d7e4664a9801593f98d1c50000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_59f486b3e9",
+        "action": "supply",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5",
+          "data": "0x617ba037000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "base"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\G05_rebuild_after_amount_change\\turn_2.txt",
+    "plan_id": "plan_55d6af9b2249",
+    "card_id": "7837b1d2-91ec-460a-936c-5301244cc6d2",
+    "chain": "base",
+    "chains_in_plan": [
+      "base"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_3f6f9340cd",
+        "action": "approve",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "200",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "data": "0x095ea7b3000000000000000000000000a238dd80c259a72e81d7e4664a9801593f98d1c5000000000000000000000000000000000000000000000000000000000bebc200",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_ca3617588a",
+        "action": "supply",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "200.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5",
+          "data": "0x617ba037000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda02913000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "base"
+      ],
+      "assets_required": {
+        "USDC": "200"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\G05_rebuild_after_amount_change\\turn_3.txt",
+    "plan_id": "plan_101f7cc9520d",
+    "card_id": "b45cfcb7-0e2d-43e1-9608-425e72468180",
+    "chain": "base",
+    "chains_in_plan": [
+      "base"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_3df5b30229",
+        "action": "approve",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "50",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "data": "0x095ea7b3000000000000000000000000a238dd80c259a72e81d7e4664a9801593f98d1c50000000000000000000000000000000000000000000000000000000002faf080",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_fecbbaf556",
+        "action": "supply",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "50.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5",
+          "data": "0x617ba037000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000002faf080000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "base"
+      ],
+      "assets_required": {
+        "USDC": "50"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\G05_rebuild_after_amount_change\\turn_4.txt",
+    "plan_id": "plan_823353315352",
+    "card_id": "9c50f1a2-c099-46b9-85d3-525673f31359",
+    "chain": "base",
+    "chains_in_plan": [
+      "base"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_7119261989",
+        "action": "approve",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "50",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "data": "0x095ea7b3000000000000000000000000a238dd80c259a72e81d7e4664a9801593f98d1c50000000000000000000000000000000000000000000000000000000002faf080",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_36758686df",
+        "action": "supply",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "50",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5",
+          "data": "0x617ba037000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000002faf080000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "base"
+      ],
+      "assets_required": {
+        "USDC": "50"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\G07_retry_after_rpc\\turn_4.txt",
+    "plan_id": "plan_2c75b77ab494",
+    "card_id": "95bff79b-6032-42da-8221-93beda82772f",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_397b93205f",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "data": "0x095ea7b300000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e20000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_c1b2f7fc9a",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+          "data": "0x617ba037000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\G09_user_initiated_cancel\\turn_1.txt",
+    "plan_id": "plan_2d8cd87a1a09",
+    "card_id": "47365bd2-858f-4529-98d7-0b84af7aa06f",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_d3b4bd671a",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "data": "0x095ea7b300000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e20000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_de4a5cd38a",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+          "data": "0x617ba037000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\G10_walletswap_continuation\\turn_1.txt",
+    "plan_id": "plan_15b4ad8d58ae",
+    "card_id": "9edd0f3a-cba0-4da8-9ac2-c7d7a2a61020",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_1ecefddec7",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "data": "0x095ea7b300000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e20000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_2f7a6d4443",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+          "data": "0x617ba037000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\G10_walletswap_continuation\\turn_3.txt",
+    "plan_id": "plan_ce361416f28f",
+    "card_id": "94b2f50f-5ec3-4685-bf6e-833d9d6c9170",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_1f2309b693",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "data": "0x095ea7b300000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e20000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_f326af76ce",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+          "data": "0x617ba037000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\G10_walletswap_continuation\\turn_4.txt",
+    "plan_id": "plan_ce361416f28f",
+    "card_id": "94b2f50f-5ec3-4685-bf6e-833d9d6c9170",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_1f2309b693",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "data": "0x095ea7b300000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e20000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_f326af76ce",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+          "data": "0x617ba037000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\H03_S3_native_eth_V3\\turn_3.txt",
+    "plan_id": "plan_af6bfbe60898",
+    "card_id": "f0047a74-6a2e-42ad-b4ac-863e2dd4ecc7",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 5,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_1aee9b4ca2",
+        "action": "swap",
+        "chain": "ethereum",
+        "protocol": "uniswap-v3",
+        "status": "ready",
+        "asset_in": "ETH",
+        "amount_in": "0.022936234636245926",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+          "data": "0xb94c3609000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000517c6245fa7ba60000000000000000000000000000000000000000000000000000000000000fa495352c9f044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116d11cc8c9b85f182559eb6a83102022cae5927c45e50017f85234ec290de353053000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000004346387bf4300000000000008bedfac7488dccaafdd66d1d7d56349780fe0477e0001010203000405068788ffffffffffffffffffffffffffffffffffffffffff6e7a43a3010809ffffffff087e7d64d987cab6eed08a191c4c2459daf2f8ed0b241c59120108ffffffffffff7e7d64d987cab6eed08a191c4c2459daf2f8ed0b000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000140000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000240000000000000000000000000000000000000000000000000000000000000028000000000000000000000000000000000000000000000000000000000000002c000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000000de00000000000000000000000000000000000000000000000000000000000000e20000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000517c6245fa7ba60000000000000000000000000000000000000000000000000000000000000020000000000000000000000000179dc3fb0f2230094894317f307241a52cdb38aa0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000002fb5e7e0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000ab27db9e0105af3d9717b0ccef11e2cc655156090000000000000000000000000000000000000000000000000000000000000ac00000000000000000000000000000000000000000000000000000000000000a84f0d7bb940000000000000000000000002c0552e5dcb79b064fd23e358a86810bc599424400000000000000000000000000000000000000000000000000517c6245fa7ba600000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000160000000000000000000000000000000000000000000000000000000006a08efbe00000000000000000000000000000000000000000000000000000000000001e00000000000000000000000000000000000000000000000000000000000000a600000000000000000000000000000000000000000000000000000000000000001000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000002f78d62000000000000000000000000bedfac7488dccaafdd66d1d7d56349780fe0477e0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bedfac7488dccaafdd66d1d7d56349780fe0477e0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000006a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000de0b6b3a764000000000000000000000000000086d34c17e54e1a96ad45fe7b49b52267118bd4f3000000000000000000000000000000000000000000000000000000000000008001000000004400000000000086d34c17e54e1a96ad45fe7b49b52267118bd4f300000000000000000000000000000000000000000000000000000000000005249402f74800000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009249fdba2a7f90f00000000000000000000000000000000000000000000000000000000000000030400000000000000000000000000000000000000000000000000000000000003c400000000000000000000000066a9893cc07d91d95644aedd05d03f95e1dba8af000000000000000000000000000000000000000000000000000000000000042424856bc30000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000011000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000340000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000003060c0f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000001e00000000000000000000000000000000000000000000000000000000000000240000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000de0b6b3a76400000000000000000000000000001eec73a5d365674a76d35b6157a177c983e48dc800000000000000000000000000000000000000000000000000000000000000800100000000240000000000001eec73a5d365674a76d35b6157a177c983e48dc80000000000000000000000000000000000000000000000000000000000000084393ec11e00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002fb5e7e000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000cd67ab9fb2102e0759345273d0297306bcb539e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000002f78d6100000000000000000000000000000000000000000000000000000000",
+          "value": "22936234636245926",
+          "spender": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_50659d284d",
+        "action": "swap",
+        "chain": "ethereum",
+        "protocol": "uniswap-v3",
+        "status": "pending",
+        "asset_in": "ETH",
+        "amount_in": "0.027063765363754073",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+          "data": "0xb94c3609000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000602659e8ca8459000000000000000000000000000000000000000000000000000000000000026495352c9f044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116d1e5c1ea25e3af6f66d3192a3616f919131805ba86d10a76710c23be4af38c1cf000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000004d0e30db00300ffffffffffffc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2a9059cbb010100ffffffffffc02aaa39b223fe8d0a0e5c4f27ead9083c756cc26e7a43a3010002ffffffff027e7d64d987cab6eed08a191c4c2459daf2f8ed0b241c59120102ffffffffffff7e7d64d987cab6eed08a191c4c2459daf2f8ed0b0000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000602659e8ca84590000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000005fab478a2fe78600000000000000000000000000000000000000000000000000000000",
+          "value": "27063765363754073",
+          "spender": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf"
+        }
+      },
+      {
+        "index": 3,
+        "step_id": "step_f3f54f4765",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "uniswap-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "24082",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "data": "0x095ea7b3000000000000000000000000c36442b4a4522e871399cd717abdd847ab11fe880000000000000000000000000000000000000000000000000000000000005e12",
+          "value": "0x0",
+          "spender": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
+        }
+      },
+      {
+        "index": 4,
+        "step_id": "step_d4223c8ef3",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "uniswap-v3",
+        "status": "pending",
+        "asset_in": "WETH",
+        "amount_in": "12355197231279",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "data": "0x095ea7b3000000000000000000000000c36442b4a4522e871399cd717abdd847ab11fe8800000000000000000000000000000000000000000000000000000b3cab2460af",
+          "value": "0x0",
+          "spender": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
+        }
+      },
+      {
+        "index": 5,
+        "step_id": "step_55f006922f",
+        "action": "deposit_lp",
+        "chain": "ethereum",
+        "protocol": "uniswap-v3",
+        "status": "pending",
+        "asset_in": "ETH",
+        "amount_in": "0.05",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+          "data": "0x88316456000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000000000000000000000000000000000000000001f400000000000000000000000000000000000000000000000000000000000306ec0000000000000000000000000000000000000000000000000000000000030ec6000000000000000000000000000000000000000000000000000000000000599800000000000000000000000000000000000000000000000000000ab3af2ed5fc000000000000000000000000000000000000000000000000000000000000592500000000000000000000000000000000000000000000000000000aa5fc6314ea000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000000000000000000000000000000000006a08e65e",
+          "value": "0x0",
+          "spender": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 15.0,
+      "estimated_duration_s": 120,
+      "signatures_required": 5,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "ETH": "0.05"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\H03_S3_native_eth_V3\\turn_4.txt",
+    "plan_id": "plan_af6bfbe60898",
+    "card_id": "f0047a74-6a2e-42ad-b4ac-863e2dd4ecc7",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 5,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_1aee9b4ca2",
+        "action": "swap",
+        "chain": "ethereum",
+        "protocol": "uniswap-v3",
+        "status": "ready",
+        "asset_in": "ETH",
+        "amount_in": "0.022936234636245926",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+          "data": "0xb94c3609000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000517c6245fa7ba60000000000000000000000000000000000000000000000000000000000000fa495352c9f044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116d11cc8c9b85f182559eb6a83102022cae5927c45e50017f85234ec290de353053000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000004346387bf4300000000000008bedfac7488dccaafdd66d1d7d56349780fe0477e0001010203000405068788ffffffffffffffffffffffffffffffffffffffffff6e7a43a3010809ffffffff087e7d64d987cab6eed08a191c4c2459daf2f8ed0b241c59120108ffffffffffff7e7d64d987cab6eed08a191c4c2459daf2f8ed0b000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000140000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000240000000000000000000000000000000000000000000000000000000000000028000000000000000000000000000000000000000000000000000000000000002c000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000000de00000000000000000000000000000000000000000000000000000000000000e20000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000517c6245fa7ba60000000000000000000000000000000000000000000000000000000000000020000000000000000000000000179dc3fb0f2230094894317f307241a52cdb38aa0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000002fb5e7e0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000ab27db9e0105af3d9717b0ccef11e2cc655156090000000000000000000000000000000000000000000000000000000000000ac00000000000000000000000000000000000000000000000000000000000000a84f0d7bb940000000000000000000000002c0552e5dcb79b064fd23e358a86810bc599424400000000000000000000000000000000000000000000000000517c6245fa7ba600000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000160000000000000000000000000000000000000000000000000000000006a08efbe00000000000000000000000000000000000000000000000000000000000001e00000000000000000000000000000000000000000000000000000000000000a600000000000000000000000000000000000000000000000000000000000000001000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000002f78d62000000000000000000000000bedfac7488dccaafdd66d1d7d56349780fe0477e0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bedfac7488dccaafdd66d1d7d56349780fe0477e0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000006a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000de0b6b3a764000000000000000000000000000086d34c17e54e1a96ad45fe7b49b52267118bd4f3000000000000000000000000000000000000000000000000000000000000008001000000004400000000000086d34c17e54e1a96ad45fe7b49b52267118bd4f300000000000000000000000000000000000000000000000000000000000005249402f74800000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009249fdba2a7f90f00000000000000000000000000000000000000000000000000000000000000030400000000000000000000000000000000000000000000000000000000000003c400000000000000000000000066a9893cc07d91d95644aedd05d03f95e1dba8af000000000000000000000000000000000000000000000000000000000000042424856bc30000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000011000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000340000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000003060c0f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000001e00000000000000000000000000000000000000000000000000000000000000240000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000de0b6b3a76400000000000000000000000000001eec73a5d365674a76d35b6157a177c983e48dc800000000000000000000000000000000000000000000000000000000000000800100000000240000000000001eec73a5d365674a76d35b6157a177c983e48dc80000000000000000000000000000000000000000000000000000000000000084393ec11e00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002fb5e7e000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000cd67ab9fb2102e0759345273d0297306bcb539e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000002f78d6100000000000000000000000000000000000000000000000000000000",
+          "value": "22936234636245926",
+          "spender": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_50659d284d",
+        "action": "swap",
+        "chain": "ethereum",
+        "protocol": "uniswap-v3",
+        "status": "pending",
+        "asset_in": "ETH",
+        "amount_in": "0.027063765363754073",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+          "data": "0xb94c3609000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000602659e8ca8459000000000000000000000000000000000000000000000000000000000000026495352c9f044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116d1e5c1ea25e3af6f66d3192a3616f919131805ba86d10a76710c23be4af38c1cf000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000004d0e30db00300ffffffffffffc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2a9059cbb010100ffffffffffc02aaa39b223fe8d0a0e5c4f27ead9083c756cc26e7a43a3010002ffffffff027e7d64d987cab6eed08a191c4c2459daf2f8ed0b241c59120102ffffffffffff7e7d64d987cab6eed08a191c4c2459daf2f8ed0b0000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000602659e8ca84590000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000005fab478a2fe78600000000000000000000000000000000000000000000000000000000",
+          "value": "27063765363754073",
+          "spender": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf"
+        }
+      },
+      {
+        "index": 3,
+        "step_id": "step_f3f54f4765",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "uniswap-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "24082",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "data": "0x095ea7b3000000000000000000000000c36442b4a4522e871399cd717abdd847ab11fe880000000000000000000000000000000000000000000000000000000000005e12",
+          "value": "0x0",
+          "spender": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
+        }
+      },
+      {
+        "index": 4,
+        "step_id": "step_d4223c8ef3",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "uniswap-v3",
+        "status": "pending",
+        "asset_in": "WETH",
+        "amount_in": "12355197231279",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "data": "0x095ea7b3000000000000000000000000c36442b4a4522e871399cd717abdd847ab11fe8800000000000000000000000000000000000000000000000000000b3cab2460af",
+          "value": "0x0",
+          "spender": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
+        }
+      },
+      {
+        "index": 5,
+        "step_id": "step_55f006922f",
+        "action": "deposit_lp",
+        "chain": "ethereum",
+        "protocol": "uniswap-v3",
+        "status": "pending",
+        "asset_in": "ETH",
+        "amount_in": "0.05",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+          "data": "0x88316456000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000000000000000000000000000000000000000001f400000000000000000000000000000000000000000000000000000000000306ec0000000000000000000000000000000000000000000000000000000000030ec6000000000000000000000000000000000000000000000000000000000000599800000000000000000000000000000000000000000000000000000ab3af2ed5fc000000000000000000000000000000000000000000000000000000000000592500000000000000000000000000000000000000000000000000000aa5fc6314ea000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000000000000000000000000000000000006a08e65e",
+          "value": "0x0",
+          "spender": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 15.0,
+      "estimated_duration_s": 120,
+      "signatures_required": 5,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "ETH": "0.05"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\H07_S7_dust_mixing\\turn_1.txt",
+    "plan_id": "plan_111525dd090f",
+    "card_id": "b21a8f8e-6074-44b8-a342-7179e24ea677",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 1,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_04336ebb16",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "curve",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "50.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+          "data": "0xb94c3609000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000040000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000002faf08000000000000000000000000000000000000000000000000000000000000004c495352c9f044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116d237cd6a3dadf2d3e71b2e392fef2320d9c8d9a5308aed9755ff3c8084992521d000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000001c00000000000000000000000000000000000000000000000000000000000000009095ea7b3010001ffffffffffa0b86991c6218b36c1d19d4a2e9eb0ce3606eb4870a082310102ffffffffff01d001ae433f254283fece51d4acce8c53263aa186b72df5de018304ffffffffffd001ae433f254283fece51d4acce8c53263aa18670a082310102ffffffffff02d001ae433f254283fece51d4acce8c53263aa1867ae2b5c7010201ffffffff01ca99eaa38e8f37a168214a3a57c9a45a58563ed5b67d77c5010201ffffffff01ca99eaa38e8f37a168214a3a57c9a45a58563ed5a9059cbb010501ffffffffffd001ae433f254283fece51d4acce8c53263aa1866e7a43a3010106ffffffff017e7d64d987cab6eed08a191c4c2459daf2f8ed0b241c59120101ffffffffffff7e7d64d987cab6eed08a191c4c2459daf2f8ed0b000000000000000000000000000000000000000000000000000000000000000700000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000120000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000001a00000000000000000000000000000000000000000000000000000000000000220000000000000000000000000000000000000000000000000000000000000026000000000000000000000000000000000000000000000000000000000000002a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000d001ae433f254283fece51d4acce8c53263aa18600000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000002faf08000000000000000000000000000000000000000000000000000000000000000200000000000000000000000004fe93ebc4ce6ae4f81601cc7ce7139023919e003000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000002faf08000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000002ac116632685657040000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000002ac1166326856570400000000000000000000000000000000000000000000000000000000",
+          "value": "0",
+          "gas": "0x499d9",
+          "spender": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.5,
+      "estimated_duration_s": 30,
+      "signatures_required": 1,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDC": "50"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\H07_S7_dust_mixing\\turn_4.txt",
+    "plan_id": "plan_0e24425dbe00",
+    "card_id": "03df4932-a166-4611-981f-a89527d52628",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 1,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_093d75b940",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "curve",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "50.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+          "data": "0xb94c3609000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000040000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000002faf08000000000000000000000000000000000000000000000000000000000000004c495352c9f044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116d6408723b3b8164ba45eae00e3f02f37adcce0f35d06ccefed4cc54e325d500c1000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000001c00000000000000000000000000000000000000000000000000000000000000009095ea7b3010001ffffffffffa0b86991c6218b36c1d19d4a2e9eb0ce3606eb4870a082310102ffffffffff01d001ae433f254283fece51d4acce8c53263aa186b72df5de018304ffffffffffd001ae433f254283fece51d4acce8c53263aa18670a082310102ffffffffff02d001ae433f254283fece51d4acce8c53263aa1867ae2b5c7010201ffffffff01ca99eaa38e8f37a168214a3a57c9a45a58563ed5b67d77c5010201ffffffff01ca99eaa38e8f37a168214a3a57c9a45a58563ed5a9059cbb010501ffffffffffd001ae433f254283fece51d4acce8c53263aa1866e7a43a3010106ffffffff017e7d64d987cab6eed08a191c4c2459daf2f8ed0b241c59120101ffffffffffff7e7d64d987cab6eed08a191c4c2459daf2f8ed0b000000000000000000000000000000000000000000000000000000000000000700000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000120000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000001a00000000000000000000000000000000000000000000000000000000000000220000000000000000000000000000000000000000000000000000000000000026000000000000000000000000000000000000000000000000000000000000002a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000d001ae433f254283fece51d4acce8c53263aa18600000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000002faf08000000000000000000000000000000000000000000000000000000000000000200000000000000000000000004fe93ebc4ce6ae4f81601cc7ce7139023919e003000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000002faf08000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000002ac116632685657040000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000002ac1166326856570400000000000000000000000000000000000000000000000000000000",
+          "value": "0",
+          "gas": "0x499cd",
+          "spender": "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.5,
+      "estimated_duration_s": 30,
+      "signatures_required": 1,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDC": "50"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\H08_S8_partial_allowance\\turn_2.txt",
+    "plan_id": "plan_bbf640163e56",
+    "card_id": "80abd509-ac45-488e-ac24-787cd9e5cb75",
+    "chain": "base",
+    "chains_in_plan": [
+      "base"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_0ca181ae40",
+        "action": "approve",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "50",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "data": "0x095ea7b3000000000000000000000000a238dd80c259a72e81d7e4664a9801593f98d1c50000000000000000000000000000000000000000000000000000000002faf080",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_1a5181b239",
+        "action": "supply",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "50.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5",
+          "data": "0x617ba037000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000002faf080000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "base"
+      ],
+      "assets_required": {
+        "USDC": "50"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\H13_S13_aave_supply\\turn_2.txt",
+    "plan_id": "plan_282c4fbd0260",
+    "card_id": "d68ec506-7871-4247-9cc9-968c6fb5ef39",
+    "chain": "base",
+    "chains_in_plan": [
+      "base"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_19e88f2731",
+        "action": "approve",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "data": "0x095ea7b3000000000000000000000000a238dd80c259a72e81d7e4664a9801593f98d1c50000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_e590513e4b",
+        "action": "supply",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5",
+          "data": "0x617ba037000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "base"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\H13_S13_aave_supply\\turn_4.txt",
+    "plan_id": "plan_6fd70a6ac284",
+    "card_id": "504cda5d-df79-43d4-8eeb-bd24ad9d51fd",
+    "chain": "base",
+    "chains_in_plan": [
+      "base"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_13af03f604",
+        "action": "approve",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "data": "0x095ea7b3000000000000000000000000a238dd80c259a72e81d7e4664a9801593f98d1c50000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_8a4946d0a1",
+        "action": "supply",
+        "chain": "base",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 8453,
+          "to": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5",
+          "data": "0x617ba037000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "base"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\H15_S15_wrong_wallet\\turn_1.txt",
+    "plan_id": "plan_7fcb52b285e1",
+    "card_id": "5b335207-8360-47c1-a579-4cc6903b1f9a",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_94b6e21d64",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "data": "0x095ea7b300000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e20000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_7788ea51e6",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+          "data": "0x617ba037000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\H15_S15_wrong_wallet\\turn_3.txt",
+    "plan_id": "plan_ea192513c5ea",
+    "card_id": "3588f927-af1b-456c-a5a5-4003c5ed0d82",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_f9727a3a2d",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "data": "0x095ea7b300000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e20000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_fa0252bf0a",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+          "data": "0x617ba037000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  },
+  {
+    "source_file": "passA-wave14\\H15_S15_wrong_wallet\\turn_4.txt",
+    "plan_id": "plan_ea192513c5ea",
+    "card_id": "3588f927-af1b-456c-a5a5-4003c5ed0d82",
+    "chain": "ethereum",
+    "chains_in_plan": [
+      "ethereum"
+    ],
+    "step_count": 2,
+    "signable_count": 1,
+    "steps": [
+      {
+        "index": 1,
+        "step_id": "step_f9727a3a2d",
+        "action": "approve",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "ready",
+        "asset_in": "USDC",
+        "amount_in": "100",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "data": "0x095ea7b300000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e20000000000000000000000000000000000000000000000000000000005f5e100",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      },
+      {
+        "index": 2,
+        "step_id": "step_fa0252bf0a",
+        "action": "supply",
+        "chain": "ethereum",
+        "protocol": "aave-v3",
+        "status": "pending",
+        "asset_in": "USDC",
+        "amount_in": "100.0",
+        "transaction": {
+          "chain_kind": "evm",
+          "chain_id": 1,
+          "to": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+          "data": "0x617ba037000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000",
+          "value": "0x0",
+          "spender": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+        }
+      }
+    ],
+    "totals": {
+      "estimated_gas_usd": 4.2,
+      "estimated_duration_s": 30,
+      "signatures_required": 2,
+      "chains_touched": [
+        "ethereum"
+      ],
+      "assets_required": {
+        "USDC": "100"
+      }
+    },
+    "blocker_count": 0
+  }
+]
