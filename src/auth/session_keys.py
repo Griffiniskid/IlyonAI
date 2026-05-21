@@ -29,6 +29,10 @@ class SessionKeyPolicy:
     allowed_assets: tuple[str, ...] = ()    # ("USDC", "USDT")
     spend_cap_24h_usd: Decimal | None = None
     spend_cap_total_usd: Decimal | None = None
+    # Phase C P1-C-005 — D.5 per-action cap. Spec mandates a single-tx
+    # ceiling separate from the 24h rolling cap so a compromised key can't
+    # drain everything in one giant transaction within its allowance window.
+    spend_cap_single_tx_usd: Decimal | None = None
     spent_24h_usd: Decimal = Decimal("0")
     spent_total_usd: Decimal = Decimal("0")
     expires_at: datetime | None = None
@@ -46,6 +50,7 @@ class SessionKeyPolicy:
         allowed_assets: Iterable[str] = (),
         spend_cap_24h_usd: Decimal | float | None = None,
         spend_cap_total_usd: Decimal | float | None = None,
+        spend_cap_single_tx_usd: Decimal | float | None = None,
         expires_at: datetime | None = None,
     ) -> "SessionKeyPolicy":
         return cls(
@@ -58,6 +63,7 @@ class SessionKeyPolicy:
             allowed_assets=tuple(a.upper() for a in allowed_assets),
             spend_cap_24h_usd=Decimal(str(spend_cap_24h_usd)) if spend_cap_24h_usd is not None else None,
             spend_cap_total_usd=Decimal(str(spend_cap_total_usd)) if spend_cap_total_usd is not None else None,
+            spend_cap_single_tx_usd=Decimal(str(spend_cap_single_tx_usd)) if spend_cap_single_tx_usd is not None else None,
             expires_at=expires_at,
             created_at=datetime.now(timezone.utc),
         )
@@ -90,6 +96,13 @@ class SessionKeyPolicy:
         amt = Decimal(str(amount_usd))
         if amt <= 0:
             return False, "amount_usd must be positive"
+        # Phase C P1-C-005 — D.5 per-action cap MUST fire before period caps
+        # so a compromised key cannot drain everything via one giant tx.
+        if self.spend_cap_single_tx_usd is not None and amt > self.spend_cap_single_tx_usd:
+            return False, (
+                f"per-action spend cap exceeded: {amt} > "
+                f"cap={self.spend_cap_single_tx_usd}"
+            )
         if self.spend_cap_24h_usd is not None and self.spent_24h_usd + amt > self.spend_cap_24h_usd:
             return False, (
                 f"24h spend cap exceeded: spent={self.spent_24h_usd} + "
@@ -120,6 +133,7 @@ class SessionKeyPolicy:
             "allowed_assets_json": json.dumps(list(self.allowed_assets)),
             "spend_cap_24h_usd": str(self.spend_cap_24h_usd) if self.spend_cap_24h_usd is not None else None,
             "spend_cap_total_usd": str(self.spend_cap_total_usd) if self.spend_cap_total_usd is not None else None,
+            "spend_cap_single_tx_usd": str(self.spend_cap_single_tx_usd) if self.spend_cap_single_tx_usd is not None else None,
             "spent_24h_usd": str(self.spent_24h_usd),
             "spent_total_usd": str(self.spent_total_usd),
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,

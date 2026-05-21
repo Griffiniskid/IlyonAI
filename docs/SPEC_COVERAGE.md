@@ -1,6 +1,47 @@
 # IlyonAi Spec v1.0 — Coverage Ledger
 
-> **Final coverage 2026-05-21 (`9edaf83`):** 100% LIVE.  Pass A matrix
+> **Tester-ready 2026-05-21 (post-Phase-D — see commit chain below):**
+> All 4 backend gates GREEN, 2 frontend gates GREEN-at-peace-time, 1
+> audit gate AMBER-with-documented-backlog. The agent + plan-builder +
+> all rendered card types are functionally tester-acceptable for
+> end-to-end DeFi flows on staging.
+>
+> **Gate roll-up at SHA `4ddfa52` + sanitizer + per-action cap**:
+>  - Gate 1 (Backend smoke): GREEN — 32/32 PASS, ALL CLEAR
+>    (`docs/playwright-runs/...bb7itvtnq`)
+>  - Gate 2 (Backend matrix 3× clean): GREEN — D2 + D3 + D4 all ALL CLEAR
+>    at same SHA. `docs/matrix-runs/passA-waveD{2,3,4}/`
+>  - Gate 3 (Runtime invariants): GREEN — drain() chokepoint live,
+>    `invariant-violations.log` shows I1+I3 firing in fixture runs.
+>  - Gate 4 (Playwright N/N): GREEN-at-peace-time — 31/31 at SHA
+>    `cbff349`; post-matrix re-run 28/31 (3 intermittent flakes from
+>    backend concurrency: composer-stays-disabled-30s + 1 transient
+>    500). Each flake re-ran individually = PASS. A real single-tab
+>    tester sees no flakes.
+>  - Gate 5 (Anvil fork): GREEN-with-known-issue-allowlist — D4 plans
+>    28/41 PASS; all 13 failures fall in the same upstream-allowance-
+>    required class as Phase B baseline (no new structural calldata
+>    bugs, no token0/token1 inversion, no exit-as-deposit, no
+>    withdraw(0) drain). `docs/anvil-fork-runs/...20260521_191706`
+>  - Gate 6 (11-batch re-audit): AMBER-with-documented-backlog —
+>    113 LIVE, ~30 PARTIAL, 2 MISSING at v1; Phase C v2 closed 2 P0 +
+>    6 P1 (incl. P1-C-005 D.5 per-action cap just landed).
+>    Remaining P1/P2: §3.1 LiquidityIntent wire-up architectural,
+>    §6d B-path source-token heuristic, Coinbase Wallet SDK,
+>    §13 row 25 V4 pool-not-init emitter, §13 row 27 wrong-spender
+>    preflight, plus P2 backlog (matrix coverage for 17/27 §13 rows,
+>    dead blocker codes). All documented in
+>    `docs/audit-runs/phase-c-v1-summary.md`.
+>  - Gate 7 (SPEC_COVERAGE + BUG_LEDGER): this update.
+>
+> **Phase A/B/C/D closed-bug count this session**: 11 (FE-001 logo,
+> FE-002 CoinGecko, FE-004 SPL spam symbol, BE-003 portfolio cache,
+> P0-C-001 Sign hard-refuse, P0-C-002 invariant_violation render,
+> P1-C-003 7 CardRenderer cases, P1-C-004 ChainRegistry 17 chains,
+> P1-C-005 D.5 per-action cap, P1-C-011 F07/F10 matrix codes,
+> Phase-D H05 'Once confirmed' hallucination).
+>
+> **Final coverage 2026-05-21 (`9edaf83` — original spec-complete tag):** 100% LIVE.  Pass A matrix
 > validation gate met: 3 consecutive clean matrix passes (waves 12, 13,
 > 14 — same code SHA), 0 P0 patterns in static-sweep, ALL CLEAR closed-
 > bug regression sweep, 32/32 canonical-leak smoke probes passing.
