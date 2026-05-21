@@ -6161,10 +6161,19 @@ _SECOND_ALLOCATION_HEADING_RE = re.compile(
 #     for Velodrome CL" — wave-5 ran "are set" but missed "are already set"
 #     (added "already" alternative).
 _FREEFORM_TX_STATE_HALLUCINATION_RE = re.compile(
-    # Bare truncated hash form (H02 t2: `0x3a9f…c1e2 Pending ~12 s`)
-    r"\b0x[0-9a-fA-F]{3,}…[0-9a-fA-F]{2,}\b|"
+    # Bare truncated hash form (H02 t2: `0x3a9f…c1e2 Pending ~12 s`).
+    # Phase D D1 — wave-14 H05 leaked `0x3f…a9` (only 2 hex chars on the
+    # left of the ellipsis) past the {3,} minimum; relaxed to {2,} so the
+    # short-truncated form catches too.
+    r"\b0x[0-9a-fA-F]{2,}…[0-9a-fA-F]{2,}\b|"
     # "Current tx: 0x…" / "Tx: 0x…" without backticks
     r"\b(?:current\s+)?tx\s*[:—–-]\s*`?0x[0-9a-fA-F]{4,}|"
+    # Phase D D1 — H05 leak: "Bridge transaction submitted on Ethereum"
+    # (and parallel swap|deposit|withdraw|approve|stake verbs) WITHOUT a
+    # preceding "has been" — direct declarative tx-state assertion.
+    r"\b(?:bridge|swap|deposit|withdraw|approve|stake|unstake|wrap|unwrap|claim|repay|borrow)\s+"
+    r"transaction\s+"
+    r"(?:submitted|broadcast(?:ed)?|confirmed|delivered|sent|pending|executed)\b|"
     # "transaction|draft|plan|approvals (for X) is/are ready/set/in place"
     r"(?:transaction|draft|plan|approvals?)\s+"
     r"(?:for\s+[\w$.,\s]{1,80}?\s+)?"
@@ -6183,9 +6192,16 @@ _FREEFORM_TX_STATE_HALLUCINATION_RE = re.compile(
     r"track\s+(?:its|the)\s+progress\s+on\s+"
     r"(?:etherscan|basescan|arbiscan|optimistic\s+etherscan|polygonscan|"
     r"bscscan|snowtrace|solscan|explorer\.solana)\b|"
-    # "Once confirmed, X will be supplied/staked/...
-    r"once\s+confirmed,?\s+[\d.]+\s+\w+\s+will\s+be\s+"
-    r"(?:supplied|staked|bridged|deposited|swapped)\b|"
+    # "Once confirmed, X will be supplied/staked/... — Phase D D1 H05
+    # leaked "Once confirmed, the USDT will arrive on Solana" — verbs
+    # "arrive" / "delivered" weren't in the wave-9 list. Broadened the
+    # verb list + made the "X will" subject pattern more flexible (allow
+    # determiner article like "the USDT" not just bare amount+symbol).
+    r"once\s+confirmed,?\s+(?:[\d.,]+\s+\w+|the\s+\w+|a\s+\w+|your\s+\w+|\w+)\s+will\s+"
+    r"(?:be\s+)?"
+    r"(?:supplied|staked|bridged|deposited|swapped|arrive|appear|land|"
+    r"be\s+delivered|be\s+executed|be\s+credited|be\s+available|"
+    r"reflect|sync)\b|"
     # Structured freeform header "**Protocol · Verb** —"
     # (e.g., "**Aave V3 · Supply** — Asset: USDC")
     r"^\s*\*\*[A-Z][A-Za-z0-9 ./-]{1,40}\s*·\s*"
