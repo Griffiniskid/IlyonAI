@@ -1,72 +1,84 @@
 ---
-description: Continuation loop for the IlyonAi tester-ready staging goal. Re-fires the agent until all 7 gates (backend smoke + matrix 3x + invariants + Playwright + Anvil fork + 12-subagent re-audit + ledger receipts) hold simultaneously. Never stops until tester opens staging and sees 0 bugs.
+description: Continuation loop for the IlyonAi tester-ready-v2 goal. Re-fires the agent until ALL 8 gates (smoke + matrix 3x + invariants I1-I12 + Playwright + Anvil + 11-batch re-audit + ledger receipts + conversation matrix LLM judge) hold simultaneously AND every BUG-RC-001..023 from AI Bug Convo.md is closed. Never stops until tester holds a real multi-turn conversation and sees 0 bugs.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, TaskCreate, TaskUpdate, TaskList, WebFetch, ScheduleWakeup, mcp__codebase-memory-mcp__*, mcp__gitnexus__*
 ---
 
-# /loop-autonomous — Continue IlyonAi Tester-Ready Goal
+# /loop-autonomous — Continue IlyonAi Tester-Ready-V2 Goal
 
 You are mid-pursuit of the goal defined in `.claude/commands/goal.md`. This
 command fires when the prior turn left work pending. Do not summarize or
 hand back to the user — **continue executing**.
 
-The backend matrix-fix loop is COMPLETE (`spec-complete` tag at `edadddf`,
-3 consecutive clean Pass A waves). The remaining work is **Phases A/B/C/D**
-of the tester-ready plan: Playwright (gate 4), Anvil fork-mainnet (gate 5),
-12-subagent re-audit (gate 6), integrated gate run (all 7 green).
+The V1 `tester-ready` tag was rolled out too early. The very first
+real-tester conversation (`AI Bug Convo.md`) surfaced 23 distinct bugs
+across protocol intent, card consistency, exception handling, time
+formatting, allocation flow, sentinel scoring, and Markdown rendering.
+**Read `RESUME_V11_PROMPT.md` if you've lost context** — it holds the
+full bug catalogue and root-cause taxonomy.
+
+The current work is **Waves RC-α/β/γ** + building Gate 8 conversation
+matrix.
 
 ---
 
 ## ALWAYS DO FIRST (cold-resume hygiene)
 
-1. **Check task state**: `TaskList` — what's `in_progress`? what's `pending`?
-   what's the next unblocked task in ID order?
-2. **Check git state**: `git log -1 --oneline && git status` — uncommitted
-   changes from a prior turn? HEAD ahead of origin?
-3. **Check tags**: `git tag -l "spec-complete tester-ready"` — both should
-   eventually be local-tagged; `tester-ready` is the finish line.
+1. **Check task state**: `TaskList` — what's `in_progress`? what's
+   `pending`? what's the next unblocked task in ID order?
+2. **Check git state**: `git log -1 --oneline && git status` —
+   uncommitted changes from a prior turn? HEAD ahead of origin?
+3. **Check tags**: `git tag -l "spec-complete pre-real-conversation-validation-v1 tester-ready-v2"`
+   — `tester-ready-v2` is the finish line; the V1 `tester-ready` tag
+   should be gone (rolled back to `pre-real-conversation-validation-v1`).
 4. **Check staging health**: `curl -fsS https://staging.ilyonai.com/api/v1/agent-health`
-   — if not 200, pause and investigate before any matrix/Playwright fire.
+   — if not 200, pause and investigate before any matrix/Playwright/
+   conversation fire.
 5. **Check recent work artefacts**:
    - `ls docs/matrix-runs/ 2>/dev/null | tail -5` — last pass/wave dir
-   - `ls docs/playwright-runs/ 2>/dev/null | tail -5` — last Playwright run
-   - `ls docs/anvil-fork-runs/ 2>/dev/null | tail -5` — last fork-sim run
-   - `ls docs/audit-runs/ 2>/dev/null | tail -5` — last re-audit run
-   - `tail -50 docs/matrix-runs/BUG_LEDGER.md 2>/dev/null` — bugs mid-fix
+   - `ls docs/playwright-runs/ 2>/dev/null | tail -5` — last Playwright
+   - `ls docs/anvil-fork-runs/ 2>/dev/null | tail -5` — last fork-sim
+   - `ls docs/audit-runs/ 2>/dev/null | tail -5` — last re-audit
+   - `ls docs/conversation-runs/ 2>/dev/null | tail -5` — last
+     conversation-matrix run (NEW)
+   - `tail -50 docs/matrix-runs/BUG_LEDGER.md 2>/dev/null` — bugs
+     mid-fix, especially the BUG-RC-* section
    - `git log --oneline -10` — what landed since the goal restarted
-6. **Pick up where you left off** — do not re-do completed work. Phases are
-   checkpointed via task state, git commits, and run directories.
+6. **Pick up where you left off** — do not re-do completed work. Phases
+   are checkpointed via task state, git commits, and run directories.
 
 ---
 
-## EXIT CHECK — STOP only when ALL 7 hold simultaneously
+## EXIT CHECK — STOP only when ALL 8 hold simultaneously
 
-- [ ] **Gate 1**: `scripts/validation/post_deploy_smoke.py` returns N/N PASS
-      against staging (current baseline 32/32)
-- [ ] **Gate 2**: 3 consecutive clean Pass A waves at the **same code SHA**
-      with static-sweep 0 P0 and regression-sweep ALL CLEAR (today: waves
-      12/13/14 at `9edaf83` — re-prove if backend changes for any Phase A/B
-      fix)
-- [ ] **Gate 3**: `docs/matrix-runs/invariant-violations.log` shows `drain()`
-      hook catching the expected structural classes; no silent producers
+- [ ] **Gate 1**: `scripts/validation/post_deploy_smoke.py` returns N/N
+      PASS against staging.
+- [ ] **Gate 2**: 3 consecutive clean Pass A waves at the **same code
+      SHA** with static-sweep 0 P0 and regression-sweep ALL CLEAR.
+- [ ] **Gate 3**: `docs/matrix-runs/invariant-violations.log` shows
+      `drain()` hook catching the expected structural classes; I1-I12
+      all wired.
 - [ ] **Gate 4**: `scripts/playwright_browser_smoke.py` returns N/N PASS
-      against staging covering every card type + 30+ matrix-chain flows;
-      every Sign button payload matches the SSE card EXACTLY; no
-      `undefined`/`NaN`/blank states in any flow
-- [ ] **Gate 5**: `scripts/anvil_fork_sim.py` broadcasts every
-      `execution_plan_v3` from the latest matrix pass on forked mainnet for
-      each chain; every step receipt succeeds with the expected balance
-      delta; no token0/token1 inversion, exit-as-deposit, or
-      withdraw(0)-style drains
-- [ ] **Gate 6**: 11 read-only subagents (batches A-K) return 0 PARTIAL + 0
-      MISSING + 0 NEW-GAP against the post-wave-N codebase
-- [ ] **Gate 7**: `docs/SPEC_COVERAGE.md` updated with a ≥2026-05-21 date +
-      the final tester-ready SHA at 100% LIVE; `docs/matrix-runs/BUG_LEDGER.md`
-      has an entry for every P0/P1 surfaced across audit + matrix waves +
-      fork sim + Playwright
-- [ ] **Final commit landed**: `spec(tester-ready): 75/75 V7-XXX + 12-subagent
-      re-audit clean + 3 matrix passes + Playwright N/N + Anvil fork N/N + 0
-      frontend bugs [<sha>]`, tagged `tester-ready`, staging deployed at that
-      exact SHA
+      including title/payload consistency check, sentinel-bar presence,
+      Markdown render, blocked-state field suppression, asset-pool
+      matching, and no raw exception in console.
+- [ ] **Gate 5**: `scripts/anvil_fork_replay.py` runs on every
+      execution_plan_v3 from the latest matrix pass + asserts
+      asset-pool matching (position token matches user-intent asset).
+- [ ] **Gate 6**: 11 read-only subagents return 0 PARTIAL + 0 MISSING +
+      0 NEW-GAP. **P1-C-006 + P1-C-010 must be LIVE, not deferred.**
+- [ ] **Gate 7**: `docs/SPEC_COVERAGE.md` updated with current date +
+      the final tester-ready-v2 SHA at 100% LIVE;
+      `docs/matrix-runs/BUG_LEDGER.md` has entries for every P0/P1 ever
+      surfaced including BUG-RC-001..023 with file:line fix evidence.
+- [ ] **Gate 8 (NEW)**: `scripts/validation/conversation_matrix.py`
+      runs ≥15 R-category conversations with per-turn LLM-judge
+      assertions. PASS bar: ≥95% turn-level assertions AND zero P0
+      turn-level failures.
+- [ ] **Final commit landed**:
+      `spec(tester-ready-v2): 75/75 V7-XXX + 12-subagent re-audit clean
+      + 3 matrix passes + Playwright N/N + Anvil fork N/N + conversation
+      matrix N/N + 0 frontend bugs + BUG-RC-001..023 closed [<sha>]`,
+      tagged `tester-ready-v2`, staging deployed at that exact SHA.
 
 If any are not yet true, **continue working**.
 
@@ -78,55 +90,70 @@ If any are not yet true, **continue working**.
 git status dirty?
   → finish/commit/push before anything else
 
-Phase A (Playwright) not yet N/N?
-  → next iteration:
-    - Read scripts/playwright_browser_smoke.py
-    - If coverage gap: extend with next card type or matrix-chain flow
-    - Run against staging
-    - If failures: triage (UI bug? sign-payload mismatch? render bug?)
-      - UI/frontend bug → fix in web/, push, redeploy, re-run
-      - Backend SSE bug → adds a row to BUG_LEDGER, fix in src/,
-        push, redeploy, then re-prove Gate 2 + Gate 3 too
-    - If all flows green: commit Playwright artefacts + advance to Phase B
+Wave RC-α (P0 root cause) incomplete?
+  → priority order:
+    1. Wire LiquidityIntent typed envelope as primary planner
+       (src/agent/simple_runtime.py), demoting _detect_* regex to
+       pre-filter only. Closes BUG-RC-001 + BUG-RC-004 + BUG-RC-005.
+    2. Add catch-all exception wrapper at tool dispatch — uncaught
+       Python becomes INTERNAL_ERROR_CAUGHT invariant_violation card.
+       Closes BUG-RC-003.
+    3. Fix Infinitys formatting at SIM_STALE/freshness/ETA sites with
+       finite-check helper. Closes BUG-RC-006.
+    4. Add ASSET_POOL_MISMATCH preflight in
+       src/defi/execution/preflight.py. Closes BUG-RC-002.
+    5. Add allocation-intent recognition ("pick N" / "distribute" /
+       "allocate" / "split across" → allocation generator). Closes
+       BUG-RC-005.
+  Each needs pin test + commit + push + ONE redeploy + matrix pass at
+  new SHA. After all 5: matrix MUST stay clean across 3 consecutive
+  passes (re-opens Gate 2).
 
-Phase B (Anvil fork) not yet N/N?
-  → next iteration:
-    - Read scripts/anvil_fork_sim.py
-    - If coverage gap: extend to cover next chain or plan type
-    - Pick latest matrix pass dir; iterate every emitted execution_plan_v3
-    - For each chain: fork, fund test wallet, broadcast plan in order
-    - If any step reverts or balance delta wrong:
-      - log to BUG_LEDGER (P0 — financial-loss class)
-      - fix in src/defi/execution/adapters/<chain>.py
-      - add pin test
-      - push, redeploy, re-prove Gate 2 + Gate 3 + Gate 4 + replay this plan
-    - If all plans succeed on all chains: commit fork-sim artefacts +
-      advance to Phase C
+Conversation matrix infra not built?
+  → build scripts/validation/conversation_matrix.py
+  → add R-category to tests/harness/v4_matrix.py (R01-R15)
+  → wire LLM judge with per-turn assertion checklist
+  → dry-run against staging at current SHA to baseline
 
-Phase C (12-subagent re-audit) not yet 0/0/0?
-  → next iteration:
-    - If no subagents in flight: dispatch all 11 batches in parallel
-      via Agent tool (subagent_type=general-purpose), each with brief
-      covering exact spec sections + relevant src/ paths + SPEC_COVERAGE
-      claims to verify; each returns LIVE/PARTIAL/MISSING + evidence
-    - If batches in flight: schedule wakeup 1200-1800s; do not poll
-    - If batches returned with any PARTIAL/MISSING:
-      - dispatch fix-subagents targeting only the open items
-      - re-run audit subagent for that batch only
-      - loop
-    - If all 11 batches 0/0/0: advance to Phase D
+Wave RC-β (P1 visible defects) pending?
+  → priority order (each commit→ONE redeploy→re-run conversation matrix
+    + Playwright):
+    6. Sentinel-scoring DOM in defi_opportunities CardRenderer
+    7. Yield-trap warning when apy > 100%
+    8. 0% APY filter at pool-ranking layer
+    9. Suppress placeholder fields on blocked cards
+    10. Markdown pass on card body text
+    11. Deduplicate "Excluded N candidates" footer
+    12. Collapse reasoning trace in MessageList
+    13. Add prior-failure memory to dispatcher
+    14. Add re-quote / refresh-sim handler
+    15. Use prior-chain context in refusal examples
 
-Phase D (integrated gate run) ready?
-  → run gates 1-3 fresh against current SHA, plus Playwright + Anvil
-  → if any flap: triage which gate, return to that phase
-  → if all 7 simultaneously green:
-    - update SPEC_COVERAGE.md → 100% with date + tester-ready SHA
-    - confirm BUG_LEDGER.md has every P0/P1 from all phases
-    - final commit on main: spec(tester-ready): ... [<sha>]
-    - tag tester-ready
-    - confirm staging is deployed at that SHA
+Wave RC-γ (P2 hygiene) pending?
+  → priority order:
+    16. Normalise "Excluded N candidates" wording (single source)
+    17. Annotate position-token addresses with semantic context
+    18. Replace generic Enso warnings with pool-specific risk callouts
+
+All 18 BUG-RC fixes shipped, conversation matrix built?
+  → re-run all 8 gates fresh against current SHA:
+    - Gate 1 smoke
+    - Gate 2 3x matrix
+    - Gate 3 invariants log (I1-I12 firing or quiet — expected)
+    - Gate 4 Playwright (with new assertions)
+    - Gate 5 Anvil with asset-pool match
+    - Gate 6 11-batch re-audit (P1-C-006 + P1-C-010 must be LIVE now)
+    - Gate 7 ledger update
+    - Gate 8 conversation matrix LLM judge ≥95%
+  → if any flap: triage which gate, return to that wave
+  → if all 8 simultaneously green AND all BUG-RC closed:
+    - update SPEC_COVERAGE.md → 100% with date + tester-ready-v2 SHA
+    - confirm BUG_LEDGER.md has BUG-RC-001..023 closed entries
+    - final commit on main: spec(tester-ready-v2): ... [<sha>]
+    - tag tester-ready-v2
+    - confirm staging deployed at that SHA
     - final report to user (counts: bugs found per phase, gates green,
-      coverage delta, SHA + tag)
+      coverage delta, SHA + tag, conversation-matrix LLM-judge score)
     - STOP (do not schedule another wake-up)
 ```
 
@@ -138,148 +165,170 @@ Phase D (integrated gate run) ready?
 - A background subagent just finished and your re-fire was triggered by
   its completion notification (the harness re-fires you for free)
 - You have an uncommitted change to finish
-- You just received a Playwright/Anvil/audit/findings/matrix result you
-  need to act on
+- You just received a Playwright/Anvil/audit/findings/matrix/
+  conversation-matrix result you need to act on
 
 **Schedule a wake-up** at the end of the turn if:
 - You're waiting on a long external operation the harness cannot notify
   you about (matrix run on VPS, staging redeploy, Anvil fork sim batch,
-  CI run)
-- You just dispatched parallel subagents and your next action depends on
-  all of them returning
+  conversation-matrix LLM-judge batch on VPS, CI run)
+- You just dispatched parallel subagents and your next action depends
+  on all of them returning
 
 Delay rules (clamped to 60-3600s):
 - **60-270s** when actively polling external state the harness can't
-  track (use sparingly — only when a state change is imminent)
+  track (use sparingly)
 - **1200-1800s** default for idle waits (matrix run, redeploy heartbeat,
-  parallel-subagent batch)
-- **Never 300s** (worst-of-both cache cliff — cache miss without amortizing)
+  parallel-subagent batch, conversation-matrix batch)
+- **Never 300s** (worst-of-both cache cliff)
 
 Pass the literal sentinel `<<autonomous-loop-dynamic>>` as the `prompt`
-argument so the runtime resolves it to this command body. Reason field:
-one specific sentence (e.g. "waiting on 11 re-audit subagents to return,
-expect ~20 min").
+argument so the runtime resolves it to this command body.
 
 ---
 
-## TOOLING REMINDERS (proven across 14 backend waves)
+## TOOLING REMINDERS
 
 ### Deploy commands (canonical)
 ```bash
 git push origin main
 ssh ilyonai-vps "cd ~/ai-sentinel-staging && \
-  git stash push -m 'matrix-vps' --include-untracked -- docs/matrix-runs/ && \
-  git pull --ff-only origin main && \
+  git stash push -u -m 'wave-rc-X' 2>&1 | tail -2 && \
+  git pull --ff-only origin main 2>&1 | tail -2 && \
   docker compose --env-file deploy/staging/compose.env up -d --build api"
-curl -fsS https://staging.ilyonai.com/api/v1/agent-health  # expect 200
+curl -fsS https://staging.ilyonai.com/api/v1/agent-health   # expect 200
 ```
 
 ### Smoke / sweep
 ```bash
 PYTHONIOENCODING=utf-8 python scripts/validation/post_deploy_smoke.py
-python scripts/validation/static_sweep.py docs/matrix-runs/passA-waveN
-python -m scripts.validation.regression_sweep docs/matrix-runs/passA-waveN
+python scripts/validation/static_sweep.py docs/matrix-runs/passA-waveX
+python -m scripts.validation.regression_sweep docs/matrix-runs/passA-waveX
 ```
 
 ### Parallel matrix fire
 ```bash
 ssh ilyonai-vps "cd ~/ai-sentinel-staging && \
-  export MATRIX_OUT_ROOT=docs/matrix-runs/passA-waveN && \
-  mkdir -p \$MATRIX_OUT_ROOT && \
+  rm -rf docs/matrix-runs/passA-waveX && mkdir -p docs/matrix-runs/passA-waveX && \
+  export MATRIX_OUT_ROOT=docs/matrix-runs/passA-waveX && \
   nohup python3 -u -m tests.harness.v4_runner --all --parallel 6 --delay 0.3 \
-    > /tmp/matrix-passA-waveN.log 2>&1 < /dev/null & disown"
-# ~25-30 min; schedule wakeup 1800s
+    > /tmp/matrix-waveX.log 2>&1 < /dev/null & disown"
+# ~25-35 min; schedule wakeup 1800s
 ```
 
-### Phase A — Playwright iteration
+### Conversation matrix (NEW — Gate 8)
 ```bash
-# Once-only: pip install playwright && playwright install chromium
-python scripts/playwright_browser_smoke.py
-# Artefacts → docs/playwright-runs/<timestamp>/
+ssh ilyonai-vps "cd ~/ai-sentinel-staging && \
+  nohup python3 -u scripts/validation/conversation_matrix.py \
+    --judge-model gpt-4o-mini --conversations R01,R02,...,R15 \
+    --out docs/conversation-runs/<ts> \
+    > /tmp/convmatrix.log 2>&1 < /dev/null & disown"
+# Expect 15-30 min; LLM-judge prose per turn + per-turn assertion list.
 ```
 
-### Phase B — Anvil fork sim
+### Playwright iteration
 ```bash
-# Once-only: curl -L https://foundry.paradigm.xyz | bash; foundryup
-python scripts/anvil_fork_sim.py docs/matrix-runs/passA-wave14
-# Artefacts → docs/anvil-fork-runs/<timestamp>/
+PYTHONIOENCODING=utf-8 python scripts/playwright_browser_smoke.py
+# Artefacts → docs/playwright-runs/<ts>/
 ```
 
-### Phase C — Subagent dispatch
+### Anvil fork sim
+```bash
+PYTHONIOENCODING=utf-8 python scripts/extract_execution_plans.py docs/matrix-runs/passA-waveX -o docs/anvil-fork-runs/waveX-plans.json --signable-only
+ssh ilyonai-vps "cd ~/ai-sentinel-staging && python3 scripts/anvil_fork_replay.py docs/anvil-fork-runs/waveX-plans.json"
+```
+
+### Subagent dispatch (Gate 6 re-audit)
 - Use `Agent` tool, `subagent_type=general-purpose`
-- One agent per batch (A-K). Brief contains: spec sections to audit,
-  src/ path pointers, SPEC_COVERAGE claims to verify, return format
-  (LIVE/PARTIAL/MISSING + evidence per item)
-- Subagents have `Write` blocked — they return inline; main thread persists
+- One agent per batch (A-K)
+- Brief contains: spec sections to audit, src/ path pointers,
+  SPEC_COVERAGE claims to verify, return format
 
 ---
 
 ## HARD RULES (re-read every turn — these never change)
 
-1. NEVER skip pytest after a code commit
-2. NEVER force-push `main`, skip hooks (`--no-verify`), or bypass signing
-3. NEVER commit secrets (`deploy/staging/app.env`, `deploy/staging/assistant.env`,
-   `deploy/prod/assistant.env` — already gitignored)
-4. NEVER deploy to prod (`~/ai-sentinel` on VPS — touch nothing)
-5. NEVER guess on-chain addresses — WebFetch the official source + verify
-   on-chain
-6. NEVER claim "tester-ready" / "done" / "complete" until ALL 7 exit-check
-   boxes hold simultaneously
+1. NEVER skip pytest after a code commit.
+2. NEVER force-push `main`, skip hooks (`--no-verify`), or bypass signing.
+3. NEVER commit secrets (`deploy/staging/app.env`,
+   `deploy/staging/assistant.env`, `deploy/prod/assistant.env` — already
+   gitignored).
+4. NEVER deploy to prod (`~/ai-sentinel` on VPS — touch nothing).
+5. NEVER guess on-chain addresses — WebFetch the official source +
+   verify on-chain.
+6. NEVER claim "tester-ready-v2" / "done" / "complete" until ALL 8
+   exit-check boxes hold simultaneously AND every BUG-RC-001..023
+   closed.
 7. **Mid-pass redeploy = cascade kill.** ONE push + ONE redeploy + ONE
-   refire per cycle
-8. All validation against `https://staging.ilyonai.com`. NEVER prod
-   (`https://ilyonai.com`)
-9. All commits on `main`. Do not push to `origin/staging`
-10. NEVER over-claim. Mark PARTIAL as PARTIAL. Mark MISSING as MISSING
-11. **No single tool catches everything.** Matrix+smoke ~80%; fork-sim +
-    Playwright + 12-subagent re-audit catch the structural rest. All
-    required
-12. **No mechanical matrix analysis.** Matrix findings come from
-    LLM-subagent judgement on raw SSE, not regex (sweeps are
-    regression-guardrails, not primary triage)
-13. **No stopping early.** Goal is not met until exit check above holds.
-    Self-fire via `ScheduleWakeup` to continue
-14. Every fix has a pin test
-15. **Backend changes after `9edaf83` re-open Gate 2** — must re-prove 3
-    consecutive clean matrix passes at the new SHA before claiming
-    tester-ready
+   refire per cycle.
+8. All validation against `https://staging.ilyonai.com`. NEVER prod.
+9. All commits on `main`. Do not push to `origin/staging`.
+10. NEVER over-claim. Mark PARTIAL as PARTIAL. Mark MISSING as MISSING.
+11. **No single tool catches everything.** Matrix+smoke ~50%; fork-sim
+    + Playwright + 12-subagent re-audit catch structural rest;
+    **conversation matrix (Gate 8) catches semantic intent failures the
+    other tools miss.** All required.
+12. **No mechanical-only analysis.** Conversation-matrix judgements
+    come from LLM-judge prose + per-turn assertion checklist, not
+    regex.
+13. **No stopping early.** Goal is not met until exit check above
+    holds.
+14. Every fix has a pin test. Every BUG-RC has either a runtime
+    invariant assertion test OR a conversation-matrix scenario.
+15. **Backend changes after the SHA at which Gate 2 was last clean
+    re-open Gate 2** — must re-prove 3 consecutive clean matrix passes
+    at the new SHA before claiming tester-ready-v2.
+16. **Phase C P1-C-006 (LiquidityIntent wire-up) and P1-C-010
+    (wrong-spender preflight) are P0 now — not deferrable.**
+17. **The `tester-ready` V1 tag is rolled back. Replace with
+    `pre-real-conversation-validation-v1`. Re-tag `tester-ready-v2`
+    only after all 8 gates green AND every BUG-RC closed.**
 
 ---
 
 ## FORBIDDEN END-OF-TURN PHRASES
 
-Catch yourself before writing any of these — they signal premature stop:
+Catch yourself before writing any of these — they signal premature stop
+or unjustified deferral:
 
-- "shipped", "done", "complete", "fully met", "all set", "tester-ready"
-  (until ALL 7 green)
+- "shipped", "done", "complete", "fully met", "all set", "tester-ready",
+  "tester-ready-v2" (until ALL 8 green AND every BUG-RC closed)
+- "ready for tester" (until Gate 8 ≥95% PASS AND every BUG-RC-001..023
+  closed)
+- "Playwright covers it" / "Anvil covers it" / "matrix covers it"
+  (without conversation-matrix Gate 8 ALL CLEAR)
+- "the audit closed it" (when the audit flagged it PARTIAL and you
+  deferred — that's NOT closure)
+- "edge case" / "rare" / "follow-up" applied to anything in
+  BUG-RC-001..023 — these are first-5-minutes-of-testing bugs
+- "architectural rewrite, deferred" / "non-tester-visible" — if a real
+  tester hit it, it is not deferrable
 - "status:", "summary:", "good progress"
 - "moving to", "now", "continuing with"
 - "should work", "likely fixes", "this addresses"
-- "deferred", "phase X handles", "acceptable for now", "good enough"
 - "I'll continue when…", "session ended at…", "good stopping point"
 - "scheduled wakeup" (just do it, don't announce it)
-- "ready for tester" (until tag pushed)
-- "Playwright covers it" / "Anvil covers it" (until N/N receipts on disk)
 
-If you catch one of these → delete the sentence → schedule the wake-up →
-do the next concrete action.
+If you catch one of these → delete the sentence → schedule the wake-up
+→ do the next concrete action.
 
 ---
 
 ## ESCALATION (only when truly blocked, not before)
 
 Stop and ask the user **only** when:
-- Staging healthcheck returns non-200 for >3 consecutive checks (10+ min)
-  and the cause is non-obvious — production-style ops issue, not a bug
+- Staging healthcheck returns non-200 for >3 consecutive checks (10+
+  min) and the cause is non-obvious — production-style ops issue, not
+  a bug.
 - A subagent / fork sim reports a financial-loss-class bug whose fix
-  requires user-judgement (e.g. a new on-chain contract address must be
-  authorized, or a protocol behaves contrary to its published docs)
-- Disk fills on VPS / repo / matrix captures (>90% full)
-- A phase has been re-firing for >10 cycles without convergence — there
-  may be a systemic spec gap that needs human review
-- A required external tool (foundry, playwright browser) cannot be
-  installed on the local machine and there is no equivalent already on
-  the VPS
+  requires user-judgement (e.g. a new on-chain contract address must
+  be authorized).
+- Disk fills on VPS / repo / matrix captures (>90% full).
+- A phase has been re-firing for >10 cycles without convergence —
+  there may be a systemic spec gap that needs human review.
+- A required external tool (foundry, playwright browser, an LLM-judge
+  API key for Gate 8) cannot be installed on the local machine and
+  there is no equivalent already on the VPS.
 
 In all other cases: **continue working autonomously**.
 
@@ -287,11 +336,20 @@ In all other cases: **continue working autonomously**.
 
 ## ARTEFACT INVENTORY (read these if you need refresher)
 
-- `IlyonAi_LP_Execution_Spec.pdf` — sole source of truth (40 pages, v1.0)
+- `IlyonAi_LP_Execution_Spec.pdf` — sole source of truth (40 pages,
+  v1.0)
 - `IlyonAi_Development_Plan_v2.md` — 75 V7-XXX tasks
-- `RESUME_V10_PROMPT.md` — current tester-ready resume prompt
+- `RESUME_V11_PROMPT.md` — current real-conversation-validation
+  resume prompt with full BUG-RC catalogue
+- **`AI Bug Convo.md` — verbatim transcript with BUG-RC-001..023
+  grounded in line citations**
 - `docs/SPEC_COVERAGE.md` — coverage ledger
-- `docs/matrix-runs/BUG_LEDGER.md` — every P0/P1 with receipts
-- `docs/matrix-runs/passA-wave{1..14}/` — captures + sweeps
+- `docs/matrix-runs/BUG_LEDGER.md` — every P0/P1 with receipts; add
+  BUG-RC section as fixes land
+- `docs/matrix-runs/passA-wave{1..N}/` — captures + sweeps
 - `docs/matrix-runs/invariant-violations.log` — drain() catches
-- `.claude/commands/goal.md` — 7-gate end-state definition
+- `docs/conversation-runs/<ts>/` — Gate 8 LLM-judge runs (NEW)
+- `docs/audit-runs/phase-c-v1-summary.md` — Phase C findings
+- `docs/audit-runs/phase-d-d1-status.md` — Phase D state (superseded
+  by V11)
+- `.claude/commands/goal.md` — 8-gate end-state definition
