@@ -13,33 +13,77 @@ Phase B Gate 5: every emitted execution_plan_v3 from the latest matrix pass
 must replay cleanly on forked mainnet for its target chain. Solana plans are
 out of scope here (anvil is EVM-only); they get marked "skipped_solana".
 
+Stdlib-only (urllib + threading) so it runs on VPS without pip deps.
+
 Usage:
-  python scripts/anvil_fork_replay.py docs/anvil-fork-runs/wave14-plans.json
+  python3 scripts/anvil_fork_replay.py docs/anvil-fork-runs/wave14-plans.json
+  python3 scripts/anvil_fork_replay.py wave14-plans.json --only-chain ethereum
 """
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import os
 import subprocess
 import sys
 import time
+import urllib.request
+import urllib.error
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import aiohttp
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-# Re-use _slot_key and TEST_ADDR from the existing single-prompt sim.
-from scripts.anvil_fork_sim import TEST_ADDR, _slot_key  # noqa: E402
+# Inlined from scripts/anvil_fork_sim.py so this script has no third-party
+# deps (VPS python has no pip). keccak via stdlib `hashlib.sha3_256`?
+# No — Ethereum uses keccak-256 (NIST keccak before SHA-3 finalisation),
+# not sha3_256. We use the standard `pysha3`-free trick: pycryptodome's
+# keccak is only on tests; on VPS we ship our own minimal keccak. Easiest
+# stdlib path: use `Crypto.Hash.keccak` if pycryptodome is present, else
+# fall back to a pure-python keccak. To avoid bundling a keccak lib, we
+# call out to `cast keccak <hex>` from foundry which IS on the VPS.
+TEST_ADDR = "0x4838B106FCe9647Bdf1E7877BF73cE8B0BAD5f97"
 
 
-# ── Per-chain config (fork RPC + ERC20 balance-slot table) ────────────────
+def _slot_key(token: str, holder: str, slot: int) -> str:
+    """keccak256(holder_pad32 || slot_pad32) for Solidity mapping storage."""
+    holder_clean = holder.lower().removeprefix("0x").rjust(64, "0")
+    slot_hex = format(slot, "064x")
+    raw_hex = holder_clean + slot_hex
+    # Try pycryptodome first (if present), then cryptography, then `cast keccak`.
+    try:
+        from Crypto.Hash import keccak  # type: ignore
+        k = keccak.new(digest_bits=256)
+        k.update(bytes.fromhex(raw_hex))
+        return "0x" + k.hexdigest()
+    except ImportError:
+        pass
+    try:
+        # eth-utils is sometimes present alongside foundry on dev boxes
+        from eth_utils import keccak as eth_keccak  # type: ignore
+        return "0x" + eth_keccak(bytes.fromhex(raw_hex)).hex()
+    except ImportError:
+        pass
+    # Last resort: shell out to `cast keccak`.
+    cast_bin = os.path.expanduser("~/.foundry/bin/cast")
+    if not Path(cast_bin).exists():
+        cast_bin = "cast"
+    try:
+        result = subprocess.run(
+            [cast_bin, "keccak", "0x" + raw_hex],
+            capture_output=True, text=True, timeout=5,
+        )
+        out = result.stdout.strip()
+        if out.startswith("0x") and len(out) == 66:
+            return out
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    raise RuntimeError("no keccak256 backend available (pycryptodome, eth_utils, or cast)")
+
+
 CHAIN_RPC = {
     "ethereum": os.environ.get("MAINNET_RPC", "https://ethereum-rpc.publicnode.com"),
     "base": os.environ.get("BASE_RPC", "https://base-rpc.publicnode.com"),
@@ -50,10 +94,8 @@ CHAIN_RPC = {
     "avalanche": os.environ.get("AVAX_RPC", "https://avalanche-c-chain-rpc.publicnode.com"),
 }
 
-# ERC20 balanceOf storage slot per (chain, token_address_lower). Verified
-# empirically by `cast index addr <holder> <slot>` then comparing to
-# `eth_getStorageAt`. Most USDC variants use slot 9 (proxy storage); WETH
-# uses slot 3; DAI/USDT use slot 2.
+# ERC20 balanceOf storage slot per (chain, token_address_lower). Most USDC
+# variants use slot 9 (proxy storage); WETH uses slot 3; DAI/USDT vary.
 ERC20_BALANCE_SLOT: dict[tuple[str, str], int] = {
     # Ethereum mainnet
     ("ethereum", "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"): 9,   # USDC
@@ -84,9 +126,7 @@ ERC20_BALANCE_SLOT: dict[tuple[str, str], int] = {
     ("avalanche", "0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7"): 51,  # USDT bridged
 }
 
-# Native token gift per chain — 100 of the native (more than any matrix step
-# expects). Hex-encoded wei.
-NATIVE_GIFT_WEI = "0x56BC75E2D63100000"  # 100 ETH/BNB/AVAX/MATIC (18 decimals)
+NATIVE_GIFT_WEI = "0x56BC75E2D63100000"  # 100 native (18 decimals)
 
 
 def find_anvil() -> str:
@@ -101,17 +141,15 @@ def find_anvil() -> str:
 
 
 def start_anvil(chain: str, port: int) -> subprocess.Popen:
-    rpc = CHAIN_RPC[chain]
+    rpc_url = CHAIN_RPC[chain]
     cmd = [
         find_anvil(),
-        "--fork-url", rpc,
+        "--fork-url", rpc_url,
         "--port", str(port),
         "--silent",
         "--auto-impersonate",
     ]
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    # Poll until ready
-    import urllib.request
     fork_url = f"http://127.0.0.1:{port}"
     for _ in range(60):
         try:
@@ -128,27 +166,33 @@ def start_anvil(chain: str, port: int) -> subprocess.Popen:
     raise RuntimeError(f"anvil for {chain} did not start within 30s")
 
 
-async def rpc(session: aiohttp.ClientSession, url: str, method: str, params: list) -> dict:
+def rpc(url: str, method: str, params: list, timeout: float = 30.0) -> dict:
     payload = {"jsonrpc": "2.0", "method": method, "params": params, "id": 1}
-    async with session.post(url, json=payload) as r:
-        return await r.json()
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except urllib.error.URLError as e:
+        return {"error": {"message": f"transport: {e}"}}
+    except Exception as e:  # noqa: BLE001
+        return {"error": {"message": f"unknown: {e}"}}
 
 
-async def fund_wallet(session: aiohttp.ClientSession, url: str, chain: str) -> None:
-    # Native gas
-    await rpc(session, url, "anvil_setBalance", [TEST_ADDR, NATIVE_GIFT_WEI])
-    # ERC20 balances — 1M with 18 decimals as worst-case; tokens with 6/8
-    # decimals get treated as 1M-scaled but the value is large enough that
-    # downstream pulls succeed regardless of the actual decimals.
-    big_18 = "0x" + format(10**24, "064x")  # 1M with 18 decimals worth in raw units
+def fund_wallet(url: str, chain: str) -> None:
+    rpc(url, "anvil_setBalance", [TEST_ADDR, NATIVE_GIFT_WEI])
+    big_18 = "0x" + format(10**24, "064x")
     for (c, token), slot in ERC20_BALANCE_SLOT.items():
         if c != chain:
             continue
         key = _slot_key(token, TEST_ADDR, slot)
-        await rpc(session, url, "anvil_setStorageAt", [token, key, big_18])
+        rpc(url, "anvil_setStorageAt", [token, key, big_18])
 
 
-async def broadcast_step(session: aiohttp.ClientSession, url: str, tx: dict) -> dict:
+def broadcast_step(url: str, tx: dict) -> dict:
     params = {
         "from": TEST_ADDR,
         "to": tx["to"],
@@ -156,16 +200,10 @@ async def broadcast_step(session: aiohttp.ClientSession, url: str, tx: dict) -> 
         "value": tx.get("value") or "0x0",
         "gas": tx.get("gas") or "0xa00000",
     }
-    return await rpc(session, url, "eth_sendTransaction", [params])
+    return rpc(url, "eth_sendTransaction", [params])
 
 
-async def replay_plan(
-    session: aiohttp.ClientSession,
-    url: str,
-    plan: dict[str, Any],
-) -> dict[str, Any]:
-    """Broadcast every signable step in this plan. Return per-step + plan-level
-    outcome."""
+def replay_plan(url: str, plan: dict[str, Any]) -> dict[str, Any]:
     results: list[dict[str, Any]] = []
     plan_ok = True
     for step in plan["steps"]:
@@ -174,26 +212,21 @@ async def replay_plan(
             results.append({"index": step["index"], "skipped": "no_tx",
                             "action": step.get("action")})
             continue
-        if step.get("status") not in ("ready", "pending"):
-            # Plans with all-pending steps still get attempted — the first
-            # is conceptually "next ready" once unblocked. We test calldata
-            # validity, not state-machine semantics.
-            pass
-        send = await broadcast_step(session, url, tx)
+        send = broadcast_step(url, tx)
         if "error" in send:
-            err = send["error"].get("message", str(send["error"]))
+            err = (send.get("error") or {}).get("message", str(send.get("error")))
             results.append({"index": step["index"], "action": step.get("action"),
-                            "status": "send_error", "error": err[:200]})
+                            "status": "send_error", "error": str(err)[:200]})
             plan_ok = False
             continue
         tx_hash = send.get("result")
         receipt = None
         for _ in range(60):
-            r = await rpc(session, url, "eth_getTransactionReceipt", [tx_hash])
+            r = rpc(url, "eth_getTransactionReceipt", [tx_hash])
             if r.get("result"):
                 receipt = r["result"]
                 break
-            await asyncio.sleep(0.3)
+            time.sleep(0.3)
         if not receipt:
             results.append({"index": step["index"], "action": step.get("action"),
                             "status": "receipt_timeout", "tx_hash": tx_hash})
@@ -222,31 +255,30 @@ async def replay_plan(
     }
 
 
-async def replay_chain(chain: str, plans: list[dict[str, Any]], port: int) -> dict[str, Any]:
-    """Spawn anvil for `chain`, fund wallet, replay every plan in this chain."""
-    print(f"[{chain}] spawning anvil :{port} (forking {CHAIN_RPC[chain]})")
+def replay_chain(chain: str, plans: list[dict[str, Any]], port: int) -> dict[str, Any]:
+    print(f"[{chain}] spawning anvil :{port} (forking {CHAIN_RPC[chain]})", flush=True)
     proc = start_anvil(chain, port)
     url = f"http://127.0.0.1:{port}"
     plan_results: list[dict[str, Any]] = []
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as session:
-            await fund_wallet(session, url, chain)
-            for i, plan in enumerate(plans, 1):
-                # Snapshot + revert between plans so each starts clean.
-                snap = (await rpc(session, url, "evm_snapshot", []))["result"]
-                print(f"[{chain}] {i}/{len(plans)} replay {plan['plan_id']} ({plan['step_count']} steps)")
-                try:
-                    res = await replay_plan(session, url, plan)
-                except Exception as exc:
-                    res = {
-                        "plan_id": plan["plan_id"], "chain": chain,
-                        "plan_ok": False, "error": str(exc)[:200], "steps": [],
-                    }
-                plan_results.append(res)
-                # Revert to snapshot so the next plan starts from the same
-                # forked state (avoids state contamination + slot drift).
-                await rpc(session, url, "evm_revert", [snap])
-                await fund_wallet(session, url, chain)
+        fund_wallet(url, chain)
+        for i, plan in enumerate(plans, 1):
+            snap_resp = rpc(url, "evm_snapshot", [])
+            snap = snap_resp.get("result")
+            print(f"[{chain}] {i}/{len(plans)} replay {plan['plan_id']} "
+                  f"({plan['step_count']} steps)", flush=True)
+            try:
+                res = replay_plan(url, plan)
+            except Exception as exc:  # noqa: BLE001
+                res = {
+                    "plan_id": plan["plan_id"], "chain": chain,
+                    "plan_ok": False, "error": str(exc)[:200], "steps": [],
+                    "source_file": plan.get("source_file"),
+                }
+            plan_results.append(res)
+            if snap:
+                rpc(url, "evm_revert", [snap])
+                fund_wallet(url, chain)
     finally:
         proc.terminate()
         try:
@@ -285,24 +317,22 @@ def render_report(run: dict[str, Any]) -> str:
                 lines.append(f"### {r['chain']} — {r['plan_id']}  ({r.get('source_file', '?')})")
                 for s in r.get("steps", []):
                     if not s.get("ok") and "skipped" not in s:
-                        lines.append(f"- step {s.get('index')} `{s.get('action')}` → {s.get('receipt_status') or s.get('status')} {s.get('error', '')}")
+                        lines.append(f"- step {s.get('index')} `{s.get('action')}` → "
+                                     f"{s.get('receipt_status') or s.get('status')} {s.get('error', '')}")
                 if r.get("error"):
                     lines.append(f"- orchestrator error: {r['error']}")
                 lines.append("")
     return "\n".join(lines)
 
 
-async def main() -> int:
+def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("plans_json", type=Path)
-    parser.add_argument("-o", "--out-dir", type=Path, default=None,
-                        help="output dir (default docs/anvil-fork-runs/<ts>)")
-    parser.add_argument("--only-chain", default=None,
-                        help="Only replay plans for this chain (e.g. ethereum)")
+    parser.add_argument("-o", "--out-dir", type=Path, default=None)
+    parser.add_argument("--only-chain", default=None)
     args = parser.parse_args()
 
     plans = json.loads(args.plans_json.read_text(encoding="utf-8"))
-    # Group by chain. Skip Solana (anvil is EVM-only).
     by_chain: dict[str, list] = defaultdict(list)
     skipped_solana = 0
     for p in plans:
@@ -321,11 +351,16 @@ async def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Replaying {sum(len(v) for v in by_chain.values())} plans "
-          f"across {len(by_chain)} chains (skipped {skipped_solana} Solana)")
+          f"across {len(by_chain)} chains (skipped {skipped_solana} Solana)",
+          flush=True)
 
     chain_runs = []
     for offset, (chain, chain_plans) in enumerate(sorted(by_chain.items())):
-        run = await replay_chain(chain, chain_plans, port=18545 + offset)
+        try:
+            run = replay_chain(chain, chain_plans, port=18545 + offset)
+        except Exception as exc:  # noqa: BLE001
+            run = {"chain": chain, "plan_count": len(chain_plans),
+                   "results": [], "fatal": str(exc)[:200]}
         chain_runs.append(run)
 
     run_summary = {
@@ -340,11 +375,11 @@ async def main() -> int:
 
     total_pass = sum(sum(1 for r in c["results"] if r["plan_ok"]) for c in chain_runs)
     total_fail = sum(sum(1 for r in c["results"] if not r["plan_ok"]) for c in chain_runs)
-    print(f"\n{'='*60}")
-    print(f"Anvil fork replay: {total_pass}/{total_pass + total_fail} plans PASS")
-    print(f"  artifacts → {out_dir}")
+    print(f"\n{'='*60}", flush=True)
+    print(f"Anvil fork replay: {total_pass}/{total_pass + total_fail} plans PASS", flush=True)
+    print(f"  artifacts -> {out_dir}", flush=True)
     return 0 if total_fail == 0 else 1
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    sys.exit(main())
