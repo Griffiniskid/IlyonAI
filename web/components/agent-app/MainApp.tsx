@@ -3707,9 +3707,15 @@ function BalanceCard({ data }: { data: BalanceData }) {
                 chain.tokens
                   // Drop spam SPL/ERC20 tokens with no usable symbol —
                   // Moralis/Helius occasionally return entries with
-                  // `symbol: undefined` or empty string. Rendering those
-                  // surfaces literal "undefined" in the sidebar.
-                  .filter(t => t && t.symbol && String(t.symbol).trim().length > 0)
+                  // `symbol: undefined`, empty string, OR the LITERAL
+                  // STRING "undefined" (JSON-encoded from `String(undefined)`
+                  // upstream). Rendering those surfaces literal "undefined"
+                  // in the sidebar — Playwright Gate 4 BUG-FE-004.
+                  .filter(t => {
+                    if (!t || !t.symbol) return false;
+                    const s = String(t.symbol).trim().toLowerCase();
+                    return s.length > 0 && s !== "undefined" && s !== "null";
+                  })
                   .reduce((acc: Record<string, typeof chain.tokens[0]>, tok) => {
                     const k = String(tok.symbol).toUpperCase();
                     if (!acc[k]) acc[k] = tok;
