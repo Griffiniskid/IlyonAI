@@ -128,6 +128,60 @@ ERC20_BALANCE_SLOT: dict[tuple[str, str], int] = {
 
 NATIVE_GIFT_WEI = "0x56BC75E2D63100000"  # 100 native (18 decimals)
 
+# Routers the agent's execution plans commonly target without including an
+# explicit approve step (because the agent assumes returning users already
+# have allowance). Pre-approving these in the fork removes the false-positive
+# "Enso revert because no allowance" failure mode and lets Phase B isolate
+# REAL calldata bugs.
+COMMON_ROUTERS_BY_CHAIN: dict[str, list[str]] = {
+    "ethereum": [
+        "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",  # Enso shortcut router
+        "0x000000000022D473030F116dDEE9F6B43aC78BA3",  # Permit2
+        "0x111111125421cA6dc452d289314280a0f8842A65",  # 1inch v6
+        "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",  # Uniswap V3 NPM
+        "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD",  # Uniswap UniversalRouter
+        "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",  # Aave V3 Pool
+    ],
+    "base": [
+        "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+        "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",  # Aave V3 Pool Base
+    ],
+    "arbitrum": [
+        "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+        "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "0x794a61358D6845594F94dc1DB02A252b5b4814aD",  # Aave V3 Pool (arb/opt/poly)
+    ],
+    "optimism": [
+        "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+        "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+    ],
+    "polygon": [
+        "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+        "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+    ],
+    "bsc": [
+        "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+        "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    ],
+    "avalanche": [
+        "0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf",
+        "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+    ],
+}
+
+MAX_UINT256 = "0x" + "f" * 64
+
+
+def _build_approve_calldata(spender: str) -> str:
+    """approve(address spender, uint256 amount) — selector 0x095ea7b3."""
+    spender_clean = spender.lower().removeprefix("0x").rjust(64, "0")
+    amount_hex = "f" * 64  # MAX_UINT256
+    return "0x095ea7b3" + spender_clean + amount_hex
+
 
 def find_anvil() -> str:
     for cand in (
@@ -190,6 +244,30 @@ def fund_wallet(url: str, chain: str) -> None:
             continue
         key = _slot_key(token, TEST_ADDR, slot)
         rpc(url, "anvil_setStorageAt", [token, key, big_18])
+
+
+def pre_approve_routers(url: str, chain: str) -> None:
+    """Pre-approve common routers for every tracked token on this chain.
+
+    Phase B finding: many execution_plan_v3 cards target Enso shortcut /
+    1inch / Permit2 routers but DON'T include the prerequisite approve
+    step (the agent assumes returning users already have allowance).
+    On a fresh fork the test wallet has 0 allowance → the router pulls
+    revert. Pre-approving simulates the "veteran user" baseline so we
+    isolate REAL calldata bugs from the missing-approve false positive.
+    """
+    routers = COMMON_ROUTERS_BY_CHAIN.get(chain, [])
+    tokens_on_chain = [t for (c, t) in ERC20_BALANCE_SLOT.keys() if c == chain]
+    for token in tokens_on_chain:
+        for spender in routers:
+            data = _build_approve_calldata(spender)
+            rpc(url, "eth_sendTransaction", [{
+                "from": TEST_ADDR,
+                "to": token,
+                "data": data,
+                "value": "0x0",
+                "gas": "0x186a0",  # 100k
+            }])
 
 
 def broadcast_step(url: str, tx: dict) -> dict:
@@ -262,6 +340,7 @@ def replay_chain(chain: str, plans: list[dict[str, Any]], port: int) -> dict[str
     plan_results: list[dict[str, Any]] = []
     try:
         fund_wallet(url, chain)
+        pre_approve_routers(url, chain)
         for i, plan in enumerate(plans, 1):
             snap_resp = rpc(url, "evm_snapshot", [])
             snap = snap_resp.get("result")
@@ -279,6 +358,7 @@ def replay_chain(chain: str, plans: list[dict[str, Any]], port: int) -> dict[str
             if snap:
                 rpc(url, "evm_revert", [snap])
                 fund_wallet(url, chain)
+                pre_approve_routers(url, chain)
     finally:
         proc.terminate()
         try:
