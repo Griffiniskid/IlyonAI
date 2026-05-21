@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"964f98ca-a4e2-44de-860d-c74894eb029a","card_type":"execution_plan_v2","payload":{"sentinel":null,"shield":null,"plan_id":"964f98ca-a4e2-44de-860d-c74894eb029a","title":"Stake JITOSOL on Via Secondary Market On Jupiter","steps":[{"step_id":"stake","order":1,"action":"stake","params":{"token":"JITOSOL","amount":"0.5","protocol":"via-secondary-market-on-jupiter","chain_id":1,"amount_usd":0.5},"depends_on":[],"resolves_from":{},"sentinel":{"sentinel":66,"safety":67,"durability":70,"exit":70,"confidence":48,"risk_level":"MEDIUM","strategy_fit":"aggressive","flags":["Unaudited"]},"shield_flags":[],"estimated_gas_usd":8.0,"estimated_duration_s":30,"status":"ready","tx_hash":null,"receipt":null,"error":null}],"total_steps":1,"total_gas_usd":8.0,"total_duration_estimate_s":30,"blended_sentinel":66,"requires_signature_count":1,"risk_warnings":[],"risk_gate":"clear","requires_double_confirm":false,"chains_touched":["1"],"user_assets_required":{}}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["964f98ca-a4e2-44de-860d-c74894eb029a"],"elapsed_ms":0,"steps":2}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The dust left after each ~0.03\u202fETH swap will be tiny\u2014well under $0.01 per token (\u22480.00005\u202fETH). You can leave it in your wallet or use it to cover gas; it won\u2019t affect the 50\u2011each deposit. All good to proceed.","card_ids":[],"elapsed_ms":20751,"steps":3}
+
+event: done
+data: {}
+

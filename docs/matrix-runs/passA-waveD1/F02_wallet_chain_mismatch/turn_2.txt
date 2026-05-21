@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The block happens because Aave V3 isn\u2019t deployed on Solana\u2014it only exists on Ethereum, Polygon, Avalanche, Arbitrum, Optimism, and a few other EVM chains. When the system tries to pull data for a non\u2011existent Solana deployment it hits an internal error, which shows up as the ExecutionBlocker message.\n\nYou can either:\n- Deposit USDC into Aave V3 on a supported chain (e.g., Ethereum or Polygon), or \n- Use a Solana\u2011native lending platform such as Solend or Marinade Finance.\n\nKeep in mind that lending on Solana carries medium\u2011to\u2011high smart\u2011contract risk; start with a small test amount and review the latest audit reports before committing larger sums.","card_ids":[],"elapsed_ms":13952,"steps":3}
+
+event: done
+data: {}
+

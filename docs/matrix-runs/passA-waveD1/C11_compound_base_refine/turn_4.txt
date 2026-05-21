@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"b3290ced-d08b-4400-b89e-2dac134e1f47","card_type":"allocation","payload":{"sentinel":null,"shield":null,"positions":[{"rank":1,"protocol":"morpho-blue","asset":"AIFXUSD","chain":"base","apy":"9.6%","sentinel":56,"risk":"high","fit":"aggressive","weight":20,"usd":"$40","tvl":"$348,078","router":"Enso","safety":55,"durability":65,"exit":57,"confidence":40,"flags":["Unaudited","< 180 days live"]},{"rank":2,"protocol":"morpho-blue","asset":"CSUSDC","chain":"base","apy":"8.5%","sentinel":56,"risk":"medium","fit":"aggressive","weight":20,"usd":"$40","tvl":"$3M","router":"Enso","safety":55,"durability":65,"exit":57,"confidence":40,"flags":["Unaudited","< 180 days live"]},{"rank":3,"protocol":"morpho-blue","asset":"EDGEUSDC","chain":"base","apy":"7.3%","sentinel":56,"risk":"high","fit":"aggressive","weight":20,"usd":"$40","tvl":"$684,190","router":"Enso","safety":55,"durability":65,"exit":57,"confidence":40,"flags":["Unaudited","< 180 days live"]},{"rank":4,"protocol":"morpho-blue","asset":"CSRUSDC","chain":"base","apy":"7.1%","sentinel":56,"risk":"high","fit":"aggressive","weight":20,"usd":"$40","tvl":"$349,098","router":"Enso","safety":55,"durability":65,"exit":57,"confidence":40,"flags":["Unaudited","< 180 days live"]},{"rank":5,"protocol":"morpho-blue","asset":"ALPHAUSDCPRIME","chain":"base","apy":"6.6%","sentinel":56,"risk":"high","fit":"aggressive","weight":20,"usd":"$40","tvl":"$359,041","router":"Enso","safety":55,"durability":65,"exit":57,"confidence":40,"flags":["Unaudited","< 180 days live"]}],"total_usd":"$200","blended_apy":"~7.8%","chains":1,"weighted_sentinel":56,"risk_mix":{"low":0,"medium":1,"high":4},"combined_tvl":"$3M"}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["b3290ced-d08b-4400-b89e-2dac134e1f47"],"elapsed_ms":0,"steps":2}
+
+event: done
+data: {}
+

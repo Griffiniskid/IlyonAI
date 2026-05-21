@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Resume** \u2014 Please sign **Step\u202f1** (approve 100\u202fUSDC) in your wallet. Once approved, Step\u202f2 (supply 100\u202fUSDC) will become ready for you to sign.","card_ids":[],"elapsed_ms":12672,"steps":3}
+
+event: done
+data: {}
+

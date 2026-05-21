@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The add_liquidity step is pending because the preceding approve transaction for 100\u202fUSDC hasn\u2019t been signed and confirmed yet. Until the wallet approves the Curve contract to spend those funds, the deposit will remain blocked. Sign step\u202f1 in your wallet, wait for the on\u2011chain confirmation, then step\u202f2 will become ready. \n\nRemember: Curve\u2019s volatile pool carries **HIGH** risk (impermanent loss possible), so only proceed if you\u2019re comfortable with that exposure.","card_ids":[],"elapsed_ms":12437,"steps":3}
+
+event: done
+data: {}
+

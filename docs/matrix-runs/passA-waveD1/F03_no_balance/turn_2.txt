@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"The transaction is likely blocked because the USDC token hasn\u2019t been approved for the Aave V3 contract (or the approval amount is too low), or the supply cap for USDC on Aave V3\u202fBase has been reached. Check your wallet\u2019s allowance and try a smaller amount or wait for the cap to reset. If the allowance is fine, the pause could be due to a temporary contract pause or high network congestion causing the tx to be dropped.","card_ids":[],"elapsed_ms":22499,"steps":3}
+
+event: done
+data: {}
+

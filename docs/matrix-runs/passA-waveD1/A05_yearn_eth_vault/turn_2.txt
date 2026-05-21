@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t place the transaction for you, but you can deposit USDC into the Yearn V3 USDC vault on Base yourself:\n\n1. Connect your wallet (e.g., MetaMask) to the Yearn app on Base. \n2. Navigate to the **USDC** vault (pool ID\u202fea721c71\u20119a61\u2011481d\u2011aa52\u2011b0198f325c66). \n3. Approve the USDC spend limit, then enter the amount you wish to deposit and confirm the transaction.\n\n**Risk:** HIGH \u2013 yields are variable and smart\u2011contract risk applies.","card_ids":[],"elapsed_ms":21858,"steps":3}
+
+event: done
+data: {}
+

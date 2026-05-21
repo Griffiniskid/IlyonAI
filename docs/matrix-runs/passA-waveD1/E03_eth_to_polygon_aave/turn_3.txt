@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"1. Approve DAI for the LI.FI router on Ethereum (\u2265\u202f100\u202fDAI). \n2. In LI.FI, select DAI \u2192 DAI, source chain Ethereum, destination Polygon, set slippage, and execute the bridge. \n3. On Polygon, approve the received DAI for Aave V3\u2019s pool contract. \n4. Deposit the DAI into Aave V3\u2019s DAI market (choose amount, confirm). \n\nRisk: Bridging via LI.FI is MEDIUM (contract & chain risk); supplying on Aave V3 is LOW\u2011MEDIUM (smart\u2011contract risk). Safety: verify contract addresses, use a trusted wallet, and keep a small gas buffer.","card_ids":[],"elapsed_ms":16211,"steps":3}
+
+event: done
+data: {}
+

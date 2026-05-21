@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"If the slippage exceeds your 50\u202fbps (0.5\u202f%) limit, the transaction will typically revert because the quoted price can\u2019t be met within that tolerance. You\u2019ll need to either raise your slippage tolerance, wait for a better price, or cancel and retry the swap/bridge. This protects you from getting a significantly worse rate, but setting the tolerance too low can cause frequent failures in volatile markets. (Risk: MEDIUM \u2013 adjust slippage only when you understand the potential price impact.)","card_ids":[],"elapsed_ms":44599,"steps":3}
+
+event: done
+data: {}
+

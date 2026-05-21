@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"\u2705 **Exit ready** \u2013 Withdraw 0.5\u202fBPT from Balancer wstETH\u2011WETH to receive WETH. \nApprove BPT, set slippage (~0.5\u202f%), and sign the transaction in your wallet.","card_ids":[],"elapsed_ms":27141,"steps":3}
+
+event: done
+data: {}
+

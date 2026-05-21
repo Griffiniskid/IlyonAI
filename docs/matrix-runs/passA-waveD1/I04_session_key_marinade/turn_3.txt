@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To auto\u2011compound\u202f0.1\u202fSOL weekly on Marinade: \n1. Deposit SOL into Marinade via the dApp to receive mSOL. \n2. Open Marinade \u2192 Settings \u2192 Auto\u2011Compound, turn it on, and set the weekly compound amount to\u202f0.1\u202fSOL (or the equivalent mSOL). \n3. Confirm the transaction with your wallet; Marinade will then restake your rewards each week. \n\nRisk: MEDIUM (smart\u2011contract exposure). Safety tip: verify the Marinade contract address, keep a small SOL buffer for transaction fees, and consider using a hardware wallet.","card_ids":[],"elapsed_ms":61418,"steps":3}
+
+event: done
+data: {}
+

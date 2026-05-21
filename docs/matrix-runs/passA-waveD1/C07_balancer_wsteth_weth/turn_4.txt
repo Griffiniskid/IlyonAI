@@ -1,0 +1,12 @@
+event: thought
+data: {"step_index":1,"content":"Continuing from the prior allocation/execution plan in this conversation..."}
+
+event: card
+data: {"step_index":2,"card_id":"58a95bf9-f04f-4b91-b1d6-6ff9c2a3e362","card_type":"allocation","payload":{"sentinel":null,"shield":null,"positions":[{"rank":1,"protocol":"lido","asset":"STETH","chain":"eth","apy":"2.4%","sentinel":71,"risk":"low","fit":"aggressive","weight":20,"usd":"$21","tvl":"$18.9B","router":"Enso","safety":75,"durability":70,"exit":80,"confidence":48,"flags":["Unaudited"]},{"rank":2,"protocol":"sky-lending","asset":"SUSDS","chain":"eth","apy":"3.6%","sentinel":76,"risk":"low","fit":"aggressive","weight":20,"usd":"$21","tvl":"$5.8B","router":"Enso","safety":75,"durability":80,"exit":92,"confidence":48,"flags":["Unaudited"]},{"rank":3,"protocol":"rocket-pool","asset":"RETH","chain":"eth","apy":"2.0%","sentinel":71,"risk":"low","fit":"aggressive","weight":20,"usd":"$21","tvl":"$2.9B","router":"Enso","safety":75,"durability":70,"exit":80,"confidence":48,"flags":["Unaudited"]},{"rank":4,"protocol":"aave-v3","asset":"WEETH","chain":"eth","apy":"0.0%","sentinel":71,"risk":"low","fit":"aggressive","weight":20,"usd":"$21","tvl":"$2.3B","router":"Enso","safety":75,"durability":70,"exit":80,"confidence":48,"flags":["Unaudited"]},{"rank":5,"protocol":"aave-v3","asset":"WBTC","chain":"eth","apy":"0.0%","sentinel":71,"risk":"low","fit":"aggressive","weight":20,"usd":"$21","tvl":"$2.3B","router":"Enso","safety":75,"durability":70,"exit":80,"confidence":48,"flags":["Unaudited"]}],"total_usd":"$106","blended_apy":"~1.6%","chains":1,"weighted_sentinel":72,"risk_mix":{"low":5,"medium":0,"high":0},"combined_tvl":"$32.2B"}}
+
+event: final
+data: {"content":"Continuing from the prior plan context. The execution-plan card from the earlier turn is not signable as-is \u2014 either it was blocked, has unresolved prerequisites, or no step has a built transaction yet (BLOCKER_NOT_RESOLVED). Please repeat the original verb form (e.g. `Supply 100 USDC to Aave V3 on Base`) so a fresh signable plan is generated.","card_ids":["58a95bf9-f04f-4b91-b1d6-6ff9c2a3e362"],"elapsed_ms":0,"steps":2}
+
+event: done
+data: {}
+

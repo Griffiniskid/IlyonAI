@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Bridge route**\n\n1. **Ethereum \u2192 Polygon** \u2013 Use the Polygon PoS Bridge (or Hop/Celer) to lock 100\u202fDAI on Ethereum and mint 100\u202fDAI on Polygon. \n *Risk:*\u202fMEDIUM (bridge smart\u2011contract risk). \n\n2. **Polygon \u2192 Aave V3** \u2013 Once the DAI appears on Polygon, approve the Aave V3 DAI contract, then supply 100\u202fDAI via Aave V3. \n *Risk:*\u202fLOW\u2011MEDIUM (standard lending risk). \n\nAfter the bridge transaction confirms, open the existing **Aave V3 Supply** execution plan and sign the approve step (step\u202f1) to begin supplying.","card_ids":[],"elapsed_ms":32620,"steps":3}
+
+event: done
+data: {}
+

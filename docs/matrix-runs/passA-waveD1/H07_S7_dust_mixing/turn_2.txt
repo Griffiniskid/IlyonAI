@@ -1,0 +1,16 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"To deposit 50\u202fUSDC\u202f+\u202f50\u202fUSDT\u202f+\u202f50\u202fDAI into Curve\u202f3pool you first need those three amounts. If you hold ETH, a typical swap via an aggregator (1inch, Paraswap, etc.) would look like:\n\n- Swap ~0.03\u202fETH \u2192\u202f50\u202fUSDC \n- Swap ~0.03\u202fETH \u2192\u202f50\u202fUSDT \n- Swap ~0.03\u202fETH \u2192\u202f50\u202fDAI \n\n(Assumes ETH \u2248\u202f$1,666; adjust for current price.)\n\nAfter the swaps, approve each stablecoin for Curve and then supply the 50\u2011each bundle. The swap\u2011and\u2011supply flow is low\u2011risk; just double\u2011check token addresses and keep slippage tolerance under\u202f1\u202f%.","card_ids":[],"elapsed_ms":88382,"steps":3}
+
+event: done
+data: {}
+
+curl: (28) Operation timed out after 90019 milliseconds with 1163 bytes received

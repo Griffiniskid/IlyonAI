@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":",\n {\n \"step\": 2,\n \"action\": \"supply 50.0 USDC on base via aave-v3\",\n \"status\": \"pending\"\n }\n ],\n \"note\": \"You already have 50 USDC approved. This plan tops up the approval by another 50 USDC so you can supply the remaining 50 USDC to reach a total of 100 USDC supplied.\"\n}","card_ids":[],"elapsed_ms":41403,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,36 @@
+event: thought
+data: {"step_index":1,"content":"Parsed constraint-aware DeFi search: {\"asset_hint\": \"USDC\", \"chains\": [\"ethereum\"], \"limit\": 8, \"max_apy\": 0.5, \"min_apy\": 0.08000000000000002, \"product_types\": [\"pool\"], \"protocol_filter\": \"uniswap-v2\", \"ranking_objective\": \"constraint_fit_then_risk_adjust."}
+
+event: thought
+data: {"step_index":2,"content":"Separating research, allocation, and execution intent before selecting a tool."}
+
+event: thought
+data: {"step_index":3,"content":"Applying hard APY, risk, chain, and TVL filters from the user's exact request."}
+
+event: thought
+data: {"step_index":4,"content":"Checking execution readiness separately so unsupported pools never get fake signing buttons."}
+
+event: tool
+data: {"step_index":4,"name":"search_defi_opportunities","args":{"target_apy":0.05,"min_apy":0.08000000000000002,"max_apy":0.5,"chains":["ethereum"],"ranking_objective":"constraint_fit_then_risk_adjusted_return","product_types":["pool"],"limit":8,"asset_hint":"USDC","protocol_filter":"uniswap-v2","extra":{"user_message":"Migrate my Uniswap V2 USDC-ETH LP to V3 0.05% native range narrow"}}}
+
+event: observation
+data: {"step_index":4,"name":"search_defi_opportunities","ok":true,"error":null}
+
+event: thought
+data: {"step_index":5,"content":"Parsed constraints: risk=any, target_apy=0.05, apy_band=(0.08000000000000002, 0.5)."}
+
+event: thought
+data: {"step_index":6,"content":"Queried DefiLlama with min_tvl=$10,000 and min_apy=0.08000000000000002 instead of the legacy $200M/0.5% staking defaults."}
+
+event: thought
+data: {"step_index":7,"content":"Ranked 1672 candidates by constraint_fit_then_risk_adjusted_return; 5 matched the hard constraints and 25 were excluded."}
+
+event: card
+data: {"step_index":7,"card_id":"62b42960-9b23-45b9-8b3c-442a0e2ebbe2","card_type":"defi_opportunities","payload":{"objective":"constraint_fit_then_risk_adjusted_return","target_apy":0.05,"apy_band":[0.08000000000000002,0.5],"risk_levels":[],"chains":["ethereum"],"execution_requested":false,"items":[{"protocol":"uniswap-v2","symbol":"BRL-USDC","chain":"ethereum","product_type":"pool","apy":0.1883,"apy_base":0.1883,"apy_reward":0.0,"tvl_usd":320872.0,"volume_24h_usd":551.7855,"risk_level":"HIGH","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/ab783068-c169-4225-a99a-1cb5f08450b6"},{"label":"Open in uniswap-v2","url":"https://app.uniswap.org/swap"}],"pool_id":"ab783068-c169-4225-a99a-1cb5f08450b6"},{"protocol":"uniswap-v2","symbol":"USDC-HERA","chain":"ethereum","product_type":"pool","apy":0.23634,"apy_base":0.23634,"apy_reward":0.0,"tvl_usd":494946.0,"volume_24h_usd":1068.28027,"risk_level":"HIGH","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/75e2bc38-9a68-489d-a51a-d5602e68b818"},{"label":"Open in uniswap-v2","url":"https://app.uniswap.org/swap"}],"pool_id":"75e2bc38-9a68-489d-a51a-d5602e68b818"},{"protocol":"uniswap-v2","symbol":"POND-USDC","chain":"ethereum","product_type":"pool","apy":0.27409,"apy_base":0.27409,"apy_reward":0.0,"tvl_usd":146257.0,"volume_24h_usd":366.1013,"risk_level":"HIGH","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/19a40c5f-6176-447c-96f1-02fade0ceb3f"},{"label":"Open in uniswap-v2","url":"https://app.uniswap.org/swap"}],"pool_id":"19a40c5f-6176-447c-96f1-02fade0ceb3f"},{"protocol":"uniswap-v2","symbol":"USDC-USDT","chain":"ethereum","product_type":"pool","apy":0.3441,"apy_base":0.3441,"apy_reward":0.0,"tvl_usd":3535862.0,"volume_24h_usd":11111.41047,"risk_level":"MEDIUM","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/e2c09021-0aa8-42b6-a596-5422c2e35399"},{"label":"Open in uniswap-v2","url":"https://app.uniswap.org/swap"}],"pool_id":"e2c09021-0aa8-42b6-a596-5422c2e35399"},{"protocol":"uniswap-v2","symbol":"USDC-ZERC","chain":"ethereum","product_type":"pool","apy":0.44186,"apy_base":0.44186,"apy_reward":0.0,"tvl_usd":82370.0,"volume_24h_usd":332.37914,"risk_level":"HIGH","executable":true,"adapter_id":"deterministic","unsupported_reason":null,"links":[{"label":"DefiLlama pool","url":"https://defillama.com/yields/pool/3211104c-8819-4ba4-92bb-cdde61afe54f"},{"label":"Open in uniswap-v2","url":"https://app.uniswap.org/swap"}],"pool_id":"3211104c-8819-4ba4-92bb-cdde61afe54f"}],"excluded_count":25,"blockers":[]}}
+
+event: final
+data: {"content":"**Constraint-Matched DeFi Opportunities**\n\n1. **Uniswap V2** \u2014 BRL-USDC on ethereum \n APY 0.2% \u00b7 TVL $320,872 \u00b7 Risk HIGH\n Links: [DefiLlama pool](https://defillama.com/yields/pool/ab783068-c169-4225-a99a-1cb5f08450b6)\n Execution: ready via deterministic\n\n2. **Uniswap V2** \u2014 USDC-HERA on ethereum \n APY 0.2% \u00b7 TVL $494,946 \u00b7 Risk HIGH\n Links: [DefiLlama pool](https://defillama.com/yields/pool/75e2bc38-9a68-489d-a51a-d5602e68b818)\n Execution: ready via deterministic\n\n3. **Uniswap V2** \u2014 POND-USDC on ethereum \n APY 0.3% \u00b7 TVL $146,257 \u00b7 Risk HIGH\n Links: [DefiLlama pool](https://defillama.com/yields/pool/19a40c5f-6176-447c-96f1-02fade0ceb3f)\n Execution: ready via deterministic\n\n4. **Uniswap V2** \u2014 USDC-USDT on ethereum \n APY 0.3% \u00b7 TVL $3,535,862 \u00b7 Risk MEDIUM\n Links: [DefiLlama pool](https://defillama.com/yields/pool/e2c09021-0aa8-42b6-a596-5422c2e35399)\n Execution: ready via deterministic\n\n5. **Uniswap V2** \u2014 USDC-ZERC on ethereum \n APY 0.4% \u00b7 TVL $82,370 \u00b7 Risk HIGH\n Links: [DefiLlama pool](https://defillama.com/yields/pool/3211104c-8819-4ba4-92bb-cdde61afe54f)\n Execution: ready via deterministic\n\nExcluded 25 candidates that violated the requested risk, APY, chain, or TVL constraints.","card_ids":["62b42960-9b23-45b9-8b3c-442a0e2ebbe2"],"elapsed_ms":1204,"steps":7}
+
+event: done
+data: {}
+

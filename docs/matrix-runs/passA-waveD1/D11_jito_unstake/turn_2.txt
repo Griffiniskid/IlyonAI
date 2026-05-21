@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Here are the main ways to unwind your jitoSOL position:\n\n1. **Direct Jito unstake** \u2013 Redeem jitoSOL for SOL through the Jito protocol. Expect a 1\u2011epoch unbonding period (\u22482\u20113 days). Risk: LOW; fits conservative/balanced strategies. \n2. **Swap on Jupiter** \u2013 Trade jitoSOL for SOL instantly via Jupiter\u2019s aggregator (uses secondary\u2011market liquidity). Risk: MEDIUM (price slippage depends on pool depth); fits balanced/aggressive if you need immediate liquidity. \n3. **Lend jitoSOL** \u2013 Deposit jitoSOL on a Solana lending market (e.g., Solend, MarginFi) to earn extra yield while retaining exposure. Risk: MEDIUM (smart\u2011contract & liquidation risk); fits balanced/aggressive. \n4. **Provide liquidity** \u2013 Add jitoSOL/SOL to a concentrated\u2011liquidity pool (e.g., Raydium CLMM) to earn fees. Risk: HIGH (impermanent loss); fits aggressive.\n\nSafety tip: Always verify contract addresses and approve only the exact amount you intend to move. Let me know which option you\u2019d like to proceed with, and I\u2019ll build a signable plan.","card_ids":[],"elapsed_ms":44765,"steps":3}
+
+event: done
+data: {}
+

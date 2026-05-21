@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t preview a bundle without a deterministic Sentinel tool generating the calldata. Please phrase the action explicitly, for example: \n**\u201cSupply 300 USDC to Compound V3 on Base via Enso.\u201d** \nOnce you provide that verb, I\u2019ll return a signable Execution Plan preview.","card_ids":[],"elapsed_ms":18492,"steps":3}
+
+event: done
+data: {}
+

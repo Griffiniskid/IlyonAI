@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I can\u2019t confirm that cap without a deterministic Sentinel tool producing the calldata. Please give an explicit verb form, e.g., \u201cLimit USDC allocation to 30\u202f% of the $500 stables portfolio\u201d or specify the asset and total amount you want capped.","card_ids":[],"elapsed_ms":40926,"steps":3}
+
+event: done
+data: {}
+

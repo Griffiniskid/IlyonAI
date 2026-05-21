@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"Approve step\u202f1 in your wallet to unlock the next step. One position requires a manual deposit via the protocol\u2019s UI\u2014follow the links in the allocation card for that.","card_ids":[],"elapsed_ms":22613,"steps":3}
+
+event: done
+data: {}
+

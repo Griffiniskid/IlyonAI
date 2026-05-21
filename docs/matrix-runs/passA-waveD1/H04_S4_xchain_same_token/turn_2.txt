@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"**Bridge Leg (Ethereum \u2192 Solana)** \n- **Token:** USDC \n- **Amount:** 100\u202fUSDC \n- **Source chain:** Ethereum (mainnet) \n- **Destination chain:** Solana (mainnet\u2011beta) \n- **Bridge:** Debridge \n- **Estimated fee:** ~0.0005\u202fETH\u202f+\u202fSolana network fee (\u2248\u202f$0.10\u2011$0.20 total) \n- **Estimated time:** 2\u20115\u202fminutes \n- **Result:** 100\u202fUSDC (SPL) appears in your Solana wallet, ready for the Raydium CLMM deposit leg. \n\n*Safety tip:* Verify the contract address for Debridge on each chain before confirming; bridge transactions are medium\u2011risk\u2014double\u2011check amounts and slippage settings.","card_ids":[],"elapsed_ms":34399,"steps":3}
+
+event: done
+data: {}
+

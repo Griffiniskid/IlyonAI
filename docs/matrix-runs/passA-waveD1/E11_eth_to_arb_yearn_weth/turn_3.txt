@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"I\u2019m unable to retrieve the current APY for the Yearn WETH vault on Arbitrum at the moment. You can check the latest rate on DefiLlama or the Yearn Finance app directly.\n\nTo bridge 0.1\u202fWETH from Ethereum to Arbitrum, you can use the official Arbitrum Bridge or a trusted cross\u2011chain router like Hop or Celer. After the funds arrive on Arbitrum, approve and deposit them into the Yearn WETH vault via the Yearn interface. Remember that bridging and vault deposits carry smart\u2011contract risk\u2014verify contract addresses and consider starting with a small test amount.","card_ids":[],"elapsed_ms":26529,"steps":3}
+
+event: done
+data: {}
+

@@ -1,0 +1,15 @@
+event: thought
+data: {"step_index":1,"content":"No deterministic DeFi tool matched the request; switching to contextual reasoning mode."}
+
+event: thought
+data: {"step_index":2,"content":"Reviewing recent chat context and user intent before answering."}
+
+event: thought
+data: {"step_index":3,"content":"Applying Sentinel-style risk framing where the answer touches crypto assets or protocols."}
+
+event: final
+data: {"content":"For executing LP positions via Enso on Berachain, you'd typically use Enso's interface directly or a compatible wallet like Rabby. Always verify contract addresses and approve tokens separately before swapping to minimize risk. (Risk: MEDIUM for LP positions due to impermanent loss and contract exposure; Strategy fit: balanced/aggressive depending on your allocation.)","card_ids":[],"elapsed_ms":28204,"steps":3}
+
+event: done
+data: {}
+
