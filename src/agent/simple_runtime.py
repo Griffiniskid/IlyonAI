@@ -5429,8 +5429,13 @@ def _format_execution_plan_v3_response(data: dict) -> str:
         lines.append("")
         lines.append("No signing button is shown until every blocker clears.")
     elif status == "ready":
-        lines.append("")
-        lines.append("Open the Execution Plan card above and sign step 1 in your wallet to begin.")
+        # BUG-RC-017: the chat-bubble filler "Open the Execution Plan
+        # card above and sign step 1 in your wallet to begin." was
+        # redundant — the card already has a visible Sign button at
+        # step 1. Real-tester (AI Bug Convo.md lines 729, 811) saw the
+        # filler twice. Removed; the chat bubble now ends at the
+        # status line.
+        pass
     return "\n".join(lines).strip()
 
 

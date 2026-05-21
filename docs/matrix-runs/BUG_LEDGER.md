@@ -538,3 +538,58 @@ Wave RC-α partial: 2 / 23 BUG-RC items closed in this commit (BUG-RC-003 P0, BU
 - **Note**: Emit-time fallback is also wired at the runtime invariant layer as `I10 asset-pool match` so any future code path that bypasses execute_pool_position still gets caught at the SSE chokepoint.
 
 Wave RC-α second batch: 4 more BUG-RC items closed (total 4 of 23 — RC-002, RC-003, RC-005, RC-006). 19 still open: RC-001 (root cause: LiquidityIntent envelope wire-up — depends on simple_runtime.py rewrite), RC-004 (re-quote intent), RC-007 through RC-023.
+
+
+## Tier RC beta (Wave RC-beta — P1 visible defects, commits 0853765 + ad0931a)
+
+### BUG-RC-004 — Re-quote intent unrecognised + cross-suggestion cascade (P1)
+- Surfaced by: real-tester AI Bug Convo.md lines 789-795. User typed Re quote please to refresh SIM_STALE; agent gave a generic refusal example suggesting Supply 100 USDC to Aave V3 on Base (wrong chain) which the user then followed and hit BUG-RC-001.
+- Severity: P1 with cascade.
+- Fix: src/agent/simple_runtime.py _REQUOTE_CONTINUATION_RE plus contextual dispatcher gate. Matches re-quote, re quote please, refresh sim, redo quote, update quote, re-simulate, refresh, new quote. When a prior LP card exists, re-issues the prior build_yield_execution_plan call with extra.requote=True. Commit ad0931a.
+- Pin test: Gate 8 conv-matrix R03 turn 2 (LLM-judge); mechanical PASS at HEAD 8fef2c2.
+
+### BUG-RC-007 — Duplicated Excluded N candidates footer (P1)
+- Surfaced by: AI Bug Convo.md lines 29 + 163 (turn 1), 249 + 385 (turn 3), 593 + 713 (turn 7).
+- Root cause: Both src/agent/simple_runtime.py _format_opportunity_search_response (chat bubble) AND web/components/agent/cards/DefiOpportunitiesCard.tsx:146-150 (card footer) emitted the same line with subtly different wording.
+- Fix: removed frontend duplicate footer. Backend formatter is canonical source. Commit 0853765.
+- Pin test: AP-RC-005 static-sweep pattern.
+
+### BUG-RC-009 — 0 percent APY pools surfaced as best (P1)
+- Surfaced by: AI Bug Convo.md turn 7 lines 587 + 591 (Sky Lending WETH and Sky Lending WSTETH at 0.0 percent APY ranked number 3 and number 5).
+- Root cause: src/agent/tools/search_defi_opportunities.py:484 min_apy default was 0.
+- Fix: implicit min_apy floor of 0.01 percent when caller does not specify. Commit 0853765.
+
+### BUG-RC-010 — Suspiciously high APY (over 100 percent) without yield-trap warning (P1)
+- Surfaced by: AI Bug Convo.md turn 1 lines 19-27 (Gmtrade XAU-USDC 208 percent, SOL-USDC 189 percent, XAG-USDC 264 percent).
+- Fix: opportunity formatter appends warning callout under any item with APY over 100 percent. Commit 0853765.
+
+### BUG-RC-012 — Blocked-state placeholder fields rendered as 0 dash clear (P1)
+- Surfaced by: AI Bug Convo.md turn 2 lines 189-209.
+- Fix: web/components/agent/cards/ExecutionPlanV3Card.tsx — hide Signatures chip plus Risk-gate, Total-Gas, Chains tiles when status equals blocked. Commit 0853765.
+
+### BUG-RC-018 — Reasoning trace exposed by default (P1)
+- Surfaced by: AI Bug Convo.md lines 813-841.
+- Fix: web/components/agent/MessageList.tsx — removed expanded prop from the post-final ReasoningAccordion. Live-streaming one still expanded. Commit 0853765.
+
+### BUG-RC-021 — Excluded-line wording drift (P2)
+- Closed as a side-effect of BUG-RC-007 fix.
+
+## Tier RC gamma (Wave RC-gamma — P2 hygiene, commit 6fc4ca7)
+
+### BUG-RC-022 — Receipt-token address shown without semantic context (P2)
+- Surfaced by: AI Bug Convo.md lines 767 + 877.
+- Fix: src/defi/execution/adapters/enso_shortcut.py — annotated receipt-token line with explorer-verification guidance. Commit 6fc4ca7.
+
+### BUG-RC-023 — Generic Enso warnings on every card (P2)
+- Surfaced by: AI Bug Convo.md lines 771-775 + 881-885.
+- Fix: replaced with pool-specific callout naming protocol + chain. Commit 6fc4ca7.
+
+---
+
+## BUG-RC closure tally (as of 8fef2c2)
+
+14 of 23 closed:
+- CLOSED: RC-002, RC-003, RC-004, RC-005, RC-006, RC-007, RC-009, RC-010, RC-012, RC-018, RC-021, RC-022, RC-023.
+- OPEN: RC-001 (LiquidityIntent envelope wire-up — deferred to last wave), RC-008 (pool count numbered-list vs cards mismatch), RC-011 (sentinel-scoring DOM in defi_opportunities CardRenderer), RC-013 (Gmtrade duplicate title repetition), RC-014 (markdown bold rendered as literal in card body), RC-015 (cross-chain implicit context, no bridge surfaced), RC-016 (prior-failure learning across turns), RC-017 (redundant Open the Execution Plan filler), RC-019 (promised alternatives in blocker text not materialising), RC-020 (refusal example chain context).
+
+Next priorities: RC-016 (prior-failure memory), RC-020 (refusal chain context), RC-011 (sentinel DOM), RC-013 (Gmtrade title dedup), RC-017 (redundant filler), then RC-001 (LiquidityIntent — larger refactor).
