@@ -668,23 +668,28 @@ async def run_flow(browser: Browser, flow: Flow, log_dir: Path) -> dict:
                 seen_card_types.add(ct)
 
             # If any execution_plan_v3 cards came through, wait up to 15s
-            # for the first step row to actually mount in the DOM before
-            # checking individual rows. (Bumped from 5s — composed
-            # cross-chain plans like E09 Eth→Arb Morpho deposit emit a
-            # multi-step plan; React commit + downstream CardRenderer
-            # tree mount routinely exceeds 5s in load-light isolation
-            # and was the only consistent fail across all post-Wave-RC
-            # Playwright runs.)
+            # for EITHER a step row OR a blocker row to mount. A
+            # composed cross-chain plan blocked on PENDING_DST_FILL has
+            # zero signable steps by design — the user can't sign
+            # anything until the bridge fills — so the card emits with
+            # blockers populated + steps=[]. Asserting step row presence
+            # in that case is wrong; assert plan presence by checking
+            # either step rows OR the blocker list rendered.
             if any(cf.get("card_type") == "execution_plan_v3" for cf in card_frames):
                 try:
+                    # Wait for ANY of: step row, blocker row, or the
+                    # 'Execution Blocked' heading (rendered by
+                    # ExecutionPlanV3Card when blockers are present).
                     await page.wait_for_selector(
-                        "[data-testid='execution-plan-v3-step']",
+                        "[data-testid='execution-plan-v3-step'], "
+                        "[data-testid='execution-plan-v3-blocker'], "
+                        "text=Execution Blocked",
                         timeout=15000,
                     )
                 except Exception:
                     bugs.append(
-                        f"BUG-P0: turn{i} — execution_plan_v3 emitted but no "
-                        "step row mounted in 15s after SSE close"
+                        f"BUG-P0: turn{i} — execution_plan_v3 emitted but "
+                        "no step row or blocker row mounted in 15s after SSE close"
                     )
 
             # Scan visible body text for leak patterns
