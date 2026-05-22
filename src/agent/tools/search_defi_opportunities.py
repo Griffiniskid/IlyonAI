@@ -318,6 +318,77 @@ def _enforce_risk_mix(
     return promoted[: max(1, int(request.limit or 8))]
 
 
+def _compute_sentinel_block(item: dict[str, Any]) -> dict[str, int]:
+    """BUG-RC-011: 4-axis sentinel scoring per opportunity item.
+
+    Renders the spec §3 sentinel scoring bar on every defi_opportunities
+    card. Heuristic mapping from the available fields:
+
+    * safety       — TVL + risk_level (high TVL + LOW risk → high safety)
+    * durability   — log(TVL); a pool with $1B+ TVL has weathered events
+                     a $50K pool has not
+    * exit         — product_type + executable; LP / lending → good exit;
+                     unsupported / vault-lock → lower
+    * confidence   — adapter_id presence + executable bool; verified
+                     adapter = high confidence; fallback = lower
+
+    Scores in 0-100. Conservative heuristic — real sentinel module can
+    refine. Critical thing: never emit a card without the block (closes
+    AI Bug Convo.md BUG-RC-011).
+    """
+    import math
+    tvl = float(item.get("tvl_usd") or 0)
+    apy = float(item.get("apy") or 0)
+    risk = (item.get("risk_level") or "").upper()
+    product = (item.get("product_type") or "").lower()
+    adapter_id = (item.get("adapter_id") or "").lower()
+    executable = bool(item.get("executable"))
+
+    # safety: TVL-weighted, capped + risk-tier bump.
+    tvl_log = math.log10(max(tvl, 1.0))  # 0 (TVL=1) to 11 (TVL=$100B)
+    safety = int(min(95, tvl_log * 8))  # $1M ~48, $100M ~64, $1B ~72
+    if risk == "LOW":
+        safety = min(100, safety + 15)
+    elif risk == "HIGH":
+        safety = max(0, safety - 20)
+
+    # durability: TVL-only (no time-series proxy yet).
+    durability = int(min(95, tvl_log * 8))
+
+    # exit: LP/lending/vault are all routine; unsupported drops exit.
+    if not executable:
+        exit_score = 35  # protocol UI only — slower
+    elif "lending" in product or "pool" in product:
+        exit_score = 85
+    elif "vault" in product or "yield" in product:
+        exit_score = 75
+    elif "lst" in product or "stake" in product:
+        exit_score = 60  # epoch unlocks
+    else:
+        exit_score = 70
+
+    # confidence: verified adapter + execution-ready = high.
+    if adapter_id and "fallback" not in adapter_id:
+        confidence = 85 if executable else 60
+    elif "fallback" in adapter_id:
+        confidence = 55
+    else:
+        confidence = 40
+
+    # Suspiciously-high APY clobbers confidence (BUG-RC-010 alignment).
+    if apy > 150.0:
+        confidence = max(10, confidence - 35)
+    elif apy > 100.0:
+        confidence = max(20, confidence - 20)
+
+    return {
+        "safety": int(safety),
+        "durability": int(durability),
+        "exit": int(exit_score),
+        "confidence": int(confidence),
+    }
+
+
 def _opportunity_card_payload(
     primary: list[dict[str, Any]],
     *,
@@ -354,6 +425,7 @@ def _opportunity_card_payload(
             "unsupported_reason": item.get("unsupported_reason"),
             "links": link_entries,
             "pool_id": item.get("pool_id"),
+            "sentinel": _compute_sentinel_block(item),  # BUG-RC-011
         })
     return {
         "objective": request.ranking_objective,

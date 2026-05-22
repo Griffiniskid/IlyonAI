@@ -40,8 +40,25 @@ function dispatchExecutePool(item: DefiOpportunityItem) {
   }
 }
 
+function SentinelAxisBar({ label, score }: { label: string; score: number }) {
+  // 0-100 → tint: red (low) → amber (mid) → emerald (high)
+  const pct = Math.max(0, Math.min(100, score));
+  const tone =
+    pct >= 70 ? "bg-emerald-400/70" : pct >= 45 ? "bg-amber-400/70" : "bg-rose-400/70";
+  return (
+    <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.12em] text-slate-400">
+      <span className="w-20 text-right">{label}</span>
+      <div className="relative h-1.5 w-24 overflow-hidden rounded-full bg-white/10">
+        <div className={`absolute left-0 top-0 h-full ${tone}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="w-6 text-right tabular-nums text-slate-300">{pct}</span>
+    </div>
+  );
+}
+
 function OpportunityRow({ item }: { item: DefiOpportunityItem }) {
   const canExecute = Boolean(item.executable);
+  const sentinel = item.sentinel;
   return (
     <div data-testid="defi-opp-row" className="rounded-3xl border border-white/10 bg-slate-950/55 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -64,6 +81,23 @@ function OpportunityRow({ item }: { item: DefiOpportunityItem }) {
           <div className="text-xs text-slate-400">TVL {fmtUsd(item.tvl_usd)}</div>
         </div>
       </div>
+
+      {/* BUG-RC-011: 4-axis sentinel scoring bar. Backend computes block
+          when scoring is available; fall back to a 'scoring unavailable'
+          badge rather than silently omitting (so testers can tell the
+          difference between 'low score' and 'no signal'). */}
+      {sentinel ? (
+        <div data-testid="defi-opp-sentinel" className="mt-3 grid gap-1 rounded-2xl border border-white/5 bg-white/[0.02] p-2">
+          <SentinelAxisBar label="Safety" score={sentinel.safety} />
+          <SentinelAxisBar label="Durability" score={sentinel.durability} />
+          <SentinelAxisBar label="Exit" score={sentinel.exit} />
+          <SentinelAxisBar label="Confidence" score={sentinel.confidence} />
+        </div>
+      ) : (
+        <div data-testid="defi-opp-sentinel-unavailable" className="mt-3 rounded-2xl border border-white/5 bg-white/[0.02] p-2 text-[10px] uppercase tracking-[0.18em] text-slate-500">
+          Sentinel scoring unavailable
+        </div>
+      )}
       {item.links && item.links.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           {item.links.map((link) => (

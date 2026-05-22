@@ -256,6 +256,15 @@ export interface DefiOpportunityItem {
   unsupported_reason?: string | null;
   links: DefiOpportunityLink[];
   pool_id?: string | null;
+  // BUG-RC-011: 4-axis sentinel scoring rendered as a bar on each card.
+  // Backend always emits this block when sentinel module is available;
+  // falls back to omission when scorer is unavailable.
+  sentinel?: {
+    safety: number;
+    durability: number;
+    exit: number;
+    confidence: number;
+  } | null;
 }
 
 export interface DefiOpportunitiesPayload {
