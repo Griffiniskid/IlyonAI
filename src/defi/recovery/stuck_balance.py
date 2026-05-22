@@ -161,15 +161,33 @@ def decide_recovery(
                 alts = list(alternatives_lookup(pool_id) or [])
             except Exception:  # noqa: BLE001 — alternatives lookup is best-effort
                 alts = []
-        return Recovery(
-            action=RecoveryAction.ASK_USER,
-            posture="Pool unavailable — surfacing alternatives",
-            alternatives=alts[:3],
-            buttons=["Pick alternative", "Leave funds in wallet", "Swap back to source"],
-            rationale=(
+        # BUG-RC-019: the prior text always said "surfacing alternatives"
+        # even when the lookup returned zero — tester saw the promise but
+        # no alternatives followed. Only promise alternatives when the
+        # lookup actually returned options; otherwise tell the user that
+        # no equivalent pool is available and suggest a fresh search.
+        if alts:
+            posture = "Pool unavailable — surfacing alternatives"
+            rationale = (
                 "Pool removed / paused / cap reached. Alternatives ranked by APR "
                 "+ similarity. Never auto-route — you pick."
-            ),
+            )
+            buttons = ["Pick alternative", "Leave funds in wallet", "Swap back to source"]
+        else:
+            posture = "Pool unavailable — no equivalent alternatives in registry"
+            rationale = (
+                "Pool removed / paused / cap reached. No equivalent pool was "
+                "found in the executable registry for this asset / chain / risk "
+                "tier. Run a fresh search with broader constraints, or pick a "
+                "different protocol family entirely."
+            )
+            buttons = ["Run a fresh search", "Leave funds in wallet", "Swap back to source"]
+        return Recovery(
+            action=RecoveryAction.ASK_USER,
+            posture=posture,
+            alternatives=alts[:3],
+            buttons=buttons,
+            rationale=rationale,
         )
 
     # 3. Bridge submission failed mid-flow → hold + alt bridges.
