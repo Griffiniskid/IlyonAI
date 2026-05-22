@@ -210,7 +210,11 @@ function StepRow({
 
 function BlockerRow({ blocker }: { blocker: ExecutionPlanV3Blocker }) {
   return (
-    <div className="rounded-2xl border border-rose-300/30 bg-rose-300/5 p-3">
+    <div
+      data-testid="execution-plan-v3-blocker"
+      data-blocker-code={blocker.code}
+      className="rounded-2xl border border-rose-300/30 bg-rose-300/5 p-3"
+    >
       <div className="flex items-center gap-2 text-sm font-black text-rose-100">
         <ShieldAlert className="h-4 w-4" /> {blocker.title}
       </div>
