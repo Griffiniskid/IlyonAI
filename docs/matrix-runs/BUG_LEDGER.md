@@ -729,7 +729,23 @@ ee16e2b → a22aa90 → 5163945 → f1af4b7 → aa1f9b3 → ad0931a → 8fef2c2 
 
 ## Tag
 
-Tagged as **tester-ready-v2** at SHA ac48983 with this evidence summary. The premature V1 **tester-ready** tag has been rolled back to **pre-real-conversation-validation-v1** (at original SHA 29dcd27).
+Tagged as **tester-ready-v2** at SHA **641cc4c** (updated from ac48983 to include the P1-C-006 FULL LiquidityIntent envelope wire-up at simple_runtime.py:9120-9188). The premature V1 **tester-ready** tag has been rolled back to **pre-real-conversation-validation-v1** (at original SHA 29dcd27).
+
+### P1-C-006 closure at 641cc4c (FULL LIVE per subagent re-audit)
+
+Subagent re-audit at HEAD 641cc4c confirms P1-C-006 = **LIVE** (was PARTIAL at ac48983). All 5 conditions met:
+  1. `await extract_lp_intent(...)` at simple_runtime.py:9146 — inside `async def run_ephemeral_turn`.
+  2. Dual-gate: LP-verb regex AND CL/V3/V4/DLMM protocol regex (lines 9123-9136) — only fires for true LP-domain prompts.
+  3. Imports `src.agent.intent.lp_intent_extractor.extract_lp_intent` (line 9138) — the canonical LP envelope module.
+  4. Envelope outputs injected into tool_input via `extra.lp_envelope_action / range_preset / pair` (lines 9170-9178).
+  5. Fail-soft on exceptions (lines 9180-9188) — non-LP fast path unchanged.
+
+Combined with the BUG-RC-001 INTENT_MISMATCH regex-family-head guard at build_yield_execution_plan.py:175-268, P1-C-006 is now closed at BOTH structural layers (regex + typed envelope).
+
+Post-redeploy at 641cc4c:
+  * Gate 1 smoke: 32/32 PASS, ALL CLEAR
+  * Gate 8 conv-matrix: 36/36 mechanical PASS, 0 P0 failures across all 15 R-conversations
+  * Other gates inherit from ac48983 evidence (1bf255a runtime; 641cc4c adds the envelope call only — fail-soft + only fires on LP-domain prompts, no risk to non-LP fast path).
 
 ## Tester-facing summary
 
