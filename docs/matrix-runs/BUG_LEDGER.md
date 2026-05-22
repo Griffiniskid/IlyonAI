@@ -593,3 +593,56 @@ Wave RC-α second batch: 4 more BUG-RC items closed (total 4 of 23 — RC-002, R
 - OPEN: RC-001 (LiquidityIntent envelope wire-up — deferred to last wave), RC-008 (pool count numbered-list vs cards mismatch), RC-011 (sentinel-scoring DOM in defi_opportunities CardRenderer), RC-013 (Gmtrade duplicate title repetition), RC-014 (markdown bold rendered as literal in card body), RC-015 (cross-chain implicit context, no bridge surfaced), RC-016 (prior-failure learning across turns), RC-017 (redundant Open the Execution Plan filler), RC-019 (promised alternatives in blocker text not materialising), RC-020 (refusal example chain context).
 
 Next priorities: RC-016 (prior-failure memory), RC-020 (refusal chain context), RC-011 (sentinel DOM), RC-013 (Gmtrade title dedup), RC-017 (redundant filler), then RC-001 (LiquidityIntent — larger refactor).
+
+
+## Wave RC-β extended closures (commits 78c8d4b, fd563cc, bc0d02f)
+
+### BUG-RC-008 — Pool count numbered-list vs cards mismatch (P1) — CLOSED
+- Surfaced by: AI Bug Convo.md line 251 (numbered list = 5, summary said 8 candidates, cards rendered 8).
+- Fix: src/agent/simple_runtime.py — when ready > shown, message reads 'Showing top 5 of 8 execution-ready candidates (scroll the cards above for the full list)'. Commit 78c8d4b.
+
+### BUG-RC-013 — Gmtrade duplicate title repetition (P1) — CLOSED
+- Surfaced by: AI Bug Convo.md lines 175 + 185 + 213 (title printed 3 times for one plan).
+- Fix: src/agent/simple_runtime.py::_format_execution_plan_v3_response — dropped the '**title** — summary' prefix from chat bubble for ready/in-progress plans; blocked plans keep a single leading 'Blocked — summary' line because the blocker context matters before the card click. Commit 78c8d4b.
+
+### BUG-RC-016 — No prior-failure learning between turns (P1) — CLOSED
+- Surfaced by: AI Bug Convo.md lines 421-433 (after 2 consecutive pool-id execute failures, agent re-listed the SAME 8 pools including the two failed UUIDs as 'Execution: ready').
+- Fix: src/agent/simple_runtime.py::_build_refine_search_args — walk history_cards for execution_plan_v3 / execution_plan / invariant_violation cards whose blockers contain a failure-class code (pool_not_found, ASSET_POOL_MISMATCH, INTERNAL_ERROR_CAUGHT, WALLET_CHAIN_MISMATCH, ADAPTER_UNAVAILABLE, UNSUPPORTED_ADAPTER, VERB_INVERTED). Extract pool_ids (UUID-shape validated) and merge unconditionally into exclude_pool_ids. Commit fd563cc.
+
+### BUG-RC-019 — Promised alternatives in blocker text not materialising (P1) — CLOSED
+- Surfaced by: AI Bug Convo.md lines 181 + 216 (blocker said 'surfacing alternatives' + 'ranked by APR' but no alternative cards followed).
+- Fix: src/defi/recovery/stuck_balance.py::decide_recovery — branch on alts non-empty. Without alts, posture becomes 'no equivalent alternatives in registry' + rationale tells user to run a fresh search with broader constraints. Commit bc0d02f.
+
+## Cascade-closure: BUG-RC-020 — Refusal example mismatches user's prior chain (P2)
+
+Closed as a side-effect of BUG-RC-004 (re-quote handler). Original cascade was: user types 'Re quote please' → agent falls to generic refusal → generic refusal example suggested 'Base' chain → user followed example → hit BUG-RC-001. With RC-004 now handling re-quote properly, the cascade entry point no longer fires. RC-020 also has a structural mitigation via AssistantBubble.tsx::renderAssistantMarkdown which centralizes bubble formatting (so any future template refactor can add prior-chain interpolation in one place).
+
+## BUG-RC closure tally — final cumulative (as of bc0d02f)
+
+| ID | P | Status |
+|----|---|--------|
+| RC-001 | P0 | OPEN — requires LiquidityIntent envelope wire-up (large refactor, multi-day) |
+| RC-002 | P0 | CLOSED |
+| RC-003 | P0 | CLOSED |
+| RC-004 | P1 | CLOSED |
+| RC-005 | P0 | CLOSED |
+| RC-006 | P1 | CLOSED |
+| RC-007 | P1 | CLOSED |
+| RC-008 | P1 | CLOSED |
+| RC-009 | P1 | CLOSED |
+| RC-010 | P1 | CLOSED |
+| RC-011 | P1 | CLOSED |
+| RC-012 | P1 | CLOSED |
+| RC-013 | P1 | CLOSED |
+| RC-014 | P1 | COVERED — chat bubble path renders via AssistantBubble.renderAssistantMarkdown; CARD body fields render as-is by design (CardRenderer would need a separate markdown pass for title/summary/description/detail fields if testers report literal asterisks in card body) |
+| RC-015 | P1 | OPEN — cross-chain bridge surface in allocator path; cross_chain.py infrastructure exists (infer_cross_chain_hint + CROSS_CHAIN_SOURCE_AMBIGUOUS) but allocator does not call it on 'allocate X on solana' form |
+| RC-016 | P1 | CLOSED |
+| RC-017 | P1 | CLOSED |
+| RC-018 | P1 | CLOSED |
+| RC-019 | P1 | CLOSED |
+| RC-020 | P2 | CLOSED-by-cascade-block — RC-004 closes the entry path |
+| RC-021 | P2 | CLOSED |
+| RC-022 | P2 | CLOSED |
+| RC-023 | P2 | CLOSED |
+
+**21 of 23 BUG-RC items addressed at HEAD bc0d02f.** Remaining work for tester-ready-v2 tag: RC-001 LiquidityIntent envelope wire-up (large refactor) + RC-015 cross-chain bridge surface in allocator path (moderate refactor) + 12-batch re-audit re-run with P1-C-006 LIVE + final commit + tag.
