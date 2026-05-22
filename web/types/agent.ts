@@ -510,7 +510,10 @@ export type CardType =
   | "sentinel"
   | "sentinel_token_report" | "sentinel_pool_report" | "sentinel_whale_feed"
   | "sentinel_smart_money_hub" | "sentinel_shield_report" | "sentinel_entity_card"
-  | "compound_card" | "rebalance_card" | "migrate_card";
+  | "compound_card" | "rebalance_card" | "migrate_card"
+  // Wave RC-α: invariant_violation replaces card payloads that fail I1-I12
+  // checks at the SSE emit chokepoint (see src/agent/runtime_invariants.py).
+  | "invariant_violation";
 
 // ── V7-025 §4 — lifecycle action cards ──
 
