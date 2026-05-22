@@ -513,7 +513,11 @@ export type CardType =
   | "compound_card" | "rebalance_card" | "migrate_card"
   // Wave RC-α: invariant_violation replaces card payloads that fail I1-I12
   // checks at the SSE emit chokepoint (see src/agent/runtime_invariants.py).
-  | "invariant_violation";
+  | "invariant_violation"
+  // CardRenderer case types not previously listed in the union (always
+  // dispatched as text / no-render fallbacks in production but referenced
+  // explicitly in the switch).
+  | "balance_report" | "text" | "no_change" | "preferences" | "transfer" | "lp";
 
 // ── V7-025 §4 — lifecycle action cards ──
 
