@@ -171,6 +171,108 @@ async def build_yield_execution_plan(
         or _extra_for_verb_guard.get("cross_chain_message")
         or ""
     )
+
+    # BUG-RC-001 — protocol-name guard. When the user explicitly named a
+    # protocol family in the message ("Aave V3", "Compound", "Fluid",
+    # "Spark", etc.) but the dispatcher selected a DIFFERENT protocol,
+    # refuse with INTENT_MISMATCH rather than silently substituting.
+    # This is the surgical close for AI Bug Convo.md lines 801-833 where
+    # 'Supply 100 USDC to Aave V3 on Base' silently routed to
+    # 'fluid-lending'. Full LiquidityIntent envelope wire-up (P1-C-006)
+    # would do this via structured LLM extraction — this regex guard
+    # catches the obvious case without an LLM call.
+    if _user_message and isinstance(_user_message, str) and protocol:
+        import re as _re_proto_guard
+        _USER_PROTOCOL_RE = _re_proto_guard.compile(
+            r"\b(?P<proto>aave(?:[\s-]?v[23])?|compound(?:[\s-]?v[23])?|"
+            r"fluid(?:[\s-]?lending)?|spark(?:[\s-]?protocol|[\s-]?lending)?|"
+            r"morpho(?:[\s-]?blue)?|metamorpho|"
+            r"yearn(?:[\s-]?finance|[\s-]?v[23])?|"
+            r"curve(?:[\s-]?dex)?|balancer(?:[\s-]?v[23])?|"
+            r"sky(?:[\s-]?lending|maker(?:dao)?)?|"
+            r"lido|rocket[\s-]?pool|rocketpool|ether[\.\-]?fi|etherfi|"
+            r"frax(?:[\s-]?ether)?|stader|"
+            r"uniswap(?:[\s-]?v[234])?|pancakeswap(?:[\s-]?v[23])?|sushiswap|"
+            r"aerodrome(?:[\s-]?slipstream|[\s-]?cl)?|velodrome(?:[\s-]?cl)?|"
+            r"raydium(?:[\s-]?amm|[\s-]?clmm)?|orca(?:[\s-]?whirlpools)?|"
+            r"meteora(?:[\s-]?dlmm)?|kamino(?:[\s-]?lend|[\s-]?liquidity)?|"
+            r"jupiter(?:[\s-]?lend|[\s-]?perps|[\s-]?staked[\s-]?sol)?|"
+            r"pendle|stargate|moonwell|venus|gmx)\b",
+            _re_proto_guard.IGNORECASE,
+        )
+        _user_proto_m = _USER_PROTOCOL_RE.search(_user_message)
+        if _user_proto_m:
+            _user_proto_raw = _re_proto_guard.sub(
+                r"\s+", "-", _user_proto_m.group("proto").lower().strip()
+            )
+            # Normalize to a canonical "family" head — strip version
+            # suffix (-v2/-v3/-v4) for the comparison, since 'aave' and
+            # 'aave-v3' are the same family but 'aave' vs 'fluid' is a
+            # real substitution.
+            def _family_head(p: str) -> str:
+                p = p.lower().replace(" ", "-").strip()
+                # Strip version suffix
+                p = _re_proto_guard.sub(r"[-_]?v\d+$", "", p)
+                # Strip family suffix (-lending, -finance, -dex)
+                p = _re_proto_guard.sub(
+                    r"[-_]?(lending|finance|dex|protocol|slipstream|cl|"
+                    r"amm|clmm|whirlpools|dlmm|blue)$",
+                    "", p,
+                )
+                # Aliases
+                return {
+                    "rocketpool": "rocket-pool",
+                    "ether-fi": "etherfi",
+                    "ether.fi": "etherfi",
+                    "metamorpho": "morpho",
+                    "frax-ether": "frax",
+                    "makerdao": "sky",
+                    "maker": "sky",
+                }.get(p, p)
+            _user_family = _family_head(_user_proto_raw)
+            _dispatched_family = _family_head(str(protocol))
+            if (
+                _user_family
+                and _dispatched_family
+                and _user_family != _dispatched_family
+            ):
+                plan = ExecutionPlanV3.new(
+                    title=(
+                        f"Intent mismatch — refusing to substitute "
+                        f"{_user_family} → {_dispatched_family}"
+                    ),
+                    summary=(
+                        f"You asked for {_user_family!r} but the dispatcher "
+                        f"selected {_dispatched_family!r}. Refusing to "
+                        f"silently route your intent to a different protocol."
+                    ),
+                )
+                plan.add_blocker(ExecutionBlocker(
+                    code="INTENT_MISMATCH",
+                    severity="blocker",
+                    title=(
+                        f"Protocol substitution refused: "
+                        f"{_user_family} != {_dispatched_family}"
+                    ),
+                    detail=(
+                        f"Your message named {_user_family!r} as the target "
+                        f"protocol, but the dispatcher resolved this request "
+                        f"to {_dispatched_family!r}. To proceed, either "
+                        f"(a) re-issue naming the dispatcher's protocol "
+                        f"explicitly, or (b) widen the prompt so the "
+                        f"intended protocol is unambiguous (e.g. include "
+                        f"chain + asset + version: 'Supply 100 USDC to "
+                        f"{_user_family} V3 on Base')."
+                    ),
+                    affected_step_ids=[],
+                    cta=f"Re-issue with the {_user_family} pool explicitly.",
+                ))
+                return ok_envelope(
+                    data={"plan": plan.to_dict()},
+                    card_type="execution_plan_v3",
+                    card_payload=plan.to_dict(),
+                )
+
     if _user_message and isinstance(_user_message, str):
         import re as _re_verb
         _exit_verb_re = _re_verb.compile(
