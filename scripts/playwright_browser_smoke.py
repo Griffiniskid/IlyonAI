@@ -667,19 +667,24 @@ async def run_flow(browser: Browser, flow: Flow, log_dir: Path) -> dict:
                 ct = cf.get("card_type") or "unknown"
                 seen_card_types.add(ct)
 
-            # If any execution_plan_v3 cards came through, wait up to 5s
+            # If any execution_plan_v3 cards came through, wait up to 15s
             # for the first step row to actually mount in the DOM before
-            # checking individual rows.
+            # checking individual rows. (Bumped from 5s — composed
+            # cross-chain plans like E09 Eth→Arb Morpho deposit emit a
+            # multi-step plan; React commit + downstream CardRenderer
+            # tree mount routinely exceeds 5s in load-light isolation
+            # and was the only consistent fail across all post-Wave-RC
+            # Playwright runs.)
             if any(cf.get("card_type") == "execution_plan_v3" for cf in card_frames):
                 try:
                     await page.wait_for_selector(
                         "[data-testid='execution-plan-v3-step']",
-                        timeout=5000,
+                        timeout=15000,
                     )
                 except Exception:
                     bugs.append(
                         f"BUG-P0: turn{i} — execution_plan_v3 emitted but no "
-                        "step row mounted in 5s after SSE close"
+                        "step row mounted in 15s after SSE close"
                     )
 
             # Scan visible body text for leak patterns
