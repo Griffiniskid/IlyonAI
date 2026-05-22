@@ -5407,7 +5407,18 @@ def _format_execution_plan_v3_response(data: dict) -> str:
     title = plan.get("title") or "Yield Execution Plan"
     summary = plan.get("summary") or ""
     status = plan.get("status") or "draft"
-    lines = [f"**{title}** — {summary}"]
+    # BUG-RC-013: the card already shows {title} and {summary} prominently.
+    # Repeating them in the chat bubble caused the literal duplication the
+    # tester saw (AI Bug Convo.md lines 185, 195, 213: 'Gmtrade XAU-USDC'
+    # printed three times for one plan). Lead with a single status-line
+    # summary in the bubble and let the card own the title + summary
+    # presentation. The title is dropped from the bubble; summary stays
+    # only for blocked plans where the blocker context matters before
+    # the user clicks into the card.
+    if status == "blocked":
+        lines = [f"**Blocked** — {summary}" if summary else "**Blocked**"]
+    else:
+        lines = []
     lines.append(f"Status: `{status}` · {plan.get('totals', {}).get('signatures_required', 0)} signature(s) required.")
     if steps:
         lines.append("")
@@ -5550,7 +5561,18 @@ def _format_opportunity_search_response(data: dict) -> str:
         lines.append("No signing button shown because no verified adapter can build unsigned transactions for this path yet.")
     elif data.get("execution_requested"):
         ready = (data.get("execution_readiness_summary") or {}).get("executable_count", 0)
-        lines.append(f"Execution readiness: {ready} candidate(s) have adapter support.")
+        # BUG-RC-008: numbered list shows only top 5 while readiness
+        # said "8 candidate(s) have adapter support" — tester couldn't
+        # tell whether there are 5 or 8 actionable pools. Reconcile by
+        # citing both the listed slice and the total ready count.
+        shown = min(5, len(candidates or []))
+        if ready and ready > shown:
+            lines.append(
+                f"Showing top {shown} of {ready} execution-ready candidates "
+                f"(scroll the cards above for the full list)."
+            )
+        else:
+            lines.append(f"Execution readiness: {ready} candidate(s) have adapter support.")
 
     return "\n".join(lines).strip()
 
