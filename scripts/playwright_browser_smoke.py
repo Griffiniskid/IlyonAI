@@ -677,19 +677,20 @@ async def run_flow(browser: Browser, flow: Flow, log_dir: Path) -> dict:
             # either step rows OR the blocker list rendered.
             if any(cf.get("card_type") == "execution_plan_v3" for cf in card_frames):
                 try:
-                    # Wait for ANY of: step row, blocker row, or the
-                    # 'Execution Blocked' heading (rendered by
-                    # ExecutionPlanV3Card when blockers are present).
+                    # Wait for the card container itself to mount first
+                    # — guaranteed selector that's always present whether
+                    # the plan has steps or blockers. CSS selectors only
+                    # (Playwright's text= syntax does NOT play well in a
+                    # comma-separated list — it falls back to invalid
+                    # selector → never matches).
                     await page.wait_for_selector(
-                        "[data-testid='execution-plan-v3-step'], "
-                        "[data-testid='execution-plan-v3-blocker'], "
-                        "text=Execution Blocked",
+                        "[data-testid='execution-plan-v3-card']",
                         timeout=15000,
                     )
                 except Exception:
                     bugs.append(
                         f"BUG-P0: turn{i} — execution_plan_v3 emitted but "
-                        "no step row or blocker row mounted in 15s after SSE close"
+                        "no card container mounted in 15s after SSE close"
                     )
 
             # Scan visible body text for leak patterns
