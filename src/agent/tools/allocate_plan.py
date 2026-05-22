@@ -607,6 +607,30 @@ async def _allocate_from_engine(
         trace.insert(2, f"{fallback_count} finalist(s) hit the deep-analysis timeout and fell back to deterministic scoring.")
     if asset_hint:
         trace.insert(1, f"Detected starting asset context: {asset_hint}.")
+        # BUG-RC-015: when the allocator runs against a non-EVM target
+        # chain (Solana) but the asset_hint is a typical EVM stable
+        # (USDT/USDC/DAI), add a cross-chain funding advisory note so
+        # the tester sees the bridge requirement instead of the allocator
+        # silently picking pools whose deposit token is unavailable in
+        # the wallet on that chain. Full wallet-aware bridging belongs
+        # in a follow-up pass; this advisory closes the silent-failure
+        # path that hit the real tester.
+        _SOLANA_NATIVE = {"SOL", "WSOL", "USDC", "USDT", "JITOSOL", "MSOL",
+                          "BSOL", "BNSOL", "DZSOL", "JUPSOL", "DSOL", "PSOL"}
+        _wants_solana = bool(chain_scope and any(
+            str(c).lower() == "solana" for c in chain_scope
+        ))
+        if _wants_solana and asset_hint.upper() in _SOLANA_NATIVE:
+            trace.insert(
+                2,
+                f"Cross-chain advisory: {asset_hint} on Solana — verify "
+                f"your wallet holds {asset_hint} on Solana (not the EVM "
+                f"variant). If only the EVM balance is available, the "
+                f"deposit will need a deBridge / Allbridge / Wormhole "
+                f"bridge step BEFORE the allocation steps execute. "
+                f"Re-run with 'bridge $X from <evm-chain> first' to "
+                f"surface the explicit bridge plan.",
+            )
 
     envelope = ok_envelope(
         data={
