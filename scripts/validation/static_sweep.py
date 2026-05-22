@@ -264,11 +264,16 @@ PATTERNS: list[tuple[str, str, re.Pattern, str]] = [
                 r"NoneType has no attribute"),
      "BUG-RC-003: raw Python exception text in agent response"),
 
-    # BUG-RC-014: literal markdown `**bold**` rendered to user (in agent
-    # response content, not in tool args / user messages).
+    # BUG-RC-014: literal markdown `**bold**` rendered as literal
+    # asterisks to the user. The 'content' field of the SSE IS expected
+    # to carry markdown (frontend renderAssistantMarkdown converts it
+    # to <strong>); the user-visible bug is when the FRONTEND drops
+    # this rendering — Playwright catches that. SSE-level scan only
+    # flags markdown in CARD body fields that get rendered as-is
+    # (title / summary / description / blocker.detail).
     ("AP-RC-003", "P1",
-     re.compile(r'"content"\s*:\s*"[^"]*\*\*[A-Z][^*\n]{1,60}\*\*'),
-     "BUG-RC-014: literal **bold** markdown in 'content' field (should render as HTML)"),
+     re.compile(r'"(?:title|summary|description|detail)"\s*:\s*"[^"]*\*\*[A-Z][^*\n]{1,60}\*\*'),
+     "BUG-RC-014: literal **bold** markdown in CARD body field (renders as literal asterisks since card body skips markdown pass)"),
 
     # BUG-RC-007: duplicated `Excluded N candidates` paragraph in same
     # response. The substring scan only flags one occurrence per file
