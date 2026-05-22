@@ -9111,6 +9111,82 @@ async def run_ephemeral_turn(
                 lazy = _detect_lazy_proto_asset_action(message, history_cards, history)
             intent = lazy if lazy else detect_intent(message)
 
+    # P1-C-006 FULL WIRE-UP — async LiquidityIntent envelope extractor at
+    # the production dispatch path. Closes the Phase C subagent finding
+    # that lp_intent_extractor.py existed but was never invoked from
+    # production. The extractor is LP-domain specific (V3/V4/DLMM/etc.),
+    # so we only call it when the message names an LP-class verb AND a
+    # CL/V3/V4/DLMM protocol — otherwise the regex/contextual paths above
+    # are authoritative. Failures are tolerated (fail-soft) — the regex
+    # paths already returned a usable intent.
+    if intent is None or (intent and intent[0] == "build_yield_execution_plan"):
+        _lp_action_re = re.compile(
+            r"\b(add\s+liquidity|increase\s+liquidity|remove\s+liquidity|"
+            r"decrease\s+liquidity|collect\s+(?:fees?|rewards?)|rebalance|"
+            r"close\s+(?:position|nft|lp)|zap\s*(?:in|out)|migrate\s+(?:lp|position))\b",
+            re.IGNORECASE,
+        )
+        _lp_proto_re = re.compile(
+            r"\b(uniswap[\s-]?v[34]|pancakeswap[\s-]?v3|aerodrome[\s-]?slipstream|"
+            r"aerodrome[\s-]?cl|velodrome[\s-]?(?:cl|slipstream)|orca[\s-]?whirlpools|"
+            r"orca[\s-]?clmm|raydium[\s-]?clmm|meteora[\s-]?dlmm|kamino[\s-]?liquidity|"
+            r"maverick(?:[\s-]?v[12])?|trader[\s-]?joe[\s-]?v?[12]?[\s-]?lb)\b",
+            re.IGNORECASE,
+        )
+        if _lp_action_re.search(message) and _lp_proto_re.search(message):
+            try:
+                from src.agent.intent.lp_intent_extractor import extract_lp_intent
+                from src.ai.openai_client import OpenAIClient
+                from src.config import settings as _settings
+                _envelope_client = OpenAIClient(
+                    api_key=_settings.openrouter_api_key,
+                    model=_settings.ai_model,
+                    use_openrouter=True,
+                )
+                _lp_intent = await extract_lp_intent(message, _envelope_client)
+                # Envelope extracted successfully — log + use as authoritative
+                # validation. If the regex path picked a different action,
+                # the envelope's action wins (overwrites tool_input.action).
+                logger.info(
+                    "P1-C-006 LiquidityIntent envelope extracted: action=%s pair=%s "
+                    "range=%s amounts=%s",
+                    _lp_intent.action.value,
+                    _lp_intent.pair,
+                    _lp_intent.range_preset.value if _lp_intent.range_preset else None,
+                    _lp_intent.amounts,
+                )
+                if intent is not None:
+                    _name, _args = intent
+                    # Map LpAction → tool action verb
+                    _LP_ACTION_TO_VERB = {
+                        "ADD": "add_liquidity", "INCREASE": "increase_liquidity",
+                        "DECREASE": "decrease_liquidity", "COLLECT": "collect_fees",
+                        "REBALANCE": "rebalance", "CLOSE": "close_position",
+                        "ZAP_IN": "add_liquidity", "ZAP_OUT": "remove_liquidity",
+                        "MIGRATE": "migrate_position",
+                    }
+                    _envelope_verb = _LP_ACTION_TO_VERB.get(_lp_intent.action.value)
+                    if _envelope_verb and isinstance(_args, dict):
+                        _args.setdefault("extra", {})
+                        if isinstance(_args["extra"], dict):
+                            _args["extra"]["lp_envelope_action"] = _envelope_verb
+                            if _lp_intent.range_preset:
+                                _args["extra"]["lp_envelope_range_preset"] = (
+                                    _lp_intent.range_preset.value
+                                )
+                            if _lp_intent.pair:
+                                _args["extra"]["lp_envelope_pair"] = list(_lp_intent.pair)
+                        intent = (_name, _args)
+            except Exception as _lp_err:  # noqa: BLE001
+                # Fail-soft: envelope extraction is best-effort. Regex path
+                # has already provided a usable intent (or None which the
+                # caller handles via LLM fallback).
+                logger.info(
+                    "P1-C-006 LiquidityIntent envelope skipped (%s: %s) — "
+                    "regex path intent used.",
+                    type(_lp_err).__name__, str(_lp_err)[:120],
+                )
+
     try:
         final_content = ""
         strategy_composed = False
