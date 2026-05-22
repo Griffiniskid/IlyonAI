@@ -157,7 +157,9 @@ SCENARIOS: list[Conversation] = [
                     _NO_INFINITYS,
                     TurnAssertion(
                         kind="regex_must_match",
-                        value=r"Execution(?:\s+readiness)?[:\s]+\d+\s+(?:candidate|pool)",
+                        # Match either the legacy 'Execution readiness: N candidate(s)' form
+                        # OR the new BUG-RC-008 'Showing top X of N execution-ready candidates' form.
+                        value=r"(?:Execution\s+readiness|Showing\s+top)[:\s]+\d+\s+(?:of\s+\d+\s+)?(?:execution-?ready\s+)?(?:candidate|pool)",
                         severity="P1",
                         description="Turn 2 must report execution-ready candidate count.",
                     ),
