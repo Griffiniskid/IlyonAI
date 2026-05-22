@@ -29,8 +29,8 @@ _TOOL_SLO_SECONDS: dict[str, float] = {
     "build_stake_tx": 30.0,
     "build_transfer_tx": 15.0,
     "compose_plan": 60.0,                 # composed_plan orchestrator SLO
-    "allocate_plan": 60.0,                # invokes build_yield_execution_plan N times
-    "rebalance_portfolio": 60.0,
+    "allocate_plan": 120.0,               # invokes build_yield_execution_plan N times — multi-pool ops with sentinel scoring + per-pool plan synth routinely take 60-90s with 4+ positions on Solana. Bumped from 60s after BUG-RC regression on R01 multi-pool '40 USDT on sol' where the 60s SLO tripped TOOL_TIMEOUT before the allocation card could emit (the inner allocate_plan call returned ok=True at ~70s).
+    "rebalance_portfolio": 120.0,         # same N-pool synthesis pattern as allocate_plan
     "execute_pool_position": 45.0,
     # Quote / read-only paths (smaller budgets).
     "simulate_swap": 20.0,
