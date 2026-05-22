@@ -7387,6 +7387,53 @@ def _synthesize_refine_search_args(
                         prior_ids.append(pid)
         if prior_ids:
             args["exclude_pool_ids"] = list({p for p in prior_ids})[:30]
+
+    # BUG-RC-016 — prior-failure memory. Walk history_cards for any
+    # plan that returned a blocker (pool_not_found, ASSET_POOL_MISMATCH,
+    # INTERNAL_ERROR_CAUGHT, invariant_violation, etc.) and add those
+    # pool_ids to exclude_pool_ids unconditionally. Without this the
+    # agent re-lists pools that just errored as "Execution: ready"
+    # (AI Bug Convo.md lines 421-433: agent re-listed 8 pools including
+    # the two UUIDs that hit UnboundLocalError on prior turns).
+    auto_failed_ids: set[str] = set()
+    _FAILED_CODES = {
+        "pool_not_found", "ASSET_POOL_MISMATCH",
+        "INTERNAL_ERROR_CAUGHT", "WALLET_CHAIN_MISMATCH",
+        "ADAPTER_UNAVAILABLE", "UNSUPPORTED_ADAPTER", "VERB_INVERTED",
+    }
+    for card in (history_cards or []):
+        if (card.get("card_type") or "").lower() not in {
+            "execution_plan_v3", "execution_plan", "invariant_violation",
+        }:
+            continue
+        payload = card.get("payload") or {}
+        blockers = payload.get("blockers") or []
+        if not blockers:
+            continue
+        # Determine if any blocker is a "failure" we should exclude on.
+        has_failure = any(
+            (b.get("code") or "") in _FAILED_CODES for b in blockers
+        )
+        if not has_failure:
+            continue
+        # Pool ID can live in several spots — sweep them all.
+        candidates: list[str] = []
+        if payload.get("pool_id"):
+            candidates.append(str(payload["pool_id"]))
+        for step in payload.get("steps") or []:
+            for k in ("pool_id", "target_pool", "pool"):
+                v = step.get(k)
+                if isinstance(v, str) and len(v) >= 8:
+                    candidates.append(v)
+        # UUID-shaped strings only — avoid polluting with title-text.
+        for cand in candidates:
+            if re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+                        r"[0-9a-f]{4}-[0-9a-f]{12}$", cand, re.IGNORECASE):
+                auto_failed_ids.add(cand)
+    if auto_failed_ids:
+        existing = set(args.get("exclude_pool_ids") or [])
+        existing.update(auto_failed_ids)
+        args["exclude_pool_ids"] = list(existing)[:60]
     return args
 
 
