@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import json
 import sys
+import time
+import urllib.error
 import urllib.request
 
 API = "http://localhost:8080/api/v1/agent"
@@ -31,26 +33,38 @@ SOFT = {
 }
 
 CHAINS = ["ethereum", "base", "arbitrum", "optimism", "polygon", "bsc", "avalanche", "solana"]
-SHAPES = ["liquidity pools", "stablecoin pools", "lending pools", "staking pools"]
+SHAPES = ["liquidity pools", "stablecoin pools", "lending pools", "liquid staking"]
 
 
 def call(message: str) -> list[dict]:
-    body = json.dumps({"message": message, "evm_wallet": EVM, "solana_wallet": SOL}).encode()
-    req = urllib.request.Request(API, data=body, headers={"Content-Type": "application/json"})
-    cards: list[dict] = []
-    try:
-        with urllib.request.urlopen(req, timeout=160) as r:
-            for raw in r:
-                line = raw.decode().strip()
-                if not line.startswith("data:"):
-                    continue
-                try:
-                    cards.append(json.loads(line[5:].strip()))
-                except Exception:
-                    continue
-    except Exception as exc:
-        print(f"    ! request failed: {type(exc).__name__}")
-    return cards
+    # The agent endpoint rate-limits rapid same-session calls (429). Retry with
+    # backoff so the sweep measures real execution, not throttling.
+    for attempt in range(5):
+        body = json.dumps({"message": message, "evm_wallet": EVM, "solana_wallet": SOL}).encode()
+        req = urllib.request.Request(API, data=body, headers={"Content-Type": "application/json"})
+        cards: list[dict] = []
+        try:
+            with urllib.request.urlopen(req, timeout=160) as r:
+                for raw in r:
+                    line = raw.decode().strip()
+                    if not line.startswith("data:"):
+                        continue
+                    try:
+                        cards.append(json.loads(line[5:].strip()))
+                    except Exception:
+                        continue
+            time.sleep(1.5)  # pace requests to avoid tripping the limiter
+            return cards
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429 and attempt < 4:
+                time.sleep(3 * (attempt + 1))
+                continue
+            print(f"    ! request failed: HTTP {exc.code}")
+            return []
+        except Exception as exc:  # noqa: BLE001
+            print(f"    ! request failed: {type(exc).__name__}")
+            return []
+    return []
 
 
 def first_plan(cards: list[dict]) -> dict | None:
