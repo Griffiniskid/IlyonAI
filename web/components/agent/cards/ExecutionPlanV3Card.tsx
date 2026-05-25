@@ -44,6 +44,7 @@ function StepRow({
   isFirstReady,
   acknowledged,
   needsAcknowledge,
+  planBlocked,
   onSignStep,
 }: {
   step: ExecutionPlanV3Step;
@@ -51,10 +52,14 @@ function StepRow({
   isFirstReady: boolean;
   acknowledged: boolean;
   needsAcknowledge: boolean;
+  planBlocked: boolean;
   onSignStep?: (planId: string, stepId: string) => void;
 }) {
   const badge = statusBadge(step.status);
-  const canSign = isFirstReady && step.status === "ready" && (!needsAcknowledge || acknowledged);
+  // Never expose a Sign button while the plan has unresolved blockers
+  // (insufficient balance / gas / wallet) — the build is ready but the deposit
+  // would fail. Matches the card's "no signing until every blocker clears".
+  const canSign = isFirstReady && step.status === "ready" && !planBlocked && (!needsAcknowledge || acknowledged);
   // V7-045 — centralized pre-flight (30s freshness + calldata-hash bind).
   // We invoke sign() with the step's already-built tx; on success it
   // returns the txId, and we still call the parent onSignStep so
@@ -167,7 +172,7 @@ function StepRow({
           <span className={`inline-flex items-center gap-1 rounded-2xl border px-3 py-1.5 text-xs font-bold ${badge.className}`}>
             <LockKeyhole className="h-3.5 w-3.5" /> {badge.label}
           </span>
-          {step.status === "ready" && isFirstReady && onSignStep && (
+          {step.status === "ready" && isFirstReady && onSignStep && !planBlocked && (
             <>
               {step.transaction?.permit_payload && step.transaction?.chain_id ? (
                 <Permit2SigButton
@@ -268,14 +273,18 @@ export function ExecutionPlanV3Card({ payload, onSignStep }: Props) {
   const needsAck = payload.requires_double_confirm || payload.risk_gate !== "clear";
   const allDone = steps.length > 0 && steps.every((step) => step.status === "confirmed" || step.status === "skipped");
   const hasFailed = steps.some((step) => step.status === "failed");
+  // Plan-level gate: unresolved blockers (insufficient balance/gas, wallet not
+  // connected, stale sim) must hide the Sign button — the build is ready but
+  // signing would fail. The card already lists the blockers separately.
+  const planBlocked = payload.status === "blocked" || (payload.blockers?.length ?? 0) > 0;
 
   useEffect(() => {
-    if (!autoExecute || !onSignStep || !firstReady || hasFailed) return;
+    if (!autoExecute || !onSignStep || !firstReady || hasFailed || planBlocked) return;
     if (needsAck && !acknowledged) return;
     if (lastSignedStepIdRef.current === firstReady.step_id) return;
     lastSignedStepIdRef.current = firstReady.step_id;
     onSignStep(payload.plan_id, firstReady.step_id);
-  }, [autoExecute, firstReady, hasFailed, needsAck, acknowledged, onSignStep, payload.plan_id]);
+  }, [autoExecute, firstReady, hasFailed, planBlocked, needsAck, acknowledged, onSignStep, payload.plan_id]);
 
   useEffect(() => {
     if (allDone || hasFailed) {
@@ -406,6 +415,7 @@ export function ExecutionPlanV3Card({ payload, onSignStep }: Props) {
               isFirstReady={firstReady?.step_id === step.step_id}
               acknowledged={acknowledged}
               needsAcknowledge={needsAck}
+              planBlocked={planBlocked}
               onSignStep={onSignStep}
             />
           ))}
