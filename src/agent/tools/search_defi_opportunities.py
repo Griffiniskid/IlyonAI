@@ -1,7 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any
+
+# Major, reliably-resolvable tokens. LP pairs whose every leg is in this set
+# route cleanly through Enso; exotic-token pairs do not.
+_MAJOR_TOKENS = frozenset({
+    "USDC", "USDT", "DAI", "USDS", "SUSDS", "CRVUSD", "GHO", "FRAX", "USDE",
+    "PYUSD", "TUSD", "BUSD", "FDUSD", "USDG", "SUSD", "LUSD", "MIM", "USD₮0", "USDT0",
+    "WETH", "ETH", "WBTC", "BTC", "CBBTC", "TBTC",
+    "SOL", "WSOL", "MSOL", "JITOSOL",
+    "BNB", "WBNB", "AVAX", "WAVAX", "MATIC", "WMATIC", "POL", "ARB", "OP",
+    "STETH", "WSTETH", "RETH", "WEETH", "CBETH",
+})
 
 from src.agent.protocol_urls import (
     SOLANA_NON_ONECLICK_PROTOS,
@@ -97,6 +109,16 @@ def _unexecutable_reason(candidate: OpportunityCandidate, action: str) -> str | 
     if not any(slug.startswith(p) for p in _RELIABLE_EXEC_PROTOCOLS):
         return (
             f"{candidate.protocol} isn't wired for one-click deposit yet — "
+            "open the pool on its protocol to deposit."
+        )
+    # Multi-token LP pairs only execute reliably when EVERY leg is a major,
+    # resolvable token. Exotic-token pairs (CRVUSD-SCRVUSD, MSUSD-FXUSD, …) fail
+    # the Enso route, so they deep-link. Single-asset lending/LST (no pair) is
+    # exempt — it deposits the underlying directly.
+    _legs = [t for t in re.split(r"[-/_·]", (candidate.symbol or "").upper()) if t]
+    if len(_legs) >= 2 and not all(t in _MAJOR_TOKENS for t in _legs):
+        return (
+            f"{candidate.symbol} has a token that isn't one-click routable — "
             "open the pool on its protocol to deposit."
         )
     if chain in {"solana", "sol"}:
