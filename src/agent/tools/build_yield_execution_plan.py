@@ -2128,10 +2128,16 @@ async def build_yield_execution_plan(
                 if _sym:
                     _wallet_balances[_sym] = max(_wallet_balances.get(_sym, 0.0), _amt)
 
+        # If the balance scanner returned NO data (e.g. provider unreachable),
+        # balance is UNKNOWN — not zero. Do NOT emit INSUFFICIENT_BALANCE / gas
+        # blockers in that case (they'd block a funded wallet forever). The
+        # wallet itself rejects an underfunded tx at signing time.
+        _balances_known = bool(_bal_doc.get("balances"))
+
         # 1) Per-asset shortfall — emit one INSUFFICIENT_BALANCE blocker per
         #    short symbol so the recovery card can route bridge/swap source.
         _shortfall_emitted: set[str] = set()
-        for _sym, _required_text in (plan.totals.assets_required or {}).items():
+        for _sym, _required_text in (plan.totals.assets_required or {}).items() if _balances_known else []:
             _sym_up = str(_sym).upper()
             if not _sym_up or _sym_up.startswith("0X") or "+" in _sym_up:
                 continue
@@ -2194,7 +2200,7 @@ async def build_yield_execution_plan(
                 _est_gas_usd += float(getattr(_step, "gas_estimate_usd", 0) or 0)
             except (TypeError, ValueError):
                 pass
-        if _native_sym and _est_gas_usd > 0:
+        if _balances_known and _native_sym and _est_gas_usd > 0:
             from src.data.price_oracle import fetch_price_usd as _fetch_price_usd
             import aiohttp as _aiohttp_oracle
             _native_usd: float | None = None
