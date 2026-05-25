@@ -1,4 +1,4 @@
-Collected 147 unique pools across 8x4 searches
+Collected 148 unique pools across 8x4 searches
 
   [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC ethereum | curve-dex | CRVUSD-WBTC
   [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC ethereum | curve-dex | CRVUSD-CBBTC
@@ -35,9 +35,9 @@ Collected 147 unique pools across 8x4 searches
   [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC arbitrum | curve-dex | USDC-USD₮0
   [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC arbitrum | fluid-lending | USD₮0
   [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC arbitrum | curve-dex | CRVUSD-USD₮0
-  [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC arbitrum | aave-v3 | GHO
   [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC arbitrum | aave-v3 | USDC
-  [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC arbitrum | compound-v3 | USDC
+  [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC arbitrum | aave-v3 | GHO
+  [PASS(ready,signable)] EXEC arbitrum | compound-v3 | USDC
   [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC optimism | curve-dex | TBTC-WBTC
   [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC optimism | curve-dex | ETH-WSTETH
   [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC optimism | curve-dex | CRVUSD-WBTC-WETH
@@ -51,20 +51,17 @@ Collected 147 unique pools across 8x4 searches
   [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC optimism | aave-v3 | SUSD
   [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC optimism | aave-v3 | LUSD
   [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | fluid-lending | USDC
-  [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC polygon | sushiswap | USDC-WETH
-  [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC polygon | sushiswap | WETH-DAI
-  [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC polygon | sushiswap | WETH-USDT
   [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | fluid-lending | WETH
-  [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC polygon | sushiswap | WBTC-WETH
-  [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC polygon | fluid-lending | USDT0
-  [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC polygon | aave-v3 | DAI
-  [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC polygon | aave-v3 | USDC
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | fluid-lending | USDT0
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | aave-v3 | DAI
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | aave-v3 | USDC
   [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | compound-v3 | USDC
   [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | compound-v3 | USDT
-  [PASS(ready,signable)] EXEC bsc | pancakeswap-amm | USDT-WBNB
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | aave-v3 | WETH
+  [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC bsc | pancakeswap-amm | USDT-WBNB
   [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC bsc | pancakeswap-amm | ETH-USDC
   [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC bsc | pancakeswap-amm | WBNB-BUSD
-  [PASS(ready,signable)] EXEC bsc | pancakeswap-amm | USDC-BUSD
+  [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC bsc | pancakeswap-amm | USDC-BUSD
   [PASS(ready,signable)] EXEC bsc | pancakeswap-amm | USDT-BUSD
   [PASS(ready,signable)] EXEC bsc | aave-v3 | USDC
   [PASS(ready,signable)] EXEC bsc | aave-v3 | FDUSD
@@ -72,7 +69,7 @@ Collected 147 unique pools across 8x4 searches
   [PASS(ready,signable)] EXEC bsc | aave-v3 | ETH
   [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC avalanche | aave-v3 | GHO
   [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC avalanche | aave-v3 | USDC
-  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC avalanche | aave-v3 | USDT
+  [PASS(needs-funds:['INSUFFICIENT_BALANCE', 'GAS_TOPUP_REQUIRED'])] EXEC avalanche | aave-v3 | USDT
   [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC avalanche | aave-v3 | WAVAX
   [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC avalanche | aave-v3 | DAI.E
   [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC avalanche | aave-v3 | AUSD
@@ -86,10 +83,10 @@ Collected 147 unique pools across 8x4 searches
   base: 10
   arbitrum: 10
   optimism: 8
-  polygon: 7
+  polygon: 8
   bsc: 9
   avalanche: 8
   solana: 2
 
-SUMMARY: 147 pools checked. FAILS=12. Chains with >=1 working executable pool: ['arbitrum', 'avalanche', 'base', 'bsc', 'ethereum', 'optimism', 'polygon', 'solana']
+SUMMARY: 148 pools checked. FAILS=8. Chains with >=1 working executable pool: ['arbitrum', 'avalanche', 'base', 'bsc', 'ethereum', 'optimism', 'polygon', 'solana']
 EXIT=1
