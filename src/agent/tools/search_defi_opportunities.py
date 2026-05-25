@@ -61,11 +61,22 @@ async def _validate_primary_executable(ctx, candidates: list[OpportunityCandidat
     async def _guarded(c):
         async with sem:
             try:
-                await asyncio.wait_for(_probe_executable(ctx, c), timeout=16.0)
+                await asyncio.wait_for(_probe_executable(ctx, c), timeout=12.0)
             except Exception:  # noqa: BLE001 — slow/failed probe → stay hidden
                 c.executable = False
 
     await asyncio.gather(*[_guarded(c) for c in to_probe], return_exceptions=True)
+
+
+# Protocol families VERIFIED to reliably build a signable deposit (Enso EVM
+# lending/stable-LP/V2-AMM + Solana single-asset LSTs), from the execution
+# sweep. Only these get an EXECUTE button; everything else deep-links.
+_RELIABLE_EXEC_PROTOCOLS = (
+    "aave", "compound", "sky-lending", "sky", "fluid", "curve", "morpho",
+    "spark", "ethena", "lido", "rocket-pool", "rocketpool", "ether.fi", "etherfi",
+    "pancakeswap", "uniswap-v2", "sushiswap", "quickswap",
+    "marinade", "jito",
+)
 
 
 def _unexecutable_reason(candidate: OpportunityCandidate, action: str) -> str | None:
@@ -79,15 +90,21 @@ def _unexecutable_reason(candidate: OpportunityCandidate, action: str) -> str | 
     """
     chain = (candidate.chain or "").lower()
     slug = (candidate.protocol_slug or candidate.protocol or "").lower()
+    # Only protocols VERIFIED to reliably build a signable tx (execution sweep)
+    # show an EXECUTE button. Everything else gets an "Open pool" deep link so we
+    # never advertise a button that fails. This is deterministic + fast (no
+    # per-pool dry-run) so search never risks its 30s SLO.
+    if not any(slug.startswith(p) for p in _RELIABLE_EXEC_PROTOCOLS):
+        return (
+            f"{candidate.protocol} isn't wired for one-click deposit yet — "
+            "open the pool on its protocol to deposit."
+        )
     if chain in {"solana", "sol"}:
         if slug in SOLANA_NON_ONECLICK_PROTOS:
             return (
                 f"{candidate.protocol} deposits aren't routable through Jupiter "
                 "(no one-click path) — open the protocol app to deposit."
             )
-        # Solana LP / staking / lending all go through the sidecar; the
-        # post-rank dry-run validation decides which actually build, so we
-        # don't statically gate by action here.
         return None
     # EVM concentrated-liquidity (V3 / CLMM) LP deposits need a price-range
     # selection that one-click can't supply yet (deferred range UI), and the
@@ -736,14 +753,9 @@ async def search_defi_opportunities(
     # so the per-candidate dry-run validation stays fast.
     _display_limit = max(1, int(request.limit or 8))
     ranked = rank_opportunities(candidates, request)
-    # NOTE: search must stay FAST — it has a 30s SLO. We do NOT dry-run pools
-    # here (that blew the SLO and returned zero pools). The `executable` flag is
-    # the cheap static capability badge set in the badging loop above; the
-    # accurate gate runs at EXECUTE time (the build re-checks and a failure
-    # degrades to a blocked card + the pool deep link). Every pool also carries
-    # a pool_deeplink so the UI can show "Open pool" on non-executable ones.
-    # Show ALL matching pools (up to the display limit). Ranking sorts
-    # likely-executable + major-token pools first.
+    # The executable badge is deterministic (reliable-protocol allowlist set in
+    # the badging loop) — no per-pool dry-run here, so search stays fast and well
+    # within its 30s SLO. The EXECUTE-time build is the final gate.
     _shown = ranked.primary[:_display_limit]
     primary = [candidate.to_dict() for candidate in _shown]
     primary = _dedup_primary(primary)
