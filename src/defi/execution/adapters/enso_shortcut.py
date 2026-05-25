@@ -64,6 +64,12 @@ _SUPPORTED_PROTOCOLS = frozenset({
     "beefy", "beefy-clm", "beefy-finance",
     "ichi", "ichi-vaults", "steer", "steer-protocol", "gamma", "arrakis",
     "tokemak", "tokemak-autoeth",
+    # V2 AMM LP — Enso zaps a single token into the pair LP in one bundled tx
+    # (swap half → add both legs), so the user doesn't need to supply both legs.
+    "pancakeswap", "pancakeswap-amm", "pancakeswap-v2", "pancake",
+    "uniswap-v2", "uniswap", "univ2",
+    "sushiswap", "sushiswap-v2", "sushi",
+    "quickswap", "camelot", "baseswap", "trader-joe", "traderjoe", "spookyswap",
 })
 
 _SUPPORTED_CHAINS = frozenset({
