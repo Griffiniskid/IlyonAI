@@ -94,7 +94,7 @@ def _ranking_score(candidate: OpportunityCandidate, request: OpportunitySearchRe
 _RELIABLE_EXEC_PROTOCOLS = (
     "aave", "compound", "sky-lending", "sky", "fluid", "curve", "morpho",
     "spark", "ethena", "lido", "rocket-pool", "rocketpool", "ether",
-    "pancakeswap", "uniswap-v2", "sushiswap",
+    "pancakeswap", "uniswap-v2",
     "marinade", "jito", "jupiter-staked", "jpool", "blazestake",
 )
 

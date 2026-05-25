@@ -86,7 +86,7 @@ async def _validate_primary_executable(ctx, candidates: list[OpportunityCandidat
 _RELIABLE_EXEC_PROTOCOLS = (
     "aave", "compound", "sky-lending", "sky", "fluid", "curve", "morpho",
     "spark", "ethena", "lido", "rocket-pool", "rocketpool", "ether.fi", "etherfi",
-    "pancakeswap", "uniswap-v2", "sushiswap", "quickswap",
+    "pancakeswap", "uniswap-v2",
     "marinade", "jito",
 )
 
