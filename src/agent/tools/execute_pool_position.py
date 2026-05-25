@@ -540,6 +540,19 @@ async def execute_pool_position(
         return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
 
     chain = str(meta.get("chain", "")).lower()
+    # Normalize DefiLlama chain names to the canonical names the adapters use.
+    # Without this, "OP"/"OP Mainnet" → never matches "optimism" and EVERY
+    # Optimism pool falls through to UNSUPPORTED_ADAPTER (same for bnb/avax/etc.).
+    _CHAIN_ALIASES = {
+        "op": "optimism", "op mainnet": "optimism", "optimism": "optimism",
+        "bnb": "bsc", "bnb chain": "bsc", "binance": "bsc", "bsc": "bsc",
+        "avax": "avalanche", "avalanche c-chain": "avalanche", "avalanche": "avalanche",
+        "matic": "polygon", "polygon pos": "polygon", "polygon": "polygon",
+        "arbitrum one": "arbitrum", "arbitrum": "arbitrum",
+        "eth": "ethereum", "ethereum": "ethereum",
+        "sol": "solana", "solana": "solana",
+    }
+    chain = _CHAIN_ALIASES.get(chain, chain)
     protocol = str(meta.get("project", "")).lower()
     pool_symbol = str(meta.get("symbol", ""))
 
@@ -600,6 +613,21 @@ async def execute_pool_position(
                 break
         if not _pool_legs and _pool_sym:
             _pool_legs.add(_pool_sym)
+        # Liquid-staking deposits take the base asset (SOL / ETH / …) and mint
+        # a receipt token (mSOL, jitoSOL, stETH). The pool symbol IS the
+        # receipt, so the base asset is the correct deposit — not a mismatch.
+        from src.agent.protocol_urls import LST_STAKE_PROTOCOLS
+        _stake_base = {
+            "solana": "SOL", "sol": "SOL", "ethereum": "ETH",
+            "bsc": "BNB", "bnb": "BNB", "polygon": "MATIC", "avalanche": "AVAX",
+        }.get(chain.lower())
+        _legs_are_lst_of_base = bool(_stake_base) and bool(_pool_legs) and all(
+            leg.endswith(_stake_base) and leg not in {_stake_base, f"W{_stake_base}"}
+            for leg in _pool_legs
+        )
+        _is_lst_stake = bool(_stake_base) and _user_asset == _stake_base and (
+            protocol in LST_STAKE_PROTOCOLS or _legs_are_lst_of_base
+        )
         # A user-named stable is interchangeable with other listed stables
         # in the pool when the pool itself is a stable basket (3CRV, USDe
         # vault, etc.) — Jupiter / Curve will route the swap. We only
@@ -609,6 +637,7 @@ async def execute_pool_position(
             _pool_legs
             and _user_asset
             and _user_asset not in _pool_legs
+            and not _is_lst_stake
             and not (
                 _user_asset in _STABLE_TICKERS
                 and any(leg in _STABLE_TICKERS for leg in _pool_legs)
@@ -742,24 +771,7 @@ async def execute_pool_position(
     # `pool_kind_unsupported` blocker with a deeplink to the protocol UI so
     # the user can complete the deposit there instead of staring at a raw
     # "Jupiter quote returned 400" leak.
-    _SOLANA_NON_LP_PROTOS = {
-        "gmtrade",  # synthetic perps — LP mints absent from Jupiter
-        "phoenix", "phoenix-v1",  # CLOB, no AMM LP
-        "openbook", "openbook-v2",  # CLOB
-        "drift", "drift-perp-vaults", "drift-vaults",  # perps vaults
-        "lulo",  # deposit market, no fungible receipt
-        "save", "save-finance",  # lending market
-        "marginfi", "mfi",  # lending market
-        "mango", "mango-markets",  # CLOB perps
-        "perena",  # synthetic stablecoin
-        "fluxbeam",  # long-tail
-        "cropper", "cropper-finance",  # long-tail AMM
-        "aldrin", "crema", "crema-finance",  # long-tail AMM
-        "ondo-finance",  # treasury fund
-        "exponent",
-        "huma", "loopscale", "sentre-protocol",
-        "swissborg",
-    }
+    from src.agent.protocol_urls import SOLANA_NON_ONECLICK_PROTOS as _SOLANA_NON_LP_PROTOS
     if chain.lower() in {"solana", "sol"} and protocol.lower() in _SOLANA_NON_LP_PROTOS:
         from src.agent.tools.build_yield_execution_plan import humanize_protocol
         # Pull the protocol's app URL if known; fall back to DefiLlama.
@@ -800,7 +812,22 @@ async def execute_pool_position(
         return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
 
     is_lp = "-" in pool_symbol or "/" in pool_symbol
-    action = "deposit_lp" if is_lp else "supply"
+    # Liquid-staking protocols need action="stake" (deposit SOL/ETH → receipt);
+    # they reject "supply". Detect via the LST protocol set or a receipt symbol
+    # that is a staked-base token (e.g. mSOL/jupSOL end with SOL, stETH with ETH).
+    from src.agent.protocol_urls import LST_STAKE_PROTOCOLS
+    _sym_u = pool_symbol.upper()
+    _is_lst_deposit = (
+        protocol in LST_STAKE_PROTOCOLS
+        or (chain.lower() in {"solana", "sol"} and _sym_u.endswith("SOL") and _sym_u not in {"SOL", "WSOL"})
+        or (chain.lower() == "ethereum" and _sym_u.endswith("ETH") and _sym_u not in {"ETH", "WETH"})
+    )
+    if is_lp:
+        action = "deposit_lp"
+    elif _is_lst_deposit:
+        action = "stake"
+    else:
+        action = "supply"
 
     extra_out: dict[str, Any] = {
         "pool_id": meta.get("pool"),
