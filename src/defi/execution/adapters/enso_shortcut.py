@@ -179,7 +179,17 @@ class EnsoShortcutAdapter:
         if chain_id is None:
             raise ValueError(f"Enso: unknown chain id for {request.chain}.")
 
+        extra = request.extra or {}
         token_in_meta = await resolve_any_evm_token(chain_norm, request.asset_in)
+        # Fallback: exotic tokens (GMT, long-tail) aren't in the symbol registry.
+        # The pool's underlying token ADDRESSES (from DefiLlama) resolve on-chain,
+        # so use one of them as the deposit token — Enso zaps it into the LP.
+        if token_in_meta is None:
+            for _addr in (extra.get("underlying_tokens") or extra.get("underlyingTokens") or []):
+                if isinstance(_addr, str) and _addr.lower().startswith("0x") and len(_addr) == 42:
+                    token_in_meta = await resolve_any_evm_token(chain_norm, _addr)
+                    if token_in_meta is not None:
+                        break
         if token_in_meta is None:
             raise ValueError(
                 f"Enso: cannot resolve token {request.asset_in} on {request.chain}. "
@@ -187,7 +197,6 @@ class EnsoShortcutAdapter:
             )
         token_in_addr, decimals = token_in_meta
 
-        extra = request.extra or {}
         protocol_slug = normalize_protocol(request.protocol)
 
         # Allow callers to override the position token (V3 NFT pool addresses,
