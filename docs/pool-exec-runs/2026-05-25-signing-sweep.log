@@ -1,0 +1,92 @@
+Collected 148 unique pools across 8x4 searches
+
+  [PASS(ready,signable)] EXEC ethereum | curve-dex | CRVUSD-WBTC
+  [PASS(ready,signable)] EXEC ethereum | curve-dex | CRVUSD-CBBTC
+  [PASS(ready,signable)] EXEC ethereum | curve-dex | CRVUSD-TBTC
+  [PASS(ready,signable)] EXEC ethereum | fluid-lending | GHO
+  [PASS(ready,signable)] EXEC ethereum | fluid-lending | USDC
+  [PASS(ready,signable)] EXEC ethereum | curve-dex | USDT-USDE
+  [PASS(ready,signable)] EXEC ethereum | curve-dex | PYUSD-USDC
+  [PASS(ready,signable)] EXEC ethereum | fluid-lending | USDT
+  [PASS(ready,signable)] EXEC ethereum | sky-lending | SUSDS
+  [PASS(ready,signable)] EXEC ethereum | aave-v3 | USDC
+  [PASS(ready,signable)] EXEC ethereum | aave-v3 | USDT
+  [PASS(ready,signable)] EXEC ethereum | aave-v3 | GHO
+  [PASS(ready,signable)] EXEC ethereum | aave-v3 | WETH
+  [PASS(needs-funds:['INSUFFICIENT_BALANCE'])] EXEC ethereum | lido | STETH
+  [PASS(ready,signable)] EXEC base | fluid-lending | USDC
+  [PASS(ready,signable)] EXEC base | fluid-lending | GHO
+  [PASS(ready,signable)] EXEC base | uniswap-v2 | WETH-USDC
+  [PASS(needs-funds:['INSUFFICIENT_BALANCE'])] EXEC base | curve-dex | CRVUSD-TBTC-WETH
+  [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC base | curve-dex | WETH-CBETH
+  [PASS(ready,signable)] EXEC base | uniswap-v2 | WETH-CBBTC
+  [PASS(ready,signable)] EXEC base | fluid-lending | ETH
+  [PASS(ready,signable)] EXEC base | aave-v3 | GHO
+  [PASS(ready,signable)] EXEC base | compound-v3 | USDC
+  [PASS(ready,signable)] EXEC base | aave-v3 | USDC
+  [PASS(ready,signable)] EXEC base | compound-v3 | WETH
+  [PASS(ready,signable)] EXEC arbitrum | fluid-lending | GHO
+  [PASS(ready,signable)] EXEC arbitrum | fluid-lending | USDC
+  [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC arbitrum | sky-lending | SUSDS
+  [PASS(ready,signable)] EXEC arbitrum | fluid-lending | ARB
+  [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC arbitrum | curve-dex | ETH-WSTETH
+  [PASS(ready,signable)] EXEC arbitrum | fluid-lending | ETH
+  [PASS(ready,signable)] EXEC arbitrum | curve-dex | CRVUSD-USDC
+  [PASS(ready,signable)] EXEC arbitrum | curve-dex | USDC-USD₮0
+  [PASS(ready,signable)] EXEC arbitrum | fluid-lending | USD₮0
+  [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC arbitrum | curve-dex | CRVUSD-USD₮0
+  [PASS(ready,signable)] EXEC arbitrum | aave-v3 | USDC
+  [PASS(ready,signable)] EXEC arbitrum | aave-v3 | GHO
+  [PASS(ready,signable)] EXEC arbitrum | compound-v3 | USDC
+  [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC optimism | curve-dex | TBTC-WBTC
+  [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC optimism | curve-dex | ETH-WSTETH
+  [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC optimism | curve-dex | CRVUSD-WBTC-WETH
+  [PASS(ready,signable)] EXEC optimism | curve-dex | CRVUSD-USDC
+  [FAIL(blocked:['ADAPTER_BUILD_FAILED'])] EXEC optimism | curve-dex | CRVUSD-USDT
+  [PASS(ready,signable)] EXEC optimism | compound-v3 | USDC
+  [PASS(ready,signable)] EXEC optimism | compound-v3 | USDT
+  [PASS(ready,signable)] EXEC optimism | aave-v3 | DAI
+  [PASS(ready,signable)] EXEC optimism | aave-v3 | USDC
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC optimism | aave-v3 | USDT
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC optimism | aave-v3 | SUSD
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC optimism | aave-v3 | LUSD
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | fluid-lending | USDC
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | fluid-lending | WETH
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | fluid-lending | USDT0
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | aave-v3 | DAI
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | aave-v3 | USDC
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | compound-v3 | USDC
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | compound-v3 | USDT
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC polygon | aave-v3 | WETH
+  [PASS(ready,signable)] EXEC bsc | pancakeswap-amm | USDT-WBNB
+  [PASS(ready,signable)] EXEC bsc | pancakeswap-amm | ETH-USDC
+  [PASS(needs-funds:['INSUFFICIENT_BALANCE'])] EXEC bsc | pancakeswap-amm | WBNB-BUSD
+  [PASS(ready,signable)] EXEC bsc | pancakeswap-amm | USDC-BUSD
+  [PASS(ready,signable)] EXEC bsc | pancakeswap-amm | USDT-BUSD
+  [PASS(ready,signable)] EXEC bsc | aave-v3 | USDC
+  [PASS(ready,signable)] EXEC bsc | aave-v3 | FDUSD
+  [PASS(ready,signable)] EXEC bsc | aave-v3 | USDT
+  [PASS(ready,signable)] EXEC bsc | aave-v3 | ETH
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC avalanche | aave-v3 | GHO
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC avalanche | aave-v3 | USDC
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC avalanche | aave-v3 | USDT
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC avalanche | aave-v3 | WAVAX
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC avalanche | aave-v3 | DAI.E
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC avalanche | aave-v3 | AUSD
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC avalanche | aave-v3 | EURC
+  [PASS(needs-funds:['GAS_TOPUP_REQUIRED'])] EXEC avalanche | aave-v3 | WETH.E
+  [PASS(needs-funds:['INSUFFICIENT_BALANCE'])] EXEC solana | marinade-liquid-staking | MSOL
+  [PASS(needs-funds:['INSUFFICIENT_BALANCE'])] EXEC solana | jito-liquid-staking | JITOSOL
+
+--- executable pools that BUILT, by chain ---
+  ethereum: 14
+  base: 10
+  arbitrum: 10
+  optimism: 8
+  polygon: 8
+  bsc: 9
+  avalanche: 8
+  solana: 2
+
+SUMMARY: 148 pools checked. FAILS=8. Chains with >=1 working executable pool: ['arbitrum', 'avalanche', 'base', 'bsc', 'ethereum', 'optimism', 'polygon', 'solana']
+EXIT=1
