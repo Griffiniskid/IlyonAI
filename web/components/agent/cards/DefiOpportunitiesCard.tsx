@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { DefiOpportunitiesPayload, DefiOpportunityItem } from "@/types/agent";
 import { ExternalLink, Rocket, ShieldAlert, Sparkles, Target } from "lucide-react";
 
@@ -28,10 +29,22 @@ function riskTone(level?: string | null): string {
   return "border-amber-300/30 bg-amber-300/10 text-amber-100";
 }
 
-function dispatchExecutePool(item: DefiOpportunityItem) {
+// Split a pool symbol ("SOL-USDC", "WETH/USDC") into its deposit-token legs.
+function poolTokens(symbol?: string | null): string[] {
+  if (!symbol) return [];
+  const legs = symbol
+    .split(/[-/_·]/)
+    .map((s) => s.trim().toUpperCase())
+    .filter((s) => /^[A-Z][A-Z0-9.]{0,9}$/.test(s));
+  return Array.from(new Set(legs));
+}
+
+function dispatchExecutePool(item: DefiOpportunityItem, amount?: string, token?: string) {
   if (typeof window === "undefined") return;
   const poolRef = (item.pool_id as string | undefined) || `${item.protocol} ${item.symbol || ""}`.trim();
-  const message = `Execute deposit into pool ${poolRef} with $100`;
+  const amt = (amount || "").trim() || "100";
+  const suffix = token ? `with ${amt} ${token}` : `with $${amt}`;
+  const message = `Execute deposit into pool ${poolRef} ${suffix}`;
   // Primary: structured event for MainApp to inject into chat input.
   window.dispatchEvent(new CustomEvent("ilyon:execute-pool", { detail: { pool: poolRef, item, message } }));
   // Fallback: copy to clipboard so user can paste if listener missing.
@@ -59,6 +72,10 @@ function SentinelAxisBar({ label, score }: { label: string; score: number }) {
 function OpportunityRow({ item }: { item: DefiOpportunityItem }) {
   const canExecute = Boolean(item.executable);
   const sentinel = item.sentinel;
+  const tokens = poolTokens(item.symbol);
+  const [showForm, setShowForm] = useState(false);
+  const [amount, setAmount] = useState("100");
+  const [token, setToken] = useState(tokens[0] || "");
   return (
     <div data-testid="defi-opp-row" className="rounded-3xl border border-white/10 bg-slate-950/55 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -116,28 +133,88 @@ function OpportunityRow({ item }: { item: DefiOpportunityItem }) {
         </div>
       )}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => dispatchExecutePool(item)}
-          data-testid="defi-opp-execute"
-          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black uppercase tracking-[0.18em] transition ${
-            canExecute
-              ? "border border-emerald-300/40 bg-emerald-300/15 text-emerald-50 hover:bg-emerald-300/25"
-              : "border border-amber-300/40 bg-amber-300/15 text-amber-50 hover:bg-amber-300/25"
-          }`}
-        >
-          <Rocket className="h-3 w-3" /> Execute
-        </button>
         {canExecute ? (
-          <span className="text-xs text-emerald-200/80">
-            via {item.adapter_id || "verified adapter"}
-          </span>
+          <>
+            <button
+              type="button"
+              onClick={() => setShowForm((v) => !v)}
+              data-testid="defi-opp-execute"
+              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/40 bg-emerald-300/15 px-3 py-1.5 text-xs font-black uppercase tracking-[0.18em] text-emerald-50 transition hover:bg-emerald-300/25"
+            >
+              <Rocket className="h-3 w-3" /> Execute
+            </button>
+            <span className="text-xs text-emerald-200/80">
+              via {item.adapter_id || "verified adapter"}
+            </span>
+          </>
         ) : (
-          <span className="text-xs text-amber-100/80">
-            {item.unsupported_reason || "Routed via closest-executable alternative at sign-time."}
-          </span>
+          <>
+            {item.pool_deeplink && (
+              <a
+                href={item.pool_deeplink}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="defi-opp-open-pool"
+                className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/40 bg-amber-300/15 px-3 py-1.5 text-xs font-black uppercase tracking-[0.18em] text-amber-50 transition hover:bg-amber-300/25"
+              >
+                <ExternalLink className="h-3 w-3" /> Open pool
+              </a>
+            )}
+            <span data-testid="defi-opp-not-executable" className="text-xs text-amber-100/80">
+              {item.unsupported_reason || "Not one-click executable — open the pool on its protocol to deposit."}
+            </span>
+          </>
         )}
       </div>
+      {canExecute && showForm && (
+        <div
+          data-testid="defi-opp-deposit-form"
+          className="mt-3 flex flex-wrap items-end gap-3 rounded-2xl border border-emerald-300/20 bg-emerald-300/5 p-3"
+        >
+          <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.14em] text-emerald-100/70">
+            Amount
+            <input
+              type="number"
+              min="0"
+              step="any"
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              data-testid="defi-opp-amount"
+              className="w-28 rounded-xl border border-white/10 bg-slate-950/60 px-3 py-1.5 text-sm font-bold text-white outline-none focus:border-emerald-300/50"
+            />
+          </label>
+          {tokens.length > 0 && (
+            <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.14em] text-emerald-100/70">
+              Token
+              <select
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                data-testid="defi-opp-token"
+                className="rounded-xl border border-white/10 bg-slate-950/60 px-3 py-1.5 text-sm font-bold text-white outline-none focus:border-emerald-300/50"
+              >
+                {tokens.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              dispatchExecutePool(item, amount, tokens.length > 0 ? token : undefined);
+              setShowForm(false);
+            }}
+            disabled={!(Number(amount) > 0)}
+            data-testid="defi-opp-build-deposit"
+            className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/40 bg-emerald-300/20 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-emerald-50 transition hover:bg-emerald-300/30 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Rocket className="h-3 w-3" /> Build deposit
+          </button>
+        </div>
+      )}
     </div>
   );
 }
