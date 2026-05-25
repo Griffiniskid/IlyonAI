@@ -34,7 +34,7 @@ _PROBE_EVM = "0x28C6c06298d514Db089934071355E5743bf21d60"
 
 _CACHE: dict[str, tuple[float, bool, str | None]] = {}
 _TTL_S = 300.0
-_PROBE_TIMEOUT_S = 14.0
+_PROBE_TIMEOUT_S = 10.0
 
 
 def classify_plan(plan: dict[str, Any] | None) -> tuple[bool, str | None]:
@@ -74,10 +74,8 @@ async def probe_pool(
     if hit and (now - hit[0]) < _TTL_S:
         return hit[1], hit[2]
 
-    ok, reason = False, "not probed"
-    try:
+    async def _one_build() -> tuple[bool, str | None]:
         from src.agent.tools.execute_pool_position import execute_pool_position
-
         env = await asyncio.wait_for(
             execute_pool_position(
                 ctx,
@@ -96,7 +94,19 @@ async def probe_pool(
             timeout=_PROBE_TIMEOUT_S,
         )
         plan = getattr(env, "card_payload", None) if getattr(env, "ok", False) else None
-        ok, reason = classify_plan(plan)
+        return classify_plan(plan)
+
+    # Double-confirm: external routers (Enso position resolution) are
+    # intermittently flaky — a pool that builds once may fail the next call.
+    # Require TWO consecutive successful builds before calling it executable so
+    # we never advertise an EXECUTE button that a fresh execute will fail.
+    ok, reason = False, "not probed"
+    try:
+        ok, reason = await _one_build()
+        if ok:
+            ok2, reason2 = await _one_build()
+            if not ok2:
+                ok, reason = False, f"flaky (2nd build failed): {reason2}"
     except Exception as exc:  # noqa: BLE001 — any failure means "can't build now"
         ok, reason = False, f"probe error: {type(exc).__name__}"
 

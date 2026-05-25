@@ -61,7 +61,7 @@ async def _validate_primary_executable(ctx, candidates: list[OpportunityCandidat
     async def _guarded(c):
         async with sem:
             try:
-                await asyncio.wait_for(_probe_executable(ctx, c), timeout=15.0)
+                await asyncio.wait_for(_probe_executable(ctx, c), timeout=25.0)
             except Exception:  # noqa: BLE001 — slow/failed probe → stay hidden
                 c.executable = False
 
@@ -744,7 +744,7 @@ async def search_defi_opportunities(
     # stall the search — if it overruns, fall back to the static executable
     # flags already set by the badging pass.
     try:
-        await asyncio.wait_for(_validate_primary_executable(ctx, ranked.primary), timeout=40.0)
+        await asyncio.wait_for(_validate_primary_executable(ctx, ranked.primary), timeout=55.0)
     except (asyncio.TimeoutError, Exception):  # noqa: BLE001 — validation is best-effort
         pass
     # Show ALL matching pools (up to the display limit). Ranking already sorts
