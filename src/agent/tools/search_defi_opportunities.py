@@ -736,21 +736,14 @@ async def search_defi_opportunities(
     # so the per-candidate dry-run validation stays fast.
     _display_limit = max(1, int(request.limit or 8))
     ranked = rank_opportunities(candidates, request)
-    # Validate-before-show: the static capability badge is optimistic. Dry-run
-    # the real builder for the buffered pools and demote any that don't produce
-    # a signable transaction, so the EXECUTE button only appears on pools that
-    # genuinely execute. Then surface executable pools first.
-    # Hard time budget: validation does network builds. It must never break or
-    # stall the search — if it overruns, fall back to the static executable
-    # flags already set by the badging pass.
-    try:
-        await asyncio.wait_for(_validate_primary_executable(ctx, ranked.primary), timeout=40.0)
-    except (asyncio.TimeoutError, Exception):  # noqa: BLE001 — validation is best-effort
-        pass
-    # Show ALL matching pools (up to the display limit). Ranking already sorts
-    # executable pools first as a tiebreak. Non-executable pools are NOT hidden
-    # — they carry executable=False + a pool_deeplink so the UI shows an
-    # "Open pool" link instead of an EXECUTE button.
+    # NOTE: search must stay FAST — it has a 30s SLO. We do NOT dry-run pools
+    # here (that blew the SLO and returned zero pools). The `executable` flag is
+    # the cheap static capability badge set in the badging loop above; the
+    # accurate gate runs at EXECUTE time (the build re-checks and a failure
+    # degrades to a blocked card + the pool deep link). Every pool also carries
+    # a pool_deeplink so the UI can show "Open pool" on non-executable ones.
+    # Show ALL matching pools (up to the display limit). Ranking sorts
+    # likely-executable + major-token pools first.
     _shown = ranked.primary[:_display_limit]
     primary = [candidate.to_dict() for candidate in _shown]
     primary = _dedup_primary(primary)
