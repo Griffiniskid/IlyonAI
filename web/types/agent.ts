@@ -256,6 +256,9 @@ export interface DefiOpportunityItem {
   unsupported_reason?: string | null;
   links: DefiOpportunityLink[];
   pool_id?: string | null;
+  // Exact-pool deep link (protocol-native when known, DefiLlama-exact fallback).
+  // Used to render an "Open pool" button on non-executable pools.
+  pool_deeplink?: string | null;
   // BUG-RC-011: 4-axis sentinel scoring rendered as a bar on each card.
   // Backend always emits this block when sentinel module is available;
   // falls back to omission when scorer is unavailable.

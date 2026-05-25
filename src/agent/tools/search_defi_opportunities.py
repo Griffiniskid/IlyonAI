@@ -1,12 +1,109 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
-from src.agent.protocol_urls import get_exec_capability, protocol_app_url
+from src.agent.protocol_urls import (
+    SOLANA_NON_ONECLICK_PROTOS,
+    classify_pool_kind,
+    get_exec_capability,
+    protocol_app_url,
+)
 from src.agent.tools._base import err_envelope, ok_envelope
 from src.defi.search.models import OpportunityCandidate, OpportunitySearchRequest
 from src.defi.search.ranking import rank_opportunities
 from src.defi.strategy.memory import remember_search_universe
+
+
+async def _probe_executable(ctx, candidate: OpportunityCandidate) -> None:
+    """Dry-run the real deposit builder for a candidate. Sets executable=True
+    ONLY when a signable tx is produced (soft balance/sim blockers still count
+    as executable). Caller has pre-set executable=False, so an un-probed or
+    failing pool stays hidden.
+    """
+    from src.defi.execution.executability_oracle import probe_pool
+    ok, reason = await probe_pool(
+        ctx,
+        pool_id=candidate.pool_id,
+        chain=candidate.chain,
+        protocol=candidate.protocol_slug or candidate.protocol,
+        symbol=candidate.symbol,
+        underlying_tokens=candidate.token_addresses,
+    )
+    # Source of truth: executable ONLY if the dry-run produced a signable tx
+    # (soft balance/sim blockers still count). Hard failure / timeout → not
+    # executable; the UI shows a deep link to the pool instead of EXECUTE.
+    if ok:
+        candidate.executable = True
+    else:
+        candidate.executable = False
+        candidate.adapter_id = None
+        candidate.unsupported_reason = (
+            candidate.unsupported_reason
+            or f"{candidate.protocol} can't be one-click executed right now — open the pool on its protocol."
+        )
+
+
+async def _validate_primary_executable(ctx, candidates: list[OpportunityCandidate]) -> None:
+    """Concurrently dry-run executability for the pools about to be shown.
+    Caps parallelism so the burst of RPC / sidecar calls doesn't trip 429s.
+    """
+    to_probe = [c for c in candidates if getattr(c, "executable", False)]
+    if not to_probe:
+        return
+    # Pessimistic default: nothing is executable until the dry-run proves it.
+    # So if validation times out before a pool is probed, it stays hidden
+    # rather than being shown as a falsely-executable pool.
+    for c in to_probe:
+        c.executable = False
+    sem = asyncio.Semaphore(6)
+
+    async def _guarded(c):
+        async with sem:
+            try:
+                await asyncio.wait_for(_probe_executable(ctx, c), timeout=8.0)
+            except Exception:  # noqa: BLE001 — slow/failed probe → stay hidden
+                c.executable = False
+
+    await asyncio.gather(*[_guarded(c) for c in to_probe], return_exceptions=True)
+
+
+def _unexecutable_reason(candidate: OpportunityCandidate, action: str) -> str | None:
+    """Return a human reason when a pool the capability check called
+    'executable' actually can't be one-click executed, else None.
+
+    Catches the two real failure modes the adapter-existence check misses:
+      - Solana protocols whose receipt mint isn't on Jupiter's swap graph.
+      - EVM pools whose token symbols aren't in the address registry, so
+        the adapter can't resolve them to contract addresses.
+    """
+    chain = (candidate.chain or "").lower()
+    slug = (candidate.protocol_slug or candidate.protocol or "").lower()
+    if chain in {"solana", "sol"}:
+        if slug in SOLANA_NON_ONECLICK_PROTOS:
+            return (
+                f"{candidate.protocol} deposits aren't routable through Jupiter "
+                "(no one-click path) — open the protocol app to deposit."
+            )
+        # Solana LP / staking / lending all go through the sidecar; the
+        # post-rank dry-run validation decides which actually build, so we
+        # don't statically gate by action here.
+        return None
+    # EVM concentrated-liquidity (V3 / CLMM) LP deposits need a price-range
+    # selection that one-click can't supply yet (deferred range UI), and the
+    # NFT-mint adapter rejects them (ASSET_POOL_MISMATCH / no calldata). Other
+    # EVM paths (supply/lend via Enso, stable/V2 LP) route on the underlying
+    # asset, so we trust the capability check for them.
+    if action in {"deposit_lp", "provide_liquidity", "add_liquidity"}:
+        kind = classify_pool_kind(
+            protocol=slug, pool_symbol=candidate.symbol, pool_id=candidate.pool_id
+        )
+        if kind == "v3":
+            return (
+                f"{candidate.protocol} is a concentrated-liquidity pool — "
+                "range deposits aren't one-click yet. Open the protocol app."
+            )
+    return None
 
 
 def _infer_risk_level(*, apy: float, tvl_usd: float) -> str:
@@ -425,6 +522,7 @@ def _opportunity_card_payload(
             "unsupported_reason": item.get("unsupported_reason"),
             "links": link_entries,
             "pool_id": item.get("pool_id"),
+            "pool_deeplink": item.get("pool_deeplink"),
             "sentinel": _compute_sentinel_block(item),  # BUG-RC-011
         })
     return {
@@ -600,7 +698,16 @@ async def search_defi_opportunities(
         )
         protocol_key = candidate.protocol_slug or candidate.protocol
         cap = get_exec_capability(protocol_key, candidate.chain, action)
-        if cap["executable"]:
+        # Accuracy gate: get_exec_capability only checks that an adapter
+        # *exists*. A pool can still be unexecutable for reasons the badge
+        # never sees, which produced EXECUTE buttons that always blocked:
+        #   - Solana: receipt mint not in Jupiter's swap graph (gmtrade /
+        #     CLOB / lending markets) — the executor refuses these.
+        #   - EVM: a pool-pair token symbol that isn't in the address
+        #     registry can't be resolved → adapter build fails.
+        # Downgrade to non-executable so the badge matches reality.
+        unexec_reason = _unexecutable_reason(candidate, action)
+        if cap["executable"] and not unexec_reason:
             candidate.executable = True
             candidate.adapter_id = (
                 "enso-shortcut-fallback" if cap["mode"] == "enso_fallback"
@@ -608,6 +715,10 @@ async def search_defi_opportunities(
                       else cap["mode"])
             )
             candidate.unsupported_reason = None
+            continue
+        if cap["executable"] and unexec_reason:
+            candidate.executable = False
+            candidate.unsupported_reason = unexec_reason
             continue
         # Not executable — surface the helper's reason so badge and exec align.
         candidate.executable = False
@@ -620,8 +731,28 @@ async def search_defi_opportunities(
                 f"No direct adapter for {candidate.protocol} on {candidate.chain}; "
                 f"closest executable alternative will be substituted at execution time."
             )
+    # Rank a modest buffer above the display limit so a truly-executable pool
+    # ranked just below the cut still gets validated and surfaced. Kept small
+    # so the per-candidate dry-run validation stays fast.
+    _display_limit = max(1, int(request.limit or 8))
     ranked = rank_opportunities(candidates, request)
-    primary = [candidate.to_dict() for candidate in ranked.primary]
+    # Validate-before-show: the static capability badge is optimistic. Dry-run
+    # the real builder for the buffered pools and demote any that don't produce
+    # a signable transaction, so the EXECUTE button only appears on pools that
+    # genuinely execute. Then surface executable pools first.
+    # Hard time budget: validation does network builds. It must never break or
+    # stall the search — if it overruns, fall back to the static executable
+    # flags already set by the badging pass.
+    try:
+        await asyncio.wait_for(_validate_primary_executable(ctx, ranked.primary), timeout=22.0)
+    except (asyncio.TimeoutError, Exception):  # noqa: BLE001 — validation is best-effort
+        pass
+    # Show ALL matching pools (up to the display limit). Ranking already sorts
+    # executable pools first as a tiebreak. Non-executable pools are NOT hidden
+    # — they carry executable=False + a pool_deeplink so the UI shows an
+    # "Open pool" link instead of an EXECUTE button.
+    _shown = ranked.primary[:_display_limit]
+    primary = [candidate.to_dict() for candidate in _shown]
     primary = _dedup_primary(primary)
     primary = _enforce_risk_mix(
         primary,

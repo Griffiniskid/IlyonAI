@@ -101,7 +101,19 @@ class OpportunityCandidate:
             "executable": self.executable,
             "adapter_id": self.adapter_id,
             "unsupported_reason": self.unsupported_reason,
+            "pool_deeplink": self._pool_deeplink(),
         }
+
+    def _pool_deeplink(self) -> str:
+        from src.agent.pool_deeplinks import pool_deeplink
+        return pool_deeplink(
+            protocol=self.protocol_slug or self.protocol,
+            chain=self.chain,
+            pool_id=self.pool_id or self.source_id,
+            pool_address=self.pool_address,
+            symbol=self.symbol,
+            underlying_tokens=self.token_addresses,
+        )
 
 
 @dataclass
