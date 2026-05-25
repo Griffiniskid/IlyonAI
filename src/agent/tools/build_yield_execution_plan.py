@@ -1413,18 +1413,23 @@ async def build_yield_execution_plan(
     adapter = registry.adapter_for(chain=chain, protocol=protocol, action=action)
     assert adapter is not None  # registry.find succeeded above
 
-    # EVM AMM LP: prefer the Enso zap adapter over the native dual-token adapter.
-    # Native V2 add-liquidity demands amounts for BOTH legs (USDT *and* WBNB);
-    # Enso takes ONE token and bundles swap+add into a single signable tx. We
-    # keep V3/CLMM on its own path (needs a range, not a zap).
-    if chain.lower() not in {"solana", "sol"} and action in {"deposit_lp", "provide_liquidity", "add_liquidity"}:
-        from src.agent.protocol_urls import classify_pool_kind
-        _kind = classify_pool_kind(protocol=protocol, pool_symbol=(extra or {}).get("pool_symbol"))
-        if _kind != "v3":
-            from src.defi.execution.adapters.enso_shortcut import EnsoShortcutAdapter
-            _enso = EnsoShortcutAdapter()
-            if _enso.supports(chain=chain, protocol=protocol, action=action).supported:
-                adapter = _enso
+    # EVM V2-AMM LP: prefer the Enso zap adapter over the native dual-token
+    # adapter, which demands amounts for BOTH legs (USDT *and* WBNB). Enso takes
+    # ONE token and bundles swap+add into a single signable tx. Scoped to V2 AMMs
+    # only — Curve/Balancer/Aerodrome/vaults keep their existing (working)
+    # adapter path, and V3/CLMM keeps its own (needs a range, not a zap).
+    _V2_AMM_PROTOS = {
+        "pancakeswap", "pancakeswap-amm", "pancakeswap-v2", "pancake",
+        "uniswap-v2", "univ2", "sushiswap", "sushiswap-v2", "sushi",
+        "quickswap", "camelot", "baseswap", "trader-joe", "traderjoe", "spookyswap",
+    }
+    if (chain.lower() not in {"solana", "sol"}
+            and action in {"deposit_lp", "provide_liquidity", "add_liquidity"}
+            and (protocol or "").lower() in _V2_AMM_PROTOS):
+        from src.defi.execution.adapters.enso_shortcut import EnsoShortcutAdapter
+        _enso = EnsoShortcutAdapter()
+        if _enso.supports(chain=chain, protocol=protocol, action=action).supported:
+            adapter = _enso
 
     try:
         steps = await adapter.build(YieldBuildRequest(
