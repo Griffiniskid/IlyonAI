@@ -80,7 +80,23 @@ def _ranking_score(candidate: OpportunityCandidate, request: OpportunitySearchRe
     # surfaces the pools the dry-run can actually confirm instead of high-APY
     # exotic ones that would only ever get a deep link.
     major_bonus = 50_000.0 if _all_major_tokens(candidate.symbol) else 0.0
-    return exec_bonus + major_bonus + _ranking_score_base(candidate, request)
+    # Surface protocols that RELIABLY build (verified by the execution sweep)
+    # above flaky ones (aerodrome/steer/balancer/exotic), so the dry-run gate
+    # probes real builders and the EXECUTE button actually appears.
+    _slug = (candidate.protocol_slug or candidate.protocol or "").lower()
+    reliable_bonus = 200_000.0 if any(_slug.startswith(p) for p in _RELIABLE_EXEC_PROTOCOLS) else 0.0
+    return exec_bonus + reliable_bonus + major_bonus + _ranking_score_base(candidate, request)
+
+
+# Protocol families whose deposits reliably build a signable tx (Enso EVM
+# lending/stable-LP/V2-AMM + Solana single-asset LSTs). Derived from the
+# pool-execution sweep. Used to rank true builders above flaky pools.
+_RELIABLE_EXEC_PROTOCOLS = (
+    "aave", "compound", "sky-lending", "sky", "fluid", "curve", "morpho",
+    "spark", "ethena", "lido", "rocket-pool", "rocketpool", "ether",
+    "pancakeswap", "uniswap-v2", "sushiswap",
+    "marinade", "jito", "jupiter-staked", "jpool", "blazestake",
+)
 
 
 _MAJOR_TOKENS = frozenset({
