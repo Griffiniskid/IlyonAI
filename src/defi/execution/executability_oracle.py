@@ -34,7 +34,7 @@ _PROBE_EVM = "0x28C6c06298d514Db089934071355E5743bf21d60"
 
 _CACHE: dict[str, tuple[float, bool, str | None]] = {}
 _TTL_S = 300.0
-_PROBE_TIMEOUT_S = 8.0
+_PROBE_TIMEOUT_S = 14.0
 
 
 def classify_plan(plan: dict[str, Any] | None) -> tuple[bool, str | None]:
@@ -87,7 +87,11 @@ async def probe_pool(
                 chain=chain,
                 asset_in=asset_in,
                 user_address=_probe_wallet(ctx, chain),
-                extra={"underlying_tokens": underlying_tokens or [], "pool_symbol": symbol},
+                extra={
+                    "underlying_tokens": underlying_tokens or [],
+                    "pool_symbol": symbol,
+                    "skip_balance_preflight": True,
+                },
             ),
             timeout=_PROBE_TIMEOUT_S,
         )

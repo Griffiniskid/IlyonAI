@@ -137,6 +137,10 @@ def humanize_action(name: str) -> str:
     return " ".join(_humanize_token(p) for p in name.replace("-", "_").split("_") if p)
 
 
+class _SkipBalancePreflight(Exception):
+    """Internal sentinel: skip the wallet balance scan (executability probe)."""
+
+
 async def build_yield_execution_plan(
     ctx,
     *,
@@ -2035,17 +2039,34 @@ async def build_yield_execution_plan(
     # would silently emit a `ready` plan. Wire the real check here so
     # frontends gate the signing CTA on visible blockers.
     try:
+        # Executability probes (the search oracle) only need to know the
+        # adapter can BUILD — not whether this wallet is funded. Skip the slow
+        # multi-chain balance scan entirely in that case.
+        if (extra or {}).get("skip_balance_preflight"):
+            raise _SkipBalancePreflight()
         from IlyonAi_Wallet_assistant_main.server.app.agents.crypto_agent import (
             get_smart_wallet_balance,
         )
         import asyncio as _asyncio
         import json as _json
-        _raw_bal = await _asyncio.to_thread(
-            get_smart_wallet_balance,
-            str(user_address or ""),
-            str(user_address or ""),
-            str(user_address or ""),
-        )
+        # The balance scanner hits Moralis across ~15 chains. When Moralis is
+        # slow/unreachable it can hang for tens of seconds (8s connect/read ×
+        # retries × chains) and blow the tool's 45s SLO, so the build returns
+        # NO card and the pool looks non-executable. Bound it hard: if the scan
+        # doesn't return quickly, proceed WITHOUT balance data (balance is a
+        # soft, sign-time concern — the wallet itself rejects an underfunded tx).
+        try:
+            _raw_bal = await _asyncio.wait_for(
+                _asyncio.to_thread(
+                    get_smart_wallet_balance,
+                    str(user_address or ""),
+                    str(user_address or ""),
+                    str(user_address or ""),
+                ),
+                timeout=6.0,
+            )
+        except (_asyncio.TimeoutError, Exception):  # noqa: BLE001 — fail-soft
+            _raw_bal = "{}"
         try:
             _bal_doc = _json.loads(_raw_bal) if isinstance(_raw_bal, str) else (_raw_bal or {})
         except Exception:

@@ -66,6 +66,41 @@ def _liquidity_score(candidate: OpportunityCandidate) -> float:
 
 
 def _ranking_score(candidate: OpportunityCandidate, request: OpportunitySearchRequest) -> float:
+    # Surface executable pools first: a pool the user can actually one-click
+    # deposit into outranks a higher-APY pool they can only stare at. The
+    # `executable` flag is set by the search badging pass (cheap capability +
+    # static gates) before ranking; the post-rank dry-run then confirms the
+    # shown set. Without this boost, high-APY non-executable pools (gmtrade,
+    # exotic V3) crowd out the executable ones and the list shows nothing
+    # signable.
+    exec_bonus = 100_000.0 if getattr(candidate, "executable", False) else 0.0
+    # Within the executable tier, prefer pools made of MAJOR tokens. Exotic-token
+    # pools (IDAI/YNUSDX/MSUSD…) almost never resolve to a buildable adapter,
+    # while major-token pools (USDC/USDT/DAI/WETH/SOL/…) reliably build. This
+    # surfaces the pools the dry-run can actually confirm instead of high-APY
+    # exotic ones that would only ever get a deep link.
+    major_bonus = 50_000.0 if _all_major_tokens(candidate.symbol) else 0.0
+    return exec_bonus + major_bonus + _ranking_score_base(candidate, request)
+
+
+_MAJOR_TOKENS = frozenset({
+    "USDC", "USDT", "DAI", "USDS", "SUSDS", "CRVUSD", "GHO", "FRAX", "USDE",
+    "PYUSD", "TUSD", "BUSD", "FDUSD", "USDG", "SUSD", "LUSD", "MIM",
+    "WETH", "ETH", "WBTC", "BTC", "CBBTC", "TBTC",
+    "SOL", "WSOL", "MSOL", "JITOSOL", "JUPSOL", "BSOL", "BNSOL", "INF",
+    "BNB", "WBNB", "AVAX", "WAVAX", "MATIC", "WMATIC", "POL", "ARB", "OP",
+    "STETH", "WSTETH", "RETH", "WEETH", "CBETH", "EZETH", "RSETH",
+})
+
+
+def _all_major_tokens(symbol: str | None) -> bool:
+    if not symbol:
+        return False
+    legs = [s.strip().upper() for s in symbol.replace("/", "-").replace("_", "-").split("-") if s.strip()]
+    return bool(legs) and all(leg in _MAJOR_TOKENS for leg in legs)
+
+
+def _ranking_score_base(candidate: OpportunityCandidate, request: OpportunitySearchRequest) -> float:
     apy = float(candidate.apy or 0.0)
     objective = request.ranking_objective
     if objective == "highest_sentinel_score":
