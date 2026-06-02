@@ -103,6 +103,107 @@ def test_detect_intent_routes_high_apy_pool_search_to_opportunity_search():
     assert params["ranking_objective"] == "constraint_fit_then_risk_adjusted_return"
 
 
+def test_execute_pool_captures_native_token_as_asset_in():
+    intent = detect_intent("Execute deposit into pool 852b494e-a92c-4e87-94c8-ea4f498d9463 with 0.5 SOL")
+    assert intent is not None
+    tool_name, params = intent
+    assert tool_name == "execute_pool_position"
+    assert params["amount"] == pytest.approx(0.5)
+    assert params["asset_in"] == "SOL"
+    # Native asset deposit is not USD-denominated.
+    assert params["amount_is_usd"] is False
+
+
+def test_execute_pool_captures_stable_token_as_usd():
+    intent = detect_intent("Execute deposit into pool 852b494e-a92c-4e87-94c8-ea4f498d9463 with 100 USDC")
+    assert intent is not None
+    tool_name, params = intent
+    assert tool_name == "execute_pool_position"
+    assert params["amount"] == pytest.approx(100.0)
+    assert params["asset_in"] == "USDC"
+    assert params["amount_is_usd"] is True
+
+
+def test_execute_pool_dollar_amount_sets_no_token():
+    intent = detect_intent("Execute deposit into pool 852b494e-a92c-4e87-94c8-ea4f498d9463 with $100")
+    assert intent is not None
+    tool_name, params = intent
+    assert tool_name == "execute_pool_position"
+    assert params["amount"] == pytest.approx(100.0)
+    assert params["amount_is_usd"] is True
+    assert "asset_in" not in params
+
+
+def test_uuid_execute_this_pool_phrasing_keeps_pool_id():
+    # Regression: "execute this pool <uuid> with N usdc" intermittently fell
+    # through to the LLM, which fabricated a default protocol=curve/chain=
+    # ethereum plan and DROPPED the UUID — user got a wrong-chain signing
+    # prompt. A UUID + execute verb must deterministically route to
+    # execute_pool_position with the exact pool id (chain resolved from the
+    # pool's metadata, never defaulted).
+    intent = detect_intent("execute this pool a3878e88-0c9f-49ef-adbc-da5fe048192d with 2 usdc")
+    assert intent is not None
+    tool_name, params = intent
+    assert tool_name == "execute_pool_position"
+    assert params["pool"] == "a3878e88-0c9f-49ef-adbc-da5fe048192d"
+    assert params["amount"] == pytest.approx(2.0)
+    assert params["asset_in"] == "USDC"
+    # No chain was named → must NOT be defaulted here; the resolver derives it.
+    assert "chain" not in params
+
+
+def test_real_evm_pool_address_routes_to_execute():
+    # Users paste real on-chain pool addresses (DexScreener/Etherscan), not
+    # DefiLlama UUIDs. A 0x pool address + deposit must route to the pool
+    # resolver, not fall into a generic search.
+    intent = detect_intent("deposit 10 usdc into pool 0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640")
+    assert intent is not None
+    tool_name, params = intent
+    assert tool_name == "execute_pool_position"
+    assert params["pool"] == "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640"
+    assert params["amount"] == pytest.approx(10.0)
+    assert params["asset_in"] == "USDC"
+
+
+def test_put_into_evm_pool_address_routes_to_execute():
+    intent = detect_intent("put 10 usdc into 0x397FF1542f962076d0BFE58eA045FfA2d347ACa0")
+    assert intent is not None
+    assert intent[0] == "execute_pool_position"
+    assert intent[1]["pool"] == "0x397FF1542f962076d0BFE58eA045FfA2d347ACa0"
+
+
+def test_wallet_transfer_to_address_not_routed_to_pool_execute():
+    # "send 5 USDC to 0x<wallet>" is a transfer, NOT a pool deposit — the
+    # address-execute detector must not hijack it.
+    from src.agent.simple_runtime import _detect_address_execute
+    assert _detect_address_execute("send 5 usdc to 0x742d35Cc6634C0532925a3b844Bc454e4438f44e") is None
+
+
+def test_uuid_analyze_does_not_route_to_execute():
+    # "analyze pool <uuid>" is an info request, not a deposit.
+    intent = detect_intent("analyze pool a3878e88-0c9f-49ef-adbc-da5fe048192d")
+    if intent is not None:
+        assert intent[0] != "execute_pool_position"
+
+
+def test_uuid_withdraw_does_not_route_to_deposit():
+    intent = detect_intent("withdraw from pool a3878e88-0c9f-49ef-adbc-da5fe048192d")
+    if intent is not None:
+        assert intent[0] != "execute_pool_position"
+
+
+def test_targeting_apy_uses_tight_symmetric_band():
+    intent = detect_intent("give me a liquidity pool on solana chain with medium risk targeting 60% APR")
+
+    assert intent is not None
+    tool_name, params = intent
+    assert tool_name == "search_defi_opportunities"
+    assert params["target_apy"] == 60.0
+    # "targeting X%" must be a tight ±10% window, not a wide asymmetric net.
+    assert params["min_apy"] == pytest.approx(54.0)
+    assert params["max_apy"] == pytest.approx(66.0)
+
+
 def test_detect_intent_keeps_highest_scoring_capital_request_as_allocation():
     intent = detect_intent("allocate 10k USDT with highest scoring opportunities")
 

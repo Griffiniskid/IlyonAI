@@ -1061,11 +1061,36 @@ _TOKEN_HOME_CHAIN: dict[str, int] = {
 }
 
 
+_BRIDGE_RECIPIENT_EVM_RE = re.compile(r"\b(0x[0-9a-fA-F]{40})\b")
+_BRIDGE_RECIPIENT_SOL_RE = re.compile(
+    r"(?:to|address|recipient|wallet)\s+(?:address\s+)?([1-9A-HJ-NP-Za-km-z]{32,44})\b",
+    re.IGNORECASE,
+)
+# Chain/token words that fit the base58 charset but are NOT addresses.
+_BRIDGE_RECIPIENT_NOISE = {"solana", "ethereum", "arbitrum", "optimism", "avalanche", "polygon"}
+
+
+def _extract_bridge_recipient(text: str) -> str:
+    """Pull an explicit destination address out of the message, if present, so
+    a cross-VM bridge ("bridge 5 USDC from Solana to 0x…") can carry a real
+    recipient instead of silently defaulting to a connected wallet. EVM 0x
+    addresses are unambiguous; Solana base58 is only taken after a preposition
+    to avoid matching token symbols."""
+    m = _BRIDGE_RECIPIENT_EVM_RE.search(text)
+    if m:
+        return m.group(1)
+    m = _BRIDGE_RECIPIENT_SOL_RE.search(text)
+    if m and m.group(1).lower() not in _BRIDGE_RECIPIENT_NOISE:
+        return m.group(1)
+    return ""
+
+
 def _detect_bridge_signable(message: str) -> tuple[str, dict] | None:
     if not _is_imperative_command(message):
         return None
     """Bridge intent → build_bridge_tx, both numeric and ALL forms."""
     text = message.strip()
+    _rcpt = _extract_bridge_recipient(text)
 
     def _resolve_dst(dst_raw: str) -> int | None:
         d = dst_raw.strip().lower()
@@ -1102,6 +1127,7 @@ def _detect_bridge_signable(message: str) -> tuple[str, dict] | None:
                             "token_in": token,
                             "token_out": "",
                             "amount": amt_base,
+                            "recipient": _rcpt,
                         },
                     )
     ta = _BRIDGE_TO_ALL_RE.search(text)
@@ -1119,6 +1145,7 @@ def _detect_bridge_signable(message: str) -> tuple[str, dict] | None:
                         "token_in": token,
                         "token_out": "",
                         "amount": _quantifier_to_amount(ta.group("qty")),
+                        "recipient": _rcpt,
                     },
                 )
 
@@ -1141,6 +1168,7 @@ def _detect_bridge_signable(message: str) -> tuple[str, dict] | None:
                 "token_in": token,
                 "token_out": "",
                 "amount": _quantifier_to_amount(am.group("qty")),
+                "recipient": _rcpt,
             },
         )
     nm = _BRIDGE_NUMERIC_RE.search(text)
@@ -1177,6 +1205,7 @@ def _detect_bridge_signable(message: str) -> tuple[str, dict] | None:
             "token_in": token,
             "token_out": "",
             "amount": amount_base,
+            "recipient": _rcpt,
         },
     )
 
@@ -3249,6 +3278,134 @@ def _detect_solana_receipt_deposit(message: str) -> tuple[str, dict] | None:
     )
 
 
+_UUID_EXEC_VERB_RE = re.compile(
+    r"\b(execute|deposit|add|put|supply|provide|invest|ape|allocate|enter|join|lend|stake)\b",
+    re.IGNORECASE,
+)
+# Withdraw-family verbs must NOT be hijacked by the deposit router — they go to
+# the lifecycle-withdraw detector, which runs earlier in dispatch.
+_UUID_EXIT_VERB_RE = re.compile(
+    r"\b(withdraw|exit|remove|redeem|unstake|unwind|close|claim|harvest)\b",
+    re.IGNORECASE,
+)
+
+
+_EVM_POOL_ADDR_RE = re.compile(r"\b0x[a-fA-F0-9]{40}\b")
+_BASE58_POOL_RE = re.compile(r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b")
+_POOL_WORD_RE = re.compile(r"\b(pool|liquidity|lp)\b", re.IGNORECASE)
+_DEPOSIT_FAMILY_RE = re.compile(
+    r"\b(deposit|add|provide|supply|invest|lend|stake|ape)\b", re.IGNORECASE
+)
+
+
+def _pool_exec_args(pool_ref: str, message: str) -> dict:
+    """Extract execute_pool_position args (amount / asset_in / amount_is_usd /
+    chain) from a deposit message, after a pool reference has been identified.
+    The pool reference is stripped first so its own digits aren't read as an
+    amount."""
+    rest = re.sub(re.escape(pool_ref), " ", message, flags=re.IGNORECASE)
+    args: dict[str, Any] = {"pool": pool_ref}
+    amount_is_usd = False
+    at = re.search(r"(\$)?\s*(\d+(?:[.,]\d+)?)\s*([kKmM])?\s*([A-Za-z]{2,10})?", rest)
+    if at:
+        try:
+            n = float(at.group(2).replace(",", ""))
+            sfx = (at.group(3) or "").lower()
+            if sfx == "k":
+                n *= 1_000
+            elif sfx == "m":
+                n *= 1_000_000
+            if 0 < n <= 1_000_000_000:
+                args["amount"] = n
+            tok = (at.group(4) or "").upper()
+            _STABLES = {"USDC", "USDT", "USD", "DAI", "BUSD", "FRAX", "TUSD", "USDE", "GHO"}
+            if tok and tok not in {"WITH", "FOR", "THE", "POOL", "ON", "VIA", "INTO", "AND", "LP", "LIQUIDITY"} and not tok.isdigit():
+                if tok != "USD":
+                    args["asset_in"] = tok
+            if bool(at.group(1)) or tok in _STABLES:
+                amount_is_usd = True
+        except (TypeError, ValueError):
+            pass
+    args["amount_is_usd"] = amount_is_usd
+    cm = re.search(
+        r"\bon\s+(ethereum|polygon|arbitrum|optimism|base|avalanche|bsc|bnb|solana|sol)\b",
+        message,
+        re.IGNORECASE,
+    )
+    if cm:
+        c = cm.group(1).lower()
+        c = {"bnb": "bsc", "sol": "solana"}.get(c, c)
+        args["chain"] = c
+    return args
+
+
+def _detect_address_execute(message: str) -> tuple[str, dict] | None:
+    """A REAL on-chain pool/pair contract address (0x… EVM or base58 Solana) +
+    a deposit intent routes to execute_pool_position(pool=<address>).
+
+    Users paste pool addresses from DexScreener/Etherscan, not DefiLlama UUIDs.
+    Without this, a 0x address fell into a generic search and returned an
+    UNRELATED pool. Guarded so wallet transfers ("send 5 USDC to 0x…") don't
+    route here: requires a deposit-family verb or an explicit pool/liquidity
+    word, and excludes withdraw/exit verbs. Solana base58 requires the literal
+    word "pool" to avoid confusing a wallet/mint pubkey for a pool."""
+    if _UUID_EXIT_VERB_RE.search(message):
+        return None
+    if not _UUID_EXEC_VERB_RE.search(message):
+        return None
+    if _STRATEGY_BUILD_VERBS_RE.search(message):
+        return None
+    # Deposit signal: a pool/liquidity word, a deposit-family verb, OR an
+    # "into <addr>" preposition ("put 10 usdc into 0x…"). "into" implies a
+    # pool deposit; bare "to" is left out so wallet transfers don't route here.
+    _into_addr = re.search(r"\binto\s+(?:this\s+|the\s+)?(?:pool\s+)?(?:0x[a-fA-F0-9]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})", message, re.IGNORECASE)
+    if not (_POOL_WORD_RE.search(message) or _DEPOSIT_FAMILY_RE.search(message) or _into_addr):
+        return None
+    addr: str | None = None
+    m = _EVM_POOL_ADDR_RE.search(message)
+    if m:
+        addr = m.group(0)
+    else:
+        # Solana pool address — only when a pool word is present.
+        if not _POOL_WORD_RE.search(message):
+            return None
+        for tok in _BASE58_POOL_RE.findall(message):
+            addr = tok
+            break
+    if not addr:
+        return None
+    return ("execute_pool_position", _pool_exec_args(addr, message))
+
+
+def _detect_uuid_execute(message: str) -> tuple[str, dict] | None:
+    """A bare DefiLlama pool UUID + an execution verb ALWAYS routes to
+    execute_pool_position(pool=<uuid>).
+
+    A UUID is an unambiguous pool reference — there is never a reason to drop
+    it. Without this deterministic guard, when the flaky `execution_requested`
+    intent classifier misses (and `_detect_pool_execute` returns None), the
+    request fell through to the LLM, which hallucinated a default
+    `protocol=curve, chain=ethereum` plan and SILENTLY DROPPED the UUID — so a
+    user asking to deposit into a BSC PancakeSwap pool got an Ethereum Curve
+    signing prompt for the wrong chain/pool. This runs early + is pure-regex so
+    the routing can never silently substitute a different pool.
+    """
+    m = _POOL_UUID_RE.search(message)
+    if not m:
+        return None
+    # Exit/withdraw verbs are not deposits — let the lifecycle detector handle.
+    if _UUID_EXIT_VERB_RE.search(message):
+        return None
+    if not _UUID_EXEC_VERB_RE.search(message):
+        return None
+    # Strategy-build intents ("build a strategy ... pool <uuid>") are not a
+    # direct single-pool deposit.
+    if _STRATEGY_BUILD_VERBS_RE.search(message):
+        return None
+    pool_ref = m.group(0)
+    return ("execute_pool_position", _pool_exec_args(pool_ref, message))
+
+
 def _detect_direct_pool_deposit(message: str) -> tuple[str, dict] | None:
     """'Put 0.2 SOL to this pool uniswap-v4 USDT-SIREN' → execute_pool_position.
 
@@ -3498,7 +3655,9 @@ _SLIPSTREAM_PAIR_RE = re.compile(
     r"\b(?P<pair>[A-Za-z][A-Za-z0-9.]{1,9}\s*[/\-_]\s*[A-Za-z][A-Za-z0-9.]{1,9})\b",
 )
 _SLIPSTREAM_CHAIN_RE = re.compile(
-    r"\bon\s+(?P<chain>base|optimism|op|ethereum)\b", re.IGNORECASE,
+    # "on" is optional: protocol-first phrasings put the chain bare between the
+    # pair and the verb ("Slipstream WETH-USDC Optimism deposit …").
+    r"\b(?:on\s+)?(?P<chain>base|optimism|op|ethereum)\b", re.IGNORECASE,
 )
 _SLIPSTREAM_AMT_NATIVE_RE = re.compile(
     r"(?P<amt>[\d,]+(?:\.\d+)?)\s+(?P<tok>[A-Za-z]{2,10})",
@@ -4282,11 +4441,37 @@ def _detect_pool_execute(message: str, intent: DefiIntent) -> tuple[str, dict] |
     if explicit_amt is None:
         explicit_amt = intent.amount_usd if (intent.amount_usd is not None and intent.amount_usd > 0) else 100.0
         amount_is_usd = True
+    # Capture an explicit deposit token after the amount ("with 0.5 SOL",
+    # "with 100 USDC"). The execute-card amount/token selector emits this
+    # form so the user's chosen leg becomes asset_in instead of silently
+    # defaulting to the pool's first leg. A $ amount never carries a token.
+    chosen_asset: str | None = None
+    _STABLE_DEPOSIT_TICKERS = {
+        "USDC", "USDT", "USD", "DAI", "FRAX", "USDE", "USDS", "GHO",
+        "PYUSD", "TUSD", "BUSD", "FDUSD", "MIM", "MKUSD", "CRVUSD",
+    }
+    _TOKEN_NON_ASSET = {
+        "ON", "VIA", "TO", "INTO", "FOR", "AND", "THE", "POOL", "WITH",
+        "OF", "USING", "AMOUNT", "DEPOSIT", "K", "M",
+    }
+    asset_match = re.search(
+        r"\b(?:with|for|amount|of|=)\s*\$?\s*\d+(?:[.,]\d+)?\s*[kKmM]?\s*([A-Za-z]{2,10})\b",
+        text,
+        re.IGNORECASE,
+    )
+    if asset_match:
+        tok = asset_match.group(1).upper()
+        if tok not in _TOKEN_NON_ASSET and re.fullmatch(r"[A-Z][A-Z0-9]{1,9}", tok):
+            chosen_asset = tok
+            # Stable deposit → USD-denominated; native asset (SOL/ETH/…) → not.
+            amount_is_usd = tok in _STABLE_DEPOSIT_TICKERS
     params: dict = {
         "pool": pool_ref,
         "amount": explicit_amt,
         "amount_is_usd": amount_is_usd,
     }
+    if chosen_asset:
+        params["asset_in"] = chosen_asset
     chain_hint_match = re.search(r"\bon\s+(solana|ethereum|polygon|arbitrum|base|optimism|bsc|avalanche)\b", text, re.I)
     if chain_hint_match:
         params["chain"] = chain_hint_match.group(1).lower()
@@ -4370,6 +4555,19 @@ def _detect_sentinel_chat_tools(message: str) -> tuple[str, dict] | None:
     # short-circuit the sentinel router.
     if re.match(r"^\s*(my\s+(?:wallet|balance|portfolio|holdings|assets)\b|what\s+is\s+my\b|swap\s|bridge\s|allocate\s|distribute\s|deploy\s+\$?\d|portfolio\b|holdings\b)", text, re.I):
         return None
+    # Bare address paste with no other intent words → default to a full token
+    # safety analysis. "User pasted just an address" universally means
+    # "tell me about this token" — never drop it to the chat LLM, which can
+    # only reply with vague "I don't have live price data".
+    _bare = _BARE_MINT_RE.search(text)
+    if _bare:
+        _rest = _BARE_MINT_RE.sub("", text).strip(" \t\n\r$.,:;'\"()-")
+        if not _rest:
+            addr = _bare.group(0)
+            params: dict = {"address": addr}
+            if not addr.startswith("0x"):
+                params["chain"] = "solana"
+            return "analyze_token_full_sentinel", params
     # 1. analyze_token / analyze_dex_pair (also matches "analyze this pool
     #    on dexscreener: <addr>" and other phrasings around a bare address).
     m = _ANALYZE_TOKEN_RE.search(text)
@@ -4656,9 +4854,66 @@ def _detect_preference_update(message: str) -> tuple[str, dict] | None:
     return "update_preference", params
 
 
+# Conversation-first default: the agent must behave like a normal AI that TALKS,
+# and only route to a tool when the user clearly wants an ACTION (swap/bridge/…),
+# a DATA lookup (price/balance/…), or a POOL SEARCH (best/highest/find …). A
+# question/explanation with none of those signals is just conversation and must
+# go to the chat LLM — NOT get hijacked into a pool list. We invert the default:
+# question-like input is conversational unless a concrete intent signal appears.
+
+# Clear ACTION intent — the user wants a transaction built.
+_INTENT_ACTION_RE = re.compile(
+    r"\b(swap|bridge|buy|sell|stake|unstake|deposit|supply|withdraw|send|"
+    r"transfer|lend|borrow|execute|provide|allocate|redeem|claim|mint|approve|"
+    r"add\s+liquidity|move\s+\w+\s+to)\b",
+    re.IGNORECASE,
+)
+# Clear DATA-lookup intent — dedicated tools (price/balance/gas/etc.).
+_INTENT_DATA_RE = re.compile(
+    r"\b(price|balance|worth|value\s+of|how\s+much|gas\s+fee|gas\s+fees|"
+    r"holdings|my\s+portfolio|trending|gainers|losers)\b",
+    re.IGNORECASE,
+)
+# Clear POOL-SEARCH intent — discovery of opportunities to deploy into.
+_INTENT_SEARCH_RE = re.compile(
+    r"\b(best|highest|top|cheapest|find\s+me|show\s+me|list\s+the|"
+    r"where\s+can\s+i\s+(?:earn|stake|deposit|farm)|where\s+to\s+(?:earn|stake|farm)|"
+    r"pools?\s+for|opportunit)\b",
+    re.IGNORECASE,
+)
+# Question / explanation shape — interrogative opener or a trailing '?'.
+_QUESTION_OPENER_RE = re.compile(
+    r"^\s*(?:what|whats|what's|why|how|who|which|when|where|explain|define|"
+    r"tell\s+me|describe|is\b|are\b|can\b|could\b|should\b|would\b|do\b|does\b|"
+    r"did\b|will\b|difference\s+between|meaning\s+of)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_conceptual_question(message: str) -> bool:
+    """True when the message is conversation/explanation, not a concrete intent.
+    Conversation-first: a question (interrogative opener or trailing '?') with NO
+    action/data/search signal goes to the chat LLM. Topic words like 'apy',
+    'pool', 'yield' are NOT signals on their own — 'what is apy' is a definition,
+    'best apy pool' is a search."""
+    m = (message or "").strip()
+    if not m or len(m) > 300:
+        return False
+    if _INTENT_ACTION_RE.search(m) or _INTENT_DATA_RE.search(m) or _INTENT_SEARCH_RE.search(m):
+        return False
+    return m.endswith("?") or bool(_QUESTION_OPENER_RE.search(m))
+
+
 def detect_intent(message: str) -> tuple[str, dict] | None:
     """Detect intent and extract parameters from user message."""
     message_lower = message.lower()
+
+    # Conceptual / educational questions ("what is a liquidity pool", "explain
+    # impermanent loss") must be answered conversationally — return None so the
+    # runtime falls to the chat LLM instead of matching a defi-search keyword
+    # and dumping a pool list.
+    if _is_conceptual_question(message):
+        return None
 
     # FIX3 (Pass C 58517bf wave 3) — Refuse-intent meta-phrase short-circuit.
     # Runs BEFORE every other detector. When the user signals an explicit
@@ -4954,7 +5209,7 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     # return None for non-withdraw prompts, so moving them ahead of the
     # deposit detectors carries zero blast radius on deposit flows but
     # closes the drain-equivalent verb-inversion class.
-    for detector in (_detect_cross_chain_universal, _detect_cross_chain_then_yield, _detect_v3_nft_refinance, _detect_v2_to_v3_migrate, _detect_claim_compound, _detect_lst_to_lp, _lst_unwrap, _detect_solana_receipt_deposit, _detect_lifecycle_withdraw, _detect_lifecycle_borrow_repay, _detect_direct_pool_deposit, _detect_slipstream_lp, _detect_add_liquidity, _detect_lp_with_my, _detect_enso_vault_deposit, _detect_execute_named_proto, _detect_multi_input_lp, _detect_aave_supply, _detect_pendle_mint, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
+    for detector in (_detect_cross_chain_universal, _detect_cross_chain_then_yield, _detect_v3_nft_refinance, _detect_v2_to_v3_migrate, _detect_claim_compound, _detect_lst_to_lp, _lst_unwrap, _detect_solana_receipt_deposit, _detect_lifecycle_withdraw, _detect_lifecycle_borrow_repay, _detect_uuid_execute, _detect_address_execute, _detect_direct_pool_deposit, _detect_slipstream_lp, _detect_add_liquidity, _detect_lp_with_my, _detect_enso_vault_deposit, _detect_execute_named_proto, _detect_multi_input_lp, _detect_aave_supply, _detect_pendle_mint, _detect_generic_supply, _detect_swap_then_lp, _detect_stake_amount_plan, _detect_stake_all, _detect_stake_simple, _detect_malicious_swap_plan, _detect_bridge_signable, _detect_buy_intent, _detect_swap_signable, _detect_transfer_plan):
         detected = detector(message)
         if detected is not None:
             return detected
@@ -9686,10 +9941,27 @@ async def run_ephemeral_turn(
                     "500-1500 bps memecoin). Always tell the user to verify the contract "
                     "address on Solscan/Etherscan before signing."
                 )
+            # Inject LIVE prices so the chat LLM answers price questions directly
+            # (incl. typos like "what is sol prace") instead of claiming it has
+            # no real-time data. Prices come from the same cached oracle the
+            # ticker uses — cheap, already warm.
+            _price_lines = []
+            for _sym in ("SOL", "ETH", "BTC", "BNB", "USDC", "USDT"):
+                try:
+                    _p = _get_cached_price_usd_sync(_sym)
+                except Exception:
+                    _p = None
+                if _p and _p > 0:
+                    _price_lines.append(f"{_sym} ${_p:,.4f}" if _p < 1 else f"{_sym} ${_p:,.2f}")
+            _price_ctx = (
+                "\n\nLIVE PRICES (current, use these to answer price questions "
+                "directly — you DO have real-time prices, never tell the user to "
+                "check CoinGecko): " + ", ".join(_price_lines) + "."
+            ) if _price_lines else ""
             base_system = (
                 "You are Ilyon Sentinel's crypto agent. You help users with DeFi, "
                 "token prices, swaps, bridges, staking, and yield opportunities."
-                + safety_prompt_extra + "\n\n"
+                + safety_prompt_extra + _price_ctx + "\n\n"
                 "STRICT OUTPUT RULES (non-negotiable):\n"
                 "1. Reply directly to the user. Never expose your internal "
                 "thinking, scratchpad, or chain-of-thought.\n"
@@ -9815,6 +10087,13 @@ async def run_ephemeral_turn(
                     or has_queued_card
                     or final_content_is_deterministic
                 ),
+                # The soft filters only ever run on freeform LLM prose (when no
+                # deterministic card/tool backed the turn) — that IS conversation.
+                # Relax the informational soft filters (fees/yields/metrics) there
+                # so normal answers ("gas on Solana is ~$0.0001") aren't nuked;
+                # hard exec-fabrication blocks (calldata, tx hash, exec URL, fake
+                # balance, state-assertions) still apply.
+                conversational=True,
             )
             if stripped:
                 logger.warning("strip_unbacked_claims: refused unbacked claim in contextual-fallback prose")
@@ -10316,7 +10595,23 @@ _UNBACKED_WALLET_UI_FLOW_RE = re.compile(
 )
 
 
-def _strip_unbacked_claims(content: str, *, has_real_card: bool) -> tuple[str, bool]:
+# Soft filters that catch EDUCATIONAL content (typical APYs, fee ranges, generic
+# metrics, general assertions). Legit in a normal conversational answer; only
+# dangerous when the model claims a specific executable action. In conversational
+# mode we skip these but KEEP every hard exec-fabrication filter (calldata, tx
+# hash, exec URL, selectors, plan id, fake balance, wallet UI flow, scratchpad…).
+_SOFT_CONVERSATIONAL_HITS = {
+    "unbacked_numeric_yield_claim",
+    "fabricated_fee",
+    "fabricated_metrics",
+    "fabricated_contract_metric",
+    # NOTE: "unbacked_state_assertion" is deliberately NOT here — claims about
+    # auto-compound / session-keys / policies / approvals being enabled are
+    # dangerous false-execution claims even in conversation, so keep them strict.
+}
+
+
+def _strip_unbacked_claims(content: str, *, has_real_card: bool, conversational: bool = False) -> tuple[str, bool]:
     """Pass-4 safety guard: refuse contextual-fallback prose that fabricates
     execution-plan card text, tx hashes, calldata, bridge fees, or session-key
     state assertions without a deterministic tool result behind it.
@@ -10413,6 +10708,11 @@ def _strip_unbacked_claims(content: str, *, has_real_card: bool) -> tuple[str, b
         hits.append("max_uint256_prose")
     if _UNBACKED_WALLET_UI_FLOW_RE.search(content):
         hits.append("wallet_ui_flow")
+    # Conversational answers (definitions, education, opinions) may legitimately
+    # mention yields/fees/metrics — drop those soft hits so a normal reply isn't
+    # nuked into a refusal. Hard exec-fabrication hits still stand.
+    if conversational:
+        hits = [h for h in hits if h not in _SOFT_CONVERSATIONAL_HITS]
     if not hits:
         return content, False
     refusal = (

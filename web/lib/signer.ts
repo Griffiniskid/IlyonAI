@@ -41,6 +41,10 @@ export interface BroadcastTx {
   data?: string;
   value?: string;
   from?: string;
+  // Sent to the wallet but NOT hashed (computeCalldataHash uses only
+  // {to,data,value}). `chainId` triggers a pre-send chain switch.
+  gas?: string;
+  chainId?: number;
 }
 
 /** Normalize a hex digest for comparison (lowercase, strip `0x`). */
@@ -54,11 +58,14 @@ function normalizeHash(h: string): string {
  *  so backend-stamped artifact hashes match client-side recomputed
  *  hashes byte-for-byte. */
 export async function computeCalldataHash(tx: BroadcastTx): Promise<string> {
-  // Canonicalize: sort keys, drop undefined values — same shape the
-  // Python side gets out of `UnsignedStepTransaction.to_dict()`.
+  // Hash ONLY the fields the backend stamps — `{to, data, value?}` (see
+  // `src/defi/execution/models.py::UnsignedStepTransaction.stamp_simulation`).
+  // The wallet layer often adds `from`/`gas`/`chainId`/`nonce` to the
+  // broadcast tx; hashing those would diverge from the backend-stamped hash
+  // and reject EVERY signature with CalldataHashMismatch. Keys are inserted in
+  // alphabetical order to match the Python `sort_keys=True` serialization.
   const ordered: Record<string, string> = {};
-  const keys = Object.keys(tx).sort() as Array<keyof BroadcastTx>;
-  for (const k of keys) {
+  for (const k of ["data", "to", "value"] as Array<keyof BroadcastTx>) {
     const v = tx[k];
     if (v !== undefined && v !== null) ordered[k] = String(v);
   }

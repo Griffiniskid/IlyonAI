@@ -1,11 +1,34 @@
 """Sentinel-scored wrapper around crypto_agent.get_smart_wallet_balance."""
 from __future__ import annotations
 
+import importlib.util
+import sys
+from pathlib import Path
 from typing import Any
 
 from src.agent.tools._assistant_bridge import AssistantError, parse_assistant_json
 from src.api.schemas.agent import ToolEnvelope
 from src.agent.tools._base import ToolCtx, err_envelope, ok_envelope
+
+
+def _get_smart_wallet_balance():
+    """Lazy-load get_smart_wallet_balance from the wallet-assistant. The dir is
+    `IlyonAi-Wallet-assistant-main` (hyphens) which can't be imported by name —
+    load crypto_agent.py by file path and cache it (same loader wallet_bridge
+    uses), so the module is shared across tool wrappers."""
+    module_name = "wallet_assistant_crypto_agent"
+    if module_name in sys.modules:
+        return sys.modules[module_name].get_smart_wallet_balance
+    assistant_dir = Path(__file__).resolve().parents[3] / "IlyonAi-Wallet-assistant-main"
+    server_path = assistant_dir / "server"
+    file_path = server_path / "app" / "agents" / "crypto_agent.py"
+    if str(server_path) not in sys.path:
+        sys.path.insert(0, str(server_path))
+    spec = importlib.util.spec_from_file_location(module_name, str(file_path))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = mod
+    spec.loader.exec_module(mod)
+    return mod.get_smart_wallet_balance
 
 
 def _flatten_balances(parsed: dict[str, Any]) -> tuple[list[dict], dict[str, dict]]:
@@ -72,9 +95,7 @@ async def get_wallet_balance(
     *,
     wallet: str | None = None,
 ) -> "ToolEnvelope":  # type: ignore[name-defined]
-    from IlyonAi_Wallet_assistant_main.server.app.agents.crypto_agent import (
-        get_smart_wallet_balance,
-    )
+    get_smart_wallet_balance = _get_smart_wallet_balance()
 
     evm = getattr(ctx, "evm_wallet", None) or ""
     sol = getattr(ctx, "solana_wallet", None) or ""

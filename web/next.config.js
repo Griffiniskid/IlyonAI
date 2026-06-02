@@ -42,6 +42,8 @@ const nextConfig = {
     return [
       { source: "/api/v1/agent-health", destination: `${agentTarget}/health` },
       { source: "/api/v1/agent", destination: `${agentTarget}/api/v1/agent` },
+      { source: "/api/v1/transactions", destination: `${walletAssistantTarget}/api/v1/transactions` },
+      { source: "/api/v1/transactions/:path*", destination: `${walletAssistantTarget}/api/v1/transactions/:path*` },
       { source: "/api/v1/chats", destination: `${walletAssistantTarget}/api/v1/chats` },
       { source: "/api/v1/chats/:path*", destination: `${walletAssistantTarget}/api/v1/chats/:path*` },
       { source: "/api/v1/auth/:path*", destination: `${walletAssistantTarget}/api/v1/auth/:path*` },

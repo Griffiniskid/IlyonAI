@@ -346,7 +346,17 @@ class EnsoShortcutAdapter:
         unsigned = response.get("unsigned_tx") or {}
         to_addr = unsigned.get("to")
         data = unsigned.get("data")
-        value = unsigned.get("value", "0x0")
+        # Enso returns `value` as a DECIMAL string ("0"); eth_sendTransaction
+        # needs a hex quantity ("0x0") or the wallet rejects with "Missing or
+        # invalid parameters". Coerce here; UnsignedStepTransaction also
+        # normalizes as a backstop.
+        _raw_value = unsigned.get("value", "0x0")
+        if isinstance(_raw_value, int):
+            value = hex(_raw_value)
+        elif isinstance(_raw_value, str) and _raw_value.strip() and not _raw_value.strip().lower().startswith("0x") and _raw_value.strip().isdigit():
+            value = hex(int(_raw_value.strip()))
+        else:
+            value = _raw_value
         gas_estimate = unsigned.get("gas")
         sim = response.get("simulation") or {}
         if not to_addr or not data:

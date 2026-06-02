@@ -25,6 +25,8 @@ PROTOCOL_APP_URL: dict[str, str] = {
     "pancakeswap-stableswap": "https://pancakeswap.finance/swap",
     "curve-dex": "https://curve.fi",
     "curve": "https://curve.fi",
+    "curve-llamalend": "https://curve.fi/llamalend/",
+    "llamalend": "https://curve.fi/llamalend/",
     "balancer": "https://app.balancer.fi",
     "balancer-v2": "https://app.balancer.fi",
     "balancer-v3": "https://app.balancer.fi",
@@ -43,6 +45,10 @@ PROTOCOL_APP_URL: dict[str, str] = {
     "compound-v3": "https://app.compound.finance",
     "morpho": "https://app.morpho.org",
     "morpho-blue": "https://app.morpho.org",
+    "fluid": "https://fluid.io",
+    "fluid-lending": "https://fluid.io",
+    "fluid-lite": "https://fluid.io",
+    "fluid-dex": "https://fluid.io",
     "spark": "https://app.spark.fi",
     "moonwell": "https://moonwell.fi",
     "venus": "https://app.venus.io",
@@ -78,6 +84,11 @@ PROTOCOL_APP_URL: dict[str, str] = {
     "marinade": "https://app.marinade.finance",
     "jito": "https://www.jito.network/staking",
     "jito-liquid-staking": "https://www.jito.network/staking",
+    "jupiter-staked-sol": "https://jup.ag/swap/SOL-JupSOL",
+    "jupiter": "https://jup.ag",
+    "binance-staked-sol": "https://www.binance.com/en/earn",
+    "blazestake": "https://stake.solblaze.org",
+    "blaze-staked-sol": "https://stake.solblaze.org",
     "sanctum": "https://app.sanctum.so",
     "drift-trade": "https://app.drift.trade",
     "drift": "https://app.drift.trade",
@@ -237,6 +248,7 @@ def pool_protocol_url(
     underlying_tokens=None,
     pool_symbol: str | None = None,
     project_url: str | None = None,
+    fee_bps: int | None = None,
 ) -> str:
     """Direct per-pool URL on the protocol's own app.
 
@@ -248,6 +260,14 @@ def pool_protocol_url(
     pa = (pool_address or "").strip()
     sym = (pool_symbol or "").strip()
     first_under = _first_underlying(underlying_tokens)
+
+    # User decision: link to the protocol's own app (always reachable) and let
+    # the card's copyable pool ADDRESS take the user to the exact pool. The
+    # per-pool deep-link forms (V3 add with fee/range, reworked routes) proved
+    # unreliable, so we no longer build them here.
+    _app = protocol_app_url(proj, project_url=project_url)
+    if _app:
+        return _app
 
     # --- EVM lending ---
     if proj in {"aave-v3", "aave-v2", "aave"}:
@@ -293,6 +313,8 @@ def pool_protocol_url(
 
     if proj in {"curve-dex", "curve", "curve-llamalend"}:
         c_ch = _CURVE_CHAIN.get(ch, "ethereum")
+        if pa:
+            return f"https://curve.fi/#/{c_ch}/pools/{pa}/deposit"
         if sym:
             return f"https://curve.fi/#/{c_ch}/pools?search={quote_plus(sym)}"
         return f"https://curve.fi/#/{c_ch}/pools"
@@ -320,12 +342,34 @@ def pool_protocol_url(
         return "https://velodrome.finance/liquidity"
 
     if proj.startswith("pancakeswap"):
-        # PancakeSwap V3 LP UI
-        if pa:
-            return f"https://pancakeswap.finance/info/v3/pools/{pa}"
+        # PancakeSwap's add-liquidity DEPOSIT page is /add/{tokenA}/{tokenB}
+        # (the old /info/v3/pools/{addr} path 404s for V2 pools). Use the token
+        # pair; fall back to the DexScreener exact pair (has a Trade-on-Pancake
+        # link) only when we lack both token addresses.
+        _toks = [t for t in (underlying_tokens or []) if isinstance(t, str) and t.lower().startswith("0x") and len(t) == 42]
+        # V2 (amm) → /v2/add (plain /add defaults to V3 → "Invalid pair" for a
+        # V2 pool). V3 → /add/{t0}/{t1}/{feeTier} — V3 REQUIRES the fee tier in
+        # the URL or it shows "Invalid pair". When the fee is unknown we can't
+        # build a valid V3 add URL, so fall to the DexScreener exact pair.
+        if "v3" in proj:
+            if len(_toks) >= 2 and fee_bps:
+                return f"https://pancakeswap.finance/add/{_toks[0]}/{_toks[1]}/{int(fee_bps)}"
+            if pa and ch:
+                return f"https://dexscreener.com/{ch}/{pa}"
+        elif len(_toks) >= 2:
+            return f"https://pancakeswap.finance/v2/add/{_toks[0]}/{_toks[1]}"
+        if pa and ch:
+            return f"https://dexscreener.com/{ch}/{pa}"
         return "https://pancakeswap.finance/liquidity"
 
     if proj in {"sushiswap", "sushiswap-v3"}:
+        _SUSHI_CID = {"ethereum": 1, "arbitrum": 42161, "base": 8453, "polygon": 137,
+                      "optimism": 10, "bsc": 56, "avalanche": 43114}
+        cid = _SUSHI_CID.get(ch)
+        if pa and cid:
+            return f"https://www.sushi.com/pool/{cid}%3A{pa}"
+        if pa:
+            return f"https://www.sushi.com/pool/1%3A{pa}"
         return "https://www.sushi.com/pool"
 
     if proj in {"camelot-v3", "camelot"}:
@@ -388,7 +432,8 @@ def pool_protocol_url(
 
     if proj in {"orca", "orca-dex", "orca-whirlpools", "orca-clmm"}:
         if pa:
-            return f"https://www.orca.so/pools?tokens={pa}"
+            # Exact whirlpool page (pa = the whirlpool/pool address).
+            return f"https://www.orca.so/pools/{pa}"
         if sym:
             return f"https://www.orca.so/pools?search={quote_plus(sym)}"
         return "https://www.orca.so/pools"
@@ -541,6 +586,30 @@ V3_PROTOCOLS = frozenset({
     "trader-joe-v2",
 })
 
+# Solana protocols whose deposit cannot be built one-click: the receipt mint
+# isn't in Jupiter's swap graph (synthetic perps / CLOB / lending markets with
+# no fungible LP receipt), so the sidecar prep-swap always 400s. The executor
+# (execute_pool_position) refuses these; the search badge must agree so it
+# never advertises an EXECUTE button that will only ever block.
+SOLANA_NON_ONECLICK_PROTOS = frozenset({
+    "gmtrade",  # synthetic perps — LP mints absent from Jupiter
+    "phoenix", "phoenix-v1",  # CLOB, no AMM LP
+    "openbook", "openbook-v2",  # CLOB
+    "drift", "drift-perp-vaults", "drift-vaults",  # perps vaults
+    "lulo",  # deposit market, no fungible receipt
+    "save", "save-finance",  # lending market
+    "marginfi", "mfi",  # lending market
+    "mango", "mango-markets",  # CLOB perps
+    "perena",  # synthetic stablecoin
+    "fluxbeam",  # long-tail
+    "cropper", "cropper-finance",  # long-tail AMM
+    "aldrin", "crema", "crema-finance",  # long-tail AMM
+    "ondo-finance",  # treasury fund
+    "exponent",
+    "huma", "loopscale", "sentre-protocol",
+    "swissborg",
+})
+
 
 _V3_HINTS = ("v3", "v4", "clmm", "slipstream", "concentrated", "kim", "thena-fusion", "fusion")
 _STABLE_HINTS = ("curve", "balancer", "saddle", "mim-swap", "convex")
@@ -605,6 +674,10 @@ def is_pool_link_action(*, action: str | None, protocol: str | None, chain: str 
     # getPool(uint24) ABI and the Slipstream-style getPool(int24) ABI,
     # so Aerodrome Slipstream and Velodrome CL now flow through the
     # native NFPM mint instead of the pool_deposit_v3 redirect (§6a).
+    # V3 EVM executes natively via the UniswapV3NFTAdapter (swap → approve →
+    # approve → NFPM mint). It's multi-step (a V3 position is a range NFT, not
+    # a fungible LP token) but it IS signable end-to-end. Only V3 variants we
+    # have no native adapter for fall back to a deep-link.
     V3_NATIVE_EXEC = frozenset({
         "uniswap-v3", "uniswap", "uniswap-v4",
         "pancakeswap-v3", "pancake-v3",

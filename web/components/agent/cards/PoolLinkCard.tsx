@@ -1,6 +1,13 @@
 "use client";
 
 import { ExternalLink, AlertTriangle, TrendingUp, Shield } from "lucide-react";
+import { copyWithFeedback } from "@/components/agent-app/utils/copyWithFeedback";
+
+/** Shorten an on-chain address for display: 0x1234…abcd. */
+function shortAddr(a?: string | null): string {
+  if (!a) return "";
+  return a.length > 14 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a;
+}
 
 /* Backend payload shape for card_type="pool_link" */
 export interface PoolLinkPayload {
@@ -133,16 +140,37 @@ export function PoolLinkCard({ payload }: { payload: PoolLinkPayload }) {
         </div>
       </div>
 
-      {/* Underlying tokens chips */}
+      {/* Pool contract address — copy it, then find/deposit on the protocol app */}
+      {payload.pool_address && (
+        <div className="mt-3 rounded-xl border border-slate-700 bg-slate-800/50 px-3 py-2" data-testid="pool-link-address">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">Pool address</div>
+          <div className="mt-1 flex items-center gap-2">
+            <code className="flex-1 truncate font-mono text-base font-semibold text-slate-100">{shortAddr(payload.pool_address)}</code>
+            <button
+              type="button"
+              data-testid="pool-link-copy-address"
+              onClick={(e) => copyWithFeedback(payload.pool_address as string, e.currentTarget)}
+              className="rounded-lg border border-slate-600 px-3 py-1 text-xs font-bold text-slate-100 transition hover:bg-slate-700/60"
+            >
+              Copy
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Underlying token addresses — tap to copy the full address */}
       {payload.underlying_tokens && payload.underlying_tokens.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
           {payload.underlying_tokens.slice(0, 6).map((tok, i) => (
-            <span
+            <button
               key={`${tok}-${i}`}
-              className="rounded border border-slate-700/60 bg-slate-800/60 px-1.5 py-0.5 font-mono text-[10px] text-slate-400"
+              type="button"
+              title={`Copy ${tok}`}
+              onClick={(e) => copyWithFeedback(tok, e.currentTarget)}
+              className="rounded border border-slate-700/60 bg-slate-800/60 px-1.5 py-0.5 font-mono text-[10px] text-slate-400 transition hover:bg-slate-700/50"
             >
               {tok.length > 12 ? `${tok.slice(0, 6)}…${tok.slice(-4)}` : tok}
-            </span>
+            </button>
           ))}
         </div>
       )}

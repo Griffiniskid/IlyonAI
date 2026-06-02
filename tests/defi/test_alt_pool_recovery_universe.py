@@ -246,12 +246,17 @@ async def test_build_yield_exec_plan_recovery_populates_alternatives(monkeypatch
             return _FakeAdapter()
 
     monkeypatch.setattr(byep_mod, "build_default_registry", lambda: _FakeRegistry())
-    # Skip the pool-link gate (force the registry path).
+    # Skip the pool-link gate (force the registry path). The gate consults both
+    # get_exec_capability AND the reliable-set + POOL_EXEC_ENABLED check, so all
+    # three must report "executable" for the registry/recovery branch to run.
     monkeypatch.setattr(
         byep_mod,
         "get_exec_capability",
         lambda *a, **kw: {"mode": "deterministic", "executable": True, "reason": ""},
     )
+    import src.defi.execution.reliable_set as _rs_mod
+    monkeypatch.setattr(_rs_mod, "pool_exec_enabled", lambda: True)
+    monkeypatch.setattr(_rs_mod, "is_reliable_exec", lambda **kw: (True, ""))
 
     ctx = ToolCtx(
         services=MagicMock(),

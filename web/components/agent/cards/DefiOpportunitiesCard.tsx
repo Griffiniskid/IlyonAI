@@ -3,6 +3,13 @@
 import { useState } from "react";
 import type { DefiOpportunitiesPayload, DefiOpportunityItem } from "@/types/agent";
 import { ExternalLink, Rocket, ShieldAlert, Sparkles, Target } from "lucide-react";
+import { copyWithFeedback } from "@/components/agent-app/utils/copyWithFeedback";
+
+/** Shorten an on-chain address for display: 0x1234…abcd. */
+function shortAddr(a?: string | null): string {
+  if (!a) return "";
+  return a.length > 14 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a;
+}
 
 interface Props {
   payload: DefiOpportunitiesPayload;
@@ -130,6 +137,20 @@ function OpportunityRow({ item }: { item: DefiOpportunityItem }) {
               {link.label}
             </a>
           ))}
+        </div>
+      )}
+      {item.pool_address && (
+        <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2" data-testid="defi-opp-pool-address">
+          <span className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Pool</span>
+          <code className="flex-1 truncate font-mono text-sm font-semibold text-slate-100">{shortAddr(item.pool_address)}</code>
+          <button
+            type="button"
+            data-testid="defi-opp-copy-address"
+            onClick={(e) => copyWithFeedback(item.pool_address as string, e.currentTarget)}
+            className="rounded-lg border border-white/15 px-2.5 py-1 text-xs font-bold text-slate-200 transition hover:bg-white/10"
+          >
+            Copy
+          </button>
         </div>
       )}
       <div className="mt-3 flex flex-wrap items-center gap-2">

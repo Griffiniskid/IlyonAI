@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -38,8 +39,32 @@ def _get_build_bridge_tx():
     return mod._build_bridge_tx
 
 
+_RECIPIENT_EVM_RE = re.compile(r"\b(0x[0-9a-fA-F]{40})\b")
+_RECIPIENT_SOL_RE = re.compile(
+    r"(?:to|address|recipient|wallet)\s+(?:address\s+)?([1-9A-HJ-NP-Za-km-z]{32,44})\b",
+    re.IGNORECASE,
+)
+_RECIPIENT_NOISE = {"solana", "ethereum", "arbitrum", "optimism", "avalanche", "polygon"}
+
+
+def _recipient_from_text(text: str) -> str:
+    """Pull an explicit destination address out of the raw user message so a
+    cross-VM bridge ("bridge 5 USDC from Solana to 0x…") carries a real
+    recipient. EVM 0x addresses are unambiguous; a Solana base58 address is only
+    taken after a preposition to avoid matching token symbols."""
+    if not text:
+        return ""
+    m = _RECIPIENT_EVM_RE.search(text)
+    if m:
+        return m.group(1)
+    m = _RECIPIENT_SOL_RE.search(text)
+    if m and m.group(1).lower() not in _RECIPIENT_NOISE:
+        return m.group(1)
+    return ""
+
+
 async def build_bridge_tx(
-    ctx, *, src_chain_id, dst_chain_id, token_in, token_out, amount, from_addr=None
+    ctx, *, src_chain_id, dst_chain_id, token_in, token_out, amount, from_addr=None, recipient=None, extra=None
 ):
     """Build a cross-chain bridge transaction via the wallet assistant.
 
@@ -182,6 +207,15 @@ async def build_bridge_tx(
         "src_chain_id": src_chain_id,
         "dst_chain_id": dst_chain_id,
     }
+    # Forward an explicit destination address (e.g. "bridge … to 0x…") so a
+    # cross-VM bridge carries the user-named recipient instead of refusing /
+    # auto-defaulting. The brittle intent detectors don't reliably capture the
+    # address, so fall back to parsing the raw user message (threaded through
+    # extra.user_message by the runtime). Empty means "not provided".
+    if not recipient and isinstance(extra, dict):
+        recipient = _recipient_from_text(str(extra.get("user_message") or ""))
+    if recipient:
+        params["recipient"] = str(recipient).strip()
     raw_input = json.dumps(params)
 
     # _build_bridge_tx signature: (raw, user_address, default_chain_id, solana_address="").
@@ -244,6 +278,11 @@ async def build_bridge_tx(
         "router": "debridge",
         "estimated_seconds": parsed.get("estimated_fill_time_seconds"),
         "spender": spender,
+        # Destination recipient so the card can show the user where funds land.
+        "recipient": parsed.get("recipient"),
+        "sender": parsed.get("sender"),
+        "recipient_explicit": parsed.get("recipient_explicit"),
+        "cross_vm": parsed.get("cross_vm"),
     }
 
     return ok_envelope(

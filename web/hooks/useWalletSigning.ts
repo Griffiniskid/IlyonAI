@@ -41,7 +41,15 @@ import {
   type BroadcastTx,
 } from "@/lib/signer";
 
-export const SIM_FRESHNESS_SECONDS = 30;
+// Sign-time freshness window. The 30s default left every ready plan
+// unsignable: a human needs time to read, and multi-step plans (swap →
+// approve → approve → mint) unlock later steps only after on-chain receipts,
+// so the original sim is always far older than 30s by step 2+. A stale quote
+// cannot lose funds — the swap is slippage-bounded on-chain (it reverts if
+// price drifted past the cap) and the calldata-hash bind below still
+// guarantees the user signs exactly what they previewed. So the wall-clock
+// window is generous; freshness.py D.7 (50bps drift) remains the value guard.
+export const SIM_FRESHNESS_SECONDS = 1800;
 
 /**
  * BUG-RC-006 (I12): SimStaleError must always render a finite numeric

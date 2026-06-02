@@ -54,6 +54,9 @@ interface SwapPreview {
   bridgeOperatingExpense?: string;
   bridgeAmountTotal?: string;
   sourceExecutionSummary?: string;
+  bridgeRecipient?: string;
+  bridgeRecipientExplicit?: boolean;
+  bridgeCrossVm?: boolean;
   warnings?: string[];
   // Solana (Jupiter) swap fields
   swapTransaction?: string;  // base64 VersionedTransaction
@@ -389,6 +392,9 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         bridgeAmountTotal: totalIn != null ? totalIn.toString() : undefined,
         bridgeOperatingExpense: opExpense != null ? opExpense.toString() : undefined,
         sourceExecutionSummary: json.source_execution_summary ? String(json.source_execution_summary) : undefined,
+        bridgeRecipient: json.recipient ? String(json.recipient) : undefined,
+        bridgeRecipientExplicit: !!json.recipient_explicit,
+        bridgeCrossVm: !!json.cross_vm,
         warnings: filteredWarnings,
       };
     }
@@ -3391,6 +3397,57 @@ function SimulationPreview({ preview, fromAddress, solanaAddress, walletType }: 
   }, [preview.isBridge, preview.orderId, txHash]);
 
   // ── Solana swap via Phantom ────────────────────────────────────────────────
+  // Record-on-sign: log this interaction to the Activity history once the
+  // wallet returns a signature/hash. Best-effort — never block or fail the UI.
+  const recordTx = async (signature: string, sourceIsSolana: boolean) => {
+    try {
+      const _ID_TO_KEY: Record<number, string> = {
+        1: "ethereum", 56: "bsc", 137: "polygon", 42161: "arbitrum",
+        10: "optimism", 8453: "base", 43114: "avalanche", 101: "solana",
+      };
+      const _labelToKey = (label?: string): string | null => {
+        if (!label) return null;
+        const l = label.toLowerCase();
+        if (l.includes("bnb") || l.includes("bsc")) return "bsc";
+        if (l.includes("solana")) return "solana";
+        for (const k of ["ethereum", "polygon", "arbitrum", "optimism", "base", "avalanche"]) {
+          if (l.includes(k)) return k;
+        }
+        return null;
+      };
+      const kind = preview.isBridge ? "bridge"
+        : preview.actionType === "stake" ? "stake"
+        : preview.actionType === "add_liquidity" ? "lp"
+        : preview.isTransfer ? "transfer"
+        : "swap";
+      const chain = sourceIsSolana ? "solana"
+        : (preview.rawTx?.chain_id ? _ID_TO_KEY[preview.rawTx.chain_id] : null)
+        ?? _labelToKey(preview.sourceChainLabel);
+      const dstChain = preview.isBridge ? _labelToKey(preview.destinationChainLabel) : null;
+      const wallet = sourceIsSolana ? (solanaAddress || fromAddress || "") : (fromAddress || "");
+      if (!wallet) return;
+      await fetch("/api/v1/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wallet,
+          kind,
+          status: "sent",
+          chain,
+          dst_chain: dstChain,
+          from_token: preview.fromToken ?? null,
+          to_token: preview.toToken ?? null,
+          from_amount: preview.fromAmount ?? null,
+          to_amount: preview.toAmount ?? null,
+          signature,
+          order_id: preview.orderId ?? null,
+        }),
+      });
+    } catch (e) {
+      console.warn("[recordTx] failed (non-blocking)", e);
+    }
+  };
+
   const executeSolanaSwap = async () => {
     if (!preview.swapTransaction) return;
     setTxError(null);
@@ -3406,6 +3463,7 @@ function SimulationPreview({ preview, fromAddress, solanaAddress, walletType }: 
 
       const { signature } = await sol.signAndSendTransaction(tx);
       setTxHash(signature);
+      void recordTx(signature, true);
     } catch (e: unknown) {
       const err = e as { message?: string };
       setTxError(err?.message ?? "Transaction rejected");
@@ -3456,6 +3514,7 @@ function SimulationPreview({ preview, fromAddress, solanaAddress, walletType }: 
       const tx = fromAddress ? { ...txFields, from: fromAddress } : txFields;
       const hash = await eth.request({ method: "eth_sendTransaction", params: [tx] }) as string;
       setTxHash(hash);
+      void recordTx(hash, false);
     } catch (e: unknown) {
       const err = e as { message?: string; reason?: string; data?: { message?: string } };
       const msg = err?.data?.message ?? err?.reason ?? err?.message ?? "Transaction rejected";
@@ -3544,6 +3603,24 @@ function SimulationPreview({ preview, fromAddress, solanaAddress, walletType }: 
             </div>
           </div>
           <div className="sim-meta">
+            {preview.bridgeRecipient && (
+              <div className="sim-meta-item">
+                <span className="sim-meta-label">Receives at</span>
+                <span className="sim-meta-value" style={{ color: "#60A5FA", fontSize: 11, wordBreak: "break-all" }}>
+                  {preview.bridgeRecipient}
+                </span>
+              </div>
+            )}
+            {preview.bridgeCrossVm && !preview.bridgeRecipientExplicit && (
+              <div
+                className="sim-meta-item"
+                style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: 8, padding: "8px 10px" }}
+              >
+                <span className="sim-meta-value" style={{ color: "#FBBF24", fontSize: 11, lineHeight: 1.4 }}>
+                  ⚠️ Cross-chain bridge. You didn&apos;t specify a destination address, so funds go to your connected {preview.destinationChainLabel || "destination-chain"} wallet shown above. This is a DIFFERENT address than your source wallet — confirm it&apos;s yours before signing. To send elsewhere, retry with an explicit recipient address.
+                </span>
+              </div>
+            )}
             {preview.bridgeAmountTotal && preview.bridgeOperatingExpense && (
               <div className="sim-meta-item">
                 <span className="sim-meta-label">Total Spend</span>
@@ -4990,7 +5067,16 @@ export default function MainApp() {
         throw new Error(detail || `Ошибка сервера ${res.status}`);
       }
       setBackendOk(true);
-      const responseText = typeof data.response === "string" ? data.response : "*(модель вернула пустой ответ)*";
+      let responseText = typeof data.response === "string" ? data.response : "*(модель вернула пустой ответ)*";
+      // A tool that refused (e.g. cross-VM bridge with no destination address)
+      // returns a raw {"status":"error","message":...} JSON. Show the readable
+      // message, not the raw blob — and never render it as a signable card.
+      try {
+        const _errJson = JSON.parse(responseText);
+        if (_errJson && _errJson.status === "error" && typeof _errJson.message === "string") {
+          responseText = _errJson.message;
+        }
+      } catch { /* not JSON — leave as-is */ }
 
       const structured = resolveStructuredContent(responseText);
       const swapPreview = structured.swapPreview;

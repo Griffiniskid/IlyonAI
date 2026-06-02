@@ -309,11 +309,11 @@ def _parse_apy(text: str) -> tuple[float | None, str | None, float | None, float
             return target, "at_least", target, 500.0
         if mode_text in {"under", "below", "up_to"}:
             return target, "at_most", 0.5, target
-        return target, "around", max(0.5, target * 0.7), target * 1.6
+        return target, "around", max(0.5, target * 0.9), target * 1.1
     target = float(match.group("num"))
     mode_text = (match.group("mode") or "around").lower().replace(" ", "_")
     if mode_text in {"around", "about", "near", "target", "targeting"}:
-        return target, "around", max(0.5, target * 0.7), target * 1.6
+        return target, "around", max(0.5, target * 0.9), target * 1.1
     if mode_text in {"at_least", "minimum", "min", "over", "above"}:
         return target, "at_least", target, 500.0
     if mode_text in {"under", "below", "up_to"}:

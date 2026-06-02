@@ -1,0 +1,23 @@
+import { chromium } from "playwright";
+const EVM = "0x742d35Cc6634C0532925a3b844Bc454e4438f44e";
+const SOL = "7Np41oeYqPefeNQEHSv1UDhYrehxin3NStpmzpaedWZ8";
+const browser = await chromium.launch({ headless: true });
+const ctx = await browser.newContext();
+await ctx.addInitScript(([evm, sol]) => {
+  localStorage.setItem("ap_wallet", evm); localStorage.setItem("ap_sol_wallet", sol);
+  localStorage.setItem("ap_wallet_type", "metamask");
+  localStorage.setItem("ap_phantom_wallet_context", JSON.stringify({ solanaAddress: sol, evmAddress: evm, evmChainId: 1 }));
+  const acc=[evm];
+  window.ethereum={isMetaMask:true,selectedAddress:evm,chainId:"0x1",request:async({method})=>method.includes("ccount")?acc:method==="eth_chainId"?"0x1":null,on:()=>{},removeListener:()=>{}};
+  const pk={toString:()=>sol}; window.phantom={solana:{isPhantom:true,publicKey:pk,isConnected:true,connect:async()=>({publicKey:pk}),on:()=>{},removeListener:()=>{}}}; window.solana=window.phantom.solana;
+}, [EVM, SOL]);
+const p = await ctx.newPage();
+await p.goto("http://localhost:3000", { waitUntil: "networkidle", timeout: 60000 });
+await p.waitForTimeout(3000);
+const url = p.url();
+const inputs = await p.$$eval("textarea, input", (els) => els.map((e) => ({ tag: e.tagName, ph: e.getAttribute("placeholder"), type: e.getAttribute("type"), visible: e.offsetParent !== null })));
+const navs = await p.$$eval("a, button", (els) => els.map((e) => e.textContent.trim()).filter((t) => t && t.length < 20).slice(0, 40));
+console.log("URL:", url);
+console.log("INPUTS:", JSON.stringify(inputs, null, 1));
+console.log("NAV/BUTTONS:", JSON.stringify([...new Set(navs)]));
+await browser.close();

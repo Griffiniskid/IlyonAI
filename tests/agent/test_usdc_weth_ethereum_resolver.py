@@ -68,11 +68,12 @@ async def test_usdc_eth_native_alias_also_works():
 @pytest.mark.asyncio
 async def test_non_canonical_pair_still_errors():
     """Sanity: the canonical fallback only fires for USDC/WETH on Ethereum.
-    A random pair must still surface pool_not_found."""
+    A random pair must still error (err_envelope normalizes the raw
+    `pool_not_found` code to the canonical UNSUPPORTED_ADAPTER)."""
     ctx = _Ctx()
     env = await find_liquidity_pool(ctx, token_a="FOO", token_b="BAR", chain="ethereum")
     assert env.ok is False
-    assert env.error.code == "pool_not_found"
+    assert env.error.code == "UNSUPPORTED_ADAPTER"
 
 
 @pytest.mark.asyncio
@@ -82,6 +83,7 @@ async def test_canonical_pair_wrong_chain_still_errors():
     ctx = _Ctx()
     env = await find_liquidity_pool(ctx, token_a="USDC", token_b="WETH", chain="polygon")
     # Polygon USDC/WETH is NOT 0x88e6...5640 — that's an ethereum mainnet
-    # address. Must surface pool_not_found rather than mis-attribute.
+    # address. Must error rather than mis-attribute (err_envelope normalizes
+    # the raw `pool_not_found` code to the canonical UNSUPPORTED_ADAPTER).
     assert env.ok is False
-    assert env.error.code == "pool_not_found"
+    assert env.error.code == "UNSUPPORTED_ADAPTER"

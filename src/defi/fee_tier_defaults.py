@@ -121,10 +121,16 @@ def default_fee_tier(t0: str, t1: str) -> int:
     return 10000
 
 
+# Canonical spec name (§3.2). Identical behaviour to default_fee_tier — kept as
+# a named alias so callers can use the spec's wording.
+default_fee_tier_for_pair = default_fee_tier
+
+
 __all__ = [
     "STABLE_TOKENS",
     "BLUE_TOKENS",
     "PairCategory",
     "categorize_pair",
     "default_fee_tier",
+    "default_fee_tier_for_pair",
 ]

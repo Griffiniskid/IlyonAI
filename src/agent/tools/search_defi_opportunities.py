@@ -6,22 +6,12 @@ from typing import Any
 
 # Major, reliably-resolvable tokens. LP pairs whose every leg is in this set
 # route cleanly through Enso; exotic-token pairs do not.
-_MAJOR_TOKENS = frozenset({
-    "USDC", "USDT", "DAI", "USDS", "SUSDS", "CRVUSD", "GHO", "FRAX", "USDE",
-    "PYUSD", "TUSD", "BUSD", "FDUSD", "USDG", "SUSD", "LUSD", "MIM", "USD₮0", "USDT0",
-    "WETH", "ETH", "WBTC", "BTC", "CBBTC", "TBTC",
-    "SOL", "WSOL", "MSOL", "JITOSOL",
-    "BNB", "WBNB", "AVAX", "WAVAX", "MATIC", "WMATIC", "POL", "ARB", "OP",
-    "STETH", "WSTETH", "RETH", "WEETH", "CBETH",
-})
-
 from src.agent.protocol_urls import (
-    SOLANA_NON_ONECLICK_PROTOS,
-    classify_pool_kind,
     get_exec_capability,
     protocol_app_url,
 )
 from src.agent.tools._base import err_envelope, ok_envelope
+from src.defi.execution.reliable_set import is_reliable_exec, pool_exec_enabled
 from src.defi.search.models import OpportunityCandidate, OpportunitySearchRequest
 from src.defi.search.ranking import rank_opportunities
 from src.defi.strategy.memory import remember_search_universe
@@ -80,69 +70,19 @@ async def _validate_primary_executable(ctx, candidates: list[OpportunityCandidat
     await asyncio.gather(*[_guarded(c) for c in to_probe], return_exceptions=True)
 
 
-# Protocol families VERIFIED to reliably build a signable deposit (Enso EVM
-# lending/stable-LP/V2-AMM + Solana single-asset LSTs), from the execution
-# sweep. Only these get an EXECUTE button; everything else deep-links.
-_RELIABLE_EXEC_PROTOCOLS = (
-    "aave", "compound", "sky-lending", "sky", "fluid", "curve", "morpho",
-    "spark", "ethena", "lido", "rocket-pool", "rocketpool", "ether.fi", "etherfi",
-    "pancakeswap", "uniswap-v2",
-    "marinade", "jito",
-)
-
-
 def _unexecutable_reason(candidate: OpportunityCandidate, action: str) -> str | None:
-    """Return a human reason when a pool the capability check called
-    'executable' actually can't be one-click executed, else None.
-
-    Catches the two real failure modes the adapter-existence check misses:
-      - Solana protocols whose receipt mint isn't on Jupiter's swap graph.
-      - EVM pools whose token symbols aren't in the address registry, so
-        the adapter can't resolve them to contract addresses.
-    """
-    chain = (candidate.chain or "").lower()
-    slug = (candidate.protocol_slug or candidate.protocol or "").lower()
-    # Only protocols VERIFIED to reliably build a signable tx (execution sweep)
-    # show an EXECUTE button. Everything else gets an "Open pool" deep link so we
-    # never advertise a button that fails. This is deterministic + fast (no
-    # per-pool dry-run) so search never risks its 30s SLO.
-    if not any(slug.startswith(p) for p in _RELIABLE_EXEC_PROTOCOLS):
-        return (
-            f"{candidate.protocol} isn't wired for one-click deposit yet — "
-            "open the pool on its protocol to deposit."
-        )
-    # Multi-token LP pairs only execute reliably when EVERY leg is a major,
-    # resolvable token. Exotic-token pairs (CRVUSD-SCRVUSD, MSUSD-FXUSD, …) fail
-    # the Enso route, so they deep-link. Single-asset lending/LST (no pair) is
-    # exempt — it deposits the underlying directly.
-    _legs = [t for t in re.split(r"[-/_·]", (candidate.symbol or "").upper()) if t]
-    if len(_legs) >= 2 and not all(t in _MAJOR_TOKENS for t in _legs):
-        return (
-            f"{candidate.symbol} has a token that isn't one-click routable — "
-            "open the pool on its protocol to deposit."
-        )
-    if chain in {"solana", "sol"}:
-        if slug in SOLANA_NON_ONECLICK_PROTOS:
-            return (
-                f"{candidate.protocol} deposits aren't routable through Jupiter "
-                "(no one-click path) — open the protocol app to deposit."
-            )
-        return None
-    # EVM concentrated-liquidity (V3 / CLMM) LP deposits need a price-range
-    # selection that one-click can't supply yet (deferred range UI), and the
-    # NFT-mint adapter rejects them (ASSET_POOL_MISMATCH / no calldata). Other
-    # EVM paths (supply/lend via Enso, stable/V2 LP) route on the underlying
-    # asset, so we trust the capability check for them.
-    if action in {"deposit_lp", "provide_liquidity", "add_liquidity"}:
-        kind = classify_pool_kind(
-            protocol=slug, pool_symbol=candidate.symbol, pool_id=candidate.pool_id
-        )
-        if kind == "v3":
-            return (
-                f"{candidate.protocol} is a concentrated-liquidity pool — "
-                "range deposits aren't one-click yet. Open the protocol app."
-            )
-    return None
+    """Human reason a pool can't be one-click executed, else None. Delegates to
+    the shared `is_reliable_exec` so the search EXECUTE badge can never disagree
+    with what the executor will actually build (they used to keep separate
+    copies of the reliable-protocol list and drifted)."""
+    _ok, reason = is_reliable_exec(
+        protocol=candidate.protocol_slug or candidate.protocol,
+        chain=candidate.chain,
+        symbol=candidate.symbol,
+        action=action,
+        pool_id=candidate.pool_id,
+    )
+    return reason
 
 
 def _infer_risk_level(*, apy: float, tvl_usd: float) -> str:
@@ -225,6 +165,7 @@ def _candidate_from_defillama(pool: dict[str, Any]) -> OpportunityCandidate:
         ),
         symbol=str(pool.get("symbol") or "Unknown"),
         pool_id=pool_id,
+        pool_meta=(str(pool.get("poolMeta")) if pool.get("poolMeta") else None),
         token_addresses=[str(token) for token in underlying if token],
         apy=apy,
         apy_base=pool.get("apyBase"),
@@ -394,18 +335,27 @@ def _chain_type(chain: str | None):
 
 
 def _dedup_primary(primary: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Collapse same-protocol-same-symbol-same-chain entries, keeping the
-    highest-TVL one. Different pool_ids of the same pair look like duplicates
-    to a user and erode trust.
+    """Drop only TRUE duplicates — the same on-chain pool listed twice (same
+    pool_id, or same protocol+symbol+chain+pool_address). Distinct pools of the
+    same pair (e.g. USDC/WETH at the 0.05% and 0.3% fee tiers) are SEPARATE
+    pools the user can pick between, so they are kept as separate rows.
     """
-    seen: dict[tuple[str, str, str], dict[str, Any]] = {}
-    order: list[tuple[str, str, str]] = []
+    seen: dict[tuple, dict[str, Any]] = {}
+    order: list[tuple] = []
     for it in primary:
-        key = (
-            (it.get("protocol") or "").lower(),
-            (it.get("symbol") or "").upper(),
-            (it.get("chain") or "").lower(),
-        )
+        pid = (it.get("pool_id") or "").lower()
+        if pid:
+            key: tuple = ("pid", pid)
+        else:
+            # No UUID — fall back to identity incl. the pool address so two
+            # different fee-tier pools (different addresses) stay distinct.
+            key = (
+                "id",
+                (it.get("protocol") or "").lower(),
+                (it.get("symbol") or "").upper(),
+                (it.get("chain") or "").lower(),
+                (it.get("pool_address") or "").lower(),
+            )
         cur = seen.get(key)
         if cur is None:
             seen[key] = it
@@ -525,6 +475,187 @@ def _compute_sentinel_block(item: dict[str, Any]) -> dict[str, int]:
     }
 
 
+_DEXSCREENER_CHAIN = {
+    "ethereum": "ethereum", "bsc": "bsc", "base": "base", "arbitrum": "arbitrum",
+    "polygon": "polygon", "optimism": "optimism", "avalanche": "avalanche",
+    "solana": "solana",
+}
+
+
+async def _enrich_pool_addresses(items: list[dict[str, Any]]) -> None:
+    """For displayed pools missing an on-chain pool address, resolve it from a
+    token mint via DexScreener (the matching DEX's deepest pair). Mutates each
+    item['pool_address'] in place. Best-effort + time-bounded."""
+    import asyncio
+    import aiohttp
+
+    from src.agent.pool_address_authoritative import (
+        fee_bps_onchain,
+        resolve_exact_pool_address,
+        resolve_v3_factory,
+        resolve_v3_pool,
+    )
+    from src.agent.pool_deeplinks import pool_deeplink
+
+    async def _maybe_v3_fee(sess, it: dict[str, Any], addr: str) -> None:
+        # V3/CLMM add URLs need the EXACT fee tier or the protocol app shows
+        # "Not Created / Invalid pair". DefiLlama's fee metadata is unreliable,
+        # so read it straight from the pool contract (pool.fee()).
+        proto = (it.get("protocol_slug") or it.get("protocol") or "").lower()
+        if ("v3" in proto or "clmm" in proto) and (it.get("chain") or "").lower() not in {"solana", "sol"}:
+            try:
+                f = await fee_bps_onchain(sess, it.get("chain"), addr)
+                if f:
+                    it["fee_bps"] = f
+            except Exception:
+                pass
+
+    def _apply_addr(it: dict[str, Any], addr: str) -> None:
+        # to_dict() computed pool_deeplink BEFORE enrichment, with no address,
+        # so it pointed at a list page. Now that the exact pool address is
+        # known, rebuild the link so "Open pool" lands on THAT pool.
+        it["pool_address"] = addr
+        it["pool_deeplink"] = pool_deeplink(
+            protocol=it.get("protocol_slug") or it.get("protocol"),
+            chain=it.get("chain"),
+            pool_id=it.get("pool_id") or it.get("source_id"),
+            pool_address=addr,
+            symbol=it.get("symbol"),
+            underlying_tokens=it.get("token_addresses") or it.get("underlying_tokens"),
+        )
+
+    async def _one(sess: "aiohttp.ClientSession", it: dict[str, Any]) -> None:
+        if it.get("pool_address"):
+            return
+        toks = it.get("token_addresses") or it.get("underlying_tokens") or []
+        toks = [t for t in toks if isinstance(t, str) and t]
+        if not toks:
+            return
+        # 0) V3 / CLMM: resolve the exact pool address (DexScreener token-pairs)
+        #    + read the fee tier on-chain (pool.fee()). This is the ONLY way to
+        #    build a correct V3 add link — the fee must be exact or the protocol
+        #    app shows "Not Created / Invalid pair".
+        _proto = (it.get("protocol_slug") or it.get("protocol") or "").lower()
+        if ("v3" in _proto or "clmm" in _proto) and (it.get("chain") or "").lower() not in {"solana", "sol"}:
+            _va = _vf = None
+            _pp = it.get("protocol_slug") or it.get("protocol")
+            try:
+                # Deterministic factory probe first (reliable for common tokens),
+                # then the DexScreener token-pairs fallback.
+                _va, _vf = await resolve_v3_factory(sess, it.get("chain"), _pp, toks)
+                if not _va:
+                    _va, _vf = await resolve_v3_pool(sess, it.get("chain"), _pp, toks)
+            except Exception:
+                _va = _vf = None
+            if _va:
+                if _vf:
+                    it["fee_bps"] = _vf
+                _apply_addr(it, _va)
+                return
+
+        # 1) AUTHORITATIVE: on-chain factory (EVM) / protocol API (Solana).
+        #    Thread the V3 fee tier (parsed from DefiLlama poolMeta) so a
+        #    multi-tier pair resolves to the EXACT pool, not an arbitrary tier.
+        from src.agent.pool_address_authoritative import fee_bps_from_meta
+        try:
+            exact = await resolve_exact_pool_address(
+                protocol=it.get("protocol"), chain=it.get("chain"),
+                token_addrs=toks, fee_bps=fee_bps_from_meta(it.get("pool_meta")),
+                sess=sess,
+            )
+        except Exception:
+            exact = None
+        if exact:
+            _apply_addr(it, exact)
+            await _maybe_v3_fee(sess, it, exact)
+            return
+        # 2) FALLBACK: DexScreener pair search.
+        # Single-mint (lending / LST / single-asset) products have NO unique AMM
+        # pair — matching one mint just picks the deepest UNRELATED pool that
+        # happens to hold that token (e.g. crvUSD → "Yield Basis cbBTC"), i.e. a
+        # WRONG pool. Only resolve when we have ≥2 distinct mints (a real pair).
+        if len({t.lower() for t in toks}) < 2:
+            return
+        chain = _DEXSCREENER_CHAIN.get(str(it.get("chain") or "").lower())
+        if not chain:
+            return
+        proto_head = str(it.get("protocol") or "").lower().split("-")[0]
+        try:
+            async with sess.get(
+                "https://api.dexscreener.com/latest/dex/search",
+                params={"q": toks[0]},
+                headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as r:
+                if r.status != 200:
+                    return
+                data = await r.json()
+        except Exception:
+            return
+        want_mints = {t.lower() for t in toks}
+        best = None
+        best_liq = -1.0
+        for pr in (data.get("pairs") or []):
+            if str(pr.get("chainId", "")).lower() != chain:
+                continue
+            dex = str(pr.get("dexId", "")).lower()
+            if proto_head and proto_head not in dex and dex not in proto_head:
+                continue
+            base = (pr.get("baseToken") or {}).get("address", "").lower()
+            quote = (pr.get("quoteToken") or {}).get("address", "").lower()
+            # For a 2-token pair, require BOTH mints to match so a generic
+            # USDC pair doesn't get picked for every USDC-* request. For
+            # single-mint (LST-style) require the one mint.
+            two = len([m for m in want_mints]) >= 2
+            if two:
+                if not (base in want_mints and quote in want_mints):
+                    continue
+            elif want_mints and not (base in want_mints or quote in want_mints):
+                continue
+            try:
+                liq = float((pr.get("liquidity") or {}).get("usd") or 0)
+            except (TypeError, ValueError):
+                liq = 0.0
+            if liq > best_liq and pr.get("pairAddress"):
+                best_liq = liq
+                best = pr.get("pairAddress")
+        if best:
+            _apply_addr(it, best)
+            await _maybe_v3_fee(sess, it, best)
+
+    try:
+        async with aiohttp.ClientSession() as sess:
+            await asyncio.wait_for(
+                asyncio.gather(*[_one(sess, it) for it in items], return_exceptions=True),
+                timeout=14.0,
+            )
+    except Exception:
+        pass
+
+
+import re as _re_exact
+
+_EXACT_EVM = _re_exact.compile(r"0x[a-fA-F0-9]{40}")
+_EXACT_B58 = _re_exact.compile(r"/[1-9A-HJ-NP-Za-km-z]{32,44}")
+
+
+def _is_exact_pool_url(u: str | None) -> bool:
+    """True only when the URL points at ONE specific pool on the protocol's
+    app (carries a pool address / id), not a list/search/homepage."""
+    if not u:
+        return False
+    ul = u.lower()
+    if "defillama.com" in ul:
+        return False
+    if any(k in ul for k in ("?search=", "?query=", "textsearch=")):
+        return False
+    if ul.rstrip("/").endswith(("/pools", "/liquidity", "/pool", "/dlmm", "/markets")):
+        return False
+    if "reserve-overview" in ul or "pool_id=" in ul or "%3a0x" in ul:
+        return True
+    return bool(_EXACT_EVM.search(u) or _EXACT_B58.search(u))
+
+
 def _opportunity_card_payload(
     primary: list[dict[str, Any]],
     *,
@@ -532,19 +663,50 @@ def _opportunity_card_payload(
     excluded_count: int,
     blockers: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    from src.agent.protocol_urls import pool_protocol_url as _ppu
+    from src.agent.pool_deeplinks import pool_deeplink as _deeplink
     items: list[dict[str, Any]] = []
-    for item in primary[:8]:
+    for item in primary:
+        if len(items) >= 8:
+            break
         urls = item.get("source_urls") or {}
+        from src.agent.pool_address_authoritative import fee_bps_from_meta as _fee
+        _proto_url = _ppu(
+            chain=item.get("chain"),
+            project=item.get("protocol"),
+            pool_address=item.get("pool_address") or item.get("poolAddress"),
+            underlying_tokens=item.get("underlying_tokens") or item.get("token_addresses"),
+            pool_symbol=item.get("symbol"),
+            project_url=urls.get("protocol_site") or urls.get("project_url"),
+            # ONLY the on-chain fee (ground truth). DefiLlama's fee metadata was
+            # wrong (said 0.01% → "Not Created / Invalid pair" on PancakeSwap),
+            # so we never guess it — no verified fee → V3 falls to DexScreener.
+            fee_bps=item.get("fee_bps"),
+        )
+        # Pick the best "Open pool" link. Prefer the exact protocol-native pool
+        # URL (carries the pool address/id). When the pool address couldn't be
+        # resolved (DexScreener/RPC flaked) the protocol URL is just a search/
+        # list page — do NOT drop the pool for that. Falling back to
+        # pool_deeplink still yields an exact DexScreener/DefiLlama pool page
+        # (never a homepage), so the user always sees the pool they asked for
+        # AND can still open it. Dropping here was hiding real pools whenever
+        # address resolution was flaky → "search shows only a few pools".
+        if _is_exact_pool_url(_proto_url):
+            _open_pool_url = _proto_url
+        else:
+            _open_pool_url = item.get("pool_deeplink") or _deeplink(
+                protocol=item.get("protocol_slug") or item.get("protocol"),
+                chain=item.get("chain"),
+                pool_id=item.get("pool_id") or item.get("source_id"),
+                pool_address=item.get("pool_address") or item.get("poolAddress"),
+                symbol=item.get("symbol"),
+                underlying_tokens=item.get("underlying_tokens") or item.get("token_addresses"),
+            )
+        _pid = item.get("pool_id")
+        _llama_pool = urls.get("defillama_pool") or (f"https://defillama.com/yields/pool/{_pid}" if _pid else None)
         link_entries: list[dict[str, str]] = []
-        if urls.get("defillama_pool"):
-            link_entries.append({"label": "DefiLlama pool", "url": urls["defillama_pool"]})
-        protocol_label = item.get("protocol", "Protocol")
-        if urls.get("protocol_app"):
-            link_entries.append({"label": f"Open in {protocol_label}", "url": urls["protocol_app"]})
-        elif urls.get("defillama_protocol"):
-            link_entries.append({"label": f"{protocol_label} on DefiLlama", "url": urls["defillama_protocol"]})
-        if urls.get("protocol_site") and urls.get("protocol_site") != urls.get("protocol_app"):
-            link_entries.append({"label": "Protocol site", "url": urls["protocol_site"]})
+        if _llama_pool:
+            link_entries.append({"label": "DefiLlama", "url": _llama_pool})
         items.append({
             "protocol": item.get("protocol"),
             "symbol": item.get("symbol"),
@@ -561,7 +723,9 @@ def _opportunity_card_payload(
             "unsupported_reason": item.get("unsupported_reason"),
             "links": link_entries,
             "pool_id": item.get("pool_id"),
-            "pool_deeplink": item.get("pool_deeplink"),
+            "pool_address": item.get("pool_address") or item.get("poolAddress"),
+            "underlying_tokens": item.get("underlying_tokens") or item.get("token_addresses"),
+            "pool_deeplink": _open_pool_url,
             "sentinel": _compute_sentinel_block(item),  # BUG-RC-011
         })
     return {
@@ -731,7 +895,20 @@ async def search_defi_opportunities(
     # is_pool_link_action FIRST (matching the exec gate) before checking the
     # adapter registry — this prevents the "ready via enso-shortcut-fallback"
     # badge from being shown on pools that exec will redirect to pool_link.
+    # Master kill-switch: when POOL_EXEC_ENABLED is off the executor
+    # (execute_pool_position) DEEP-LINKS every pool. The badge MUST match — show
+    # no EXECUTE button, only "Open pool" — or the user clicks Execute and just
+    # gets a deep-link card (the exact mismatch the user hit on Aave V3).
+    _exec_on = pool_exec_enabled()
     for candidate in candidates:
+        if not _exec_on:
+            candidate.executable = False
+            candidate.adapter_id = None
+            candidate.unsupported_reason = (
+                candidate.unsupported_reason
+                or "Open the pool on its protocol to deposit."
+            )
+            continue
         action = "supply" if candidate.product_type in {"lending", "supply"} else (
             "deposit_lp" if candidate.product_type in {"pool", "lp"} else "stake"
         )
@@ -786,6 +963,12 @@ async def search_defi_opportunities(
         [e.candidate for e in ranked.excluded if "risk_not_requested" in (e.reason_codes or [])],
         request,
     )
+    # Fill the on-chain POOL ADDRESS for the displayed pools (DefiLlama gives
+    # only a UUID + token mints, not the pool address) so the "Open pool"
+    # button can deep-link to the EXACT pool — not the protocol's pools list.
+    # Resolve via DexScreener (token mint → pair) for the shown items only,
+    # concurrently + time-bounded so search stays fast.
+    await _enrich_pool_addresses(primary[:16])
     excluded = [item.to_dict() for item in ranked.excluded[:25]]
     blockers = _execution_blockers(primary, request)
     executable_count = sum(1 for candidate in primary if candidate.get("executable"))

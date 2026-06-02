@@ -101,22 +101,108 @@ async function _initRaydium({ connection, user }) {
   return { raydium, sdk };
 }
 
-async function _fetchPool({ raydium, poolId }) {
-  // raydium.api.fetchPoolById returns { id, poolInfo, poolKeys } or an array.
-  // Some SDK builds returns [poolInfo]; others { data: [poolInfo] }. Normalize.
+// Known major Solana token mints — used to recover pool mints from the pool
+// symbol when DefiLlama omits underlyingTokens.
+const _SYMBOL_MINTS = {
+  SOL: "So11111111111111111111111111111111111111112",
+  WSOL: "So11111111111111111111111111111111111111112",
+  USDC: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  USDT: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+  JUP: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+  JTO: "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL",
+  BONK: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+  RAY: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+  MSOL: "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",
+  JITOSOL: "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+  WBTC: "3NZ9JMVBmGAqocyb8nL3DKWQUmTd9zNQ8j5HXyDgGqQ7",
+  WETH: "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs",
+};
+
+function _looksLikePoolUuid(id) {
+  // DefiLlama pool ids are UUIDs (8-4-4-4-12 hex); Raydium pool ids are
+  // base58 on-chain addresses. fetchPoolById only accepts the latter.
+  return typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim());
+}
+
+async function _resolvePoolAddressByMints(mints) {
+  // The caller often only has a DefiLlama UUID, which the SDK can't resolve.
+  // Look the real Raydium AMM (Standard) pool address up by its token mints
+  // via the public api-v3 endpoint. Returns the highest-liquidity Standard
+  // pool address, or null.
+  const valid = (mints || []).filter((m) => typeof m === "string" && m.length >= 32 && !m.includes("-"));
+  if (valid.length < 2) return null;
+  const [mint1, mint2] = valid;
+  const url = `https://api-v3.raydium.io/pools/info/mint?mint1=${mint1}&mint2=${mint2}&poolType=standard&poolSortField=liquidity&sortType=desc&pageSize=5&page=1`;
+  try {
+    const r = await fetch(url, { headers: { accept: "application/json" } });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const list = j?.data?.data || j?.data || [];
+    const pool = Array.isArray(list) ? list.find((p) => p && p.id) : null;
+    return pool ? pool.id : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
+async function _fetchPoolById(raydium, poolId) {
   const res = await raydium.api.fetchPoolById({ ids: poolId });
+  if (Array.isArray(res)) return res[0] || null;
+  if (res && Array.isArray(res.data)) return res.data[0] || null;
+  if (res && typeof res === "object") return res.poolInfo || res;
+  return null;
+}
+
+async function _fetchPool({ raydium, poolId, extra = {} }) {
+  // 1) Direct lookup when we were handed a real Raydium pool address.
   let poolInfo = null;
-  if (Array.isArray(res)) {
-    poolInfo = res[0] || null;
-  } else if (res && Array.isArray(res.data)) {
-    poolInfo = res.data[0] || null;
-  } else if (res && typeof res === "object") {
-    poolInfo = res.poolInfo || res;
+  if (poolId && !_looksLikePoolUuid(poolId)) {
+    poolInfo = await _fetchPoolById(raydium, poolId);
+  }
+  // 2) Fallback: resolve the real pool address from the pool's token mints
+  //    (handles DefiLlama UUIDs, the common case from search/execute).
+  if (!poolInfo) {
+    let mints = extra.underlying_tokens || extra.underlyingTokens || extra.mints || [];
+    // DefiLlama frequently omits underlyingTokens for Solana pools. Recover the
+    // mints from the pool symbol's legs via the known-major-token map so common
+    // pairs (SOL-USDC, USDC-USDT, …) resolve. Exotic legs stay unresolved →
+    // the pool is correctly reported non-executable.
+    if ((!mints || mints.length < 2) && extra.pool_symbol) {
+      const legs = String(extra.pool_symbol)
+        .toUpperCase()
+        .split(/[-/_·]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const resolved = legs.map((l) => _SYMBOL_MINTS[l]).filter(Boolean);
+      if (resolved.length >= 2) mints = resolved;
+    }
+    const addr = await _resolvePoolAddressByMints(mints);
+    if (addr) {
+      poolInfo = await _fetchPoolById(raydium, addr);
+    }
   }
   if (!poolInfo) {
-    throw new Error(`Raydium pool ${poolId} not found via api.fetchPoolById.`);
+    throw new Error(
+      `Raydium pool ${poolId} not found (UUID could not be resolved to an on-chain pool via token mints).`,
+    );
   }
   return poolInfo;
+}
+
+function _bn(sdk) {
+  return sdk.BN || require("bn.js");
+}
+
+// Convert a human amount ("50", 50, "0.5") into a raw base-unit BN given the
+// token's decimals. The Raydium SDK calls `.isZero()` on amounts, so they MUST
+// be BN instances — plain numbers/strings throw "r.isZero is not a function".
+function _toRawBN(sdk, human, decimals) {
+  const BN = _bn(sdk);
+  const d = Number.isFinite(decimals) ? decimals : 6;
+  const [intPart = "0", fracRaw = ""] = String(human).split(".");
+  const frac = (fracRaw + "0".repeat(d)).slice(0, d);
+  const raw = ((intPart || "0") + frac).replace(/^0+(?=\d)/, "") || "0";
+  return new BN(raw);
 }
 
 async function _buildCpmm({ raydium, sdk, poolInfo, amount, slippageBps, asset }) {
@@ -128,11 +214,12 @@ async function _buildCpmm({ raydium, sdk, poolInfo, amount, slippageBps, asset }
   const baseIn = !upperAsset || upperAsset === baseSymbol;
   const slippage = (slippageBps || 0) / 10_000;
   const txVersion = sdk.TxVersion ? sdk.TxVersion.V0 : 0;
+  const inDecimals = baseIn ? poolInfo.mintA?.decimals : poolInfo.mintB?.decimals;
 
   const { transaction } = await raydium.cpmm.addLiquidity({
     poolInfo,
     poolKeys: poolInfo.poolKeys || undefined,
-    inputAmount: amount,
+    inputAmount: _toRawBN(sdk, amount, inDecimals),
     slippage,
     baseIn,
     txVersion,
@@ -149,20 +236,24 @@ async function _buildAmmV4({ raydium, sdk, poolInfo, amount, slippageBps, asset 
   // amount (we treat as side-A) and lets fixedSide drive the math; we
   // estimate otherAmountMin off the pool's current reserves so the SDK does
   // not refuse the build.
+  const BN = _bn(sdk);
   const upperAsset = String(asset || "").toUpperCase();
   const symA = String(poolInfo.mintA?.symbol || "").toUpperCase();
   const fixedSide = !upperAsset || upperAsset === symA ? "a" : "b";
   const slippage = (slippageBps || 0) / 10_000;
   const txVersion = sdk.TxVersion ? sdk.TxVersion.V0 : 0;
 
-  const amountInA = fixedSide === "a" ? amount : "0";
-  const amountInB = fixedSide === "b" ? amount : "0";
+  const inDecimals = fixedSide === "a" ? poolInfo.mintA?.decimals : poolInfo.mintB?.decimals;
+  const rawAmount = _toRawBN(sdk, amount, inDecimals);
+  const zero = new BN(0);
+  const amountInA = fixedSide === "a" ? rawAmount : zero;
+  const amountInB = fixedSide === "b" ? rawAmount : zero;
 
   const { transaction } = await raydium.liquidity.addLiquidity({
     poolInfo,
     amountInA,
     amountInB,
-    otherAmountMin: "0",
+    otherAmountMin: zero,
     fixedSide,
     slippage,
     txVersion,
@@ -321,7 +412,7 @@ module.exports = {
     }
 
     const { raydium, sdk } = await _initRaydium({ connection, user });
-    const poolInfo = await _fetchPool({ raydium, poolId });
+    const poolInfo = await _fetchPool({ raydium, poolId, extra });
     const isCpmm = _isCpmm(extra, poolInfo);
     const redemption_program = isCpmm ? CPMM_PROGRAM : AMM_V4_PROGRAM;
 

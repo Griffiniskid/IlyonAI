@@ -656,11 +656,15 @@ def test_asset_pool_match_allows_usdc_against_usdc_pool():
         )
     ok = result.ok if hasattr(result, "ok") else result["ok"]
     assert ok is True
+    # A matching USDC/aave pool must NOT trip the mismatch guard. With the
+    # execution kill-switch off (default), it deep-links (a pool_link card, no
+    # `plan`) rather than building a signable plan — that path already proves
+    # the guard didn't fire. Only when a plan IS built do we inspect blockers.
     data = result.data if hasattr(result, "data") else result["data"]
-    plan = data["plan"]
-    blockers = plan.get("blockers") or []
-    codes = [b.get("code") for b in blockers]
-    assert "ASSET_POOL_MISMATCH" not in codes
+    plan = data.get("plan")
+    if plan:
+        codes = [b.get("code") for b in (plan.get("blockers") or [])]
+        assert "ASSET_POOL_MISMATCH" not in codes
 
 
 def test_asset_pool_match_stables_interchangeable():

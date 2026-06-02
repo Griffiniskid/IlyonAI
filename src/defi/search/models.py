@@ -62,6 +62,7 @@ class OpportunityCandidate:
     protocol_slug: str | None = None
     pool_id: str | None = None
     pool_address: str | None = None
+    pool_meta: str | None = None
     token_addresses: list[str] = field(default_factory=list)
     apy_base: float | None = None
     apy_reward: float | None = None
@@ -89,6 +90,7 @@ class OpportunityCandidate:
             "symbol": self.symbol,
             "pool_id": self.pool_id,
             "pool_address": self.pool_address,
+            "pool_meta": self.pool_meta,
             "token_addresses": self.token_addresses,
             "apy": self.apy,
             "apy_base": self.apy_base,

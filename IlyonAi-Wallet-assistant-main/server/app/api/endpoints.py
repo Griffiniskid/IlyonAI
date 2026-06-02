@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.schemas.request import AgentRequest
 from app.core.config import settings
 from app.db.database import get_db
-from app.db.models import Chat, ChatMessage, User
+from app.db.models import Chat, ChatMessage, User, Transaction
 from app.api.auth import get_optional_user
 
 router = APIRouter()
@@ -325,7 +325,10 @@ def _try_direct_bridge(query: str, user_address: str, solana_address: str, chain
         "src_chain_id": src_chain,
         "dst_chain_id": dst_chain,
     })
-    return _build_bridge_tx(payload, user_address, chain_id, solana_address)
+    # Pass the raw query so _build_bridge_tx can recover an explicit destination
+    # address (e.g. "… send it to 0x…") the user typed — required for cross-VM
+    # bridges, which refuse without one.
+    return _build_bridge_tx(payload, user_address, chain_id, solana_address, user_query=q)
 
 
 def _try_direct_yield_search(query: str) -> Optional[str]:
@@ -693,6 +696,43 @@ def _try_direct_balance(query: str, user_address: str, solana_address: str) -> O
     return get_smart_wallet_balance(wallet_input, user_address, solana_address)
 
 
+_PRICE_TOKENS = {
+    "SOL", "ETH", "BTC", "BNB", "USDC", "USDT", "DAI", "ARB", "OP", "MATIC",
+    "POL", "AVAX", "CAKE", "JUP", "BONK", "WBTC", "WETH", "LINK", "UNI", "AAVE",
+    "PEPE", "DOGE", "ADA", "XRP", "CRV", "LDO", "MKR", "SUI", "APT", "TIA",
+}
+# Price word incl. common typos ("prace", "pric", "pirce", "prise").
+_PRICE_INTENT_RE = re.compile(
+    r"\b(price|prace|pric|pirce|prce|prise|prce|cost|worth|quote)\b|how\s+much\s+(?:is|does|for|are)",
+    re.IGNORECASE,
+)
+_PRICE_ACTION_RE = re.compile(
+    r"\b(swap|bridge|stake|unstake|deposit|supply|withdraw|send|transfer|buy|"
+    r"sell|borrow|lend|provide|add\s+liquidity)\b",
+    re.IGNORECASE,
+)
+
+
+def _try_direct_price(query: str) -> Optional[str]:
+    """Deterministically answer 'what is X price' (the most common question),
+    tolerant of typos like 'prace'. Fetches a live price via Binance/CoinGecko
+    so it never falsely claims it lacks price data, and never depends on the
+    chat LLM. Skips when the message is an ACTION (swap/bridge/etc.)."""
+    q = (query or "").strip()
+    if not q or _PRICE_ACTION_RE.search(q) or not _PRICE_INTENT_RE.search(q):
+        return None
+    sym = next((t.upper() for t in re.findall(r"[A-Za-z]{2,6}", q)
+                if t.upper() in _PRICE_TOKENS), None)
+    if not sym:
+        return None
+    try:
+        from app.agents.crypto_agent import _get_token_price
+        res = _get_token_price(sym)
+    except Exception:
+        return None
+    return res if (res and "$" in res) else None
+
+
 def _try_direct_swap(query: str, user_address: str, solana_address: str, chain_id: int) -> Optional[str]:
     """
     Detect 'swap all/my X to Y' patterns and handle directly without the agent.
@@ -710,11 +750,15 @@ def _try_direct_swap(query: str, user_address: str, solana_address: str, chain_i
     # e.g. "MARCOfrom" → "MARCO from", "BNBto" → "BNB to"
     q = re.sub(r'([A-Za-z0-9])(from|to|for|into|that|on)\b', r'\1 \2', q, flags=re.IGNORECASE)
     # Match: "swap all/my X to/for Y", "swap X that i have to Y", etc.
+    # The qualifier group is repeatable so STACKED fillers like "all my",
+    # "all of my", "my entire" don't get mis-captured as the token symbol
+    # ("swap all my SOL" was reading the token as "my").
+    _QUAL = r"(?:(?:all|my|entire|full|of|the)\s+)+"
     patterns = [
-        # "swap all BNB to USDT", "swap my BNB to USDT"
-        r"swap\s+(?:all|my|entire|full)\s+([A-Za-z0-9]+)\s+(?:to|for|into)\s+([A-Za-z0-9]+)",
-        # "swap all BNB that I have to USDT", "swap all BNB from my wallet to USDT"
-        r"swap\s+(?:all|my|entire|full)\s+([A-Za-z0-9]+)\s+.*?(?:to|for|into)\s+([A-Za-z0-9]+)",
+        # "swap all BNB to USDT", "swap all my BNB to USDT"
+        rf"swap\s+{_QUAL}([A-Za-z0-9]+)\s+(?:to|for|into)\s+([A-Za-z0-9]+)",
+        # "swap all my BNB that I have to USDT", "swap all BNB from my wallet to USDT"
+        rf"swap\s+{_QUAL}([A-Za-z0-9]+)\s+.*?(?:to|for|into)\s+([A-Za-z0-9]+)",
         # "swap BNB that i have on my wallet for USDT"
         r"swap\s+([A-Za-z0-9]+)\s+that\s+i\s+have\s+.*?(?:to|for|into)\s+([A-Za-z0-9]+)",
     ]
@@ -740,11 +784,20 @@ def _try_direct_swap(query: str, user_address: str, solana_address: str, chain_i
             return True
         return False
 
+    # Filler / pronoun words are never token symbols. If a capture lands on one
+    # (brittle phrasing the regex didn't fully strip), DON'T confidently build a
+    # swap with garbage — skip and let the request fall through to the LLM,
+    # which can interpret the intent. Prevents "Unknown token MY/THE/THIS".
+    _token_stop = {"MY", "THE", "THIS", "THAT", "ALL", "OF", "IT", "A", "AN",
+                   "SOME", "MAX", "ENTIRE", "FULL", "TOKEN", "TOKENS", "COIN"}
+
     for pat in patterns:
         m = re.search(pat, q, re.IGNORECASE)
         if m:
             token_in = m.group(1).upper()
             token_out = m.group(2).upper()
+            if token_in in _token_stop or token_out in _token_stop:
+                continue
             if _should_use_solana(token_in, token_out):
                 swap_input = json.dumps({
                     "sell_token": token_in,
@@ -752,7 +805,7 @@ def _try_direct_swap(query: str, user_address: str, solana_address: str, chain_i
                     "sell_amount": "all",
                     "user_pubkey": solana_wallet,
                 })
-                return build_solana_swap(swap_input)
+                return build_solana_swap(swap_input, user_query=q)
             initial_chain = chain_id if chain_id else _NATIVE_CHAIN.get(token_in, chain_id)
             _, _, resolved_chain = _resolve_token_metadata(
                 token_in, initial_chain, user_address, search_wallet_all_chains=True,
@@ -778,6 +831,22 @@ def _try_direct_swap(query: str, user_address: str, solana_address: str, chain_i
         amount_human = m.group(1)
         token_in = m.group(2).upper()
         token_out = m.group(3).upper()
+        # "swap 5 usdc for this token <MINT>" — the regex grabbed the filler word
+        # ("this") as the buy token, but the user pasted a Solana MINT. A base58
+        # address (not 0x) is unambiguously Solana, so recover it and route the
+        # Solana swap directly — don't punt to the LLM for clarification.
+        if token_out in _token_stop and token_in not in _token_stop and solana_wallet:
+            _mint_m = re.search(r"\b([1-9A-HJ-NP-Za-km-z]{32,44})\b", q)
+            if _mint_m and not _mint_m.group(1).startswith("0x"):
+                swap_input = json.dumps({
+                    "sell_token": token_in,
+                    "buy_token": _mint_m.group(1),
+                    "sell_amount": amount_human,
+                    "user_pubkey": solana_wallet,
+                })
+                return build_solana_swap(swap_input, user_query=q)
+        if token_in in _token_stop or token_out in _token_stop:
+            continue
         if _should_use_solana(token_in, token_out):
             swap_input = json.dumps({
                 "sell_token": token_in,
@@ -785,7 +854,7 @@ def _try_direct_swap(query: str, user_address: str, solana_address: str, chain_i
                 "sell_amount": amount_human,
                 "user_pubkey": solana_wallet,
             })
-            return build_solana_swap(swap_input)
+            return build_solana_swap(swap_input, user_query=q)
         initial_chain = chain_id if chain_id else _NATIVE_CHAIN.get(token_in, chain_id)
         _, decimals, resolved_chain = _resolve_token_metadata(token_in, initial_chain, user_address, search_wallet_all_chains=True)
         effective_chain = resolved_chain if resolved_chain else initial_chain
@@ -1094,6 +1163,11 @@ async def run_agent(
     evm_wallet, solana_wallet = _split_wallet_context(body.user_address, body.solana_address)
     effective_chain_id = _infer_runtime_chain_id(body.chain_id, getattr(body, "wallet_type", None), evm_wallet, solana_wallet)
 
+    # ── Price questions (the most common ask) — deterministic, typo-tolerant ──
+    direct_price_result = _try_direct_price(direct_query)
+    if direct_price_result:
+        return {"session_id": body.session_id, "chat_id": getattr(body, "chat_id", None), "response": direct_price_result}
+
     # ── Try direct balance handling for common wallet balance prompts ────────
     direct_balance_result = _try_direct_balance(direct_query, evm_wallet, solana_wallet)
     if direct_balance_result:
@@ -1359,6 +1433,7 @@ async def run_agent(
                 solana_address=solana_wallet,
                 chain_id=effective_chain_id,
                 openrouter_model=model,
+                user_query=direct_query,
             )
             result = await asyncio.wait_for(
                 agent.ainvoke({"input": effective_query}),
@@ -1547,3 +1622,98 @@ async def bridge_status(order_id: str):
 
     status = str((data or {}).get("status") or "Unknown")
     return {"order_id": order_id, "status": status}
+
+
+# ── Transaction activity log ────────────────────────────────────────────────
+# Record-on-sign history of the user's interactions with the protocol
+# (swaps / bridges / transfers / stakes / LPs). The web POSTs here right after
+# the wallet signs (it has the signature/hash by then); the Activity view GETs
+# the list back, keyed by wallet.
+
+class TransactionCreate(BaseModel):
+    wallet: str
+    kind: str  # swap | bridge | transfer | stake | lp
+    status: Optional[str] = "sent"
+    chain: Optional[str] = None
+    dst_chain: Optional[str] = None
+    from_token: Optional[str] = None
+    to_token: Optional[str] = None
+    from_amount: Optional[str] = None
+    to_amount: Optional[str] = None
+    signature: Optional[str] = None
+    order_id: Optional[str] = None
+    explorer_url: Optional[str] = None
+
+
+_TX_EXPLORER = {
+    "solana": "https://solscan.io/tx/",
+    "ethereum": "https://etherscan.io/tx/",
+    "bsc": "https://bscscan.com/tx/",
+    "polygon": "https://polygonscan.com/tx/",
+    "arbitrum": "https://arbiscan.io/tx/",
+    "optimism": "https://optimistic.etherscan.io/tx/",
+    "base": "https://basescan.org/tx/",
+    "avalanche": "https://snowtrace.io/tx/",
+}
+
+
+def _default_explorer_url(chain: Optional[str], signature: Optional[str]) -> Optional[str]:
+    if not signature:
+        return None
+    base = _TX_EXPLORER.get((chain or "").strip().lower())
+    return f"{base}{signature}" if base else None
+
+
+@router.post("/transactions")
+async def create_transaction(body: TransactionCreate, db: Session = Depends(get_db)) -> dict:
+    wallet = (body.wallet or "").strip()
+    if not wallet:
+        raise HTTPException(status_code=400, detail="wallet is required")
+    if not (body.kind or "").strip():
+        raise HTTPException(status_code=400, detail="kind is required")
+
+    # Idempotency: if this signature is already logged for the wallet, return it
+    # instead of inserting a duplicate (the web may retry the POST).
+    if body.signature:
+        existing = (
+            db.query(Transaction)
+            .filter(Transaction.wallet == wallet, Transaction.signature == body.signature)
+            .first()
+        )
+        if existing:
+            return existing.to_dict()
+
+    tx = Transaction(
+        wallet=wallet,
+        kind=body.kind.strip().lower(),
+        status=(body.status or "sent").strip().lower(),
+        chain=body.chain,
+        dst_chain=body.dst_chain,
+        from_token=body.from_token,
+        to_token=body.to_token,
+        from_amount=body.from_amount,
+        to_amount=body.to_amount,
+        signature=body.signature,
+        order_id=body.order_id,
+        explorer_url=body.explorer_url or _default_explorer_url(body.chain, body.signature),
+    )
+    db.add(tx)
+    db.commit()
+    db.refresh(tx)
+    return tx.to_dict()
+
+
+@router.get("/transactions")
+async def list_transactions(wallet: str, limit: int = 50, db: Session = Depends(get_db)) -> dict:
+    wallet = (wallet or "").strip()
+    if not wallet:
+        raise HTTPException(status_code=400, detail="wallet is required")
+    limit = max(1, min(int(limit or 50), 200))
+    rows = (
+        db.query(Transaction)
+        .filter(Transaction.wallet == wallet)
+        .order_by(Transaction.created_at.desc(), Transaction.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return {"wallet": wallet, "transactions": [r.to_dict() for r in rows]}

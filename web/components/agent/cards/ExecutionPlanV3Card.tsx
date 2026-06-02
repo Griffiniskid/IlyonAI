@@ -98,6 +98,9 @@ function StepRow({
             to: tx.to,
             data: tx.data,
             value: tx.value ?? undefined,
+            // Sent to the wallet (chain-switch + gas); ignored by the hash.
+            gas: (tx as { gas?: string | null }).gas ?? undefined,
+            chainId: (tx as { chain_id?: number | null }).chain_id ?? undefined,
           },
           simTimestamp: simAt,
           expectedCalldataHash: simHash,

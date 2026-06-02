@@ -56,9 +56,9 @@ _MORALIS_CHAINS: Final[dict[str, str]] = {
 
 # Fallback RPC URLs when not present in settings.rpc_urls
 _RPC_FALLBACK: Final[dict[int, str]] = {
-    1:   "https://rpc.ankr.com/eth",
-    56:  "https://rpc.ankr.com/bsc",
-    137: "https://rpc.ankr.com/polygon",
+    1:   "https://eth.drpc.org",
+    56:  "https://bsc-dataseed.binance.org",
+    137: "https://polygon-bor-rpc.publicnode.com",
 }
 
 # (1inch constants removed — using Enso for EVM swaps)
@@ -497,7 +497,7 @@ def _build_llm(openrouter_model: Optional[str] = None):
 _BALANCE_CHAINS: Final[list[dict]] = [
     {
         "name": "Ethereum",
-        "rpcs": ["https://eth.llamarpc.com", "https://ethereum.publicnode.com"],
+        "rpcs": ["https://eth.drpc.org", "https://ethereum-rpc.publicnode.com", "https://1rpc.io/eth", "https://rpc.flashbots.net"],
         "native": "ETH",
         "tokens": [
             ("USDC", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", 6),
@@ -1216,7 +1216,19 @@ def _get_token_price(token_input: str) -> str:
     """
     cleaned = token_input.strip().strip('"\'')
     symbol = cleaned.upper()
-    coin_id = cleaned.lower()
+    # CoinGecko needs the coin ID, not the ticker (SOL → "solana"). Map common
+    # symbols so the CoinGecko fallback actually works when Binance is down.
+    _CG_ID = {
+        "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "BNB": "binancecoin",
+        "XRP": "ripple", "ADA": "cardano", "DOGE": "dogecoin", "AVAX": "avalanche-2",
+        "MATIC": "matic-network", "POL": "matic-network", "LINK": "chainlink",
+        "DOT": "polkadot", "ATOM": "cosmos", "ARB": "arbitrum", "OP": "optimism",
+        "JUP": "jupiter-exchange-solana", "PYTH": "pyth-network", "RAY": "raydium",
+        "ORCA": "orca", "CAKE": "pancakeswap-token", "UNI": "uniswap", "AAVE": "aave",
+        "CRV": "curve-dao-token", "LDO": "lido-dao", "WBTC": "wrapped-bitcoin",
+        "WETH": "weth", "PEPE": "pepe", "SUI": "sui", "APT": "aptos", "TIA": "celestia",
+    }
+    coin_id = _CG_ID.get(symbol, cleaned.lower())
 
     if symbol in {"USDT", "USDC", "DAI", "BUSD", "FDUSD"}:
         return f"{symbol}/USD = $1.0000 (stablecoin)"
@@ -1514,7 +1526,7 @@ def _resolve_token_metadata(
 # Public RPCs for pre-sign eth_call simulation. Same map across all simulate
 # call sites; keep in sync with the inline _chain_rpcs blocks above.
 _SIM_RPCS_BY_CHAIN: dict[int, list[str]] = {
-    1:     ["https://eth.llamarpc.com", "https://rpc.ankr.com/eth"],
+    1:     ["https://eth.drpc.org", "https://ethereum-rpc.publicnode.com", "https://1rpc.io/eth"],
     10:    ["https://mainnet.optimism.io"],
     56:    ["https://bsc-dataseed1.binance.org", "https://bsc-dataseed2.binance.org"],
     137:   ["https://polygon-rpc.com"],
@@ -1633,7 +1645,7 @@ def _build_enso_swap_tx(
             # Native balance via RPC — free, no Moralis needed
             _chain_rpcs = {
                 56: ["https://bsc-dataseed1.binance.org", "https://bsc-dataseed2.binance.org"],
-                1: ["https://eth.llamarpc.com", "https://rpc.ankr.com/eth"],
+                1: ["https://eth.drpc.org", "https://ethereum-rpc.publicnode.com", "https://1rpc.io/eth"],
                 137: ["https://polygon-rpc.com"],
                 43114: ["https://api.avax.network/ext/bc/C/rpc"],
                 42161: ["https://arb1.arbitrum.io/rpc"],
@@ -1686,7 +1698,7 @@ def _build_enso_swap_tx(
             balance_of_data = "0x70a08231" + "0" * 24 + from_addr[2:].lower()
             _chain_rpcs = {
                 56: ["https://bsc-dataseed1.binance.org", "https://bsc-dataseed2.binance.org"],
-                1: ["https://eth.llamarpc.com", "https://rpc.ankr.com/eth"],
+                1: ["https://eth.drpc.org", "https://ethereum-rpc.publicnode.com", "https://1rpc.io/eth"],
                 137: ["https://polygon-rpc.com"],
                 43114: ["https://api.avax.network/ext/bc/C/rpc"],
                 42161: ["https://arb1.arbitrum.io/rpc"],
@@ -2260,10 +2272,20 @@ Choose tools based on intent — you are an intelligent advisor, not a router. C
   Example: {{{{"token_in":"USDC","pool_address":"0xABC...","amount":"5000000","chain_id":1}}}}
 
 • build_bridge_tx — Bridge tokens between chains via deBridge DLN.
-  Input: JSON with token_in, amount, src_chain_id, dst_chain_id, token_out (optional).
+  Input: JSON with token_in, amount, src_chain_id, dst_chain_id, token_out (optional),
+  recipient (optional destination address).
   Chain IDs: Ethereum=1, BSC=56, Polygon=137, Arbitrum=42161, Base=8453, Optimism=10, Solana=7565164.
   For Phantom/Solana bridge requests, use Solana as the source chain when the user is bridging SOL.
-  Example: {{{{"token_in":"USDC","amount":"5000000","src_chain_id":1,"dst_chain_id":42161}}}}
+  CRITICAL — CROSS-VM RECIPIENT: A bridge that crosses virtual machines (Solana ↔ any
+  EVM chain) lands at a DIFFERENT address than the source wallet — the source wallet
+  CANNOT receive on the other chain. When the user provides a destination address
+  anywhere in the message (a 0x… address for an EVM destination, or a base58 address
+  for a Solana destination), you MUST pass it as `recipient`. If the user does NOT
+  provide one for a cross-VM bridge, do NOT call this tool — instead ask the user for
+  the destination address in plain text (see REQUEST VALIDITY). Same-VM EVM↔EVM bridges
+  may omit recipient (one 0x address is valid on every EVM chain).
+  Example (cross-VM with address): {{{{"token_in":"USDC","amount":"5000000","src_chain_id":7565164,"dst_chain_id":56,"recipient":"0xYourBnbAddress"}}}}
+  Example (same-VM): {{{{"token_in":"USDC","amount":"5000000","src_chain_id":1,"dst_chain_id":42161}}}}
 
 • build_transfer_tx — Build a token transfer/send transaction.
   Input: JSON with token_symbol, amount, to_address, chain_id.
@@ -2312,6 +2334,30 @@ When the user asks for multiple actions in one message (e.g. "swap X and then br
 6. NEVER return raw transaction JSON for compound actions — always use plain text so the user can choose the order.
 
 For single-action requests, follow the normal rules below.
+
+━━━ REQUEST VALIDITY — REFUSE LOGICALLY-INCOMPLETE / INCORRECT REQUESTS ━━━
+
+Before building ANY signable transaction, check the request is logically complete and
+coherent. If it is NOT, do NOT call a build_* tool and do NOT return a transaction to
+sign. Instead reply in plain text: name the mistake, explain why it can't proceed, and
+ask for the missing or corrected detail. It is far better to ask than to hand the user a
+transaction that sends funds to the wrong place or reverts.
+
+Refuse (ask, don't build) when, for example:
+- A cross-chain bridge crosses virtual machines (Solana ↔ EVM) but NO destination address
+  is given. The source wallet CANNOT receive on the other chain — the user must supply the
+  destination address (a 0x… address for EVM, a base58 address for Solana). Never silently
+  default the recipient for a cross-VM bridge.
+- A recipient/destination address does not match the destination chain's format
+  (e.g. a Solana base58 address given as the recipient of an EVM bridge, or vice-versa).
+- A required field is missing or nonsensical: no amount, zero/negative amount, an amount
+  larger than the balance for a fixed-amount request, unknown/unspecified token, or the
+  source and destination chain/token are identical for a "bridge".
+- The action contradicts itself (e.g. "swap USDC to USDC", "bridge to the same chain").
+
+When you refuse, be specific and helpful: state exactly what is missing or wrong and give
+a corrected example the user can copy (e.g. "bridge 5 USDC from Solana to your BNB address
+0x… — reply with that address"). Do NOT loop trying other tools.
 
 ━━━ RESPONSE FORMAT RULES (CRITICAL) ━━━
 
@@ -2922,7 +2968,32 @@ def _build_deposit_lp_tx(raw: str, user_address: str, default_chain_id: int) -> 
 # ---------------------------------------------------------------------------
 
 
-def _build_bridge_tx(raw: str, user_address: str, default_chain_id: int, solana_address: str = "") -> str:
+_BRIDGE_RCPT_EVM_RE = re.compile(r"\b(0x[0-9a-fA-F]{40})\b")
+_BRIDGE_RCPT_SOL_RE = re.compile(
+    r"(?:to|address|recipient|wallet)\s+(?:address\s+)?([1-9A-HJ-NP-Za-km-z]{32,44})\b",
+    re.IGNORECASE,
+)
+_BRIDGE_RCPT_NOISE = {"solana", "ethereum", "arbitrum", "optimism", "avalanche", "polygon", "bnb", "base"}
+
+
+def _extract_recipient_from_text(text: str, dst_is_solana: bool) -> str:
+    """Pull the destination address the user typed straight out of their
+    message. The ReAct LLM frequently drops the `recipient` arg even when the
+    user named an address, so we recover it deterministically. EVM destinations
+    take a 0x… address; Solana destinations take a base58 address (only after a
+    preposition, to avoid matching token symbols)."""
+    if not text:
+        return ""
+    if dst_is_solana:
+        m = _BRIDGE_RCPT_SOL_RE.search(text)
+        if m and m.group(1).lower() not in _BRIDGE_RCPT_NOISE:
+            return m.group(1)
+        return ""
+    m = _BRIDGE_RCPT_EVM_RE.search(text)
+    return m.group(1) if m else ""
+
+
+def _build_bridge_tx(raw: str, user_address: str, default_chain_id: int, solana_address: str = "", user_query: str = "") -> str:
     """
     Build a cross-chain bridge transaction via deBridge DLN API.
     Input JSON keys: token_in (str), amount (str in wei), src_chain_id (int),
@@ -2948,6 +3019,18 @@ def _build_bridge_tx(raw: str, user_address: str, default_chain_id: int, solana_
     if not sender:
         sender = user_address.strip() if src_chain != _DEBRIDGE_SOLANA_CHAIN_ID else sol_wallet
     recipient = params.get("recipient", "").strip()
+    recipient_explicit = bool(recipient)
+    # Deterministic recipient recovery: the ReAct LLM often omits `recipient`
+    # even when the user typed a destination address. Recover it from the raw
+    # user message so a cross-VM bridge to a named address proceeds instead of
+    # being stuck behind the cross-VM refusal.
+    if not recipient_explicit and user_query:
+        _recovered = _extract_recipient_from_text(
+            user_query, dst_chain == _DEBRIDGE_SOLANA_CHAIN_ID
+        )
+        if _recovered:
+            recipient = _recovered
+            recipient_explicit = True
     if not recipient:
         recipient = sol_wallet if dst_chain == _DEBRIDGE_SOLANA_CHAIN_ID else evm_wallet
 
@@ -2970,6 +3053,30 @@ def _build_bridge_tx(raw: str, user_address: str, default_chain_id: int, solana_
         return json.dumps({
             "status": "error",
             "message": f"No {dst_chain_name} destination wallet connected. Please connect {'Phantom' if dst_chain == _DEBRIDGE_SOLANA_CHAIN_ID else 'MetaMask'} on the destination side or provide a recipient address.",
+        })
+
+    # Cross-VM bridges (Solana ↔ EVM) deliver to a DIFFERENT address than the
+    # source wallet — the source keypair cannot receive on the other VM. If the
+    # user did not name a destination, REFUSE rather than silently defaulting to
+    # an auto-derived wallet they may not control (logically-incomplete request:
+    # "bridge from Solana to BNB" never said WHERE on BNB). Same-VM EVM↔EVM keeps
+    # the auto-derive — one 0x address is valid on every EVM chain.
+    src_is_sol = src_chain == _DEBRIDGE_SOLANA_CHAIN_ID
+    dst_is_sol = dst_chain == _DEBRIDGE_SOLANA_CHAIN_ID
+    if (src_is_sol != dst_is_sol) and not recipient_explicit:
+        _src_label = _bridge_chain_label(src_chain)
+        _dst_label = _bridge_chain_label(dst_chain)
+        _kind = "a Solana" if dst_is_sol else "an EVM (0x…)"
+        _tok = (token_in or "tokens").upper()
+        return json.dumps({
+            "status": "error",
+            "message": (
+                f"You didn't give a destination address. Bridging {_src_label} → {_dst_label} "
+                f"sends funds to {_kind} address — NOT your {_src_label} wallet, which cannot "
+                f"receive on {_dst_label}. I can send to your connected {_dst_label} wallet "
+                f"{recipient} — if that is correct, re-issue with it explicit: "
+                f"\"bridge {_tok} to {recipient}\". Otherwise reply with the right destination address."
+            ),
         })
 
     if src_chain == _DEBRIDGE_SOLANA_CHAIN_ID and not _is_valid_solana_address(sender):
@@ -3022,7 +3129,7 @@ def _build_bridge_tx(raw: str, user_address: str, default_chain_id: int, solana_
         else:
             _chain_rpcs = {
                 56: ["https://bsc-dataseed1.binance.org"],
-                1: ["https://eth.llamarpc.com"],
+                1: ["https://eth.drpc.org", "https://ethereum-rpc.publicnode.com"],
                 137: ["https://polygon-rpc.com"],
                 43114: ["https://api.avax.network/ext/bc/C/rpc"],
                 42161: ["https://arb1.arbitrum.io/rpc"],
@@ -3217,6 +3324,14 @@ def _build_bridge_tx(raw: str, user_address: str, default_chain_id: int, solana_
             "dst_amount_display": round(dst_amount_display, 6),
             "route_summary": "deBridge DLN",
             "platform_fee_bps": 0,
+            # Destination recipient — surfaced so the UI shows the user EXACTLY
+            # which address receives the funds on the destination chain (a
+            # cross-VM bridge lands at a DIFFERENT address than the source
+            # wallet, so this must be confirmable before signing).
+            "recipient": recipient,
+            "sender": sender,
+            "recipient_explicit": recipient_explicit,
+            "cross_vm": True,  # solana source → EVM dest is always cross-VM
             "order_id": data.get("orderId", ""),
             "estimated_fill_time_seconds": estimated_fill_time_seconds,
             "estimated_fee_display": estimated_fee_display,
@@ -3257,6 +3372,12 @@ def _build_bridge_tx(raw: str, user_address: str, default_chain_id: int, solana_
         "dst_amount_display": round(dst_amount_display, 6),
         "route_summary": "deBridge DLN",
         "platform_fee_bps": 0,
+        # Destination recipient — surfaced so the UI shows the user EXACTLY
+        # which address receives the funds on the destination chain.
+        "recipient": recipient,
+        "sender": sender,
+        "recipient_explicit": recipient_explicit,
+        "cross_vm": dst_chain == _DEBRIDGE_SOLANA_CHAIN_ID,
         "order_id": data.get("orderId", ""),
         "estimated_fill_time_seconds": estimated_fill_time_seconds,
         "estimated_fee_display": estimated_fee_display,
@@ -4258,7 +4379,30 @@ def _get_solana_mint_decimals(mint: str) -> int:
     return 9
 
 
-def build_solana_swap(raw: str) -> str:
+_SOL_MINT_IN_TEXT_RE = re.compile(r"\b([1-9A-HJ-NP-Za-km-z]{32,44})\b")
+_SOL_SWAP_FILLER = {"this", "that", "it", "token", "tokens", "coin", "the", "mint", "address", "ca"}
+
+
+def _looks_like_sol_mint(token: str) -> bool:
+    t = (token or "").strip()
+    return t.lower() in _SOL_MINTS or (32 <= len(t) <= 44 and t.isalnum() and not t.startswith("0x"))
+
+
+def _extract_sol_mint_from_text(text: str) -> str:
+    """Pull a pasted SPL mint address out of the user's message. Used when the
+    LLM grabs a filler word ('this token') as the buy/sell token and drops the
+    mint the user actually pasted (e.g. a pump.fun address)."""
+    if not text:
+        return ""
+    for cand in _SOL_MINT_IN_TEXT_RE.findall(text):
+        if cand.lower() in _SOL_MINTS:
+            continue  # a known symbol alias, not the pasted mint
+        if 32 <= len(cand) <= 44 and not cand.startswith("0x"):
+            return cand
+    return ""
+
+
+def build_solana_swap(raw: str, user_query: str = "") -> str:
     """
     Build a ready-to-sign Solana swap transaction via Jupiter API v6.
 
@@ -4293,6 +4437,15 @@ def build_solana_swap(raw: str) -> str:
         user_pubkey = str(params.get("user_pubkey") or "").strip()
     except (KeyError, ValueError) as exc:
         return _solana_swap_error(f"Missing or invalid parameter: {exc}")
+
+    # Recover a pasted mint: the LLM frequently grabs a filler word ("this",
+    # "that token") as buy_token and drops the SPL mint address the user pasted
+    # ("swap 5 USDC for this token <mint>"). Understand the intent — pull the
+    # mint straight from the message instead of erroring on "Unknown token THIS".
+    if user_query and (buy_token.strip().lower() in _SOL_SWAP_FILLER or not _looks_like_sol_mint(buy_token)):
+        _mint = _extract_sol_mint_from_text(user_query)
+        if _mint:
+            buy_token = _mint
 
     # ── Validate user_pubkey ─────────────────────────────────────────────────
     if not user_pubkey or len(user_pubkey) < 32:
@@ -4357,6 +4510,11 @@ def build_solana_swap(raw: str) -> str:
                 "outputMint":  output_mint,
                 "amount":      sell_amount,
                 "slippageBps": 50,   # 0.5 % slippage
+                # No platform fee: the public Jupiter proxy otherwise injects a
+                # platformFee into the quote, and /swap then HARD-REJECTS with
+                # "feeAccount is required for swap with platformFee" (we have no
+                # fee account configured). Explicitly disable it so the swap builds.
+                "platformFeeBps": 0,
             },
             timeout=15,
         )
@@ -4379,6 +4537,11 @@ def build_solana_swap(raw: str) -> str:
     raw_out_amount = int(quote.get("outAmount", 0))
     out_decimals   = _get_solana_mint_decimals(output_mint)
     ui_out_amount  = round(raw_out_amount / (10 ** out_decimals), 5)
+
+    # Strip any platform fee the quote proxy injected — without a configured
+    # feeAccount, leaving it in makes /swap reject the request.
+    if isinstance(quote, dict):
+        quote.pop("platformFee", None)
 
     # ── Step 2: Swap transaction ─────────────────────────────────────────────
     try:
@@ -4961,6 +5124,7 @@ def build_agent(
     chain_id: int,
     openrouter_model: Optional[str] = None,
     solana_address: str = "",
+    user_query: str = "",
 ) -> AgentExecutor:
     """
     Returns a ZERO_SHOT_REACT_DESCRIPTION AgentExecutor bound to `session_id`.
@@ -5094,7 +5258,7 @@ def build_agent(
         ),
         Tool(
             name="build_solana_swap",
-            func=lambda raw: build_solana_swap(raw),
+            func=lambda raw: build_solana_swap(raw, user_query=user_query),
             description=(
                 "Builds a ready-to-sign Solana swap transaction using Jupiter API v6 (no fees). "
                 "Use this tool WHENEVER the user wants to swap tokens and a Solana/Phantom wallet is connected. "
@@ -5146,7 +5310,7 @@ def build_agent(
         ),
         Tool(
             name="build_bridge_tx",
-            func=lambda raw: _build_bridge_tx(raw, user_address, chain_id, solana_address),
+            func=lambda raw: _build_bridge_tx(raw, user_address, chain_id, solana_address, user_query=user_query),
             return_direct=True,
             description=(
                 "Builds a cross-chain bridge transaction via deBridge DLN. "

@@ -176,6 +176,24 @@ async def build_yield_execution_plan(
         or ""
     )
 
+    # ── Action normalization for AMM LP pools ──────────────────────────────
+    # A V2 AMM pool (Uniswap-V2 / PancakeSwap / Sushi …) can't be "supplied"
+    # to — that's a lending verb. Depositing into a V2 AMM IS providing
+    # liquidity. Various upstream detectors classify "deposit into pool <id>"
+    # as action="supply" (the pool's DefiLlama symbol is often a single token,
+    # so the LP heuristic misses), which then hits the lending gate and
+    # link-only's a pool that the Enso zap can actually execute. Normalize here
+    # — the ONE point every routing path funnels through — so it can't drift.
+    from src.agent.protocol_urls import V2_LP_EXEC_PROTOCOLS as _V2_LP
+    if (protocol or "").lower() in _V2_LP and (action or "").lower() in {"supply", "deposit", "lend"}:
+        action = "deposit_lp"
+
+    # NOTE: the reliable-set + POOL_EXEC_ENABLED deposit gate lives at the
+    # canonical pool-link gate further down (search "Execution is gated to the
+    # fork-PROVEN reliable set"), AFTER the verb-inversion (drain), cross-chain,
+    # intent-mismatch and chain-mismatch guards — so a deposit deep-link can
+    # never short-circuit those safety guards. Do NOT re-add an early gate here.
+
     # BUG-RC-001 — protocol-name guard. When the user explicitly named a
     # protocol family in the message ("Aave V3", "Compound", "Fluid",
     # "Spark", etc.) but the dispatcher selected a DIFFERENT protocol,
@@ -1177,6 +1195,14 @@ async def build_yield_execution_plan(
     # pool on the protocol app. Solana flows pass through (sidecar adapters
     # handle pair-aware prep + sim themselves).
     _cap = get_exec_capability(protocol, chain, action)
+    # Deep-link only the pool TYPES the capability helper marks `link_only`
+    # (V3 EVM LPs, generic V2 EVM LPs, non-Aave EVM supply, non-LST stake).
+    # This runs AFTER the verb-inversion (drain), cross-chain, intent-mismatch
+    # and chain-mismatch guards above, so a deposit deep-link can never bypass
+    # them. The reliable-set + POOL_EXEC_ENABLED master gate lives in the
+    # user-facing executor (execute_pool_position) — NOT here: this builder is
+    # called directly to construct plans (blockers, verb refusals, recovery),
+    # and gating it on the kill-switch would swallow all of that.
     if _cap["mode"] == "link_only":
         extra_dict = extra or {}
         url = pool_protocol_url(
@@ -1193,62 +1219,35 @@ async def build_yield_execution_plan(
             pool_id=extra_dict.get("pool_id"),
         )
 
-        # V3 / CLMM pools get the interactive range card with live APR math.
-        # Other pool types (V2, stable, vault) keep the bare pool_link redirect.
+        # V3 / CLMM pools → clean deep-link (Phase 1 decision). A V3 position
+        # is an NFT minted into a price range — no fungible LP token, so it
+        # can't be a single-token Enso zap. One "Open on <protocol>" button
+        # instead of the old multi-signature plan or the range-selector card.
         if kind_hint == "v3":
-            pool_symbol = extra_dict.get("pool_symbol") or asset_in or ""
-            # Parse pair from pool_symbol when available, else default to USDC/<asset>.
-            sym_parts = [s for s in pool_symbol.replace("/", "-").split("-") if s]
-            t0 = sym_parts[0].upper() if len(sym_parts) >= 1 else (asset_in or "USDC").upper()
-            t1 = sym_parts[1].upper() if len(sym_parts) >= 2 else "WETH"
-            decimals_map = {"USDC": 6, "USDT": 6, "DAI": 18, "WETH": 18, "ETH": 18,
-                             "WSOL": 9, "SOL": 9, "WBTC": 8, "BTC": 8, "BNB": 18}
-            apy_pct = float(extra_dict.get("apy") or 0.0)
-            current_price_hint = float(extra_dict.get("current_price") or 1.0)
-            v3_card = {
-                "card_type": "pool_deposit_v3",
-                "card_id": f"v3-{protocol}-{(extra_dict.get('pool_id') or pool_symbol)[:24]}",
-                "chain": chain,
+            v3_link = {
+                "card_type": "pool_link",
+                "title": f"{protocol.title()} · Open to add liquidity",
                 "protocol": protocol,
-                "pool_address": extra_dict.get("pool_address") or extra_dict.get("poolAddress") or "",
-                "pair": {
-                    "token0": {"symbol": t0, "decimals": decimals_map.get(t0, 18), "address": None},
-                    "token1": {"symbol": t1, "decimals": decimals_map.get(t1, 18), "address": None},
-                },
-                "current": {
-                    "price_human": f"1 {t0} ≈ {current_price_hint:.4f} {t1}",
-                    "current_price": current_price_hint,
-                    "sqrt_price_x96": extra_dict.get("sqrt_price_x96"),
-                    "tick": extra_dict.get("current_tick"),
-                    "tvl_usd": extra_dict.get("tvl_usd"),
-                    "vol_24h_usd": extra_dict.get("vol_24h_usd"),
-                    "fee_tier_bps": extra_dict.get("fee_tier_bps"),
-                    "tick_spacing": extra_dict.get("tick_spacing"),
-                },
-                "market": {
-                    "base_apr_pct": apy_pct,
-                    "reward_apr_pct": float(extra_dict.get("reward_apr") or 0.0),
-                    "cdf_30d": extra_dict.get("cdf_30d") or [],
-                },
-                "input_token": {
-                    "symbol": (asset_in or "USDC").upper(),
-                    "decimals": decimals_map.get((asset_in or "USDC").upper(), 18),
-                    "address": None,
-                },
-                "input_amount_human": str(amount),
-                "input_amount_usd": float(amount),
-                "initial_range": {"preset": "balanced", "lower_pct": -10.0, "upper_pct": 10.0},
-                "initial_steps": [],
-                "rebuild_endpoint": "/api/v1/pool/rebuild",
-                "protocol_url": url,
-                "finalize_externally": True,
+                "chain": chain,
+                "pool_kind": "v3",
+                "pool_symbol": extra_dict.get("pool_symbol") or asset_in,
+                "pool_id": extra_dict.get("pool_id"),
+                "pool_address": extra_dict.get("pool_address") or extra_dict.get("poolAddress"),
+                "apy_pct": extra_dict.get("apy"),
+                "tvl_usd": extra_dict.get("tvl_usd"),
+                "underlying_tokens": extra_dict.get("underlying_tokens") or extra_dict.get("underlyingTokens"),
+                "url": url,
+                "amount": str(amount),
+                "asset_in": asset_in,
+                "amount_is_usd": bool(extra_dict.get("amount_is_usd")),
+                "exec_status": "link_only",
                 "notice": (
-                    f"{protocol.title()} V3 concentrated liquidity — adjust the range to see "
-                    "live APR / capital efficiency / in-range probability. Range NFT mint "
-                    "currently finalizes on the protocol app (in-chat mint lands in Phase 4)."
+                    f"{protocol.title()} is a concentrated-liquidity (V3) pool — the "
+                    "position is an NFT minted into a price range, so it can't be a "
+                    "one-tap deposit. Open the protocol app to pick a range and mint."
                 ),
             }
-            return ok_envelope(data=v3_card, card_type="pool_deposit_v3", card_payload=v3_card)
+            return ok_envelope(data=v3_link, card_type="pool_link", card_payload=v3_link)
 
         card = {
             "card_type": "pool_link",
@@ -1413,19 +1412,23 @@ async def build_yield_execution_plan(
     adapter = registry.adapter_for(chain=chain, protocol=protocol, action=action)
     assert adapter is not None  # registry.find succeeded above
 
-    # EVM V2-AMM LP: prefer the Enso zap adapter over the native dual-token
-    # adapter, which demands amounts for BOTH legs (USDT *and* WBNB). Enso takes
-    # ONE token and bundles swap+add into a single signable tx. Scoped to V2 AMMs
-    # only — Curve/Balancer/Aerodrome/vaults keep their existing (working)
-    # adapter path, and V3/CLMM keeps its own (needs a range, not a zap).
-    _V2_AMM_PROTOS = {
+    # EVM LP: prefer the Enso zap adapter over the native dual-token / stable
+    # adapters. Enso takes ONE token and bundles swap+add into a single
+    # signable tx, AND handles slippage internally — the native Curve
+    # add_liquidity ("Slippage screwed you") and V2 dual-leg adapters revert on
+    # a funded mainnet fork because their min-out amounts are miscalculated.
+    # Scoped to V2 AMMs + Curve/Balancer stable LPs. V3/CLMM is NOT here (it's
+    # a range-NFT mint, no fungible LP token → Enso 404s; keeps native NFPM).
+    _ENSO_LP_PROTOS = {
         "pancakeswap", "pancakeswap-amm", "pancakeswap-v2", "pancake",
         "uniswap-v2", "univ2", "sushiswap", "sushiswap-v2", "sushi",
         "quickswap", "camelot", "baseswap", "trader-joe", "traderjoe", "spookyswap",
+        "curve", "curve-dex", "curve-finance", "convex",
+        "balancer", "balancer-v2", "aerodrome", "velodrome",
     }
     if (chain.lower() not in {"solana", "sol"}
             and action in {"deposit_lp", "provide_liquidity", "add_liquidity"}
-            and (protocol or "").lower() in _V2_AMM_PROTOS):
+            and (protocol or "").lower() in _ENSO_LP_PROTOS):
         from src.defi.execution.adapters.enso_shortcut import EnsoShortcutAdapter
         _enso = EnsoShortcutAdapter()
         if _enso.supports(chain=chain, protocol=protocol, action=action).supported:
@@ -2150,6 +2153,11 @@ async def build_yield_execution_plan(
             _have = float(_wallet_balances.get(_sym_up, 0.0))
             if _have < _required and _sym_up not in _shortfall_emitted:
                 _shortfall_emitted.add(_sym_up)
+                # Only reached when the scan returned data (_balances_known) AND
+                # reports a genuine shortfall — a flaky/unreachable scan is
+                # already treated as UNKNOWN above and skipped. A confirmed
+                # shortfall hard-blocks so the user never signs a tx that will
+                # revert and waste gas.
                 plan.add_blocker(ExecutionBlocker(
                     code="INSUFFICIENT_BALANCE",
                     severity="blocker",

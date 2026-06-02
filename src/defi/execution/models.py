@@ -107,8 +107,82 @@ class UnsignedStepTransaction:
     # Tables. The hardware-wallet preflight check refuses to surface such
     # plans to Ledger/Trezor/Keystone wallets that can't parse v0 messages.
     requires_alt: bool | None = None
+    # V7-047 — sign-time freshness + calldata-hash binding surfaced to the
+    # web signer. `useWalletSigning.ts` reads BOTH off `step.transaction`:
+    # `simulated_at` feeds the freshness gate and `simulated_calldata_hash`
+    # feeds the hash-bind. Without them the frontend sees `0`/empty and
+    # refuses every plan with "SIM_STALE: ... stale old" — i.e. no ready
+    # plan was ever signable. Stamped lazily at serialization so the
+    # timestamp reflects when the card is emitted (freshest possible).
+    simulated_at: float | None = None
+    simulated_calldata_hash: str | None = None
+
+    def _is_signable(self) -> bool:
+        if self.chain_kind == "evm":
+            return bool(self.to and self.data)
+        return bool(self.serialized)
+
+    @staticmethod
+    def _to_hex_qty(v: Any) -> Any:
+        """Coerce an EVM quantity (value / gas) to a canonical 0x-hex string.
+        `eth_sendTransaction` REJECTS decimal quantities with "Missing or
+        invalid parameters" — the Enso adapter emits a decimal `value` ("0")
+        while others emit hex ("0x0"), so normalize at this single choke point.
+        None stays None; non-numeric strings are left untouched."""
+        if v is None:
+            return None
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, int):
+            return hex(v)
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return v
+            if s.lower().startswith("0x"):
+                body = s[2:].lstrip("0") or "0"  # 0x000 → 0x0
+                return "0x" + body.lower()
+            if s.isdigit():
+                return hex(int(s))
+        return v
+
+    def _normalize_quantities(self) -> None:
+        """Idempotent: value/gas → canonical hex. Run before hashing so the
+        backend-stamped hash is over the SAME bytes the web signer hashes and
+        the wallet receives (keeps the calldata-hash-bind parity intact)."""
+        self.value = self._to_hex_qty(self.value)
+        self.gas = self._to_hex_qty(self.gas)
+
+    def stamp_simulation(self, *, now: float | None = None) -> None:
+        """Populate `simulated_calldata_hash` + `simulated_at` over the
+        EXACT fields the web signer hashes — `{to,data,value}` for EVM
+        (matches `computeCalldataHash` in web/lib/signer.ts), decoded bytes
+        for Solana (matches `hashSerializedBytes`). Idempotent: only stamps
+        a signable, not-yet-stamped tx."""
+        # Normalize quantities FIRST so the hash binds the hex form the wallet
+        # will actually receive (not a decimal that MetaMask would reject).
+        self._normalize_quantities()
+        if not self._is_signable() or self.simulated_calldata_hash is not None:
+            return
+        import time as _time
+        if self.chain_kind == "evm":
+            from src.defi.execution.state_machine import compute_calldata_hash
+            payload: dict[str, Any] = {"to": self.to, "data": self.data}
+            if self.value is not None:
+                payload["value"] = self.value
+            self.simulated_calldata_hash = compute_calldata_hash(payload)
+        else:
+            import base64
+            import hashlib
+            try:
+                raw = base64.b64decode(self.serialized or "")
+            except Exception:
+                raw = (self.serialized or "").encode("utf-8")
+            self.simulated_calldata_hash = hashlib.sha256(raw).hexdigest()
+        self.simulated_at = float(now if now is not None else _time.time())
 
     def to_dict(self) -> dict[str, Any]:
+        self.stamp_simulation()
         return {k: v for k, v in asdict(self).items() if v is not None}
 
 

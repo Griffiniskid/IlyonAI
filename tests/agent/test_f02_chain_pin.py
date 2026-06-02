@@ -146,9 +146,11 @@ async def test_aave_v3_on_solana_emits_unsupported_chain_blocker():
         f"F02 regression: no blocker emitted for Aave V3 on Solana — "
         f"the chain was likely silently coerced to ethereum. Plan: {plan}"
     )
+    # ExecutionPlanV3.add_blocker normalizes the raw `unsupported_chain` code
+    # to the canonical WALLET_CHAIN_MISMATCH (models._BLOCKER_CODE_ALIASES).
     blocker_codes = [b.get("code") for b in blockers]
-    assert "unsupported_chain" in blocker_codes, (
-        f"Expected `unsupported_chain` blocker; got {blocker_codes}"
+    assert "WALLET_CHAIN_MISMATCH" in blocker_codes, (
+        f"Expected chain-rejection blocker; got {blocker_codes}"
     )
 
     # Sanity: the plan summary must reference Solana — not ethereum.

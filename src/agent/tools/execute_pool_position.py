@@ -454,8 +454,19 @@ async def execute_pool_position(
         if _head in _POOL_NAME_ALIASES:
             pool_arg = " ".join([_POOL_NAME_ALIASES[_head], *_pool_parts[1:]])
 
+    from src.agent.pool_address_resolver import (
+        looks_like_onchain_pool_address,
+        resolve_pool_address,
+    )
+
     if _looks_like_pool_id(pool_arg):
         meta = await _fetch_pool_meta(pool_arg)
+    elif looks_like_onchain_pool_address(pool_arg):
+        # Real on-chain pool/pair contract address (what users paste from
+        # DexScreener/Etherscan). Resolve chain+protocol+tokens via DexScreener
+        # so a 0x…/base58 pool address executes instead of erroring or silently
+        # falling into an unrelated search result.
+        meta = await resolve_pool_address(pool_arg, chain_hint=chain)
     else:
         protocol_hint, pair_hint = _split_protocol_pair(pool_arg)
         # Infer chain from a Solana protocol head when not given so the
@@ -555,6 +566,56 @@ async def execute_pool_position(
     chain = _CHAIN_ALIASES.get(chain, chain)
     protocol = str(meta.get("project", "")).lower()
     pool_symbol = str(meta.get("symbol", ""))
+
+    # ── Exact-pool deep-link card — the universal fallback ─────────────────
+    # Built up front so BOTH the reliable-set gate (just below) and the
+    # verify-on-commit fallback (after the build, Phase B) can return it. It
+    # always lands on THIS exact pool on the protocol's own app (never a
+    # homepage), so a pool that can't be one-click executed still gives the
+    # user a working way in.
+    from src.agent.pool_deeplinks import pool_deeplink
+    _dl_addr = meta.get("pool_address") or meta.get("poolAddress")
+    _dl_under = meta.get("underlyingTokens") or meta.get("underlying_tokens") or []
+    _dl_uuid = str(meta.get("pool") or pool_arg)
+    _dl_url = pool_deeplink(
+        protocol=protocol,
+        chain=chain,
+        pool_id=_dl_uuid,
+        pool_address=_dl_addr,
+        symbol=pool_symbol,
+        underlying_tokens=_dl_under,
+    )
+    _dl_title = (protocol.replace("-", " ").title() or "Pool") + (f" · {pool_symbol}" if pool_symbol else "")
+    _dl_card = {
+        "card_type": "pool_link",
+        "title": _dl_title,
+        "protocol": protocol,
+        "chain": chain,
+        "pool_kind": "pool",
+        "pool_symbol": pool_symbol,
+        "pool_id": _dl_uuid,
+        "pool_address": _dl_addr,
+        "underlying_tokens": _dl_under,
+        "apy_pct": meta.get("apy"),
+        "tvl_usd": meta.get("tvlUsd") or meta.get("tvl_usd"),
+        "url": _dl_url,
+        "amount": str(amount),
+        "asset_in": asset_in,
+        "amount_is_usd": bool(amount_is_usd),
+        "exec_status": "link_only",
+        "notice": "Open this exact pool on the protocol app to add liquidity / deposit.",
+    }
+
+    def _emit_deeplink(notice: str | None = None):
+        _c = dict(_dl_card)
+        if notice:
+            _c["notice"] = notice
+        return ok_envelope(data=_c, card_type="pool_link", card_payload=_c)
+
+    # NOTE: the reliable-set execution gate runs AFTER the ASSET_POOL_MISMATCH
+    # preflight below — a user asking for an asset the pool can't accept must be
+    # refused (not silently deep-linked), so the asset-mismatch guard takes
+    # priority over the deep-link fallback.
 
     # Preserve the user's sub-variant when they explicitly named it. DefiLlama
     # collapses every Raydium variant into 'raydium-amm'; if the user asked
@@ -673,6 +734,27 @@ async def execute_pool_position(
                 card_type="execution_plan_v3",
                 card_payload=plan.to_dict(),
             )
+
+    # ── Reliable-set execution gate ────────────────────────────────────────
+    # Execution is master-gated by POOL_EXEC_ENABLED (default off → deep-link
+    # only, the safe state) and per-pool by the SHARED reliable-set check — the
+    # exact same logic the search EXECUTE badge uses, so badge and executor can
+    # never disagree. Anything off the verified set deep-links instead of
+    # building a signable plan. Runs AFTER the asset-mismatch preflight so a
+    # genuinely mismatched ask is refused rather than silently deep-linked.
+    from src.defi.execution.reliable_set import is_reliable_exec, pool_exec_enabled
+    _legs = [t for t in re.split(r"[-/_·]", pool_symbol.upper()) if t]
+    _exec_action = "deposit_lp" if len(_legs) >= 2 else "supply"
+    _reliable_ok, _reliable_reason = is_reliable_exec(
+        protocol=protocol, chain=chain, symbol=pool_symbol,
+        action=_exec_action, pool_id=_dl_uuid, strict_tokens=False,
+    )
+    if not (pool_exec_enabled() and _reliable_ok):
+        return _emit_deeplink()
+    # Reliable + enabled → fall through and build the signable plan. The
+    # verify-on-commit gate (Phase B, just before the build returns) ensures a
+    # Sign button is only ever shown when a fresh simulation passed; otherwise
+    # it degrades back to _emit_deeplink().
 
     # USD-denominated amount → native units conversion. When the user typed
     # "$100" or "with 100 USDC" but the pool's primary asset is non-stable
@@ -811,7 +893,19 @@ async def execute_pool_position(
         plan.add_blocker(_blocker)
         return ok_envelope(data={"plan": plan.to_dict()}, card_type="execution_plan_v3", card_payload=plan.to_dict())
 
-    is_lp = "-" in pool_symbol or "/" in pool_symbol
+    # LP detection. The symbol heuristic ("-"/"/" in the pair name) misses pools
+    # whose DefiLlama symbol is a single token (e.g. a PancakeSwap AMM pool that
+    # comes back as just "WBNB") — those wrongly became action="supply" and hit
+    # the lending gate → link_only. A pool with ≥2 underlying tokens, OR on a
+    # known AMM/DEX protocol, IS an LP regardless of how the symbol parsed.
+    from src.agent.protocol_urls import V2_LP_EXEC_PROTOCOLS, V3_PROTOCOLS
+    _under_legs = [t for t in (meta.get("underlyingTokens") or meta.get("underlying_tokens") or []) if t]
+    is_lp = (
+        "-" in pool_symbol or "/" in pool_symbol
+        or len(_under_legs) >= 2
+        or protocol in V2_LP_EXEC_PROTOCOLS
+        or protocol in V3_PROTOCOLS
+    )
     # Liquid-staking protocols need action="stake" (deposit SOL/ETH → receipt);
     # they reject "supply". Detect via the LST protocol set or a receipt symbol
     # that is a staked-base token (e.g. mSOL/jupSOL end with SOL, stETH with ETH).
@@ -851,6 +945,25 @@ async def execute_pool_position(
     if extra:
         extra_out.update(extra)
     extra = extra_out
+    # EVM V2-style AMM: the pool/pair contract IS the fungible LP token, so
+    # hand Enso the pair address as the explicit position_token. Without this,
+    # the Enso adapter tries to resolve a position via underlying tokens and
+    # fails for pools it doesn't index (e.g. SushiSwap by address →
+    # ADAPTER_BUILD_FAILED). With it, Enso bundles swap+add into one signable
+    # tx. Only when we actually have the pool address (address-resolved pools).
+    _V2_AMM_FOR_LP = {
+        "uniswap-v2", "univ2", "uniswap", "sushiswap", "sushiswap-v2", "sushi",
+        "pancakeswap-amm", "pancakeswap-v2", "pancakeswap", "pancake",
+        "quickswap", "camelot", "baseswap", "trader-joe", "traderjoe", "spookyswap",
+    }
+    _pool_addr_for_lp = meta.get("pool_address") or meta.get("poolAddress")
+    if (chain.lower() not in {"solana", "sol"}
+            and protocol.lower() in _V2_AMM_FOR_LP
+            and _pool_addr_for_lp
+            and isinstance(_pool_addr_for_lp, str)
+            and _pool_addr_for_lp.lower().startswith("0x")
+            and "position_token" not in extra):
+        extra["position_token"] = _pool_addr_for_lp
     if chain.lower() in {"solana", "sol"}:
         # Solana yield-builder accepts an optional `lpMint` to skip the
         # prep-swap and route a single one-tx deposit into the LP token.
@@ -879,7 +992,7 @@ async def execute_pool_position(
             if valid:
                 extra["lpMint"] = valid
 
-    return await build_yield_execution_plan(
+    _built = await build_yield_execution_plan(
         ctx,
         chain=chain,
         protocol=protocol,
@@ -891,3 +1004,27 @@ async def execute_pool_position(
         research_thesis=research_thesis or f"Direct deposit into {protocol} {pool_symbol} on {chain}.",
         extra=extra,
     )
+
+    # ── Verify-on-commit ───────────────────────────────────────────────────
+    # The build above already ran the pre-sign simulation; its status/blockers
+    # ARE the fresh verdict. A Sign button is only safe to show when the plan
+    # is `ready` or blocked solely by SOFT (user-fixable: balance/gas/stale)
+    # blockers — the wallet gates those at sign time. Any HARD failure
+    # (no calldata, adapter/route failure, revert) must NOT show a Sign button;
+    # degrade to the exact-pool deep-link so the worst case is a working link,
+    # never a broken signature. Same classifier the executability oracle uses.
+    try:
+        from src.defi.execution.executability_oracle import classify_plan
+        if getattr(_built, "ok", False) and getattr(_built, "card_type", None) == "execution_plan_v3":
+            _payload = getattr(_built, "card_payload", None)
+            _signable, _why = classify_plan(_payload)
+            if not _signable:
+                return _emit_deeplink(
+                    notice=f"Couldn't build a signable deposit right now ({_why}). "
+                    "Open this exact pool on the protocol app to deposit."
+                )
+    except Exception:
+        # Verification must never crash the request — on doubt, hand back the
+        # built envelope (the plan's own blockers still gate the UI).
+        pass
+    return _built

@@ -256,6 +256,10 @@ export interface DefiOpportunityItem {
   unsupported_reason?: string | null;
   links: DefiOpportunityLink[];
   pool_id?: string | null;
+  // On-chain pool contract address (when resolved) — rendered copyable so the
+  // user can find/deposit on the protocol app for non-executable pools.
+  pool_address?: string | null;
+  underlying_tokens?: string[] | null;
   // Exact-pool deep link (protocol-native when known, DefiLlama-exact fallback).
   // Used to render an "Open pool" button on non-executable pools.
   pool_deeplink?: string | null;

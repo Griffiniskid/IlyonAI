@@ -46,14 +46,14 @@ def test_high_apy_thin_tvl_demoted_when_experimental_false() -> None:
     we use 250% APY here to exercise the penalty path directly.
     """
     thin_high = _candidate(protocol="MAXUSD", apy=250.0, tvl_usd=81_000.0)
-    deep_low = _candidate(protocol="Aave", apy=4.0, tvl_usd=50_000_000.0)
+    deep_low = _candidate(protocol="DeepStable", apy=4.0, tvl_usd=50_000_000.0)
     request = OpportunitySearchRequest(
         ranking_objective="highest_apy_after_sanity_filters",
         include_experimental=False,
     )
     result = rank_opportunities([thin_high, deep_low], request)
     protocols = [c.protocol for c in result.primary]
-    assert protocols == ["Aave", "MAXUSD"], (
+    assert protocols == ["DeepStable", "MAXUSD"], (
         f"thin-TVL high-APY pool must be demoted; got order {protocols}"
     )
 
@@ -63,14 +63,14 @@ def test_high_apy_thin_tvl_kept_when_experimental_true() -> None:
     high APY first.
     """
     thin_high = _candidate(protocol="MAXUSD", apy=250.0, tvl_usd=81_000.0)
-    deep_low = _candidate(protocol="Aave", apy=4.0, tvl_usd=50_000_000.0)
+    deep_low = _candidate(protocol="DeepStable", apy=4.0, tvl_usd=50_000_000.0)
     request = OpportunitySearchRequest(
         ranking_objective="highest_apy_after_sanity_filters",
         include_experimental=True,
     )
     result = rank_opportunities([thin_high, deep_low], request)
     protocols = [c.protocol for c in result.primary]
-    assert protocols == ["MAXUSD", "Aave"], (
+    assert protocols == ["MAXUSD", "DeepStable"], (
         f"experimental opt-in must preserve high-APY first; got {protocols}"
     )
 
@@ -80,7 +80,7 @@ def test_low_apy_thin_tvl_kept() -> None:
     pool (below the $1M TVL floor but with a sane APY) must NOT be demoted.
     """
     thin_low = _candidate(protocol="SmallPool", apy=4.0, tvl_usd=500_000.0)
-    deep_low = _candidate(protocol="Aave", apy=3.0, tvl_usd=50_000_000.0)
+    deep_low = _candidate(protocol="DeepStable", apy=3.0, tvl_usd=50_000_000.0)
     request = OpportunitySearchRequest(
         ranking_objective="highest_apy_after_sanity_filters",
         include_experimental=False,
@@ -89,7 +89,7 @@ def test_low_apy_thin_tvl_kept() -> None:
     result = rank_opportunities([thin_low, deep_low], request)
     protocols = [c.protocol for c in result.primary]
     # SmallPool has higher APY (4.0 vs 3.0) and is NOT demoted, so it ranks first.
-    assert protocols == ["SmallPool", "Aave"], (
+    assert protocols == ["SmallPool", "DeepStable"], (
         f"low-APY thin-TVL pool must NOT be demoted; got {protocols}"
     )
 
@@ -99,7 +99,7 @@ def test_high_apy_deep_tvl_kept() -> None:
     $50M TVL satisfies the TVL floor and must NOT be demoted.
     """
     deep_high = _candidate(protocol="LegitFarm", apy=200.0, tvl_usd=50_000_000.0)
-    deep_low = _candidate(protocol="Aave", apy=4.0, tvl_usd=50_000_000.0)
+    deep_low = _candidate(protocol="DeepStable", apy=4.0, tvl_usd=50_000_000.0)
     request = OpportunitySearchRequest(
         ranking_objective="highest_apy_after_sanity_filters",
         include_experimental=False,
@@ -107,6 +107,6 @@ def test_high_apy_deep_tvl_kept() -> None:
     result = rank_opportunities([deep_high, deep_low], request)
     protocols = [c.protocol for c in result.primary]
     # LegitFarm has higher APY and deep TVL — sanity penalty must not fire.
-    assert protocols == ["LegitFarm", "Aave"], (
+    assert protocols == ["LegitFarm", "DeepStable"], (
         f"high-APY deep-TVL pool must NOT be demoted; got {protocols}"
     )

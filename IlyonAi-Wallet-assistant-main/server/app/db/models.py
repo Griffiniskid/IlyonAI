@@ -52,3 +52,48 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     chat: Mapped[Chat] = relationship("Chat", back_populates="messages")
+
+
+class Transaction(Base):
+    """A swap / bridge / transfer / stake / LP the user executed THROUGH this
+    app. Logged client-side right after the wallet signs (the web has the
+    signature/hash by then), keyed by wallet so the Activity view can list a
+    user's interactions with the protocol. Wallets may be anonymous, so there
+    is no FK to users — `wallet` is the lookup key."""
+
+    __tablename__ = "transactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    wallet: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # swap|bridge|transfer|stake|lp
+    status: Mapped[str] = mapped_column(String(20), default="sent")  # sent|confirmed|failed
+    chain: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    dst_chain: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)  # bridge only
+    from_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    to_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    from_amount: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    to_amount: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    signature: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)  # tx hash / sig
+    order_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)  # deBridge order
+    explorer_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "wallet": self.wallet,
+            "kind": self.kind,
+            "status": self.status,
+            "chain": self.chain,
+            "dst_chain": self.dst_chain,
+            "from_token": self.from_token,
+            "to_token": self.to_token,
+            "from_amount": self.from_amount,
+            "to_amount": self.to_amount,
+            "signature": self.signature,
+            "order_id": self.order_id,
+            "explorer_url": self.explorer_url,
+            "created_at": (self.created_at.isoformat() if self.created_at else None),
+        }

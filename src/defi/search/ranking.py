@@ -187,8 +187,39 @@ def rank_opportunities(
         for t in set(requested_tiers):
             merged.extend(bucketed[t])
         merged.extend(leftover)
-        limited = merged[:limit]
+        limited = _diversify_by_protocol(merged, limit)
     else:
-        limited = primary[:limit]
+        limited = _diversify_by_protocol(primary, limit)
 
     return OpportunitySearchResult(primary=limited, excluded=excluded)
+
+
+def _diversify_by_protocol(
+    ordered: list[OpportunityCandidate], limit: int, per_cap: int = 3
+) -> list[OpportunityCandidate]:
+    """Keep the shown set varied across protocols. The reliable-protocol
+    ranking bonus pushes one protocol (e.g. PancakeSwap on BNB) to the top, so
+    a naive top-N filled all slots with a single protocol — the user saw no
+    choice. Take at most `per_cap` pools per protocol first (preserving rank
+    order), then backfill from the remainder if too few protocols exist to
+    fill `limit`."""
+    if limit <= 0 or not ordered:
+        return ordered[:limit]
+    out: list[OpportunityCandidate] = []
+    counts: dict[str, int] = {}
+    used: set[int] = set()
+    for c in ordered:
+        slug = (c.protocol_slug or c.protocol or "").lower()
+        if counts.get(slug, 0) < per_cap:
+            out.append(c)
+            used.add(id(c))
+            counts[slug] = counts.get(slug, 0) + 1
+        if len(out) >= limit:
+            return out
+    # Backfill (few protocols available) — keep rank order, skip already-picked.
+    for c in ordered:
+        if id(c) not in used:
+            out.append(c)
+            if len(out) >= limit:
+                break
+    return out

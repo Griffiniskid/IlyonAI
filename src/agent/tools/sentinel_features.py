@@ -99,11 +99,43 @@ async def analyze_token_full_sentinel(
             "the token may be on an unsupported chain, or upstream APIs are temporarily down.",
         )
 
+    # Partial-analysis guard. overall_score=0 with NO AI verdict, NO rug-prob
+    # and NO holder data means the upstream sources timed out / the cache was
+    # cold — not a confident DANGEROUS. Same token was scoring 0/F on first
+    # paste then 55/D on retry. Retry once to warm the sources; if still
+    # partial, surface DATA_INCOMPLETE instead of a false-confident verdict.
+    def _is_partial(r) -> bool:
+        # A 0/100 with NO AI verdict means the AI scorer didn't run (cold
+        # cache / upstream timeout). A genuinely-dangerous token still gets an
+        # AI verdict, even if score is low. So absence of any AI signal at
+        # overall=0 is the "data didn't gather" indicator.
+        if r is None:
+            return True
+        if (getattr(r, "overall_score", 0) or 0) > 0:
+            return False
+        tok = getattr(r, "token", None)
+        ai_score_val = getattr(r, "ai_score", None)
+        ai_verdict_val = tok and (getattr(tok, "ai_verdict", None) or getattr(tok, "ai_summary", None))
+        return not ai_score_val and not ai_verdict_val
+
+    # If the fast "standard" pass returned a 0 score, the upstream sources
+    # didn't all resolve. Escalate to "deep" mode (waits for the full signal
+    # set) before classifying the token.
+    if (getattr(result, "overall_score", 0) or 0) == 0:
+        try:
+            result = await analyzer.analyze(address.strip(), mode="deep", chain=chain)
+        except Exception:
+            _logger.warning("analyze_token deep retry failed; surfacing partial result")
+    data_incomplete = _is_partial(result)
+
     token = result.token
     chain_label = (token.chain or "unknown").lower()
     score = float(getattr(result, "overall_score", 0) or 0)
-    verdict = "SAFE" if score >= 70 else ("CAUTION" if score >= 50 else ("RISKY" if score >= 30 else "DANGEROUS"))
     grade = getattr(result, "grade", "F")
+    if data_incomplete:
+        verdict = "DATA_INCOMPLETE"
+    else:
+        verdict = "SAFE" if score >= 70 else ("CAUTION" if score >= 50 else ("RISKY" if score >= 30 else "DANGEROUS"))
 
     payload = {
         "address": token.address,
