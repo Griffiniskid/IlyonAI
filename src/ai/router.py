@@ -77,17 +77,21 @@ class AIRouter:
         Args:
             openai_client: Optional OpenAI client (creates default if None)
         """
-        # OpenRouter is required for all non-Grok AI analysis.
-        has_openrouter = bool(settings.openrouter_api_key)
-
-        if has_openrouter:
+        # Provider selection. Prefer the DIRECT OpenAI API when OPENAI_API_KEY
+        # is set; otherwise fall back to OpenRouter. Prod has no OPENAI_API_KEY,
+        # so it stays on OpenRouter even if this code is deployed.
+        if settings.openai_api_key:
+            logger.info(f"🔄 Using OpenAI API for AI analysis (model: {settings.openai_model})")
+            self.openai = openai_client or OpenAIClient(model=settings.openai_model, use_openrouter=False)
+            self.openai_mini = OpenAIClient(model=settings.openai_mini_model, use_openrouter=False)
+        elif settings.openrouter_api_key:
             openrouter_key = settings.openrouter_api_key or ""
             api_key_preview = openrouter_key[:15] + "..." if len(openrouter_key) > 15 else "***"
             logger.info(f"🔄 Using OpenRouter API for AI analysis (key: {api_key_preview})")
             self.openai = openai_client or OpenAIClient(model=settings.ai_model, use_openrouter=True)
             self.openai_mini = OpenAIClient(model=settings.openai_mini_model, use_openrouter=True)
         else:
-            logger.error("❌ No OpenRouter API key configured! Set OPENROUTER_API_KEY in .env for DeepSeek analysis")
+            logger.error("❌ No AI provider configured! Set OPENAI_API_KEY or OPENROUTER_API_KEY in .env")
             self.openai = None
             self.openai_mini = None
             
