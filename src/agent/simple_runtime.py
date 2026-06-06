@@ -1268,8 +1268,9 @@ def _detect_stake_all(message: str) -> tuple[str, dict] | None:
 def _detect_stake_simple(message: str) -> tuple[str, dict] | None:
     """Match bare 'stake 0.1 bnb' / 'stake 1 sol' (no protocol qualifier).
 
-    Returns build_swap_tx into the canonical LST for that chain so the user
-    gets a real signing card instead of an empty DeFi search.
+    Routes to build_stake_tx (a proper STAKE card + stake-relabeled LST tx) so a
+    stake request is never rendered/executed as a swap. protocol="" makes the
+    wallet assistant pick the chain default LST (e.g. jitoSOL for SOL).
     """
     pattern = re.compile(
         r"^\s*stake\s+(?P<amount>[\d,]+(?:\.\d+)?)\s+(?P<token>[A-Za-z]{2,10})"
@@ -1304,13 +1305,13 @@ def _detect_stake_simple(message: str) -> tuple[str, dict] | None:
     if int(amount_in) <= 0:
         return None
     return (
-        "build_swap_tx",
+        "build_stake_tx",
         {
+            "protocol": "",  # "" -> wallet assistant picks the chain default LST
+            "amount": m.group("amount").replace(",", ""),
+            "asset": token,
             "chain_id": chain_id,
-            "token_in": token,
-            "token_out": lst_target[0],
-            "amount_in": amount_in,
-            "from_addr": "",
+            "user_addr": "",
         },
     )
 
@@ -4904,6 +4905,42 @@ def _is_conceptual_question(message: str) -> bool:
     return m.endswith("?") or bool(_QUESTION_OPENER_RE.search(m))
 
 
+_REASONING_QUESTION_RE = re.compile(
+    r"\b("
+    r"should\s+i|shall\s+i|do\s+you\s+(?:think|recommend|reckon)|what\s+do\s+you\s+think|"
+    r"is\s+it\s+worth|worth\s+it|is\s+it\s+a\s+good\s+idea|good\s+idea|bad\s+idea|"
+    r"what\s+happens|what\s+would\s+happen|what\s+if|happens\s+if|"
+    r"how\s+much|how\s+many|how\s+long|"
+    r"why\s+(?:did|do|does|is|are|should|would|wouldn|can|cant|not)|"
+    r"can\s+i\s+(?:lose|still|really|even|safely)|could\s+i|would\s+it|"
+    r"is\s+it\s+safe|is\s+it\s+better|is\s+it\s+smart|is\s+it\s+risky|"
+    r"what.?s\s+the\s+(?:catch|risk|downside|point)|"
+    r"pros\s+and\s+cons|trade-?offs?|"
+    r"which\s+is\s+(?:better|safer|best)|"
+    r"compare|explain|help\s+me\s+(?:decide|understand|choose)|"
+    r"what\s+should\s+i\s+do|makes?\s+sense|pointless|"
+    r"too\s+(?:small|little|risky|much)|"
+    r"eat\s+(?:the|my|up|into)|net\s+of\s+fees|after\s+fees|worth\s+the\s+fees|"
+    r"better\s+to|or\s+(?:should\s+i|just)|safe\s+to|risky\s+to|lose\s+(?:money|funds|my)|"
+    r"where\s+(?:can|do)\s+i\s+(?:check|see|view|find|track|monitor)|my\s+(?:position|stake|staking|jitosol)|"
+    r"(?:we|i)\s+just\s+did|that\s+we\s+did|what\s+we\s+did"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_reasoning_question(message: str) -> bool:
+    """True for analytical / advice / 'what-if' questions that must be REASONED
+    by the chat LLM rather than matched to a data/execution detector (which would
+    dump a price or build a tx). Unlike _is_conceptual_question, this fires even
+    when an action keyword like 'stake' is present — e.g. 'is it worth staking
+    0.01 SOL if fees eat the rewards?' is reasoning, not a stake command."""
+    m = (message or "").strip()
+    if not m or len(m) > 400:
+        return False
+    return bool(_REASONING_QUESTION_RE.search(m))
+
+
 def detect_intent(message: str) -> tuple[str, dict] | None:
     """Detect intent and extract parameters from user message."""
     message_lower = message.lower()
@@ -4935,6 +4972,14 @@ def detect_intent(message: str) -> tuple[str, dict] | None:
     session_key = _detect_session_key_intent(message)
     if session_key is not None:
         return session_key
+
+    # Analytical / advice / "what-if" questions ("should I stake or hold?",
+    # "is it worth staking 0.01 SOL with fees?", "what happens if SOL crashes?")
+    # must be REASONED by the chat LLM — not matched to a data/execution detector
+    # that dumps a price or builds a tx. Placed after the safety short-circuits
+    # (refuse / session-key) so those still win, but before every data detector.
+    if _is_reasoning_question(message):
+        return None
 
     bootstrap = _detect_bootstrap_alloc(message)
     if bootstrap is not None:
@@ -8550,6 +8595,57 @@ def _build_prior_pools_card(prior_pools: list[dict]) -> dict:
     }
 
 
+async def _llm_normalize_request(message: str) -> str | None:
+    """Translate/normalise a slang, typo, or non-English crypto request into ONE
+    canonical English command so the deterministic detectors can route it.
+    Returns the normalised command string, or None. Used ONLY on the
+    no-deterministic-match path (additive — never overrides a real detector)."""
+    try:
+        from src.ai.openai_client import OpenAIClient
+        client = OpenAIClient()
+        sys = (
+            "You normalise a crypto/DeFi user message into ONE short canonical "
+            "ENGLISH command for a DeFi agent. Translate ANY language to English. "
+            "Map to the closest action: swap / buy / sell / bridge / stake / "
+            "unstake / analyze / price / balance. Fix typos and slang (ape in / "
+            "ape into = buy, dump = sell, swp = swap, a bare '2' between two tokens "
+            "= to). Staking words (stake, 质押, стейк) -> 'stake'. A safety or "
+            "quality question about a token/address ('is X safe', 'is X a good "
+            "buy', 'это безопасный токен X') -> 'is X safe'. PRESERVE any 0x or "
+            "base58 address EXACTLY. Output ONLY the command, nothing else. "
+            "Examples: 'обменяй 1 SOL на USDC' -> 'swap 1 SOL to USDC'; "
+            "'质押 1 SOL' -> 'stake 1 SOL'; 'ape into bonk' -> 'buy bonk'; "
+            "'is wif a gud buy' -> 'is WIF safe'; 'precio de SOL' -> 'SOL price'. "
+            "If NOT a crypto action or lookup (greeting, concept question, "
+            "off-topic), output exactly: NONE"
+        )
+        out = await client.chat(message, system_prompt=sys, max_tokens=48, temperature=0)
+        try:
+            await client.close()
+        except Exception:
+            pass
+        return out
+    except Exception:
+        return None
+
+
+async def _normalize_and_retry_intent(message: str):
+    """No-match fallback: LLM-normalise the request then re-run detect_intent.
+    Returns an (tool, params) intent tuple, or None (-> contextual chat)."""
+    norm = await _llm_normalize_request(message)
+    if not norm:
+        return None
+    n = norm.strip().strip('"\'`').strip()
+    if not n or n.upper() == "NONE":
+        return None
+    if n.lower() == (message or "").strip().lower():
+        return None
+    try:
+        return detect_intent(n)
+    except Exception:
+        return None
+
+
 async def run_ephemeral_turn(
     *,
     router,
@@ -9457,6 +9553,13 @@ async def run_ephemeral_turn(
         # results carrying `execution_blockers` text in `data`).
         final_content_is_deterministic = False
 
+        # No deterministic detector matched — try an LLM normalisation pass
+        # (slang / typos / non-English) and re-detect. Additive: runs only when
+        # nothing matched, so it can never override a successful detector.
+        if intent is None:
+            _norm_intent = await _normalize_and_retry_intent(message)
+            if _norm_intent is not None:
+                intent = _norm_intent
         # If we detected an intent, call the tool and format result directly
         if intent:
             tool_name, tool_input = intent
@@ -9922,9 +10025,7 @@ async def run_ephemeral_turn(
             # No intent detected, use LLM for general conversation.
             # When prior history exists, include it so multi-turn context is preserved.
             _emit_thoughts(collector, [
-                "No deterministic DeFi tool matched the request; switching to contextual reasoning mode.",
-                "Reviewing recent chat context and user intent before answering.",
-                "Applying Sentinel-style risk framing where the answer touches crypto assets or protocols.",
+                "Reasoning through your question using live prices and recent chat context.",
             ])
             for frame in collector.drain():
                 yield encode_sse(frame_event_name(frame), frame.model_dump())
@@ -10124,9 +10225,17 @@ async def run_simple_turn(
     user_id: int = 0,
     solana_wallet: str | None = None,
     evm_wallet: str | None = None,
+    client_history: list[dict] | None = None,
 ) -> AsyncIterator[bytes]:
     """Wrapper around run_ephemeral_turn that persists chat history and loads
     prior turns for context.
+
+    client_history (optional): the recent conversation the WEB client sends with
+    each request. It is the authoritative CROSS-BACKEND view — it includes turns
+    the user did on the other backend (e.g. a stake executed via the wallet
+    assistant) which this backend's own DB never saw. When provided it overrides
+    the per-backend DB history so a follow-up reasoned here knows what just
+    happened, regardless of which backend handled the earlier turn.
 
     Persistence behaviour:
       * Whenever a `session_id` is provided we both load the prior history
@@ -10166,6 +10275,16 @@ async def run_simple_turn(
                 await append_message(db, chat_id=session_id, role="user", content=message)
             except Exception:
                 pass
+
+    # The web client sends the authoritative cross-backend conversation. Prefer
+    # it over this backend's own DB history so reasoning here sees what the user
+    # did on the other backend (DB persistence above still runs for authed users).
+    if client_history:
+        history = [
+            {"role": str(m.get("role") or "user"), "content": str(m.get("content") or "")[:2000]}
+            for m in client_history
+            if isinstance(m, dict) and m.get("content")
+        ][-HISTORY_WINDOW:]
 
     final_content_parts: list[str] = []
     captured_card_frames: list[dict] = []

@@ -2397,6 +2397,20 @@ C. SIMPLE QUESTIONS & ANALYTICS (no lists of entities):
   these JSON types as visual cards. Rewriting them as text BREAKS the UI.
 - CRITICAL: If no tool returned a pool or APR figure, say you could not verify it. Never guess missing data.
 
+━━━ CONTEXT CONTINUITY (short affirmations) ━━━
+The user may reply with a short affirmation — "yes", "yes do that", "do it", "go ahead",
+"sure", "ok", "the first one" — that refers to something YOU offered earlier in the
+conversation above. When that happens, read the recent chat history, identify the
+specific action you most recently offered, and DO IT now — do NOT reply with a generic
+"please restate your request".
+- Informational offers (fetch a staking link via get_staking_options, check a balance,
+  explain a flow): just perform them using the right tool or answer.
+- A transaction you offered: proceed ONLY if every required detail (amount, token, chain,
+  direction) is already established earlier in this same conversation — then call the
+  build_* tool. If a detail is still genuinely missing, ask ONLY for that missing detail.
+- If you offered several clearly-distinct actions and truly cannot tell which one, ask a
+  SHORT one-line clarification that names the options — never a generic non-answer.
+
 Conversation so far:
 {{chat_history}}"""
 
@@ -2655,6 +2669,45 @@ def _bridge_default_output_token(token_in: str, src_chain: int, dst_chain: int) 
     return token_upper
 
 
+# DefiLlama yield-pool ids for the Solana LSTs we stake into (current APY source).
+_LST_APY_POOL = {
+    "jito": "0e7d0722-9054-4907-8593-567b353c0900",      # jitoSOL
+    "marinade": "b3f93865-5ec8-4662-90a0-11808e0aa2bd",  # mSOL
+    "lido": "747c1d2a-c668-4682-b9f9-296708a3dd90",       # stETH
+    "rocketpool": "d4b3c522-6127-4b89-bedf-83641cdcd2eb", # rETH
+    "frax": "5b3aebb3-891d-47fc-92e2-927ada3d5b82",       # sfrxETH
+    "mantle": "b9f2f00a-ba96-4589-a171-dde979a23d87",     # mETH
+    "coinbase": "0f45d730-b279-4629-8e11-ccb5cc3038b4",   # cbETH
+    "binance": "80b8bf92-b953-4c20-98ea-c9653ef2bb98",    # wBETH
+    "ankr": "e201dbed-63fa-48e2-bfa2-f56e730167d2",       # ankrETH
+    "stader": "90bfb3c2-5d35-4959-a275-ba5085b08aa3",     # ETHx
+}
+_lst_apy_cache: dict[str, tuple[float, float]] = {}  # protocol -> (apy_pct, fetched_at)
+
+
+def _get_lst_apy(protocol: str) -> Optional[float]:
+    """Live staking APY (%) for a liquid-staking protocol, via DefiLlama.
+    Cached 30 min; returns None (not a fake number) if unavailable."""
+    import time
+    pool = _LST_APY_POOL.get(protocol)
+    if not pool:
+        return None
+    cached = _lst_apy_cache.get(protocol)
+    now = time.time()
+    if cached and now - cached[1] < 1800:
+        return cached[0]
+    try:
+        resp = _requests.get(f"https://yields.llama.fi/chart/{pool}", timeout=8)
+        rows = resp.json().get("data", [])
+        apy = float(rows[-1]["apy"]) if rows else None
+        if apy is not None:
+            _lst_apy_cache[protocol] = (apy, now)
+            return apy
+    except Exception:
+        pass
+    return cached[0] if cached else None
+
+
 def _build_stake_tx(raw: str, user_address: str, default_chain_id: int, solana_address: str = "") -> str:
     """
     Build a staking transaction via Enso routing.
@@ -2711,11 +2764,34 @@ def _build_stake_tx(raw: str, user_address: str, default_chain_id: int, solana_a
         except json.JSONDecodeError:
             return result_json
         if result.get("status") == "ok":
+            _lst = "jitoSOL" if buy_token == "jito" else "mSOL"
             result["action"] = "stake"
             result["route_summary"] = f"Stake via {protocol_name}"
             result["protocol_url"] = _STAKING_PROTOCOL_URLS.get(key, "")
             result["from_token_symbol"] = "SOL"
             result["to_token_symbol"] = protocol_name
+            # Liquid-stake card context so the UI renders a STAKE card (not a swap).
+            # The underlying tx is a Jupiter route SOL -> LST mint, but it IS a stake:
+            # the LST (jitoSOL/mSOL) accrues staking yield and is redeemable for SOL.
+            result["is_stake"] = True
+            result["staking_protocol"] = "Jito" if buy_token == "jito" else "Marinade"
+            result["receipt_token_symbol"] = _lst
+            result["out_symbol"] = _lst  # correct the aggregator's "JITO" label
+            result["liquid"] = True
+            result["unstake_note"] = (
+                f"Liquid stake — you receive {_lst}, a liquid staking token that earns "
+                "staking yield and can be unstaked or swapped back to SOL anytime."
+            )
+            # Live staking APY + projected yearly earnings (how much the user earns).
+            _apy = _get_lst_apy("jito" if buy_token == "jito" else "marinade")
+            if _apy is not None:
+                result["apy"] = round(_apy, 2)
+                try:
+                    _yield = round(float(amount) * _apy / 100.0, 6)
+                    result["est_yearly_yield_sol"] = _yield
+                    result["est_yearly_yield"] = _yield
+                except (TypeError, ValueError):
+                    pass
         elif "error" in result and "message" not in result:
             result = {"status": "error", "message": result["error"]}
         return json.dumps(result)
@@ -2734,10 +2810,38 @@ def _build_stake_tx(raw: str, user_address: str, default_chain_id: int, solana_a
     try:
         result = json.loads(result_json)
         if result.get("status") == "ok":
+            _pid = (protocol or "").lower()
+            _proto_disp = {
+                "lido": "Lido", "rocketpool": "Rocket Pool", "frax": "Frax",
+                "mantle": "Mantle", "coinbase": "Coinbase", "binance": "Binance",
+                "ankr": "Ankr", "stader": "Stader",
+            }.get(_pid, (protocol_name.split()[0] if protocol_name else _pid.title()))
+            _lst_sym = protocol_name.split()[-1] if protocol_name else f"{token}-LST"
             result["action"] = "stake"
+            result["from_token_symbol"] = token
             result["to_token_symbol"] = protocol_name
             result["route_summary"] = f"Stake via {protocol_name}"
             result["protocol_url"] = _STAKING_PROTOCOL_URLS.get(key, "")
+            # Liquid-stake card context (mirror the Solana path): renders a STAKE
+            # card + APY, and makes the chat-history summary say "stake" not "swap".
+            result["is_stake"] = True
+            result["staking_protocol"] = _proto_disp
+            result["receipt_token_symbol"] = _lst_sym
+            result["liquid"] = True
+            result["unstake_note"] = (
+                f"Liquid stake — you receive {_lst_sym}, a liquid staking token that earns "
+                f"staking yield and can be swapped back to {token} anytime."
+            )
+            _apy = _get_lst_apy(_pid)
+            if _apy is not None:
+                result["apy"] = round(_apy, 2)
+                # `amount` is in wei for the EVM path — use the human display amount.
+                _human_amt = result.get("amount_in_display")
+                try:
+                    _amt_f = float(_human_amt) if _human_amt not in (None, "") else float(amount)
+                    result["est_yearly_yield"] = round(_amt_f * _apy / 100.0, 6)
+                except (TypeError, ValueError):
+                    pass
         return json.dumps(result)
     except json.JSONDecodeError:
         return result_json

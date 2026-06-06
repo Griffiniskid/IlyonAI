@@ -1146,6 +1146,89 @@ def _try_direct_pool_lookup(query: str, chain_id: int) -> Optional[str]:
     return json.dumps(fallback)
 
 
+_REASONING_QUESTION_RE = re.compile(
+    r"\b("
+    r"should\s+i|shall\s+i|do\s+you\s+(?:think|recommend|reckon)|what\s+do\s+you\s+think|"
+    r"is\s+it\s+worth|worth\s+it|is\s+it\s+a\s+good\s+idea|good\s+idea|bad\s+idea|"
+    r"what\s+happens|what\s+would\s+happen|what\s+if|happens\s+if|"
+    r"how\s+much|how\s+many|how\s+long|"
+    r"why\s+(?:did|do|does|is|are|should|would|wouldn|can|cant|not)|"
+    r"can\s+i\s+(?:lose|still|really|even|safely)|could\s+i|would\s+it|"
+    r"is\s+it\s+safe|is\s+it\s+better|is\s+it\s+smart|is\s+it\s+risky|"
+    r"what.?s\s+the\s+(?:catch|risk|downside|point)|"
+    r"pros\s+and\s+cons|trade-?offs?|"
+    r"which\s+is\s+(?:better|safer|best)|"
+    r"compare|explain|help\s+me\s+(?:decide|understand|choose)|"
+    r"what\s+should\s+i\s+do|makes?\s+sense|pointless|"
+    r"too\s+(?:small|little|risky|much)|"
+    r"eat\s+(?:the|my|up|into)|net\s+of\s+fees|after\s+fees|worth\s+the\s+fees|"
+    r"better\s+to|or\s+(?:should\s+i|just)|safe\s+to|risky\s+to|lose\s+(?:money|funds|my)|"
+    r"where\s+(?:can|do)\s+i\s+(?:check|see|view|find|track|monitor)|my\s+(?:position|stake|staking|jitosol)|"
+    r"(?:we|i)\s+just\s+did|that\s+we\s+did|what\s+we\s+did"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_reasoning_question(text: str) -> bool:
+    """True for analytical / advice / 'what-if' questions that must be REASONED
+    by the LLM agent, not intercepted by a deterministic data handler.
+    Deliberately does NOT match plain lookups ('what is SOL price', 'my balance')
+    or imperative commands ('stake 1 SOL', 'swap 1 SOL to USDC')."""
+    q = (text or "").strip()
+    if not q:
+        return False
+    return bool(_REASONING_QUESTION_RE.search(q))
+
+
+def _summarize_for_memory(query: str, raw_response: str) -> str:
+    """One-line summary of a direct (non-agent) turn for conversation memory, so a
+    later agent turn can recall what the user did (e.g. recall a prior stake).
+    Avoids storing raw card JSON (token-heavy + noisy)."""
+    try:
+        d = json.loads(raw_response)
+    except Exception:
+        return (raw_response or "")[:400]  # plain-text answer — keep as-is
+    if not isinstance(d, dict):
+        return ""
+    action = (d.get("action") or d.get("type") or "").lower()
+    f_sym = d.get("from_token_symbol") or d.get("in_symbol")
+    t_sym = d.get("receipt_token_symbol") or d.get("to_token_symbol") or d.get("out_symbol")
+    in_amt = d.get("ui_in_amount") if d.get("ui_in_amount") is not None else d.get("amount_in_display")
+    out_amt = d.get("ui_out_amount") if d.get("ui_out_amount") is not None else d.get("dst_amount_display")
+    if d.get("is_stake") or action == "stake":
+        proto = d.get("staking_protocol") or d.get("to_token_symbol") or "a liquid-staking protocol"
+        apy = d.get("apy")
+        apy_txt = f" at ~{apy}% APY" if apy is not None else ""
+        return (f"User staked {in_amt} {f_sym or 'SOL'} via {proto}{apy_txt}, receiving ~{out_amt} "
+                f"{t_sym or 'LST'} (a liquid staking token). A signable tx was prepared. To check it "
+                f"later, the user holds {t_sym or 'the LST'} in this wallet, redeemable for SOL anytime.")
+    if "bridge" in action or d.get("type") == "bridge_proposal":
+        return f"User prepared a bridge of ~{in_amt} {f_sym} from {d.get('src_chain_name')} to {d.get('dst_chain_name')} (signable tx prepared)."
+    if "swap" in action or d.get("type") in ("solana_swap_proposal", "evm_action_proposal"):
+        return f"User prepared a swap of ~{in_amt} {f_sym} for ~{out_amt} {t_sym} (signable tx prepared)."
+    if d.get("type") == "transaction":
+        return f"User prepared a transfer of {d.get('amount')} {d.get('token_symbol')} (signable tx prepared)."
+    if d.get("type") == "balance_report":
+        return "User checked their wallet balances."
+    return (d.get("message") or "")[:300]
+
+
+def _record_direct_turn(session_id: Optional[str], query: str, raw_response: str) -> None:
+    """Save a concise summary of a direct (non-agent) turn into the session's
+    conversation memory, so a later full-agent turn (e.g. 'how do I check the SOL
+    I just staked?') has context. Best-effort — never breaks the response."""
+    if not session_id:
+        return
+    try:
+        from app.agents.crypto_agent import _get_or_create_memory
+        summary = _summarize_for_memory(query, raw_response)
+        if summary:
+            _get_or_create_memory(session_id).save_context({"input": query}, {"output": summary})
+    except Exception:
+        pass
+
+
 @router.post("/agent")
 async def run_agent(
     request: Request,
@@ -1160,17 +1243,22 @@ async def run_agent(
     from app.agents.crypto_agent import build_agent  # imported lazily to avoid import-time errors
 
     direct_query = _normalize_short_swap_query(body.query)
+    # Analytical / advice / "what-if" questions must REASON via the LLM agent.
+    # When set, every deterministic data handler below is skipped so it can't
+    # hijack the question with a scripted price/links/template answer.
+    _reasoning = _is_reasoning_question(body.query)
     evm_wallet, solana_wallet = _split_wallet_context(body.user_address, body.solana_address)
     effective_chain_id = _infer_runtime_chain_id(body.chain_id, getattr(body, "wallet_type", None), evm_wallet, solana_wallet)
 
     # ── Price questions (the most common ask) — deterministic, typo-tolerant ──
-    direct_price_result = _try_direct_price(direct_query)
+    direct_price_result = None if _reasoning else _try_direct_price(direct_query)
     if direct_price_result:
         return {"session_id": body.session_id, "chat_id": getattr(body, "chat_id", None), "response": direct_price_result}
 
     # ── Try direct balance handling for common wallet balance prompts ────────
-    direct_balance_result = _try_direct_balance(direct_query, evm_wallet, solana_wallet)
+    direct_balance_result = None if _reasoning else _try_direct_balance(direct_query, evm_wallet, solana_wallet)
     if direct_balance_result:
+        _record_direct_turn(body.session_id, body.query, direct_balance_result)
         provided_chat_id_early: Optional[str] = getattr(body, "chat_id", None)
         if current_user:
             if provided_chat_id_early:
@@ -1191,19 +1279,20 @@ async def run_agent(
             return {"session_id": chat.id, "chat_id": chat.id, "response": direct_balance_result}
         return {"session_id": body.session_id, "chat_id": None, "response": direct_balance_result}
 
-    direct_swap_clarification = _try_direct_swap_clarification(direct_query)
+    direct_swap_clarification = None if _reasoning else _try_direct_swap_clarification(direct_query)
     if direct_swap_clarification:
         return {"session_id": body.session_id, "chat_id": None, "response": direct_swap_clarification}
 
-    direct_transfer_clarification = _try_direct_transfer_clarification(direct_query)
+    direct_transfer_clarification = None if _reasoning else _try_direct_transfer_clarification(direct_query)
     if direct_transfer_clarification:
         return {"session_id": body.session_id, "chat_id": None, "response": direct_transfer_clarification}
 
     # ── Try compound swap+bridge for multi-step queries ───────────────────────
-    compound_result = _try_direct_compound_swap_bridge(
+    compound_result = None if _reasoning else _try_direct_compound_swap_bridge(
         direct_query, evm_wallet, solana_wallet, effective_chain_id
     )
     if compound_result:
+        _record_direct_turn(body.session_id, body.query, compound_result)
         provided_chat_id_early: Optional[str] = getattr(body, "chat_id", None)
         if current_user:
             if provided_chat_id_early:
@@ -1225,12 +1314,13 @@ async def run_agent(
         return {"session_id": body.session_id, "chat_id": None, "response": compound_result}
 
     # ── Try direct swap handling for deterministic swap prompts ───────────────
-    direct_swap_result = _try_direct_swap(
+    direct_swap_result = None if _reasoning else _try_direct_swap(
         direct_query, evm_wallet, solana_wallet, effective_chain_id
     )
     if direct_swap_result:
         direct_response = _format_direct_swap_result(direct_swap_result)
         if direct_response is not None:
+            _record_direct_turn(body.session_id, body.query, direct_swap_result)
             provided_chat_id_early: Optional[str] = getattr(body, "chat_id", None)
             if current_user:
                 if provided_chat_id_early:
@@ -1253,10 +1343,11 @@ async def run_agent(
         # Non-Solana direct errors fall through to let the agent suggest alternatives.
 
     # ── Try direct bridge flow for common bridge requests ────────────────────
-    direct_bridge_result = _try_direct_bridge(
+    direct_bridge_result = None if _reasoning else _try_direct_bridge(
         direct_query, evm_wallet, solana_wallet, effective_chain_id
     )
     if direct_bridge_result:
+        _record_direct_turn(body.session_id, body.query, direct_bridge_result)
         provided_chat_id_early: Optional[str] = getattr(body, "chat_id", None)
         if current_user:
             if provided_chat_id_early:
@@ -1278,7 +1369,7 @@ async def run_agent(
         return {"session_id": body.session_id, "chat_id": None, "response": direct_bridge_result}
 
     # ── Try direct yield search for common APR/APY questions ─────────────────
-    direct_staking_info_result = _try_direct_staking_info(direct_query)
+    direct_staking_info_result = None if _reasoning else _try_direct_staking_info(direct_query)
     if direct_staking_info_result:
         provided_chat_id_early: Optional[str] = getattr(body, "chat_id", None)
         if current_user:
@@ -1301,7 +1392,7 @@ async def run_agent(
         return {"session_id": body.session_id, "chat_id": None, "response": direct_staking_info_result}
 
     # ── Try direct yield search for common APR/APY questions ─────────────────
-    direct_yield_result = _try_direct_yield_search(direct_query)
+    direct_yield_result = None if _reasoning else _try_direct_yield_search(direct_query)
     if direct_yield_result:
         provided_chat_id_early: Optional[str] = getattr(body, "chat_id", None)
         if current_user:
@@ -1324,10 +1415,11 @@ async def run_agent(
         return {"session_id": body.session_id, "chat_id": None, "response": direct_yield_result}
 
     # ── Try direct LP deposit flow for simple "add/deposit to best pool" requests ──
-    direct_lp_result = _try_direct_lp_deposit(
+    direct_lp_result = None if _reasoning else _try_direct_lp_deposit(
         direct_query, evm_wallet, effective_chain_id
     )
     if direct_lp_result:
+        _record_direct_turn(body.session_id, body.query, direct_lp_result)
         provided_chat_id_early: Optional[str] = getattr(body, "chat_id", None)
         if current_user:
             if provided_chat_id_early:
@@ -1349,10 +1441,11 @@ async def run_agent(
         return {"session_id": body.session_id, "chat_id": None, "response": direct_lp_result}
 
     # ── Try direct staking flow for simple staking requests ──────────────────
-    direct_stake_result = _try_direct_stake(
+    direct_stake_result = None if _reasoning else _try_direct_stake(
         direct_query, evm_wallet, effective_chain_id, solana_wallet
     )
     if direct_stake_result:
+        _record_direct_turn(body.session_id, body.query, direct_stake_result)
         provided_chat_id_early: Optional[str] = getattr(body, "chat_id", None)
         if current_user:
             if provided_chat_id_early:
@@ -1374,7 +1467,7 @@ async def run_agent(
         return {"session_id": body.session_id, "chat_id": None, "response": direct_stake_result}
 
     # ── Try direct pool lookup flow for simple pair-address requests ─────────
-    direct_pool_result = _try_direct_pool_lookup(direct_query, effective_chain_id)
+    direct_pool_result = None if _reasoning else _try_direct_pool_lookup(direct_query, effective_chain_id)
     if direct_pool_result:
         provided_chat_id_early: Optional[str] = getattr(body, "chat_id", None)
         if current_user:

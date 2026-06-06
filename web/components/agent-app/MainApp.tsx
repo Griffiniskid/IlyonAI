@@ -61,6 +61,14 @@ interface SwapPreview {
   // Solana (Jupiter) swap fields
   swapTransaction?: string;  // base64 VersionedTransaction
   isSolanaSwap?: boolean;
+  // Liquid-staking card fields (stake SOL -> LST like jitoSOL / mSOL)
+  isStake?: boolean;
+  stakingProtocol?: string;   // e.g. "Jito"
+  receiptToken?: string;      // e.g. "jitoSOL"
+  liquid?: boolean;
+  unstakeNote?: string;
+  apy?: number;               // live staking APY %
+  estYearly?: number;         // projected yearly yield in the staked asset
 }
 
 interface TokenBalance {
@@ -317,9 +325,13 @@ export function parseSwapPreview(text: string): SwapPreview | null {
       if (nested && typeof nested === "object") json = nested as Record<string, any>;
     }
     if (!json || typeof json !== "object") throw new Error("not an object");
-    // Legacy/alternate Solana swap payloads that still contain a base64 tx
+    // Legacy/alternate Solana swap payloads that still contain a base64 tx.
+    // This is the FIRST branch any swapTransaction-bearing payload hits, so a
+    // SOL stake (which is a Jupiter route under the hood) must be detected here
+    // — otherwise it renders as a plain swap.
     if (json.swapTransaction) {
-      const outSym: string = json.out_symbol ?? json.to_token_symbol ?? "Token";
+      const isStake = json.action === "stake" || json.is_stake === true;
+      const outSym: string = json.receipt_token_symbol ?? json.out_symbol ?? json.to_token_symbol ?? "Token";
       const outHuman: string = json.ui_out_amount != null
         ? String(json.ui_out_amount)
         : json.dst_amount_display != null
@@ -339,6 +351,15 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         fee: "0",
         swapTransaction: json.swapTransaction,
         isSolanaSwap: true,
+        // Liquid-stake awareness so the UI renders a STAKE card, not a swap.
+        actionType: json.action ?? "swap",
+        isStake,
+        stakingProtocol: json.staking_protocol ?? undefined,
+        receiptToken: json.receipt_token_symbol ?? outSym,
+        liquid: json.liquid === true,
+        unstakeNote: json.unstake_note ?? undefined,
+        apy: json.apy != null ? Number(json.apy) : undefined,
+        estYearly: (json.est_yearly_yield ?? json.est_yearly_yield_sol) != null ? Number(json.est_yearly_yield ?? json.est_yearly_yield_sol) : undefined,
       };
     }
     if (json.type === "bridge_proposal" && json.tx) {
@@ -436,21 +457,30 @@ export function parseSwapPreview(text: string): SwapPreview | null {
       json.type === "solana_swap_proposal" &&
       json.swapTransaction
     ) {
-      const outSym: string = json.out_symbol ?? "Token";
+      const isStake = json.action === "stake" || json.is_stake === true;
+      const outSym: string = json.receipt_token_symbol ?? json.out_symbol ?? "Token";
       // Prefer backend-computed human-readable amount; fall back to raw division
       const outHuman: string = json.ui_out_amount != null
         ? String(json.ui_out_amount)
         : String(parseInt(json.out_amount ?? "0") / 10 ** (["USDC","USDT"].includes(outSym.toUpperCase()) ? 6 : 9));
       return {
         fromToken: json.in_symbol ?? "Token",
-        fromAmount: "—",
+        // Stake/swap now shows the real input amount (was hardcoded "—").
+        fromAmount: json.ui_in_amount != null ? String(json.ui_in_amount) : "—",
         toToken: outSym,
         toAmount: outHuman,
-        route: "Jupiter v6",
+        route: json.route_summary ?? "Jupiter v6",
         priceImpact: "≤ 0.5%",
         fee: "0",
         swapTransaction: json.swapTransaction,
         isSolanaSwap: true,
+        // Carry the action so a stake renders as a STAKE card, not a swap.
+        actionType: json.action ?? "swap",
+        isStake,
+        stakingProtocol: json.staking_protocol ?? undefined,
+        receiptToken: json.receipt_token_symbol ?? outSym,
+        liquid: json.liquid === true,
+        unstakeNote: json.unstake_note ?? undefined,
       };
     }
     if (json.type === "evm_action_proposal" && json.tx) {
@@ -467,6 +497,14 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         approvalTx: json.approval_tx ?? null,
         actionType: json.action ?? "swap",
         warnings: Array.isArray(json.warnings) ? json.warnings.map(String) : undefined,
+        // Liquid-stake awareness for EVM stakes (ETH->stETH etc.) — same card as SOL.
+        isStake: json.action === "stake" || json.is_stake === true,
+        stakingProtocol: json.staking_protocol ?? undefined,
+        receiptToken: json.receipt_token_symbol ?? json.to_token_symbol ?? undefined,
+        liquid: json.liquid === true,
+        unstakeNote: json.unstake_note ?? undefined,
+        apy: json.apy != null ? Number(json.apy) : undefined,
+        estYearly: json.est_yearly_yield != null ? Number(json.est_yearly_yield) : undefined,
       };
     }
     // Swap transaction from build_swap_tx (EVM / old Solana path with dst_amount)
@@ -3362,7 +3400,7 @@ async function waitForReceipt(
   throw new Error("Timed out waiting for transaction confirmation. Please check your wallet activity.");
 }
 
-function SimulationPreview({ preview, fromAddress, solanaAddress, walletType }: SimulationPreviewProps) {
+export function SimulationPreview({ preview, fromAddress, solanaAddress, walletType }: SimulationPreviewProps) {
   const [isPending, setIsPending] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [txError, setTxError] = useState<string | null>(null);
@@ -3659,6 +3697,54 @@ function SimulationPreview({ preview, fromAddress, solanaAddress, walletType }: 
             )}
           </div>
         </>
+      ) : preview.isStake ? (
+        <>
+          <div className="sim-title"><span>🟢</span> Liquid Stake Preview</div>
+          <div className="sim-row">
+            <div className="sim-token from">
+              <span className="sim-token-icon">◎</span>
+              <div>
+                <div className="sim-token-label">You Stake</div>
+                <div className="sim-token-value">{preview.fromAmount} {preview.fromToken}</div>
+              </div>
+            </div>
+            <div className="sim-arrow">→</div>
+            <div className="sim-token to">
+              <span className="sim-token-icon">🪙</span>
+              <div>
+                <div className="sim-token-label">You Receive{preview.liquid ? " (liquid)" : ""}</div>
+                <div className="sim-token-value">~{preview.toAmount} {preview.receiptToken ?? preview.toToken}</div>
+              </div>
+            </div>
+          </div>
+          <div className="sim-meta">
+            {preview.apy != null && (
+              <div className="sim-meta-item">
+                <span className="sim-meta-label">Est. APY (you earn)</span>
+                <span className="sim-meta-value" style={{ color: "#34D399", fontWeight: 600 }}>
+                  ~{preview.apy}% / yr{preview.estYearly != null ? ` · ≈ ${preview.estYearly} ${preview.fromToken}/yr` : ""}
+                </span>
+              </div>
+            )}
+            <div className="sim-meta-item">
+              <span className="sim-meta-label">Protocol</span>
+              <span className="sim-meta-value" style={{ color: "#34D399" }}>{preview.stakingProtocol ?? preview.route}</span>
+            </div>
+            <div className="sim-meta-item">
+              <span className="sim-meta-label">Type</span>
+              <span className="sim-meta-value">Liquid staking{preview.liquid ? " · unstake anytime" : ""}</span>
+            </div>
+            <div className="sim-meta-item">
+              <span className="sim-meta-label">Rate</span>
+              <span className="sim-meta-value">1 {preview.fromToken} ≈ {preview.toAmount} {preview.receiptToken ?? preview.toToken}</span>
+            </div>
+          </div>
+          {preview.unstakeNote && (
+            <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(52,211,153,0.10)", border: "1px solid rgba(52,211,153,0.24)", borderRadius: 10, color: "#6EE7B7", fontSize: 12, lineHeight: 1.4 }}>
+              ℹ️ {preview.unstakeNote}
+            </div>
+          )}
+        </>
       ) : (
         <>
           <div className="sim-title"><span>⚡</span> {actionLabel} Preview</div>
@@ -3716,7 +3802,7 @@ function SimulationPreview({ preview, fromAddress, solanaAddress, walletType }: 
           disabled={isPending || !solanaAddress}
           style={{ marginTop: 14, width: "100%", opacity: isPending ? 0.7 : 1, background: "linear-gradient(135deg,#10b981,#34d399)", color: "#03150f" }}
         >
-          {isPending ? "⏳ Confirm in Phantom..." : (preview.isBridge ? "👻 Bridge in Phantom" : "👻 Swap in Phantom")}
+          {isPending ? "⏳ Confirm in Phantom..." : `👻 ${preview.isBridge ? "Bridge" : actionLabel} in Phantom`}
         </button>
       )}
 
@@ -4985,6 +5071,32 @@ export default function MainApp() {
         body: JSON.stringify({
           query: normalizedQuery,
           message: normalizedQuery,
+          // Cross-backend conversation context: the prior turns (this closure's
+          // `messages` excludes the just-typed turn). Card messages are summarized
+          // so raw tx JSON never pollutes the model context. Lets whichever backend
+          // answers know what the user just did (e.g. a stake on the other backend).
+          history: messages
+            .filter((m) => m.id !== 0)
+            .slice(-8)
+            .map((m) => {
+              let c = m.text ?? "";
+              if (m.role === "assistant") {
+                const p = m.swapPreview;
+                if (p) {
+                  c = p.isStake
+                    ? `Prepared a liquid stake: ${p.fromAmount} ${p.fromToken} → ~${p.toAmount} ${p.receiptToken ?? p.toToken} via ${p.stakingProtocol ?? "a protocol"}.`
+                    : p.isBridge
+                      ? `Prepared a bridge of ${p.fromAmount} ${p.fromToken}.`
+                      : p.isTransfer
+                        ? `Prepared a transfer of ${p.fromAmount} ${p.fromToken}.`
+                        : `Prepared a swap: ${p.fromAmount} ${p.fromToken} → ~${p.toAmount} ${p.toToken}.`;
+                } else if (/^\s*[[{]/.test(c) || c.includes('"swapTransaction"') || c.includes('"type"')) {
+                  c = "(showed a transaction or data card)";
+                }
+              }
+              return { role: m.role, content: String(c).slice(0, 1500) };
+            })
+            .filter((h) => h.content.trim()),
           session_id: currentChatId ?? clientSessionId,
           chat_id: currentChatId,
           user_address: connectedWallet ?? "",

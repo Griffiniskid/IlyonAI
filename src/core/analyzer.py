@@ -275,6 +275,11 @@ class TokenAnalyzer:
         if not isinstance(data['dex'], Exception) and data['dex']:
             self._apply_dex_data(token, data['dex'])  # type: ignore[arg-type]
 
+        # DexScreener omits liquidity for Meteora DBC / bonding-curve pools, which
+        # would zero out the score for an otherwise-liquid token. Backfill it.
+        if token.liquidity_usd <= 0:
+            await self._backfill_liquidity_from_geckoterminal(token, network="solana")
+
         if not isinstance(data['rugcheck'], Exception) and data['rugcheck']:
             self._apply_rugcheck_data(token, data['rugcheck'])  # type: ignore[arg-type]
             # Map rugcheck fields to universal fields
@@ -586,6 +591,48 @@ class TokenAnalyzer:
             logger.debug(f"Could not fetch SOL price: {e}")
         return 150.0
 
+    async def _backfill_liquidity_from_geckoterminal(self, token: TokenInfo, network: str = "solana") -> None:
+        """Backfill liquidity when DexScreener reports none.
+
+        Meteora DBC bonding-curve pools (and some others) return liquidity: null
+        on DexScreener, so the token is scored as zero-liquidity / DANGEROUS even
+        though it has real reserves. GeckoTerminal exposes `reserve_in_usd` for
+        these pools — use the deepest pool's reserve as the liquidity figure.
+        """
+        if not token.address:
+            return
+        try:
+            import aiohttp
+            url = (
+                f"https://api.geckoterminal.com/api/v2/networks/{network}"
+                f"/tokens/{token.address}/pools"
+            )
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    url,
+                    timeout=aiohttp.ClientTimeout(total=10),
+                    headers={"Accept": "application/json"},
+                ) as resp:
+                    if resp.status != 200:
+                        return
+                    data = await resp.json()
+            best = 0.0
+            for pool in (data.get("data") or []):
+                attrs = pool.get("attributes") or {}
+                try:
+                    rv = float(attrs.get("reserve_in_usd") or 0)
+                except (TypeError, ValueError):
+                    rv = 0.0
+                if rv > best:
+                    best = rv
+            if best > 0:
+                token.liquidity_usd = best
+                logger.info(
+                    f"💧 Liquidity backfilled from GeckoTerminal: ${best:,.0f} ({token.symbol})"
+                )
+        except Exception as exc:
+            logger.warning(f"GeckoTerminal liquidity backfill failed: {exc}")
+
     def _apply_dex_data(self, token: TokenInfo, dex_data: Dict) -> None:
         """Apply DexScreener data to token."""
         if not dex_data or not dex_data.get('main'):
@@ -601,7 +648,10 @@ class TokenAnalyzer:
         token.market_cap = float(p.get('marketCap') or 0)
         token.fdv = float(p.get('fdv') or 0)
 
-        liq = p.get('liquidity', {})
+        # NB: DexScreener returns liquidity: null for some pools (e.g. Meteora
+        # DBC bonding curves), so `.get('liquidity', {})` would yield None — guard
+        # with `or {}`. A 0 here is backfilled from GeckoTerminal downstream.
+        liq = p.get('liquidity') or {}
         token.liquidity_usd = float(liq.get('usd') or 0)
 
         info = p.get('info', {})

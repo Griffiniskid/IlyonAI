@@ -156,6 +156,30 @@ function compoundSwapBridgeJson() {
   });
 }
 
+function solanaStakeJson() {
+  // Shape returned by _build_stake_tx for "stake 1 SOL" (Jito liquid staking).
+  return JSON.stringify({
+    status: "ok",
+    type: "solana_swap_proposal",
+    chain_type: "solana",
+    action: "stake",
+    is_stake: true,
+    staking_protocol: "Jito",
+    receipt_token_symbol: "jitoSOL",
+    swapTransaction: "AQ==",
+    out_amount: "778324562",
+    ui_out_amount: 0.77833,
+    ui_in_amount: 1,
+    in_symbol: "SOL",
+    out_symbol: "jitoSOL",
+    from_token_symbol: "SOL",
+    to_token_symbol: "Jito JitoSOL",
+    route_summary: "Stake via Jito JitoSOL",
+    liquid: true,
+    unstake_note: "Liquid stake — you receive jitoSOL, a liquid staking token you can unstake anytime.",
+  });
+}
+
 describe("agent chat regressions", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -379,6 +403,27 @@ describe("agent chat regressions", () => {
     expect(screen.getByText(/Swap Preview/i)).toBeInTheDocument();
     expect(screen.getByText(/Bridge Preview/i)).toBeInTheDocument();
     expect(screen.queryByText(/"compound_action"/i)).not.toBeInTheDocument();
+  });
+
+  it("renders a SOL stake as a liquid-stake card, not a swap", async () => {
+    localStorage.setItem("ap_sol_wallet", "So11111111111111111111111111111111111111112");
+    installFetchMock(JSON.stringify({ response: solanaStakeJson(), chat_id: "stake-chat" }));
+    const { container } = render(<MainApp />);
+
+    const input = screen.getByPlaceholderText(/Ask anything about Solana/i);
+    fireEvent.change(input, { target: { value: "stake 1 SOL" } });
+    await waitFor(() => expect(container.querySelector(".chat-composer .send-btn.active")).toBeTruthy());
+    fireEvent.click(container.querySelector(".chat-composer .send-btn.active") as HTMLButtonElement);
+
+    // Must render the dedicated STAKE card — never a swap card.
+    await waitFor(() => {
+      expect(screen.getByText(/Liquid Stake Preview/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Swap Preview/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/You Stake/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/jitoSOL/i).length).toBeGreaterThan(0);
+    // Phantom CTA must say Stake, not Swap.
+    expect(screen.getByRole("button", { name: /Stake in Phantom/i })).toBeInTheDocument();
   });
 
   it("re-runs allocation from the execution plan card", async () => {

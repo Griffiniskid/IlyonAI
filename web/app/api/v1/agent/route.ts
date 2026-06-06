@@ -25,8 +25,56 @@ function textFromAgentBody(body: string): string {
   }
 }
 
+// In-process session→backend affinity: an ambiguous follow-up ("yes do that",
+// "ok", "the first one") must stay on the backend that holds the conversation
+// (and its chat memory). Otherwise it falls back to the sentinel, which has no
+// context, and the thread is lost.
+type Affinity = { backend: BackendKind; ts: number };
+const _sessionBackend = new Map<string, Affinity>();
+const AFFINITY_TTL_MS = 30 * 60 * 1000;
+
+function sessionIdFromBody(body: string): string {
+  try {
+    const o = JSON.parse(body) as Record<string, unknown>;
+    return String(o.session_id || o.chat_id || "");
+  } catch {
+    return "";
+  }
+}
+
+// True when a message only makes sense as a continuation of the prior turn
+// (short affirmation / pronoun follow-up with no actionable DeFi keyword).
+export function _isAmbiguousFollowup(text: string): boolean {
+  const q = (text || "").trim().toLowerCase();
+  if (!q) return false;
+  if (/^(yes|yep|yeah|yup|ok|okay|sure|sounds good|go ahead|please do|do it|do that|yes do that|yes please|that one|the (first|second|third|last) one|continue|proceed|go on)\b/.test(q)) {
+    return true;
+  }
+  const hasSignal =
+    /\b(swap|bridge|cross[- ]?chain|stake|staking|transfer|send|deposit|pool|farm|vault|yield|apy|apr|price|balance|analy[sz]e|safe|rug|scan|audit|holders?|allocat|rebalance)\b/.test(q) ||
+    /0x[a-f0-9]{6,}|[1-9A-HJ-NP-Za-km-z]{32,}/.test(q);
+  // very short + keyword-free → treat as a contextual continuation
+  return q.split(/\s+/).length <= 4 && !hasSignal;
+}
+
+// Analytical / advice / "what-if" questions. These must be REASONED by a chat
+// LLM, not handled by the execution agent (which can dump links or build a tx).
+// The sentinel answers them in a single, reliable LLM call.
+const _REASONING_RE =
+  /\b(should\s+i|shall\s+i|do\s+you\s+(?:think|recommend|reckon)|what\s+do\s+you\s+think|is\s+it\s+worth|worth\s+it|is\s+it\s+a\s+good\s+idea|good\s+idea|bad\s+idea|what\s+happens|what\s+would\s+happen|what\s+if|happens\s+if|how\s+much|how\s+many|how\s+long|why\s+(?:did|do|does|is|are|should|would|wouldn|can|cant|not)|can\s+i\s+(?:lose|still|really|even|safely)|could\s+i|would\s+it|is\s+it\s+safe|is\s+it\s+better|is\s+it\s+smart|is\s+it\s+risky|what.?s\s+the\s+(?:catch|risk|downside|point)|pros\s+and\s+cons|trade-?offs?|which\s+is\s+(?:better|safer|best)|compare|explain|help\s+me\s+(?:decide|understand|choose)|what\s+should\s+i\s+do|makes?\s+sense|pointless|too\s+(?:small|little|risky|much)|eat\s+(?:the|my|up|into)|net\s+of\s+fees|after\s+fees|worth\s+the\s+fees|better\s+to|or\s+(?:should\s+i|just)|safe\s+to|risky\s+to|lose\s+(?:money|funds|my)|where\s+(?:can|do)\s+i\s+(?:check|see|view|find|track|monitor)|my\s+(?:position|stake|staking|jitosol)|(?:we|i)\s+just\s+did|that\s+we\s+did|what\s+we\s+did)\b/i;
+
+export function _isReasoningQuestion(text: string): boolean {
+  const q = (text || "").trim();
+  if (!q || q.length > 400) return false;
+  return _REASONING_RE.test(q);
+}
+
 export function _selectBackendTarget(body: string): BackendKind {
   const q = textFromAgentBody(body).toLowerCase();
+  // Reasoning/advice questions → sentinel (reliable single-call reasoning).
+  if (_isReasoningQuestion(q)) {
+    return "sentinel";
+  }
   if (/\b(sentinel|allocation|allocate|rebalance|methodology|risk[- ]?weighted|scor(?:e|ing))\b/.test(q)) {
     return "sentinel";
   }
@@ -81,7 +129,21 @@ function normalizeAgentBody(body: string): string {
 
 export async function POST(request: NextRequest): Promise<Response> {
   const body = normalizeAgentBody(await request.text());
-  const selected = _selectBackendTarget(body);
+  const text = textFromAgentBody(body);
+  const sid = sessionIdFromBody(body);
+  let selected = _selectBackendTarget(body);
+  // Keep an ambiguous follow-up on the same backend that holds the conversation.
+  if (_isAmbiguousFollowup(text) && sid) {
+    const aff = _sessionBackend.get(sid);
+    if (aff && Date.now() - aff.ts < AFFINITY_TTL_MS) selected = aff.backend;
+  }
+  if (sid) {
+    _sessionBackend.set(sid, { backend: selected, ts: Date.now() });
+    if (_sessionBackend.size > 1000) {
+      const cutoff = Date.now() - AFFINITY_TTL_MS;
+      _sessionBackend.forEach((v, k) => { if (v.ts < cutoff) _sessionBackend.delete(k); });
+    }
+  }
   const target = _resolveBackendTarget(selected);
   const upstream = await fetch(`${target}/api/v1/agent`, {
     method: "POST",

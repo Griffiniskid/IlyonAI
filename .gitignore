@@ -125,3 +125,4 @@ secrets.json
 
 # Claude Code machine-local locks (never commit)
 .claude/*.lock
+.env.bak*

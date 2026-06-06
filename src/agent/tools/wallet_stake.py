@@ -117,16 +117,34 @@ async def build_stake_tx(
             message=parsed.get("message", "Unknown stake error"),
         )
 
+    _proto_name = (
+        parsed.get("to_token_symbol")
+        or parsed.get("protocol_name")
+        or parsed.get("protocol", protocol)
+    )
+    _asset = parsed.get("from_token_symbol") or parsed.get("asset", asset_label or "SOL")
     card_payload = {
+        "kind": "liquid_stake",
         "protocol": parsed.get("protocol", protocol),
-        "asset": parsed.get("asset", asset_label or "?"),
-        "amount": parsed.get("amount", amount),
+        "protocol_name": _proto_name,
+        "asset": _asset,
+        "amount": parsed.get("ui_in_amount") or parsed.get("amount", amount),
+        # Liquid staking token the user receives (e.g. jitoSOL / mSOL) + amount.
+        "receive_token": parsed.get("receipt_token_symbol") or parsed.get("to_token_symbol"),
+        "receive_amount": parsed.get("ui_out_amount") or parsed.get("out_amount"),
+        # Carry the signable Jupiter tx so the card can be executed (not display-only).
+        "swapTransaction": parsed.get("swapTransaction"),
+        "liquid_via": parsed.get("staking_protocol"),
+        "route_summary": parsed.get("route_summary"),
+        "protocol_url": parsed.get("protocol_url"),
+        "liquid": True,
+        "unstake_note": parsed.get("unstake_note") or "Liquid stake — you receive a liquid staking token you can unstake or swap back anytime.",
         "spender": parsed.get("spender") or parsed.get("protocol", protocol),
         "steps": [
             {
                 "step": 1,
                 "action": "stake",
-                "detail": f"Stake {amount} on {parsed.get('protocol', protocol)}",
+                "detail": f"Stake {parsed.get('amount', amount)} {_asset} on {_proto_name}",
             }
         ],
         "requires_signature": True,

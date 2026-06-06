@@ -128,6 +128,7 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
                 evm_wallet=evm_wallet,
             )
 
+            _client_history = body.get("history")
             async for chunk in run_simple_turn(
                 router=router,
                 tools=tools,
@@ -137,6 +138,7 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
                 user_id=user_id,
                 solana_wallet=solana_wallet,
                 evm_wallet=evm_wallet,
+                client_history=_client_history if isinstance(_client_history, list) else None,
             ):
                 await response.write(chunk)
         else:

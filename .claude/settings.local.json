@@ -31,7 +31,9 @@
       "Bash(git -C /home/griffiniskid/Documents/ai-sentinel show --name-status HEAD)",
       "Bash(git -C /home/griffiniskid/Documents/ai-sentinel status --short)",
       "Bash(git -C /home/griffiniskid/Documents/ai-sentinel log --all --full-history --oneline -- src/bot/ src/output/)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(ssh *)",
+      "Bash(git check-ignore *)"
     ]
   }
 }
