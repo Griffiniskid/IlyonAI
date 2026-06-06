@@ -1372,53 +1372,12 @@ def _detect_buy_intent(message: str) -> tuple[str, dict] | None:
     src = (m.group("src") or "USDC").upper()
     if tout in _NOT_A_SYMBOL or src in _NOT_A_SYMBOL or tout == src:
         return None
-    amount_value = _expand_numeric_amount(m.group("amount"), m.group("suffix"))
-    if amount_value is None or amount_value <= 0:
-        return None
-    # Pick chain from token signal: solana memes → 101, EVM tokens → 1 default,
-    # BNB → 56, etc. Reuse the same logic as sell-all.
-    chain_id_by_token = {
-        "BNB": 56, "CAKE": 56, "BUSD": 56, "WBNB": 56,
-        "MATIC": 137, "POL": 137, "AVAX": 43114,
-        "ARB": 42161, "OP": 10,
-        "SHIB": 1, "PEPE": 1, "ETH": 1, "WETH": 1,
-        "SOL": 101, "BONK": 101, "JUP": 101, "PYTH": 101, "RAY": 101,
-        "ORCA": 101, "MSOL": 101, "JITOSOL": 101, "STSOL": 101,
-        "FATPENGU": 101, "PENGU": 101, "WIF": 101, "POPCAT": 101,
-    }
-    chain_hint = (m.group("chain") or "").lower()
-    if chain_hint:
-        chain_id = CHAIN_IDS.get(chain_hint, chain_id_by_token.get(tout, 1))
-        if chain_id == 7565164:
-            chain_id = 101
-    else:
-        chain_id = chain_id_by_token.get(tout, 101)
-    # Convert input USDC amount in source token decimals.
-    if chain_id == 101:
-        decimals = _SOLANA_DECIMALS.get(src, 6)
-    elif chain_id == 56 and src in {"USDC", "USDT", "DAI", "BUSD", "TUSD", "FDUSD"}:
-        decimals = 18
-    else:
-        decimals = TOKEN_DECIMALS.get(src, 18 if src not in {"USDC", "USDT"} else 6)
-    try:
-        amount_in = str(int(amount_value * (Decimal(10) ** decimals)))
-    except (OverflowError, ValueError, InvalidOperation):
-        return None
-    # Cross-chain reject: 'buy 100 PENGU with ETH' — PENGU is Solana-only,
-    # ETH is EVM. Buy intent doesn't auto-bridge; refuse so the LLM/user can
-    # rephrase as bridge + swap.
-    if is_cross_chain(src, tout, chain_id):
-        return None
-    return (
-        "build_swap_tx",
-        {
-            "chain_id": chain_id,
-            "token_in": src,
-            "token_out": tout,
-            "amount_in": amount_in,
-            "from_addr": "",
-        },
-    )
+    # `buy N TOKEN` is an exact-OUTPUT amount ("I want N of TOKEN"), but swaps are
+    # quoted by the amount you SPEND (exact-input). The old code routed it as
+    # `swap N USDC -> TOKEN`, silently treating N as the USDC input → a wrong,
+    # symbol-less card (`buy 1 SOL` built a 1-USDC swap ≈ 0.016 SOL). Don't build a
+    # misleading tx — clarify and redirect to the unambiguous `swap` form.
+    return ("buy_clarification", {"tout": tout, "src": src})
 
 
 def _detect_swap_signable(message: str) -> tuple[str, dict] | None:
@@ -9716,6 +9675,27 @@ async def run_ephemeral_turn(
                 for frame in collector.drain():
                     yield encode_sse(frame_event_name(frame), frame.model_dump())
                 final_content = _format_expected_refusal_acked(tool_input)
+                collector.emit_final(final_content, [])
+                for frame in collector.drain():
+                    yield encode_sse(frame_event_name(frame), frame.model_dump())
+                return
+
+            if tool_name == "buy_clarification":
+                _tt = (tool_input or {}).get("tout") or "the token"
+                _sr = (tool_input or {}).get("src") or "USDC"
+                _emit_thoughts(collector, [
+                    "Buy intent is ambiguous: 'buy N TOKEN' is an output amount, "
+                    "but swaps are quoted by the amount you spend.",
+                    "Redirecting to the unambiguous swap form instead of building a misleading tx.",
+                ])
+                for frame in collector.drain():
+                    yield encode_sse(frame_event_name(frame), frame.model_dump())
+                final_content = (
+                    f"To buy **{_tt}**, tell me how much you want to **spend** and in which "
+                    f"token — swaps are quoted by the amount you put in, not the amount you get "
+                    f"out.\n\nFor example: **swap 50 {_sr} to {_tt}** (spend 50 {_sr}), or "
+                    f"**swap all {_sr} to {_tt}**."
+                )
                 collector.emit_final(final_content, [])
                 for frame in collector.drain():
                     yield encode_sse(frame_event_name(frame), frame.model_dump())

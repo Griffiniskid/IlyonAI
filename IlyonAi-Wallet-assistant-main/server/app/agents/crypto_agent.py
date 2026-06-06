@@ -2026,6 +2026,15 @@ def _build_swap_tx(raw_input: str, user_address: str, chain_id: int, solana_addr
     except json.JSONDecodeError as exc:
         return json.dumps({"status": "error", "message": f"JSON parse error: {exc}"})
 
+    # Refuse same-token swaps before routing to Enso/Jupiter (nothing to trade).
+    _ti = str(params.get("token_in") or "").strip().lower()
+    _to = str(params.get("token_out") or "").strip().lower()
+    if _ti and _to and _ti == _to:
+        return json.dumps({
+            "status": "error",
+            "message": f"Can't swap {params.get('token_in')} to itself — pick a different token to swap into.",
+        })
+
     chain = str(params.get("chain", "evm")).lower()
     if chain == "solana":
         if not params.get("from") and solana_address:
@@ -4564,6 +4573,14 @@ def build_solana_swap(raw: str, user_query: str = "") -> str:
         output_mint = _resolve_sol_mint(buy_token)
     except ValueError as exc:
         return _solana_swap_error(str(exc))
+
+    # Refuse same-token swaps ("swap 1 USDC to USDC", or symbol vs its own mint) —
+    # nothing to trade, and Jupiter would error anyway.
+    if input_mint == output_mint:
+        return _solana_swap_error(
+            f"Can't swap {sell_token} to {buy_token} — that's the same token. "
+            "Pick a different token to swap into."
+        )
 
     # ── Convert sell_amount to integer lamports ──────────────────────────────
     # Jupiter requires amount as a plain integer in the token's smallest unit.

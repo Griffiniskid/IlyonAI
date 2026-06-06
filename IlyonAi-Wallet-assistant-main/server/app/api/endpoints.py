@@ -899,6 +899,14 @@ def _try_direct_swap_clarification(query: str) -> Optional[str]:
     if not amountless:
         return None
 
+    # Same-token swap is nonsensical — refuse, don't ask for an amount.
+    if amountless.group(1).upper() == amountless.group(2).upper():
+        tok = amountless.group(1).upper()
+        return (
+            f"You're asking to swap {tok} to {tok} — that's the same token, so there's nothing "
+            f"to swap. Tell me a different token to swap into, e.g. 'swap 1 {tok} to SOL'."
+        )
+
     lowered = q.lower()
     if re.search(r"\bswap\s+(?:all|my|entire|full)\b", lowered):
         return None
