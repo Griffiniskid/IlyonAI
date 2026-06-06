@@ -115,6 +115,10 @@ class TokenAnalyzer:
 
         # Simple in-memory cache (replace with Redis in production)
         self._cache: Dict[str, AnalysisResult] = {}
+        # Per-entry timestamps + TTL so a stale score isn't served forever
+        # (price / liquidity / volume go out of date within minutes).
+        self._cache_ts: Dict[str, float] = {}
+        self._cache_ttl: float = 120.0  # seconds
 
         logger.info("TokenAnalyzer initialized — universal multi-chain mode")
 
@@ -189,9 +193,10 @@ class TokenAnalyzer:
         # Resolve chain
         chain_type = self._resolve_chain(address, chain)
 
-        # Check cache
+        # Check cache (TTL-bounded so a stale score isn't served forever)
+        import time as _time
         cache_key = f"{chain_type.value}:{address}:{mode}"
-        if cache_key in self._cache:
+        if cache_key in self._cache and (_time.time() - self._cache_ts.get(cache_key, 0.0)) < self._cache_ttl:
             logger.info(f"Cache hit for {address[:8]}... ({mode}, {chain_type.value})")
             return self._cache[cache_key]
 
@@ -221,8 +226,9 @@ class TokenAnalyzer:
             logger.info("Stage 4: Calculating risk scores...")
             result = self.scorer.calculate(token)
 
-            # Cache result
+            # Cache result + stamp it for TTL expiry
             self._cache[cache_key] = result
+            self._cache_ts[cache_key] = _time.time()
 
             logger.info(
                 f"Analysis complete for {token.symbol} on {chain_type.display_name}: "

@@ -70,12 +70,15 @@ export default function TokenAnalysisPage() {
 
   const {
     mutate: analyze,
-    data: analysis,
+    data: analyzeData,
     isPending: isAnalyzing,
     error,
   } = useAnalyzeToken();
 
-  const { mutate: refresh, isPending: isRefreshing } = useRefreshAnalysis();
+  const { mutate: refresh, data: refreshData, isPending: isRefreshing } = useRefreshAnalysis();
+  // The Refresh button hits /refresh (clears cache + re-analyzes). Show ITS result
+  // when present — otherwise the UI kept rendering the stale initial analysis.
+  const analysis = refreshData ?? analyzeData;
   const { data: whaleActivity } = useWhaleActivity(
     {
       token: address || undefined,
