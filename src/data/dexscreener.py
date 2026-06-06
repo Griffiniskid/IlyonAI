@@ -375,7 +375,7 @@ class DexScreenerClient:
                     continue
 
                 main_pair = result["main"]
-                token_addr = main_(pair.get("baseToken") or {}).get("address")
+                token_addr = (main_pair.get("baseToken") or {}).get("address")
                 pair_chain = self._normalize_chain(main_pair.get("chainId") or candidate.get("chain"))
                 if not token_addr or not pair_chain:
                     continue
