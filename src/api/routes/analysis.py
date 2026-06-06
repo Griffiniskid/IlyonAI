@@ -651,7 +651,7 @@ async def search_tokens(request: web.Request) -> web.Response:
                     apy = float(matched_pool.get("apy") or 0)
                     chain_label = str(matched_pool.get("chain") or pair_match.get("chainId") or "Unknown")
                     project = str(matched_pool.get("project") or pair_match.get("dexId") or "Unknown")
-                    symbol = str(matched_pool.get("symbol") or f"{pair_match.get('baseToken', {}).get('symbol', '?')}-{pair_match.get('quoteToken', {}).get('symbol', '?')}")
+                    symbol = str(matched_pool.get("symbol") or f"{(pair_match.get('baseToken') or {}).get('symbol', '?')}-{(pair_match.get('quoteToken') or {}).get('symbol', '?')}")
                     results.append(SearchResultItem(
                         type="pool",
                         product_type=str(taxonomy.get("product_type") or ""),

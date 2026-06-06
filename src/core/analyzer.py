@@ -683,17 +683,17 @@ class TokenAnalyzer:
 
         token.socials_count = sum([token.has_twitter, token.has_website, token.has_telegram])
 
-        vol = p.get('volume', {})
+        vol = p.get('volume') or {}
         token.volume_24h = float(vol.get('h24') or 0)
         token.volume_1h = float(vol.get('h1') or 0)
 
-        pc = p.get('priceChange', {})
+        pc = p.get('priceChange') or {}
         token.price_change_24h = float(pc.get('h24') or 0)
         token.price_change_6h = float(pc.get('h6') or 0)
         token.price_change_1h = float(pc.get('h1') or 0)
         token.price_change_5m = float(pc.get('m5') or 0)
 
-        txns = p.get('txns', {}).get('h24', {})
+        txns = (p.get('txns') or {}).get('h24') or {}
         token.buys_24h = int(txns.get('buys') or 0)
         token.sells_24h = int(txns.get('sells') or 0)
         token.txns_24h = token.buys_24h + token.sells_24h

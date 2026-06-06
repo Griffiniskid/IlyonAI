@@ -45,7 +45,7 @@ def _pair_to_response(pair: Dict[str, Any]) -> Optional[TrendingTokenResponse]:
         if created_at:
             age_hours = (datetime.now().timestamp() - created_at / 1000) / 3600
 
-        txns = pair.get("txns", {}).get("h1", {})
+        txns = (pair.get("txns") or {}).get("h1") or {}
         txns_1h = int(txns.get("buys", 0) or 0) + int(txns.get("sells", 0) or 0)
 
         return TrendingTokenResponse(

@@ -254,7 +254,7 @@ class DexScreenerClient:
 
         # Sort by liquidity (highest first)
         pairs.sort(
-            key=lambda x: x.get('liquidity', {}).get('usd', 0) or 0,
+            key=lambda x: (x.get('liquidity') or {}).get('usd', 0) or 0,
             reverse=True
         )
 
@@ -269,7 +269,7 @@ class DexScreenerClient:
 
         logger.info(
             f"Found {len(pairs)} pairs for {address[:8]}, "
-            f"main pair liquidity: ${result['main'].get('liquidity', {}).get('usd', 0):,.0f}"
+            f"main pair liquidity: ${(result['main'].get('liquidity') or {}).get('usd', 0):,.0f}"
         )
 
         return result
@@ -375,7 +375,7 @@ class DexScreenerClient:
                     continue
 
                 main_pair = result["main"]
-                token_addr = main_pair.get("baseToken", {}).get("address")
+                token_addr = main_(pair.get("baseToken") or {}).get("address")
                 pair_chain = self._normalize_chain(main_pair.get("chainId") or candidate.get("chain"))
                 if not token_addr or not pair_chain:
                     continue
@@ -420,7 +420,7 @@ class DexScreenerClient:
                     filtered_pairs.append(pair)
 
                 for pair in filtered_pairs[:limit_per_keyword]:
-                    address = pair.get("baseToken", {}).get("address")
+                    address = (pair.get("baseToken") or {}).get("address")
                     pair_chain = self._normalize_chain(pair.get("chainId"))
                     if not address or not pair_chain:
                         continue
@@ -498,7 +498,7 @@ class DexScreenerClient:
                 limit_per_keyword=max(6, limit_hint // 2),
             )
             for pair in search_pairs:
-                address = pair.get("baseToken", {}).get("address")
+                address = (pair.get("baseToken") or {}).get("address")
                 pair_chain = self._normalize_chain(pair.get("chainId"))
                 if not address or not pair_chain:
                     continue
@@ -519,11 +519,11 @@ class DexScreenerClient:
         pairs: List[Dict[str, Any]] = await self._collect_market_pairs(chain=chain, limit_hint=limit)
         pairs = [
             pair for pair in pairs
-            if float(pair.get("volume", {}).get("h24", 0) or 0) >= 500
-            and float(pair.get("liquidity", {}).get("usd", 0) or 0) >= 2000
+            if float((pair.get("volume") or {}).get("h24", 0) or 0) >= 500
+            and float((pair.get("liquidity") or {}).get("usd", 0) or 0) >= 2000
         ]
         pairs.sort(
-            key=lambda x: float(x.get("volume", {}).get("h24", 0) or 0),
+            key=lambda x: float((x.get("volume") or {}).get("h24", 0) or 0),
             reverse=True
         )
 
@@ -543,15 +543,15 @@ class DexScreenerClient:
         all_pairs: List[Dict[str, Any]] = await self._collect_market_pairs(chain=chain, limit_hint=limit)
         gainers = []
         for pair in all_pairs:
-            price_change = float(pair.get("priceChange", {}).get("h24", 0) or 0)
-            liquidity = float(pair.get("liquidity", {}).get("usd", 0) or 0)
-            volume = float(pair.get("volume", {}).get("h24", 0) or 0)
+            price_change = float((pair.get("priceChange") or {}).get("h24", 0) or 0)
+            liquidity = float((pair.get("liquidity") or {}).get("usd", 0) or 0)
+            volume = float((pair.get("volume") or {}).get("h24", 0) or 0)
             if price_change > 0 and liquidity >= 100 and volume >= 50:
                 gainers.append(pair)
 
         # Sort by price change (highest gains first)
         gainers.sort(
-            key=lambda x: float(x.get("priceChange", {}).get("h24", 0) or 0),
+            key=lambda x: float((x.get("priceChange") or {}).get("h24", 0) or 0),
             reverse=True
         )
 
@@ -567,15 +567,15 @@ class DexScreenerClient:
         all_pairs: List[Dict[str, Any]] = await self._collect_market_pairs(chain=chain, limit_hint=limit)
         losers = []
         for pair in all_pairs:
-            price_change = float(pair.get("priceChange", {}).get("h24", 0) or 0)
-            liquidity = float(pair.get("liquidity", {}).get("usd", 0) or 0)
-            volume = float(pair.get("volume", {}).get("h24", 0) or 0)
+            price_change = float((pair.get("priceChange") or {}).get("h24", 0) or 0)
+            liquidity = float((pair.get("liquidity") or {}).get("usd", 0) or 0)
+            volume = float((pair.get("volume") or {}).get("h24", 0) or 0)
             if price_change < 0 and liquidity >= 100 and volume >= 50:
                 losers.append(pair)
 
         # Sort by price change (biggest losers first)
         losers.sort(
-            key=lambda x: float(x.get("priceChange", {}).get("h24", 0) or 0),
+            key=lambda x: float((x.get("priceChange") or {}).get("h24", 0) or 0),
             reverse=False
         )
 
@@ -597,7 +597,7 @@ class DexScreenerClient:
         fresh_tokens = []
         recent_tokens = []
         for pair in all_pairs:
-            liquidity = float(pair.get("liquidity", {}).get("usd", 0) or 0)
+            liquidity = float((pair.get("liquidity") or {}).get("usd", 0) or 0)
             created_at = pair.get("pairCreatedAt", 0) or 0
             if liquidity < 50 or created_at <= 0:
                 continue
@@ -661,9 +661,9 @@ class DexScreenerClient:
                     "name": sanitise_onchain_string(base.get("name", "Unknown")),
                     "chain": self._normalize_chain(pair.get("chainId")) or pair.get("chainId"),
                     "dex": pair.get("dexId", "unknown"),
-                    "logo_url": pair.get("info", {}).get("imageUrl"),
+                    "logo_url": (pair.get("info") or {}).get("imageUrl"),
                     "priceUsd": pair.get("priceUsd"),
-                    "liquidity": pair.get("liquidity", {}).get("usd", 0),
+                    "liquidity": (pair.get("liquidity") or {}).get("usd", 0),
                 })
 
         return results[:limit]

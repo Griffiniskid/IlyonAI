@@ -89,10 +89,11 @@ class DeBridgeBridge:
             r = await cli.get(f"{self._base}/dln/order/quote", params=params)
             r.raise_for_status()
             data = r.json()
-        estimation = data.get("estimation", {})
+        estimation = data.get("estimation") or {}
+        _dst_out = estimation.get("dstChainTokenOut") or {}
         dst_token_amount = (
-            estimation.get("dstChainTokenOut", {}).get("amount")
-            or estimation.get("dstChainTokenOut", {}).get("recommendedAmount")
+            _dst_out.get("amount")
+            or _dst_out.get("recommendedAmount")
             or "0"
         )
         recommended_slippage_bps = int(
@@ -106,8 +107,8 @@ class DeBridgeBridge:
                 "min": max(1, recommended_slippage_bps // 2),
                 "max": recommended_slippage_bps,
             },
-            "quote_id": data.get("orderId") or data.get("estimation", {}).get("orderId"),
-            "ttl_s": int(data.get("estimation", {}).get("orderTtlSec", 600)),
+            "quote_id": data.get("orderId") or (data.get("estimation") or {}).get("orderId"),
+            "ttl_s": int((data.get("estimation") or {}).get("orderTtlSec", 600)),
         }
 
     async def create_order_encoded(
@@ -164,11 +165,11 @@ class DeBridgeBridge:
         # caller decides which one to attach based on chain_kind.
         return {
             "tx": tx_blob,
-            "order_id": data.get("orderId") or data.get("estimation", {}).get("orderId"),
+            "order_id": data.get("orderId") or (data.get("estimation") or {}).get("orderId"),
             "fix_fee_quote": data.get("fixFee"),
             "estimated_dst_amount": (
-                data.get("estimation", {}).get("dstChainTokenOut", {}).get("amount")
-                or data.get("estimation", {}).get("dstChainTokenOut", {}).get("recommendedAmount")
+                ((data.get("estimation") or {}).get("dstChainTokenOut") or {}).get("amount")
+                or ((data.get("estimation") or {}).get("dstChainTokenOut") or {}).get("recommendedAmount")
             ),
             "raw": data,
         }
@@ -194,8 +195,8 @@ class DeBridgeBridge:
         }
         state = mapping.get(raw_state, raw_state or "unknown")
         actual = (
-            data.get("dstChainTokenOut", {}).get("filledAmount")
-            or data.get("fulfilledOrder", {}).get("dstAmount")
+            (data.get("dstChainTokenOut") or {}).get("filledAmount")
+            or (data.get("fulfilledOrder") or {}).get("dstAmount")
         )
         return {
             "state": state,

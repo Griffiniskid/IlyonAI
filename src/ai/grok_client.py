@@ -170,7 +170,7 @@ class GrokClient(BaseAIClient):
                     return self._create_error_response(f"API Error: {resp.status}", start_time)
 
                 data = await resp.json()
-                content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+                content = (((data.get('choices') or [{}])[0] or {}).get('message') or {}).get('content', '')
 
                 if not content:
                     return self._create_error_response("Empty response", start_time)

@@ -154,7 +154,7 @@ class SniperAlertSystem:
             return None
 
         # Check liquidity
-        liquidity = pair.get("liquidity", {}).get("usd", 0) or 0
+        liquidity = (pair.get("liquidity") or {}).get("usd", 0) or 0
         if liquidity < self.min_liquidity:
             return None
 

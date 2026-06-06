@@ -9016,7 +9016,7 @@ async def run_ephemeral_turn(
                     prior_chain = str(_steps[0].get("chain") or "").lower()
             prior_pool_symbol = (
                 payload.get("pool_symbol")
-                or (payload.get("pair") or {}).get("token0", {}).get("symbol", "") + "-" + (payload.get("pair") or {}).get("token1", {}).get("symbol", "")
+                or ((payload.get("pair") or {}).get("token0") or {}).get("symbol", "") + "-" + ((payload.get("pair") or {}).get("token1") or {}).get("symbol", "")
                 or ""
             ).strip("-")
             # Prior amount: pool_link / pool_deposit_v3 carry a human-readable

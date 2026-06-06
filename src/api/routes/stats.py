@@ -152,9 +152,10 @@ async def fetch_sol_price() -> Dict[str, float]:
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    price = float(data.get("data", {}).get(
-                        "So11111111111111111111111111111111111111112", {}
-                    ).get("price", 0))
+                    _sol = (data.get("data") or {}).get(
+                        "So11111111111111111111111111111111111111112"
+                    ) or {}
+                    price = float(_sol.get("price", 0))
                     if price > 0:
                         return {"price": price, "change_24h": 0}
     except Exception as e:
@@ -245,7 +246,7 @@ async def get_dashboard_stats(request: web.Request) -> web.Response:
                 name = base.get("name", "")
                 symbol = base.get("symbol", "")
                 category = categorize_token(name, symbol)
-                token_liq = float(t.get("liquidity", {}).get("usd", 0) or 0)
+                token_liq = float((t.get("liquidity") or {}).get("usd", 0) or 0)
                 category_liquidity[category] += token_liq
                 total_liquidity += token_liq
 
@@ -272,13 +273,13 @@ async def get_dashboard_stats(request: web.Request) -> web.Response:
         if trending_tokens:
             sorted_by_vol = sorted(
                 trending_tokens,
-                key=lambda x: float(x.get("volume", {}).get("h24", 0) or 0),
+                key=lambda x: float((x.get("volume") or {}).get("h24", 0) or 0),
                 reverse=True
             )[:10]
 
             for t in sorted_by_vol:
                 base = t.get("baseToken", {})
-                vol = float(t.get("volume", {}).get("h24", 0) or 0)
+                vol = float((t.get("volume") or {}).get("h24", 0) or 0)
                 if vol > 0:
                     top_tokens_by_volume.append({
                         "symbol": base.get("symbol", "???"),

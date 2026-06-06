@@ -444,7 +444,7 @@ CRITICAL RULES:
 
                     data = await resp.json()
 
-                content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+                content = (((data.get('choices') or [{}])[0] or {}).get('message') or {}).get('content', '')
 
                 if not content:
                     self.ai_logger.log_error(
@@ -897,7 +897,7 @@ If asked about a specific token, suggest sending the address for analysis."""
                     return {}
 
                 data = await resp.json()
-                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                content = (((data.get("choices") or [{}])[0] or {}).get("message") or {}).get("content", "")
                 if not content:
                     return {}
                 return self._extract_json_from_text(content)

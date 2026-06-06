@@ -193,30 +193,30 @@ class CoinGeckoClient:
 
     def _normalize_token(self, data: Dict) -> Dict[str, Any]:
         """Normalize CoinGecko token data into a clean format."""
-        market = data.get("market_data", {})
-        community = data.get("community_data", {})
-        developer = data.get("developer_data", {})
+        market = data.get("market_data") or {}
+        community = data.get("community_data") or {}
+        developer = data.get("developer_data") or {}
 
         from src.agent.sanitizer import sanitise_onchain_string
         return {
             "id": data.get("id", ""),
             "name": sanitise_onchain_string(data.get("name", "")),
             "symbol": sanitise_onchain_string(data.get("symbol", "")),
-            "description": sanitise_onchain_string(data.get("description", {}).get("en", "")),
-            "image": data.get("image", {}).get("large", ""),
+            "description": sanitise_onchain_string((data.get("description") or {}).get("en", "")),
+            "image": (data.get("image") or {}).get("large", ""),
             "market_cap_rank": data.get("market_cap_rank"),
             "categories": data.get("categories", []),
 
             # Market data
-            "price_usd": market.get("current_price", {}).get("usd", 0),
-            "market_cap": market.get("market_cap", {}).get("usd", 0),
-            "fdv": market.get("fully_diluted_valuation", {}).get("usd", 0),
-            "total_volume": market.get("total_volume", {}).get("usd", 0),
+            "price_usd": (market.get("current_price") or {}).get("usd", 0),
+            "market_cap": (market.get("market_cap") or {}).get("usd", 0),
+            "fdv": (market.get("fully_diluted_valuation") or {}).get("usd", 0),
+            "total_volume": (market.get("total_volume") or {}).get("usd", 0),
             "price_change_24h": market.get("price_change_percentage_24h", 0),
             "price_change_7d": market.get("price_change_percentage_7d", 0),
             "price_change_30d": market.get("price_change_percentage_30d", 0),
-            "ath": market.get("ath", {}).get("usd", 0),
-            "ath_change": market.get("ath_change_percentage", {}).get("usd", 0),
+            "ath": (market.get("ath") or {}).get("usd", 0),
+            "ath_change": (market.get("ath_change_percentage") or {}).get("usd", 0),
             "circulating_supply": market.get("circulating_supply", 0),
             "total_supply": market.get("total_supply", 0),
             "max_supply": market.get("max_supply"),
@@ -232,13 +232,13 @@ class CoinGeckoClient:
             "github_commits_30d": developer.get("commit_count_4_weeks", 0),
 
             # Links
-            "homepage": data.get("links", {}).get("homepage", [""])[0],
-            "blockchain_sites": data.get("links", {}).get("blockchain_site", []),
-            "chat_url": data.get("links", {}).get("chat_url", []),
-            "twitter_handle": data.get("links", {}).get("twitter_screen_name", ""),
-            "telegram_channel": data.get("links", {}).get("telegram_channel_identifier", ""),
-            "subreddit": data.get("links", {}).get("subreddit_url", ""),
-            "github_repos": data.get("links", {}).get("repos_url", {}).get("github", []),
+            "homepage": (data.get("links") or {}).get("homepage", [""])[0],
+            "blockchain_sites": (data.get("links") or {}).get("blockchain_site", []),
+            "chat_url": (data.get("links") or {}).get("chat_url", []),
+            "twitter_handle": (data.get("links") or {}).get("twitter_screen_name", ""),
+            "telegram_channel": (data.get("links") or {}).get("telegram_channel_identifier", ""),
+            "subreddit": (data.get("links") or {}).get("subreddit_url", ""),
+            "github_repos": ((data.get("links") or {}).get("repos_url") or {}).get("github", []),
 
             # Contract addresses by platform
             "platforms": data.get("platforms", {}),
