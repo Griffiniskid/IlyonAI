@@ -6,6 +6,8 @@
  * Phantom (or another wallet) has hijacked window.ethereum.
  */
 
+import { isMobileBrowser, openInMetaMaskBrowser } from "./mobile";
+
 const API_BASE = "/api/v1";
 const BNB_CHAIN_HEX = "0x38"; // 56
 
@@ -53,6 +55,12 @@ export function resolveMetaMaskProvider(): EthProvider {
   const eth = win.ethereum;
 
   if (!eth) {
+    // No injected provider on this mobile browser — open the dApp inside
+    // MetaMask's in-app browser, where window.ethereum is available.
+    if (isMobileBrowser()) {
+      openInMetaMaskBrowser();
+      throw new Error("Opening MetaMask… approve the connection in the MetaMask app, then you'll be connected.");
+    }
     throw new Error("MetaMask not installed. Please install it from metamask.io");
   }
 

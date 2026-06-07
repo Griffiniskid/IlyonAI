@@ -1082,6 +1082,64 @@ def _try_direct_stake(query: str, user_address: str, chain_id: int, solana_addre
     return f"I could not build the staking transaction: {message}"
 
 
+def _try_direct_unstake(query: str, user_address: str, chain_id: int, solana_address: str = "") -> Optional[str]:
+    """
+    Detect simple unstake intents and build the unstake (liquid redemption) tx
+    directly. Returns JSON on success, an English clarification on ambiguity, or
+    None to let other handlers / the LLM agent try.
+    """
+    from app.agents.crypto_agent import _build_unstake_tx, _resolve_unstake_target
+
+    q = query.strip()
+    low = q.lower()
+    # Gate: must clearly be an unstake/redeem-of-a-staked-token request.
+    if ("unstake" not in low and "un-stake" not in low
+            and not re.search(r"\b(?:withdraw|redeem)\b.*\b(?:stak|jito|msol|steth|reth|cbeth|sfrxeth|meth|stkbnb|ankrbnb|stmatic|lst)", low)):
+        return None
+
+    m = re.search(
+        r"\b(?:un[-\s]?stake|withdraw|redeem)\s+(?:(all|max|everything|[0-9]*\.?[0-9]+)\s+)?(?:my\s+)?(?:staked\s+)?([A-Za-z0-9]+)?",
+        q, re.IGNORECASE,
+    )
+    if not m:
+        return None
+    amount = (m.group(1) or "all").lower()
+    if amount == "everything":
+        amount = "all"
+    token = (m.group(2) or "").strip()
+
+    _GENERIC = {"", "position", "positions", "stake", "staking", "staked", "lst",
+                "funds", "everything", "all", "max", "it", "them", "some"}
+    if token.lower() in _GENERIC:
+        return ("Which position do you want to unstake? Tell me the token — e.g. "
+                "'unstake all my jitoSOL', 'unstake 0.5 mSOL', or 'unstake my stETH'.")
+
+    info = _resolve_unstake_target(token, "", chain_id)
+    if not info:
+        return None  # unknown token -> let the LLM agent try
+
+    effective_chain = info["chain_id"]
+    # Convert human amount -> wei for EVM (Solana path uses human amounts).
+    if amount not in ("all", "max") and effective_chain != 101:
+        try:
+            amount = str(int(Decimal(amount) * (Decimal(10) ** int(info["decimals"]))))
+        except Exception:
+            pass
+
+    raw = json.dumps({"token": token, "amount": amount, "chain_id": effective_chain})
+    if solana_address:
+        result = _build_unstake_tx(raw, user_address, effective_chain, solana_address)
+    else:
+        result = _build_unstake_tx(raw, user_address, effective_chain)
+    try:
+        parsed = json.loads(result)
+    except json.JSONDecodeError:
+        return result
+    if parsed.get("status") == "ok":
+        return result
+    return parsed.get("message", "I could not build the unstake transaction right now.")
+
+
 def _try_direct_pool_lookup(query: str, chain_id: int) -> Optional[str]:
     """Detect simple pool lookup requests and route them directly to find_liquidity_pool."""
     from app.agents.crypto_agent import find_liquidity_pool, get_defi_analytics
@@ -1189,6 +1247,31 @@ def _is_reasoning_question(text: str) -> bool:
     return bool(_REASONING_QUESTION_RE.search(q))
 
 
+# Imperative unstake/redeem commands must EXECUTE — they must NOT be diverted to
+# the reasoning path even though they contain "my position / my jitoSOL" (which
+# _REASONING_QUESTION_RE matches). A genuine question ("should I unstake?",
+# "how much if I unstake?") still reasons.
+_UNSTAKE_CMD_RE = re.compile(
+    r"\bun[-\s]?stake\b|\b(?:redeem|withdraw)\b[^.?!]*\b(?:stak|jito|msol|steth|reth|cbeth|sfrxeth|meth|stkbnb|ankrbnb|stmatic|lst)",
+    re.IGNORECASE,
+)
+_UNSTAKE_QUESTION_RE = re.compile(
+    r"\b(should|shall|is\s+it|are\s+there|worth|good\s+idea|bad\s+idea|can\s+i|could\s+i|would|"
+    r"how\s+(?:much|many|do|long|to|can|should)|why|what|when|where|pros|cons|explain|compare|"
+    r"better\s+to|or\s+should)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_unstake_command(text: str) -> bool:
+    q = (text or "").strip()
+    if not q or len(q) > 300:
+        return False
+    if not _UNSTAKE_CMD_RE.search(q):
+        return False
+    return not _UNSTAKE_QUESTION_RE.search(q)  # a question ABOUT unstaking → not a command
+
+
 def _summarize_for_memory(query: str, raw_response: str) -> str:
     """One-line summary of a direct (non-agent) turn for conversation memory, so a
     later agent turn can recall what the user did (e.g. recall a prior stake).
@@ -1211,6 +1294,11 @@ def _summarize_for_memory(query: str, raw_response: str) -> str:
         return (f"User staked {in_amt} {f_sym or 'SOL'} via {proto}{apy_txt}, receiving ~{out_amt} "
                 f"{t_sym or 'LST'} (a liquid staking token). A signable tx was prepared. To check it "
                 f"later, the user holds {t_sym or 'the LST'} in this wallet, redeemable for SOL anytime.")
+    if d.get("is_unstake") or action == "unstake":
+        proto = d.get("staking_protocol") or "a liquid-staking protocol"
+        return (f"User unstaked ~{in_amt} {f_sym or 'LST'} via {proto}, redeeming ~{out_amt} "
+                f"{t_sym or 'SOL'} (liquid unstake — the LST was swapped back to the underlying "
+                f"instantly). A signable tx was prepared.")
     if "bridge" in action or d.get("type") == "bridge_proposal":
         return f"User prepared a bridge of ~{in_amt} {f_sym} from {d.get('src_chain_name')} to {d.get('dst_chain_name')} (signable tx prepared)."
     if "swap" in action or d.get("type") in ("solana_swap_proposal", "evm_action_proposal"):
@@ -1254,7 +1342,9 @@ async def run_agent(
     # Analytical / advice / "what-if" questions must REASON via the LLM agent.
     # When set, every deterministic data handler below is skipped so it can't
     # hijack the question with a scripted price/links/template answer.
-    _reasoning = _is_reasoning_question(body.query)
+    # Imperative unstake ("unstake my jitoSOL") must execute, so it overrides the
+    # reasoning gate even though it contains "my jitoSOL / my position".
+    _reasoning = _is_reasoning_question(body.query) and not _is_unstake_command(body.query)
     evm_wallet, solana_wallet = _split_wallet_context(body.user_address, body.solana_address)
     effective_chain_id = _infer_runtime_chain_id(body.chain_id, getattr(body, "wallet_type", None), evm_wallet, solana_wallet)
 
@@ -1286,6 +1376,33 @@ async def run_agent(
             db.commit()
             return {"session_id": chat.id, "chat_id": chat.id, "response": direct_balance_result}
         return {"session_id": body.session_id, "chat_id": None, "response": direct_balance_result}
+
+    # ── Try direct UNstake flow (reverse of staking). Must precede swap so
+    #    "unstake jitoSOL" builds a redemption (LST->SOL), not a generic swap. ──
+    direct_unstake_result = None if _reasoning else _try_direct_unstake(
+        direct_query, evm_wallet, effective_chain_id, solana_wallet
+    )
+    if direct_unstake_result:
+        _record_direct_turn(body.session_id, body.query, direct_unstake_result)
+        provided_chat_id_early: Optional[str] = getattr(body, "chat_id", None)
+        if current_user:
+            if provided_chat_id_early:
+                chat = db.query(Chat).filter(
+                    Chat.id == provided_chat_id_early, Chat.user_id == current_user.id
+                ).first()
+            else:
+                chat = None
+            if not chat:
+                chat_id = str(uuid.uuid4())
+                chat = Chat(id=chat_id, user_id=current_user.id, title=_auto_title(body.query))
+                db.add(chat)
+                db.flush()
+            db.add(ChatMessage(chat_id=chat.id, role="user", content=body.query))
+            db.add(ChatMessage(chat_id=chat.id, role="assistant", content=direct_unstake_result))
+            chat.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            return {"session_id": chat.id, "chat_id": chat.id, "response": direct_unstake_result}
+        return {"session_id": body.session_id, "chat_id": None, "response": direct_unstake_result}
 
     direct_swap_clarification = None if _reasoning else _try_direct_swap_clarification(direct_query)
     if direct_swap_clarification:

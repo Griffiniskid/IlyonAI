@@ -89,6 +89,29 @@ body:has([data-agent-route]) [data-agent-route] {
   flex-direction: column !important;
 }
 
+/* Non-chat tabs (dashboard, portfolio) must scroll their OWN content inside the
+   fixed-height, overflow-hidden tab-panel. Without this, tall content — the
+   portfolio token list + the Activity section, or long dashboard sections — is
+   clipped and unreachable (you can't scroll to it). Chat scrolls via .messages. */
+.app .tab-panel > .dash,
+.app .tab-panel > .page {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow-y: auto !important;
+}
+
+/* The inner shell of those tabs must GROW with its content (height:auto), not be
+   pinned to 100%. A fixed-height flex column compresses its only auto-min-size-0
+   child — .portfolio-table has overflow:hidden, so flexbox collapses it to ~0 and
+   the token rows disappear (everything else keeps min-content height). height:auto
+   stops the compression; the .page/.dash parent above owns the scroll. */
+.app .tab-panel > .page > .page-shell,
+.app .tab-panel > .dash > .page-shell {
+  height: auto !important;
+  min-height: 100% !important;
+}
+
 /* Chat / swap / portfolio wraps fill the tab-panel; drop fixed viewport math from MainApp. */
 .chat-wrap,
 .swap-wrap,

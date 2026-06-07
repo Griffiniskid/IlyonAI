@@ -51,7 +51,7 @@ export function _isAmbiguousFollowup(text: string): boolean {
     return true;
   }
   const hasSignal =
-    /\b(swap|bridge|cross[- ]?chain|stake|staking|transfer|send|deposit|pool|farm|vault|yield|apy|apr|price|balance|analy[sz]e|safe|rug|scan|audit|holders?|allocat|rebalance)\b/.test(q) ||
+    /\b(swap|bridge|cross[- ]?chain|un[-\s]?stake|stake|staking|redeem|transfer|send|deposit|pool|farm|vault|yield|apy|apr|price|balance|analy[sz]e|safe|rug|scan|audit|holders?|allocat|rebalance)\b/.test(q) ||
     /0x[a-f0-9]{6,}|[1-9A-HJ-NP-Za-km-z]{32,}/.test(q);
   // very short + keyword-free → treat as a contextual continuation
   return q.split(/\s+/).length <= 4 && !hasSignal;
@@ -69,8 +69,28 @@ export function _isReasoningQuestion(text: string): boolean {
   return _REASONING_RE.test(q);
 }
 
+// Imperative unstake/redeem commands must EXECUTE on the wallet backend, even
+// though they contain "my position / my jitoSOL" which _REASONING_RE also matches.
+// A leading advice/question word ("should I unstake?", "how much if I unstake?")
+// still routes to reasoning instead.
+const _UNSTAKE_CMD_RE =
+  /\bun[-\s]?stake\b|\b(?:redeem|withdraw)\b[^.?!]*\b(?:stak|jito|msol|steth|reth|cbeth|sfrxeth|meth|stkbnb|ankrbnb|stmatic|lst)/i;
+const _UNSTAKE_QUESTION_RE =
+  /\b(should|shall|is\s+it|are\s+there|worth|good\s+idea|bad\s+idea|can\s+i|could\s+i|would|how\s+(?:much|many|do|long|to|can|should)|why|what|when|where|pros|cons|explain|compare|better\s+to|or\s+should)\b/i;
+export function _isUnstakeCommand(text: string): boolean {
+  const q = (text || "").trim();
+  if (!q || q.length > 300) return false;
+  if (!_UNSTAKE_CMD_RE.test(q)) return false;
+  return !_UNSTAKE_QUESTION_RE.test(q); // a question ABOUT unstaking → not a command
+}
+
 export function _selectBackendTarget(body: string): BackendKind {
   const q = textFromAgentBody(body).toLowerCase();
+  // Imperative unstake → execute on wallet backend. Checked BEFORE the reasoning
+  // gate, which would otherwise capture "unstake my jitoSOL" via "my position".
+  if (_isUnstakeCommand(q)) {
+    return "wallet";
+  }
   // Reasoning/advice questions → sentinel (reliable single-call reasoning).
   if (_isReasoningQuestion(q)) {
     return "sentinel";

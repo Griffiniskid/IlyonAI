@@ -6,6 +6,7 @@ import type { CardFrame, ExecutionPlanPayload, ObservationFrame, PlanCompleteFra
 import { connectMetaMask, resolveMetaMaskProvider } from "./wallets/metamask";
 import { connectPhantomSolana, disconnectPhantomSolana, getStoredPhantomWalletContext, resolvePhantomEvmProvider, restorePhantomWalletContext } from "./wallets/phantom";
 import { copyWithFeedback } from "./utils/copyWithFeedback";
+import TransactionHistory from "./TransactionHistory";
 import {
   useWalletSigning,
   SimStaleError,
@@ -63,6 +64,7 @@ interface SwapPreview {
   isSolanaSwap?: boolean;
   // Liquid-staking card fields (stake SOL -> LST like jitoSOL / mSOL)
   isStake?: boolean;
+  isUnstake?: boolean;        // liquid unstake: LST -> underlying (jitoSOL -> SOL)
   stakingProtocol?: string;   // e.g. "Jito"
   receiptToken?: string;      // e.g. "jitoSOL"
   liquid?: boolean;
@@ -149,6 +151,7 @@ interface Message {
   balanceData?: BalanceData | null;
   poolData?: LiquidityPoolData | null;
   universalCards?: UniversalCardsData | null;
+  signedTx?: string | null;   // on-chain signature once the card's tx is signed — persisted so the card keeps showing "✅ sent" across reloads/navigation (and can't be re-signed)
 }
 
 export interface ParsedAgentSseResponse {
@@ -331,6 +334,7 @@ export function parseSwapPreview(text: string): SwapPreview | null {
     // — otherwise it renders as a plain swap.
     if (json.swapTransaction) {
       const isStake = json.action === "stake" || json.is_stake === true;
+      const isUnstake = json.action === "unstake" || json.is_unstake === true;
       const outSym: string = json.receipt_token_symbol ?? json.out_symbol ?? json.to_token_symbol ?? "Token";
       const outHuman: string = json.ui_out_amount != null
         ? String(json.ui_out_amount)
@@ -354,6 +358,7 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         // Liquid-stake awareness so the UI renders a STAKE card, not a swap.
         actionType: json.action ?? "swap",
         isStake,
+        isUnstake,
         stakingProtocol: json.staking_protocol ?? undefined,
         receiptToken: json.receipt_token_symbol ?? outSym,
         liquid: json.liquid === true,
@@ -458,6 +463,7 @@ export function parseSwapPreview(text: string): SwapPreview | null {
       json.swapTransaction
     ) {
       const isStake = json.action === "stake" || json.is_stake === true;
+      const isUnstake = json.action === "unstake" || json.is_unstake === true;
       const outSym: string = json.receipt_token_symbol ?? json.out_symbol ?? "Token";
       // Prefer backend-computed human-readable amount; fall back to raw division
       const outHuman: string = json.ui_out_amount != null
@@ -477,6 +483,7 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         // Carry the action so a stake renders as a STAKE card, not a swap.
         actionType: json.action ?? "swap",
         isStake,
+        isUnstake,
         stakingProtocol: json.staking_protocol ?? undefined,
         receiptToken: json.receipt_token_symbol ?? outSym,
         liquid: json.liquid === true,
@@ -497,8 +504,9 @@ export function parseSwapPreview(text: string): SwapPreview | null {
         approvalTx: json.approval_tx ?? null,
         actionType: json.action ?? "swap",
         warnings: Array.isArray(json.warnings) ? json.warnings.map(String) : undefined,
-        // Liquid-stake awareness for EVM stakes (ETH->stETH etc.) — same card as SOL.
+        // Liquid-stake / unstake awareness for EVM (ETH->stETH, stETH->ETH) — same card as SOL.
         isStake: json.action === "stake" || json.is_stake === true,
+        isUnstake: json.action === "unstake" || json.is_unstake === true,
         stakingProtocol: json.staking_protocol ?? undefined,
         receiptToken: json.receipt_token_symbol ?? json.to_token_symbol ?? undefined,
         liquid: json.liquid === true,
@@ -1031,7 +1039,6 @@ const SIDEBAR_GROUPS = [
     title: "AI Agent",
     items: [
       { key: "chat", label: "Chat", icon: "⌁" },
-      { key: "swap", label: "Swap", icon: "⇄" },
     ],
   },
 ] as const;
@@ -3384,6 +3391,8 @@ interface SimulationPreviewProps {
   fromAddress?: string | null;
   solanaAddress?: string | null;
   walletType?: "metamask" | "phantom" | null;
+  initialSignature?: string | null;          // persisted signature → card shows "✅ sent" on reload, button stays hidden
+  onSigned?: (signature: string) => void;     // called once signed, so the parent persists it onto the message
 }
 
 async function waitForReceipt(
@@ -3400,9 +3409,9 @@ async function waitForReceipt(
   throw new Error("Timed out waiting for transaction confirmation. Please check your wallet activity.");
 }
 
-export function SimulationPreview({ preview, fromAddress, solanaAddress, walletType }: SimulationPreviewProps) {
+export function SimulationPreview({ preview, fromAddress, solanaAddress, walletType, initialSignature, onSigned }: SimulationPreviewProps) {
   const [isPending, setIsPending] = useState(false);
-  const [txHash, setTxHash] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(initialSignature ?? null);
   const [txError, setTxError] = useState<string | null>(null);
   const [bridgeStatus, setBridgeStatus] = useState<string | null>(null);
 
@@ -3455,6 +3464,7 @@ export function SimulationPreview({ preview, fromAddress, solanaAddress, walletT
       };
       const kind = preview.isBridge ? "bridge"
         : preview.actionType === "stake" ? "stake"
+        : preview.actionType === "unstake" ? "unstake"
         : preview.actionType === "add_liquidity" ? "lp"
         : preview.isTransfer ? "transfer"
         : "swap";
@@ -3501,6 +3511,7 @@ export function SimulationPreview({ preview, fromAddress, solanaAddress, walletT
 
       const { signature } = await sol.signAndSendTransaction(tx);
       setTxHash(signature);
+      onSigned?.(signature);
       void recordTx(signature, true);
     } catch (e: unknown) {
       const err = e as { message?: string };
@@ -3552,6 +3563,7 @@ export function SimulationPreview({ preview, fromAddress, solanaAddress, walletT
       const tx = fromAddress ? { ...txFields, from: fromAddress } : txFields;
       const hash = await eth.request({ method: "eth_sendTransaction", params: [tx] }) as string;
       setTxHash(hash);
+      onSigned?.(hash);
       void recordTx(hash, false);
     } catch (e: unknown) {
       const err = e as { message?: string; reason?: string; data?: { message?: string } };
@@ -3565,11 +3577,13 @@ export function SimulationPreview({ preview, fromAddress, solanaAddress, walletT
 
   const actionLabel = preview.actionType === "stake"
     ? "Stake"
-    : preview.actionType === "add_liquidity"
-      ? "Add Liquidity"
-      : preview.isBridge
-        ? "Bridge"
-        : "Swap";
+    : preview.actionType === "unstake"
+      ? "Unstake"
+      : preview.actionType === "add_liquidity"
+        ? "Add Liquidity"
+        : preview.isBridge
+          ? "Bridge"
+          : "Swap";
 
   const buttonLabel = preview.isTransfer
     ? `📤 Send in ${walletType === "phantom" ? "Phantom" : "MetaMask"}`
@@ -3696,6 +3710,46 @@ export function SimulationPreview({ preview, fromAddress, solanaAddress, walletT
               </div>
             )}
           </div>
+        </>
+      ) : preview.isUnstake ? (
+        <>
+          <div className="sim-title"><span>🔵</span> Unstake Preview</div>
+          <div className="sim-row">
+            <div className="sim-token from">
+              <span className="sim-token-icon">🪙</span>
+              <div>
+                <div className="sim-token-label">You Unstake</div>
+                <div className="sim-token-value">{preview.fromAmount} {preview.fromToken}</div>
+              </div>
+            </div>
+            <div className="sim-arrow">→</div>
+            <div className="sim-token to">
+              <span className="sim-token-icon">{preview.toToken === "SOL" ? "◎" : preview.toToken === "ETH" ? "Ξ" : "🟡"}</span>
+              <div>
+                <div className="sim-token-label">You Receive{preview.liquid ? " (instant)" : ""}</div>
+                <div className="sim-token-value">~{preview.toAmount} {preview.toToken}</div>
+              </div>
+            </div>
+          </div>
+          <div className="sim-meta">
+            <div className="sim-meta-item">
+              <span className="sim-meta-label">Protocol</span>
+              <span className="sim-meta-value" style={{ color: "#60A5FA" }}>{preview.stakingProtocol ?? preview.route}</span>
+            </div>
+            <div className="sim-meta-item">
+              <span className="sim-meta-label">Type</span>
+              <span className="sim-meta-value">Liquid unstake{preview.liquid ? " · instant, no epoch wait" : ""}</span>
+            </div>
+            <div className="sim-meta-item">
+              <span className="sim-meta-label">Rate</span>
+              <span className="sim-meta-value">{preview.fromAmount} {preview.fromToken} ≈ {preview.toAmount} {preview.toToken}</span>
+            </div>
+          </div>
+          {preview.unstakeNote && (
+            <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(96,165,250,0.10)", border: "1px solid rgba(96,165,250,0.24)", borderRadius: 10, color: "#93C5FD", fontSize: 12, lineHeight: 1.4 }}>
+              ℹ️ {preview.unstakeNote}
+            </div>
+          )}
         </>
       ) : preview.isStake ? (
         <>
@@ -4319,6 +4373,23 @@ interface PortfolioToken {
   chainName?: string;
 }
 
+// Open liquid-staking position (jitoSOL/mSOL/stETH/...) with live APY + earnings.
+interface PortfolioPosition {
+  symbol: string;
+  protocol: string;
+  chainName: string;
+  underlying: string;
+  balance: number;
+  balanceDisplay: string;
+  priceUsd: number;
+  valueUsd: number;
+  underlyingPriceUsd: number;
+  apy: number | null;
+  projectedYearlyUsd: number | null;
+  realizedUsd: number | null;
+  realizedUnderlying: number | null;
+}
+
 interface ChainTokenConfig {
   symbol: string; name: string; address: string; decimals: number;
   icon: string; grad: string; stablecoin: boolean; pricePair?: string;
@@ -4466,24 +4537,60 @@ const CHAIN_CONFIG: Record<number, ChainConfig> = {
 // CoinGecko IDs for fallback pricing when Binance is unavailable
 
 
+// Persisted portfolio snapshot so the Portfolio tab shows the last-known balance
+// instantly (no $0 flash for ~30s while the live scan runs), then refreshes.
+type PortfolioCache = {
+  wallet: string;
+  tokens: PortfolioToken[];
+  positions: PortfolioPosition[];
+  totalUsd: number;
+  bnbPrice: number;
+  solPrice: number;
+  updatedAt: number;
+};
+const PORTFOLIO_CACHE_KEY = "ap_portfolio_cache_v1";
+function loadPortfolioCache(): PortfolioCache | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(PORTFOLIO_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as PortfolioCache) : null;
+  } catch { return null; }
+}
+function savePortfolioCache(c: PortfolioCache): void {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem(PORTFOLIO_CACHE_KEY, JSON.stringify(c)); } catch { /* quota — ignore */ }
+}
+
 async function fetchPortfolio(
   address: string,
-): Promise<{ tokens: PortfolioToken[]; totalUsd: number; nativePrice: number; solPrice: number; chainName: string }> {
-  try {
-    const response = await fetch(`/api/portfolio/${address}`);
-    if (!response.ok) throw new Error(`Backend returned ${response.status}`);
-    const data = await response.json();
-    return {
-      tokens:      data.tokens   ?? [],
-      totalUsd:    data.totalUsd ?? 0,
-      nativePrice: data.bnbPrice ?? 0,
-      solPrice:    data.solPrice ?? 0,
-      chainName:   "All Networks",
-    };
-  } catch (error) {
-    console.error("Backend portfolio error:", error);
-    return { tokens: [], totalUsd: 0, nativePrice: 0, solPrice: 0, chainName: "Error" };
+): Promise<{ tokens: PortfolioToken[]; positions: PortfolioPosition[]; totalUsd: number; nativePrice: number; solPrice: number; chainName: string }> {
+  // An empty result is almost always a transient backend scan failure (RPC/Moralis
+  // throttle), not a genuinely empty wallet — retry once before accepting it.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch(`/api/portfolio/${address}`);
+      if (!response.ok) throw new Error(`Backend returned ${response.status}`);
+      const data = await response.json();
+      const tokens: PortfolioToken[] = data.tokens ?? [];
+      if (tokens.length === 0 && attempt === 0) {
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+      return {
+        tokens,
+        positions:   data.positions ?? [],
+        totalUsd:    data.totalUsd  ?? 0,
+        nativePrice: data.bnbPrice  ?? 0,
+        solPrice:    data.solPrice  ?? 0,
+        chainName:   "All Networks",
+      };
+    } catch (error) {
+      console.error("Backend portfolio error:", error);
+      if (attempt === 0) { await new Promise((r) => setTimeout(r, 1500)); continue; }
+      return { tokens: [], positions: [], totalUsd: 0, nativePrice: 0, solPrice: 0, chainName: "Error" };
+    }
   }
+  return { tokens: [], positions: [], totalUsd: 0, nativePrice: 0, solPrice: 0, chainName: "Error" };
 }
 
 function buildPhantomPortfolioAddress(solanaAddress: string | null, evmAddress: string | null): string {
@@ -4492,7 +4599,7 @@ function buildPhantomPortfolioAddress(solanaAddress: string | null, evmAddress: 
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
-export default function MainApp() {
+export default function MainApp({ routeTab }: { routeTab?: string | null } = {}) {
   // V7-045 — centralized signing pre-flight (30s freshness +
   // calldata-hash bind). We use the hook only for its pre-flight
   // (`sign` is intentionally NOT called for the actual broadcast here
@@ -4504,19 +4611,24 @@ export default function MainApp() {
   const makeWelcome = (): Message => ({ ...WELCOME, ts: new Date() });
   const createClientSessionId = () => globalThis.crypto?.randomUUID?.() ?? `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const [messages, setMessages]         = useState<Message[]>(() => loadLocalChatMessages() ?? [makeWelcome()]);
+  // Persist a card's on-chain signature onto its message so the "✅ sent" state
+  // survives reloads/navigation and the Sign button can't reappear (no re-signing).
+  const markMessageSigned = (msgId: number, signature: string) => {
+    setMessages(prev => prev.map(m => (m.id === msgId ? { ...m, signedTx: signature } : m)));
+  };
   const [input, setInput]               = useState("");
   const [loading, setLoading]           = useState(false);
   const [backendOk, setBackendOk]       = useState<null | boolean>(null);
   const [activeTab, setActiveTab]       = useState<Tab>(() => {
     if (typeof window === "undefined") return "chat";
     const t = new URLSearchParams(window.location.search).get("tab");
-    return t === "chat" || t === "swap" || t === "portfolio" || t === "dashboard" ? t : "chat";
+    return t === "chat" || t === "portfolio" || t === "dashboard" ? t : "chat";
   });
   useEffect(() => {
     if (typeof window === "undefined") return;
     const sync = () => {
       const t = new URLSearchParams(window.location.search).get("tab");
-      if (t === "chat" || t === "swap" || t === "portfolio" || t === "dashboard") setActiveTab(t);
+      if (t === "chat" || t === "portfolio" || t === "dashboard") setActiveTab(t);
     };
     window.addEventListener("popstate", sync);
     window.addEventListener("ilyon-tab-change", sync as EventListener);
@@ -4525,6 +4637,15 @@ export default function MainApp() {
       window.removeEventListener("ilyon-tab-change", sync as EventListener);
     };
   }, []);
+  // React-driven tab sync from the route (MainAppLoader passes the ?tab= param).
+  // This is the RELIABLE path: clicking the sidebar Portfolio/Chat link switches
+  // the tab without a window.location race or a missed custom event (which is why
+  // it previously "sometimes" didn't switch until a manual page refresh).
+  useEffect(() => {
+    if (routeTab === "chat" || routeTab === "portfolio" || routeTab === "dashboard") {
+      setActiveTab(routeTab);
+    }
+  }, [routeTab]);
   const [showIntro, setShowIntro]       = useState(() => {
     if (typeof window === "undefined") return true;
     return !new URLSearchParams(window.location.search).get("tab");
@@ -4559,12 +4680,35 @@ export default function MainApp() {
   });
   const solDisplayAddr = solanaWallet ?? null;
   const [_nativeBalance, setNativeBalance]       = useState<string>("0.00");
-  const [portfolioTokens, setPortfolioTokens]   = useState<PortfolioToken[]>([]);
-  const [portfolioTotalUsd, setPortfolioTotalUsd] = useState<number>(0);
-  const [bnbPriceUsd, setBnbPriceUsd]           = useState<number>(0);
-  const [solPriceUsd, setSolPriceUsd]           = useState<number>(0);
+  // Seed from the persisted snapshot so the balance shows immediately on entry.
+  const [_pfCache] = useState<PortfolioCache | null>(() => loadPortfolioCache());
+  const [portfolioTokens, setPortfolioTokens]   = useState<PortfolioToken[]>(() => _pfCache?.tokens ?? []);
+  const [portfolioPositions, setPortfolioPositions] = useState<PortfolioPosition[]>(() => _pfCache?.positions ?? []);
+  const [portfolioTotalUsd, setPortfolioTotalUsd] = useState<number>(() => _pfCache?.totalUsd ?? 0);
+  const [bnbPriceUsd, setBnbPriceUsd]           = useState<number>(() => _pfCache?.bnbPrice ?? 0);
+  const [solPriceUsd, setSolPriceUsd]           = useState<number>(() => _pfCache?.solPrice ?? 0);
   const [portfolioLoading, setPortfolioLoading] = useState(false);
+  const [portfolioUpdatedAt, setPortfolioUpdatedAt] = useState<number | null>(() => _pfCache?.updatedAt ?? null);
+  const [portfolioSubTab, setPortfolioSubTab]   = useState<"overview" | "positions" | "history">("overview");
   const [balanceUnit, setBalanceUnit]           = useState<"USD" | "native">("USD");
+
+  // Apply a portfolio fetch result. An empty/failed result NEVER overwrites good
+  // data and does NOT update the "Updated" stamp/cache — so the user keeps seeing
+  // their real balance instead of a transient "$0 / no tokens · Updated now".
+  const applyPortfolioResult = (
+    wallet: string,
+    res: { tokens: PortfolioToken[]; positions: PortfolioPosition[]; totalUsd: number; nativePrice: number; solPrice: number },
+  ) => {
+    const empty = res.tokens.length === 0 && res.totalUsd === 0;
+    setPortfolioTokens(prev => (empty && prev.length > 0 ? prev : res.tokens));
+    setPortfolioPositions(prev => (empty && res.positions.length === 0 && prev.length > 0 ? prev : res.positions));
+    if (empty) return;
+    setPortfolioTotalUsd(res.totalUsd);
+    setBnbPriceUsd(res.nativePrice);
+    setSolPriceUsd(res.solPrice);
+    setPortfolioUpdatedAt(Date.now());
+    savePortfolioCache({ wallet, tokens: res.tokens, positions: res.positions, totalUsd: res.totalUsd, bnbPrice: res.nativePrice, solPrice: res.solPrice, updatedAt: Date.now() });
+  };
   const [connectedChainId, setConnectedChainId] = useState<number>(() => {
     const stored = getStoredPhantomWalletContext();
     if ((localStorage.getItem("ap_wallet_type") as "metamask" | "phantom" | null) === "phantom") {
@@ -4756,12 +4900,14 @@ export default function MainApp() {
   }, [connectedWallet, walletType]);
 
   useEffect(() => {
-    const wallet = walletType === "phantom"
-      ? buildPhantomPortfolioAddress(solanaWallet, connectedWallet)
-      : connectedWallet;
+    // Always scan BOTH wallets (Solana + EVM) when connected, regardless of
+    // walletType — a Phantom user with an EVM address connected must still see
+    // their SOL/jitoSOL tokens + staking positions, not just the EVM side.
+    const wallet = [solanaWallet, connectedWallet].filter(Boolean).join(",");
     if (!wallet) {
       setNativeBalance("0.00");
       setPortfolioTokens([]);
+      setPortfolioPositions([]);
       setPortfolioTotalUsd(0);
       setPortfolioError(null);
       return;
@@ -4769,18 +4915,32 @@ export default function MainApp() {
     setPortfolioLoading(true);
     setPortfolioError(null);
       fetchPortfolio(wallet)
-      .then(({ tokens, totalUsd, nativePrice, solPrice }) => {
-        setPortfolioTokens(tokens);
-        setPortfolioTotalUsd(totalUsd);
-        setBnbPriceUsd(nativePrice);
-        setSolPriceUsd(solPrice);
-        const preferredNative = walletType === "phantom" ? "SOL" : "BNB";
-        const mainToken = tokens.find(t => t.symbol === preferredNative || t.symbol === "ETH" || t.symbol === "SOL");
-        setNativeBalance(mainToken ? mainToken.balance : "0.00");
+      .then((res) => {
+        applyPortfolioResult(wallet, res);
+        if (res.tokens.length > 0) {
+          const preferredNative = walletType === "phantom" ? "SOL" : "BNB";
+          const mainToken = res.tokens.find(t => t.symbol === preferredNative || t.symbol === "ETH" || t.symbol === "SOL");
+          setNativeBalance(mainToken ? mainToken.balance : "0.00");
+        }
       })
       .catch(console.error)
       .finally(() => setPortfolioLoading(false));
   }, [connectedWallet, solanaWallet, walletType]);
+
+  // Re-fetch the portfolio every time the user ENTERS the Portfolio tab, so a
+  // balance/position change made elsewhere (e.g. an unstake in chat) is reflected
+  // — otherwise the cached state lingers and a closed position appears to "stay".
+  useEffect(() => {
+    if (activeTab !== "portfolio") return;
+    const wallet = [solanaWallet, connectedWallet].filter(Boolean).join(",");
+    if (!wallet) return;
+    setPortfolioLoading(true);
+    fetchPortfolio(wallet)
+      .then((res) => applyPortfolioResult(wallet, res))
+      .catch(() => {})
+      .finally(() => setPortfolioLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   // Live swap quote fetching via CoinGecko-backed live prices
   useEffect(() => {
@@ -5083,7 +5243,9 @@ export default function MainApp() {
               if (m.role === "assistant") {
                 const p = m.swapPreview;
                 if (p) {
-                  c = p.isStake
+                  c = p.isUnstake
+                    ? `Prepared an unstake: ${p.fromAmount} ${p.fromToken} → ~${p.toAmount} ${p.toToken} (liquid redemption, instant).`
+                    : p.isStake
                     ? `Prepared a liquid stake: ${p.fromAmount} ${p.fromToken} → ~${p.toAmount} ${p.receiptToken ?? p.toToken} via ${p.stakingProtocol ?? "a protocol"}.`
                     : p.isBridge
                       ? `Prepared a bridge of ${p.fromAmount} ${p.fromToken}.`
@@ -6217,7 +6379,8 @@ export default function MainApp() {
 
                           {/* Simulation Preview (for swap / transfer responses) */}
                           {msg.role === "assistant" && resolvedSwap && (
-                            <SimulationPreview preview={resolvedSwap} fromAddress={connectedWallet} solanaAddress={solanaWallet} walletType={walletType} />
+                            <SimulationPreview preview={resolvedSwap} fromAddress={connectedWallet} solanaAddress={solanaWallet} walletType={walletType}
+                              initialSignature={msg.signedTx} onSigned={(sig) => markMessageSigned(msg.id, sig)} />
                           )}
 
                           {msg.role === "assistant" && resolvedCompound && resolvedCompound.previews.map((preview, index) => (
@@ -6383,6 +6546,19 @@ export default function MainApp() {
                       : "Track your assets and performance across all chains"}
                   </div>
 
+                  {/* Sub-tabs: Portfolio (balance + tokens) / Positions / History */}
+                  <div style={{ display: "flex", gap: 6, margin: "4px 0 18px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                    {([["overview", "Portfolio"], ["positions", "Positions"], ["history", "History"]] as const).map(([k, label]) => (
+                      <button key={k} onClick={() => setPortfolioSubTab(k)} style={{
+                        padding: "8px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
+                        background: "transparent", border: "none",
+                        borderBottom: portfolioSubTab === k ? "2px solid #34D399" : "2px solid transparent",
+                        color: portfolioSubTab === k ? "#fff" : "rgba(255,255,255,0.45)", marginBottom: -1,
+                      }}>{label}{k === "positions" && portfolioPositions.length > 0 ? ` (${portfolioPositions.length})` : ""}</button>
+                    ))}
+                  </div>
+
+                  {portfolioSubTab === "overview" && (<>
                   {/* ── Stats ── */}
                   <div className="stats-grid">
                     {[
@@ -6430,19 +6606,14 @@ export default function MainApp() {
                         const nativeSym = walletType === "phantom" ? "SOL" : "BNB";
                         const chainName = "All Chains";
                         const doRefresh = () => {
-                          const wallet = walletType === "phantom"
-                            ? buildPhantomPortfolioAddress(solanaWallet, connectedWallet)
-                            : connectedWallet;
+                          const wallet = [solanaWallet, connectedWallet].filter(Boolean).join(",");
                           if (!wallet) return;
                           setPortfolioLoading(true);
                           setPortfolioError(null);
                           fetchPortfolio(wallet)
-                            .then(({ tokens, totalUsd, nativePrice, solPrice }) => {
-                              setPortfolioTokens(tokens);
-                              setPortfolioTotalUsd(totalUsd);
-                              setBnbPriceUsd(nativePrice);
-                              setSolPriceUsd(solPrice);
-                              const nt = tokens.find(t => t.symbol === nativeSym || t.symbol === "ETH" || t.symbol === "SOL");
+                            .then((res) => {
+                              applyPortfolioResult(wallet, res);
+                              const nt = res.tokens.find(t => t.symbol === nativeSym || t.symbol === "ETH" || t.symbol === "SOL");
                               if (nt) setNativeBalance(nt.balance);
                             })
                             .catch(err => setPortfolioError(String(err)))
@@ -6462,9 +6633,18 @@ export default function MainApp() {
                                 ))}
                                 <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginLeft: 4 }}>{chainName}</span>
                               </div>
-                              <button onClick={doRefresh} style={{ padding: "5px 12px", borderRadius: 999, fontSize: 12, fontFamily: "inherit", cursor: "pointer", background: "rgba(15,23,42,0.72)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(226,232,240,0.58)" }}>
-                                {portfolioLoading ? "⏳" : "🔄 Refresh"}
-                              </button>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                {portfolioUpdatedAt !== null && !portfolioLoading && (
+                                  <span style={{ fontSize: 11, color: "rgba(52,211,153,0.8)", whiteSpace: "nowrap" }}>
+                                    ✓ Updated {new Date(portfolioUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                                  </span>
+                                )}
+                                <button onClick={doRefresh} disabled={portfolioLoading} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 999, fontSize: 12, fontFamily: "inherit", cursor: portfolioLoading ? "default" : "pointer", background: "rgba(15,23,42,0.72)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(226,232,240,0.58)", opacity: portfolioLoading ? 0.7 : 1 }}>
+                                  {portfolioLoading
+                                    ? <><span className="animate-spin" style={{ display: "inline-block", lineHeight: 1 }}>🔄</span> Refreshing…</>
+                                    : "🔄 Refresh"}
+                                </button>
+                              </div>
                             </div>
                             {portfolioError && (
                               <div style={{ background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.28)", borderRadius: 12, padding: "10px 14px", fontSize: 12, color: "#FCA5A5", marginBottom: 12 }}>
@@ -6517,11 +6697,85 @@ export default function MainApp() {
                       </div>
                     </>
                   )}
+                  </>)}
+
+                  {/* Positions sub-tab — liquid-staking holdings with live APY + earnings */}
+                  {portfolioSubTab === "positions" && (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <span style={{ fontSize: 18 }}>🟢</span>
+                        <h2 style={{ fontSize: 18, fontWeight: 700, color: "#fff", margin: 0 }}>Staking &amp; Positions</h2>
+                      </div>
+                      <p style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", margin: "0 0 14px" }}>
+                        Your liquid-staking positions. <b style={{ color: "rgba(255,255,255,0.6)" }}>Earned</b> = value now vs. what you staked through Ilyon · APY is live.
+                      </p>
+                      {portfolioLoading && portfolioPositions.length === 0 ? (
+                        <div style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "20px 16px", textAlign: "center", color: "rgba(255,255,255,0.5)", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                          <span className="animate-spin" style={{ display: "inline-block" }}>🔄</span> Loading your positions…
+                        </div>
+                      ) : portfolioPositions.length === 0 ? (
+                        <div style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "20px 16px", textAlign: "center", color: "rgba(255,255,255,0.45)", fontSize: 13 }}>
+                          No open staking positions. Stake in chat — e.g. <span style={{ color: "#34D399" }}>“stake 1 SOL”</span> or <span style={{ color: "#34D399" }}>“stake 0.1 ETH”</span> — and your jitoSOL / stETH positions show up here with live APY and earnings.
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                          {portfolioPositions.map(pos => (
+                            <div key={`${pos.symbol}-${pos.chainName}`} style={{
+                              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap",
+                              background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "14px 16px",
+                            }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 170 }}>
+                                <div style={{ width: 38, height: 38, borderRadius: "50%", background: "linear-gradient(135deg,#10b981,#059669)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "#06281d" }}>
+                                  {pos.symbol.slice(0, 2)}
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{pos.symbol}</div>
+                                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{pos.protocol} · {pos.chainName}</div>
+                                </div>
+                              </div>
+                              <div style={{ minWidth: 110 }}>
+                                <div style={{ fontSize: 13, color: "#fff", fontFamily: "'JetBrains Mono', monospace" }}>{Number(pos.balance).toFixed(4)}</div>
+                                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>${pos.valueUsd.toFixed(2)}</div>
+                              </div>
+                              <div style={{ minWidth: 120 }}>
+                                <div style={{ fontSize: 13, color: "#34D399", fontWeight: 600 }}>{pos.apy != null ? `${pos.apy}% APY` : "APY —"}</div>
+                                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)" }}>{pos.projectedYearlyUsd != null ? `≈ $${pos.projectedYearlyUsd.toFixed(2)}/yr` : ""}</div>
+                              </div>
+                              <div style={{ minWidth: 120 }}>
+                                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>Earned</div>
+                                {pos.realizedUsd != null ? (
+                                  <div style={{ fontSize: 13, fontWeight: 600, color: pos.realizedUsd >= 0 ? "#34D399" : "#F87171" }}>
+                                    {pos.realizedUsd >= 0 ? "+" : "−"}${Math.abs(pos.realizedUsd).toFixed(2)}
+                                    {pos.realizedUnderlying != null && (
+                                      <span style={{ color: "rgba(255,255,255,0.4)", fontWeight: 400, fontSize: 11 }}> ({pos.realizedUnderlying >= 0 ? "+" : "−"}{Math.abs(pos.realizedUnderlying).toFixed(4)} {pos.underlying})</span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)" }} title="No recorded stake through Ilyon to compute cost basis">—</div>
+                                )}
+                              </div>
+                              <button onClick={() => send(`unstake all my ${pos.symbol}`)} style={{
+                                padding: "7px 16px", borderRadius: 10, fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
+                                background: "rgba(96,165,250,0.12)", border: "1px solid rgba(96,165,250,0.3)", color: "#93C5FD",
+                              }}>Unstake</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* History sub-tab — activity (swaps / bridges / stakes / unstakes) */}
+                  {portfolioSubTab === "history" && (
+                    <div style={{ marginTop: 4 }}>
+                      <TransactionHistory />
+                    </div>
+                  )}
                   </div>
                 </motion.div>
               )}
 
-              {/* Swap */}
+              {/* Swap (removed from nav — users swap in chat; tab unreachable) */}
               {activeTab === "swap" && (
                 <motion.div key="swap" variants={scaleIn} initial="hidden" animate="show" style={{ flex: 1, overflowY: "auto", padding: "24px 24px 40px" }}>
                   <div className="page-shell swap-grid">

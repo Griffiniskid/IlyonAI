@@ -1021,14 +1021,24 @@ def _scan_single_address(raw_addr: str, target_chain: str) -> list[dict]:
     priority = [c for c in evm_chains if c["name"] in priority_names]
     others = [c for c in evm_chains if c["name"] not in priority_names]
 
-    chain_dicts: list[dict] = []
-    for chain in priority + others:
+    chains_to_scan = priority + others
+
+    # Scan EVM chains CONCURRENTLY. Each check_evm() makes blocking RPC + Moralis +
+    # DexScreener calls; running them one-after-another over ~15 chains is what made
+    # the portfolio take 30-50s. A thread pool collapses that to roughly the time of
+    # the single slowest chain.
+    def _safe_check_evm(chain: dict) -> Optional[dict]:
         try:
-            res = check_evm(chain)
+            return check_evm(chain)
+        except Exception:
+            return None
+
+    from concurrent.futures import ThreadPoolExecutor
+    chain_dicts: list[dict] = []
+    with ThreadPoolExecutor(max_workers=min(12, max(1, len(chains_to_scan)))) as _ex:
+        for res in _ex.map(_safe_check_evm, chains_to_scan):
             if res:
                 chain_dicts.append(res)
-        except Exception:
-            pass
 
     return chain_dicts
 
@@ -2856,31 +2866,194 @@ def _build_stake_tx(raw: str, user_address: str, default_chain_id: int, solana_a
         return result_json
 
 
-def _get_solana_spl_balance(owner: str, mint: str) -> int:
-    for rpc in _SOL_RPCS_AGENT:
+# ---------------------------------------------------------------------------
+# Unstake — the reverse of staking. Liquid unstaking = swap the LST back to its
+# underlying (jitoSOL->SOL via Jupiter, stETH->ETH via Enso). Instant; no epoch
+# wait. The reverse map is built lazily because _STAKING_PROTOCOLS is defined
+# further down this module (would NameError at import otherwise).
+# ---------------------------------------------------------------------------
+
+_LST_TOKENS_CACHE: dict[str, dict[str, Any]] = {}
+
+
+def _get_lst_tokens() -> dict[str, dict[str, Any]]:
+    """LST symbol (lowercase) -> {symbol, underlying, protocol, chain_id, address,
+    decimals, apy_key, name}. Derived once from _STAKING_PROTOCOLS, cached."""
+    if _LST_TOKENS_CACHE:
+        return _LST_TOKENS_CACHE
+    # APY pool keys in _LST_APY_POOL only track the right asset for these
+    # protocols; for the others (stkBNB/ankrBNB/stMATIC) the pool would report a
+    # different asset's APY, so we keep APY blank rather than show a wrong number.
+    _apy_ok = {"jito", "marinade", "lido", "rocketpool", "frax", "mantle", "coinbase"}
+    for (chain_id, token, protocol), info in _STAKING_PROTOCOLS.items():
+        sym = info["name"].split()[-1]  # "Jito JitoSOL"->"JitoSOL", "Lido stETH"->"stETH"
+        apy_key = protocol if (protocol in _apy_ok and not (protocol == "lido" and token == "MATIC")) else None
+        _LST_TOKENS_CACHE[sym.lower()] = {
+            "symbol": sym,
+            "underlying": token,
+            "protocol": protocol,
+            "chain_id": chain_id,
+            "address": info["receipt"],
+            "decimals": int(info["decimals"]),
+            "apy_key": apy_key,
+            "name": info["name"],
+        }
+    return _LST_TOKENS_CACHE
+
+
+def _resolve_unstake_target(token: str, protocol: str, default_chain_id: int) -> Optional[dict[str, Any]]:
+    """Resolve what the user wants to unstake into LST metadata. Accepts an LST
+    symbol ('jitoSOL', 'stETH'), or an underlying ('SOL', 'ETH') optionally with
+    a protocol (falls back to the chain default protocol)."""
+    lst = _get_lst_tokens()
+    t = (token or "").strip().lower()
+    if t in lst:
+        return lst[t]
+    u = (token or "").strip().upper()
+    chain_for_u = {"ETH": 1, "BNB": 56, "MATIC": 137, "SOL": 101}.get(u, default_chain_id)
+    proto = (protocol or "").strip().lower() or _DEFAULT_STAKING.get((chain_for_u, u), "")
+    si = _STAKING_PROTOCOLS.get((chain_for_u, u, proto))
+    if si:
+        return lst.get(si["name"].split()[-1].lower())
+    return None
+
+
+def _build_unstake_tx(raw: str, user_address: str, default_chain_id: int, solana_address: str = "") -> str:
+    """
+    Build an unstake (liquid redemption) transaction — the reverse of _build_stake_tx.
+    Input JSON keys: token (LST symbol e.g. 'jitoSOL', or underlying 'SOL'),
+    protocol (optional), amount ('all' or human number for SOL / wei for EVM),
+    chain_id (optional).
+    """
+    try:
+        params = _parse_tool_json(raw)
+    except json.JSONDecodeError:
+        return json.dumps({"status": "error", "message": f"Invalid JSON input: {raw}"})
+
+    token = str(params.get("token") or params.get("lst") or "").strip()
+    protocol = str(params.get("protocol") or "").strip().lower()
+    amount = str(params.get("amount", "all"))
+    chain_id_hint = int(params.get("chain_id", default_chain_id))
+
+    if not token:
+        return json.dumps({"status": "error", "message": "Tell me which staked token to unstake, e.g. 'unstake all my jitoSOL' or 'unstake 0.5 stETH'."})
+
+    info = _resolve_unstake_target(token, protocol, chain_id_hint)
+    if not info:
+        return json.dumps({"status": "error", "message": f"I don't know how to unstake '{token}'. Supported: jitoSOL, mSOL, stETH, rETH, cbETH, sfrxETH, mETH, stkBNB, ankrBNB, stMATIC."})
+
+    chain_id = info["chain_id"]
+    underlying = info["underlying"]
+    lst_sym = info["symbol"]
+
+    # ---- Solana liquid unstake: LST -> SOL via Jupiter ----
+    if chain_id in _APP_SOLANA_CHAIN_IDS:
+        _evm_wallet, sol_wallet = _split_connected_wallets(user_address, solana_address)
+        if not sol_wallet:
+            return json.dumps({"status": "error", "message": "No Solana wallet connected. Connect Phantom to unstake jitoSOL/mSOL."})
+        sell_token = "jito" if info["protocol"] == "jito" else "msol"
+        if amount.lower().strip() in ("", "all", "max"):
+            raw_bal = _get_solana_spl_balance(sol_wallet, info["address"])
+            if raw_bal < 0:
+                return json.dumps({"status": "error", "message": f"I couldn't check your {lst_sym} balance right now (Solana RPC is busy). Please try again in a moment, or unstake an exact amount, e.g. 'unstake 0.0005 {lst_sym}'."})
+            if raw_bal == 0:
+                return json.dumps({"status": "error", "message": f"You have no {lst_sym} to unstake."})
+            amount = f"{raw_bal / (10 ** info['decimals']):.9f}".rstrip("0").rstrip(".")
+        result_json = build_solana_swap(json.dumps({
+            "sell_token": sell_token,
+            "buy_token": "SOL",
+            "sell_amount": amount,
+            "user_pubkey": sol_wallet,
+            # The jitoSOL/mSOL → SOL route can settle through the Jito/Sanctum
+            # stake-pool program, whose withdrawal fee + rate spread reverts
+            # (custom error 0x23) at 0.5%. 1.5% reliably clears the minimum-out.
+            "slippage_bps": 150,
+        }))
         try:
-            r = _requests.post(
-                rpc,
-                json={
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "getTokenAccountsByOwner",
-                    "params": [
-                        owner,
-                        {"mint": mint},
-                        {"encoding": "jsonParsed", "commitment": "processed"},
-                    ],
-                },
-                timeout=8,
+            result = json.loads(result_json)
+        except json.JSONDecodeError:
+            return result_json
+        if result.get("status") == "ok":
+            result["action"] = "unstake"
+            result["is_unstake"] = True
+            result["liquid"] = True
+            result["staking_protocol"] = "Jito" if sell_token == "jito" else "Marinade"
+            result["from_token_symbol"] = lst_sym
+            result["to_token_symbol"] = "SOL"
+            result["in_symbol"] = lst_sym
+            result["out_symbol"] = "SOL"
+            result["route_summary"] = f"Unstake {lst_sym} → SOL"
+            result["unstake_note"] = (
+                f"Liquid unstake — your {lst_sym} is swapped back to SOL instantly via Jupiter "
+                "(no epoch wait). A small route/slippage cost applies."
             )
-            total = 0
-            for item in (((r.json() or {}).get("result") or {}).get("value") or []):
-                amount = (((((item.get("account") or {}).get("data") or {}).get("parsed") or {}).get("info") or {}).get("tokenAmount") or {}).get("amount") or "0"
-                total += int(amount)
-            return total
-        except Exception:
-            continue
-    return 0
+        elif "error" in result and "message" not in result:
+            result = {"status": "error", "message": result["error"]}
+        return json.dumps(result)
+
+    # ---- EVM liquid unstake: LST -> underlying via Enso (handles 'all' via balanceOf) ----
+    swap_params = {
+        "token_in": info["address"],   # the LST contract
+        "token_out": underlying,       # ETH / BNB / MATIC
+        "amount": amount,
+        "chain_id": chain_id,
+        "action": "unstake",
+    }
+    result_json = _build_enso_swap_tx(swap_params, user_address, chain_id)
+    try:
+        result = json.loads(result_json)
+        if result.get("status") == "ok":
+            result["action"] = "unstake"
+            result["is_unstake"] = True
+            result["liquid"] = True
+            result["staking_protocol"] = info["protocol"].title()
+            result["from_token_symbol"] = lst_sym
+            result["to_token_symbol"] = underlying
+            result["route_summary"] = f"Unstake {lst_sym} → {underlying}"
+            result["unstake_note"] = (
+                f"Liquid unstake — your {lst_sym} is swapped back to {underlying} via Enso routing. "
+                "A small route/slippage cost applies."
+            )
+        return json.dumps(result)
+    except json.JSONDecodeError:
+        return result_json
+
+
+def _get_solana_spl_balance(owner: str, mint: str) -> int:
+    """Raw SPL balance (base units) of `owner`'s `mint` holding. Returns -1 when the
+    balance could NOT be determined (every RPC errored / rate-limited). Callers MUST
+    NOT treat -1 as a genuine zero: a rate-limited RPC returns an error body with no
+    "result", which previously read as 0 and wrongly told users "you have no jitoSOL"
+    when they did. Each RPC is retried before moving on."""
+    for rpc in _SOL_RPCS_AGENT:
+        for _attempt in range(2):
+            try:
+                r = _requests.post(
+                    rpc,
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "getTokenAccountsByOwner",
+                        "params": [
+                            owner,
+                            {"mint": mint},
+                            {"encoding": "jsonParsed", "commitment": "confirmed"},
+                        ],
+                    },
+                    timeout=8,
+                )
+                result = (r.json() or {}).get("result")
+                # No "result" (rate-limit / error body) → a FAILURE, not a 0 balance.
+                if not isinstance(result, dict) or "value" not in result:
+                    continue
+                total = 0
+                for item in (result.get("value") or []):
+                    amount = (((((item.get("account") or {}).get("data") or {}).get("parsed") or {}).get("info") or {}).get("tokenAmount") or {}).get("amount") or "0"
+                    total += int(amount)
+                return total
+            except Exception:
+                continue
+    return -1
 
 
 def _is_valid_solana_address(address: str) -> bool:
@@ -3238,7 +3411,7 @@ def _build_bridge_tx(raw: str, user_address: str, default_chain_id: int, solana_
                 except Exception:
                     continue
         elif src_chain == _DEBRIDGE_SOLANA_CHAIN_ID:
-            amount = str(_get_solana_spl_balance(sender, src_addr))
+            amount = str(max(0, _get_solana_spl_balance(sender, src_addr)))
         else:
             _chain_rpcs = {
                 56: ["https://bsc-dataseed1.binance.org"],
@@ -4548,6 +4721,10 @@ def build_solana_swap(raw: str, user_query: str = "") -> str:
         buy_token   = str(params["buy_token"])
         raw_amount  = params["sell_amount"]   # may be float or int string
         user_pubkey = str(params.get("user_pubkey") or "").strip()
+        # Slippage tolerance (bps). Default 0.5% for swaps/stakes; unstakes pass a
+        # higher value because the jitoSOL/mSOL→SOL stake-pool route has a
+        # withdrawal-fee/rate spread that reverts (custom error 0x23) at 0.5%.
+        slippage_bps = int(params.get("slippage_bps", 50))
     except (KeyError, ValueError) as exc:
         return _solana_swap_error(f"Missing or invalid parameter: {exc}")
 
@@ -4630,7 +4807,7 @@ def build_solana_swap(raw: str, user_query: str = "") -> str:
                 "inputMint":   input_mint,
                 "outputMint":  output_mint,
                 "amount":      sell_amount,
-                "slippageBps": 50,   # 0.5 % slippage
+                "slippageBps": slippage_bps,   # default 0.5%; unstakes raise it
                 # No platform fee: the public Jupiter proxy otherwise injects a
                 # platformFee into the quote, and /swap then HARD-REJECTS with
                 # "feeAccount is required for swap with platformFee" (we have no
@@ -5408,6 +5585,21 @@ def build_agent(
                 "chain_id (optional; native staking chain is auto-detected: ETH->1, BNB->56, MATIC->137, SOL->101). "
                 "If user doesn't specify a protocol, the best default is chosen. "
                 "Example: {{\"token\":\"ETH\",\"protocol\":\"lido\",\"amount\":\"all\",\"chain_id\":1}}."
+            ),
+        ),
+        Tool(
+            name="build_unstake_tx",
+            func=lambda raw: _build_unstake_tx(raw, user_address, chain_id, solana_address),
+            return_direct=True,
+            description=(
+                "Builds an UNstaking (liquid redemption) transaction — the reverse of build_stake_tx. "
+                "Swaps a liquid-staking token back to its underlying (jitoSOL->SOL via Jupiter, stETH->ETH via Enso). Instant, no epoch wait. "
+                "Use when user says 'unstake my jitoSOL', 'unstake 0.5 stETH', 'withdraw my stake', 'redeem mSOL'. "
+                "Input: a JSON string with - "
+                "token (required: the LST symbol like 'jitoSOL','mSOL','stETH','rETH','cbETH','stkBNB','stMATIC', OR the underlying 'SOL'/'ETH'/'BNB'/'MATIC'), "
+                "amount ('all' for full position, or a number — human units for SOL, wei for EVM), "
+                "chain_id (optional; auto-detected from the token). "
+                "Example: {{\"token\":\"jitoSOL\",\"amount\":\"all\"}}."
             ),
         ),
         Tool(

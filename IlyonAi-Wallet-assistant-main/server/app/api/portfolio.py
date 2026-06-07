@@ -474,6 +474,262 @@ def _to_portfolio_format(chain_dicts: list[dict[str, Any]]) -> list[dict[str, An
 
 
 # ---------------------------------------------------------------------------
+# Open positions — liquid-staking (LST) holdings with live APY + earnings.
+#
+# SOL LSTs (jitoSOL/mSOL) already arrive via the Moralis SPL scan (priced $0 in
+# the token list). EVM LSTs (stETH/rETH/...) are NOT in the USDC/USDT scan, so we
+# scan their balanceOf here. Each position gets a real price, the live APY, a
+# projected yearly yield, and a realized P&L computed from the user's recorded
+# stake/unstake history (cost basis) when available.
+# ---------------------------------------------------------------------------
+
+_LST_CHAIN_RPCS: dict[int, list[str]] = {
+    1:   ["https://rpc.ankr.com/eth", "https://eth.drpc.org", "https://1rpc.io/eth", "https://eth.llamarpc.com"],
+    56:  ["https://bsc-dataseed.binance.org", "https://bsc-dataseed1.defibit.io", "https://bsc.drpc.org"],
+    137: ["https://polygon-rpc.com", "https://polygon.drpc.org", "https://1rpc.io/matic"],
+}
+
+# CoinGecko ids for LST USD pricing. Missing/failed ids fall back to the
+# underlying asset's price (stETH≈ETH; jitoSOL slightly under) so values stay sane.
+_LST_COINGECKO: dict[str, str] = {
+    "jitosol": "jito-staked-sol",
+    "msol":    "msol",
+    "steth":   "staked-ether",
+    "reth":    "rocket-pool-eth",
+    "cbeth":   "coinbase-wrapped-staked-eth",
+    "sfrxeth": "staked-frax-ether",
+    "meth":    "mantle-staked-ether",
+    "stkbnb":  "pstake-staked-bnb",
+    "ankrbnb": "ankr-staked-bnb",
+    "stmatic": "lido-staked-matic",
+}
+
+_UNDERLYING_PAIR = {"SOL": "SOLUSDT", "ETH": "ETHUSDT", "BNB": "BNBUSDT", "MATIC": "MATICUSDT"}
+
+
+async def _fetch_lst_usd_prices(client: httpx.AsyncClient, symbols_lower: set[str]) -> dict[str, float]:
+    """Batch CoinGecko price for the LST symbols actually held. Returns {sym_lower: usd}."""
+    ids = {s: _LST_COINGECKO[s] for s in symbols_lower if s in _LST_COINGECKO}
+    if not ids:
+        return {}
+    out: dict[str, float] = {}
+    try:
+        cg = await client.get(
+            "https://api.coingecko.com/api/v3/simple/price",
+            params={"ids": ",".join(sorted(set(ids.values()))), "vs_currencies": "usd"},
+            timeout=8,
+        )
+        if cg.status_code == 200:
+            data = cg.json()
+            for sym, cg_id in ids.items():
+                node = data.get(cg_id)
+                if isinstance(node, dict) and "usd" in node:
+                    out[sym] = float(node["usd"])
+    except Exception as exc:
+        logger.warning("LST price fetch failed: %s", exc)
+    return out
+
+
+async def _scan_evm_lst_balances(
+    client: httpx.AsyncClient, evm_addresses: list[str], lst_tokens: dict[str, dict],
+) -> list[dict[str, Any]]:
+    """balanceOf each EVM LST contract for each EVM address. Returns raw holdings."""
+    held: list[dict[str, Any]] = []
+    evm_lsts = [v for v in lst_tokens.values() if v["chain_id"] in _LST_CHAIN_RPCS]
+    for addr in evm_addresses:
+        if not (addr.startswith("0x") and len(addr) == 42):
+            continue
+        padded = addr[2:].lower().rjust(64, "0")
+        calldata = f"0x70a08231{padded}"
+        tasks = [
+            _rpc_with_fallback(client, _LST_CHAIN_RPCS[v["chain_id"]], {
+                "jsonrpc": "2.0", "method": "eth_call",
+                "params": [{"to": v["address"], "data": calldata}, "latest"], "id": 1,
+            })
+            for v in evm_lsts
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for v, data in zip(evm_lsts, results):
+            if not isinstance(data, dict):
+                continue
+            hex_val = data.get("result", "0x0") or "0x0"
+            if hex_val in ("0x", "0x0", "0x" + "0" * 64):
+                continue
+            try:
+                bal = int(hex_val, 16) / 10 ** v["decimals"]
+            except (ValueError, TypeError):
+                continue
+            if bal > 1e-6:
+                held.append({"sym": v["symbol"], "balance": bal, "info": v})
+    return held
+
+
+async def _scan_sol_lst_balances(
+    client: httpx.AsyncClient, sol_addresses: list[str], lst_tokens: dict[str, dict],
+) -> list[dict[str, Any]]:
+    """getTokenAccountsByOwner for each SOL LST mint (jitoSOL/mSOL) per SOL address."""
+    held: list[dict[str, Any]] = []
+    sol_lsts = [v for v in lst_tokens.values() if v["chain_id"] == 101]
+    for addr in sol_addresses:
+        for v in sol_lsts:
+            data = await _rpc_with_fallback(client, _SOL_RPCS, {
+                "jsonrpc": "2.0", "id": 1, "method": "getTokenAccountsByOwner",
+                "params": [addr, {"mint": v["address"]}, {"encoding": "jsonParsed"}],
+            })
+            total = 0.0
+            for item in (((data.get("result") or {}).get("value")) or []):
+                amt = (((((item.get("account") or {}).get("data") or {}).get("parsed") or {}).get("info") or {}).get("tokenAmount") or {})
+                total += float(amt.get("uiAmount") or 0)
+            if total > 1e-6:
+                held.append({"sym": v["symbol"], "balance": total, "info": v})
+    return held
+
+
+def _staking_history(addresses: list[str]) -> dict[str, dict[str, float]]:
+    """Per-LST-symbol cost basis from recorded stake/unstake turns:
+    {lst_lower: {"staked_underlying": x, "unstaked_underlying": y}}.
+    Best-effort — DB issues never break the portfolio."""
+    out: dict[str, dict[str, float]] = {}
+    try:
+        from app.db.database import SessionLocal
+        from app.db.models import Transaction
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(Transaction)
+                .filter(Transaction.wallet.in_(addresses), Transaction.kind.in_(["stake", "unstake"]))
+                .all()
+            )
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("staking history query failed: %s", exc)
+        return out
+
+    def _f(v: Any) -> float:
+        try:
+            return float(str(v))
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _init() -> dict[str, float]:
+        return {"staked_underlying": 0.0, "staked_lst": 0.0, "unstaked_underlying": 0.0}
+
+    for r in rows:
+        if r.kind == "stake":
+            lst = (r.to_token or "").strip().lower()      # e.g. "jitoSOL"
+            if not lst:
+                continue
+            out.setdefault(lst, _init())
+            out[lst]["staked_underlying"] += _f(r.from_amount)   # underlying paid (SOL/ETH)
+            out[lst]["staked_lst"] += _f(r.to_amount)            # LST received (jitoSOL/...)
+        elif r.kind == "unstake":
+            lst = (r.from_token or "").strip().lower()    # unstake: LST -> underlying
+            if not lst:
+                continue
+            out.setdefault(lst, _init())
+            out[lst]["unstaked_underlying"] += _f(r.to_amount)   # underlying out (SOL/ETH)
+    return out
+
+
+async def _build_positions(
+    addresses: list[str],
+    prices: dict[str, float],
+    client: httpx.AsyncClient,
+) -> list[dict[str, Any]]:
+    """Liquid-staking positions with value, live APY, projected + realized earnings."""
+    try:
+        from app.agents.crypto_agent import _get_lst_tokens, _get_lst_apy
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("positions: cannot import LST helpers: %s", exc)
+        return []
+
+    lst_tokens = _get_lst_tokens()
+
+    # Dedicated LST balance scans (independent of the USDC/USDT token list).
+    holdings: list[dict[str, Any]] = []
+    sol_addresses = [a for a in addresses if not a.startswith("0x") and 32 <= len(a) <= 44]
+    if sol_addresses:
+        holdings.extend(await _scan_sol_lst_balances(client, sol_addresses, lst_tokens))
+    evm_addresses = [a for a in addresses if a.startswith("0x") and len(a) == 42]
+    if evm_addresses:
+        holdings.extend(await _scan_evm_lst_balances(client, evm_addresses, lst_tokens))
+
+    if not holdings:
+        return []
+
+    # 3) Price the held LSTs (CoinGecko; fall back to underlying price).
+    lst_prices = await _fetch_lst_usd_prices(client, {h["sym"].lower() for h in holdings})
+
+    # 4) Cost basis from recorded stake/unstake history.
+    history = _staking_history(addresses)
+
+    positions: list[dict[str, Any]] = []
+    for h in holdings:
+        info = h["info"]
+        sym = info["symbol"]
+        sym_l = sym.lower()
+        underlying = info["underlying"]
+        bal = float(h["balance"] or 0)
+        if bal <= 0:
+            continue
+        und_usd = prices.get(_UNDERLYING_PAIR.get(underlying, ""), 0.0)
+        price_usd = lst_prices.get(sym_l) or und_usd  # fallback: ≈ underlying price
+        value_usd = bal * price_usd
+
+        apy = None
+        if info.get("apy_key"):
+            try:
+                apy = _get_lst_apy(info["apy_key"])
+            except Exception:
+                apy = None
+
+        projected_yearly_usd = round(value_usd * apy / 100.0, 2) if apy else None
+
+        # Earned (realized yield) on the CURRENTLY held LST: how much its value has
+        # grown above the rate you paid to enter. entry_rate = underlying paid per LST
+        # (from your stake history); current_rate = underlying per LST now. Multiplying
+        # by the held balance isolates the appreciation of what you still hold — robust
+        # to unstake churn (the old net-staked subtraction went negative once you'd
+        # unstaked more than you currently hold, leaving Earned blank).
+        realized_underlying = None
+        realized_usd = None
+        hist = history.get(sym_l)
+        if hist and und_usd > 0 and price_usd > 0 and hist.get("staked_lst", 0.0) > 1e-9:
+            entry_rate = hist["staked_underlying"] / hist["staked_lst"]   # underlying per LST at entry
+            current_rate = price_usd / und_usd                           # underlying per LST now
+            realized_underlying = round(bal * (current_rate - entry_rate), 6)
+            realized_usd = round(realized_underlying * und_usd, 2)
+            # Clamp sub-cent pricing noise to a clean zero (a freshly-opened position
+            # is ~break-even; show $0.00, not a confusing "-$0.00").
+            if abs(realized_usd) < 0.005:
+                realized_usd = 0.0
+            if abs(realized_underlying) < 1e-5:
+                realized_underlying = 0.0
+
+        positions.append({
+            "symbol": sym,
+            "protocol": info["protocol"].title(),
+            "chainName": {101: "Solana", 1: "Ethereum", 56: "BNB Chain", 137: "Polygon"}.get(info["chain_id"], "—"),
+            "chainId": info["chain_id"],
+            "underlying": underlying,
+            "kind": "stake",
+            "balance": bal,
+            "balanceDisplay": f"{bal:.6f}",
+            "priceUsd": round(price_usd, 4),
+            "valueUsd": round(value_usd, 2),
+            "underlyingPriceUsd": round(und_usd, 2),
+            "apy": round(apy, 2) if apy is not None else None,
+            "projectedYearlyUsd": projected_yearly_usd,
+            "realizedUsd": realized_usd,
+            "realizedUnderlying": realized_underlying,
+        })
+
+    positions.sort(key=lambda p: p["valueUsd"], reverse=True)
+    return positions
+
+
+# ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
 
@@ -485,36 +741,45 @@ async def _build_portfolio(wallet_address: str) -> dict[str, Any]:
         addresses = [wallet_address]
 
     chain_dicts: list[dict[str, Any]] = []
-    for scan_addr in addresses:
-        try:
-            scanned: list[dict[str, Any]] = await asyncio.to_thread(
-                _scan_single_address, scan_addr, ""
+    bnb_price = 0.0
+    sol_price = 0.0
+    positions: list[dict[str, Any]] = []
+    try:
+        async with httpx.AsyncClient() as client:
+            prices = await _fetch_prices(client)
+            bnb_price = prices.get("BNBUSDT", 0.0)
+            sol_price = prices.get("SOLUSDT", 0.0)
+            # Run the per-wallet token scans (all wallets in parallel) CONCURRENTLY
+            # with the positions build — so liquid-staking positions don't wait behind
+            # the slow 15-chain token scan. Total time ≈ max(), not sum().
+            scan_results, positions_res = await asyncio.gather(
+                asyncio.gather(
+                    *[asyncio.to_thread(_scan_single_address, a, "") for a in addresses],
+                    return_exceptions=True,
+                ),
+                _build_positions(addresses, prices, client),
+                return_exceptions=True,
             )
-            chain_dicts.extend(scanned)
-        except Exception as exc:
-            logger.error("Portfolio scan error for %s: %s", scan_addr, exc)
+            if isinstance(scan_results, list):
+                for res in scan_results:
+                    if isinstance(res, list):
+                        chain_dicts.extend(res)
+                    else:
+                        logger.error("Portfolio scan error: %s", res)
+            positions = positions_res if isinstance(positions_res, list) else []
+    except Exception as exc:
+        logger.warning("Portfolio build failed: %s", exc)
 
     tokens = _to_portfolio_format(chain_dicts)
     tokens.sort(key=lambda t: t["valueUsd"], reverse=True)
     total_usd = sum(t.get("valueUsd", 0.0) for t in tokens)
-
-    # Fetch live prices for the stats widget (BNB Price / SOL Price cards).
-    # Wrapped — must not break the whole portfolio response.
-    bnb_price = 0.0
-    sol_price = 0.0
-    try:
-        async with httpx.AsyncClient() as client:
-            prices = await _fetch_prices(client)
-        bnb_price = prices.get("BNBUSDT", 0.0)
-        sol_price = prices.get("SOLUSDT", 0.0)
-    except Exception as exc:
-        logger.warning("Portfolio price-widget fetch failed: %s", exc)
 
     return {
         "totalUsd": round(total_usd, 2),
         "bnbPrice": bnb_price,
         "solPrice": sol_price,
         "tokens": tokens,
+        "positions": positions,
     }
 
 
@@ -545,7 +810,15 @@ async def get_portfolio(wallet_address: str) -> dict[str, Any]:
             return cached[1]
         try:
             payload = await _build_portfolio(wallet_address)
-            _PORTFOLIO_CACHE[cache_key] = (time.monotonic(), payload)
+            # Only cache a result that actually found tokens. An empty result is
+            # almost always a transient scan failure (RPC/Moralis throttle) — caching
+            # it would serve "$0 / no tokens" for the next 30 s. On an empty result,
+            # prefer the last good cached payload so the user keeps seeing real data.
+            if payload.get("tokens"):
+                _PORTFOLIO_CACHE[cache_key] = (time.monotonic(), payload)
+                return payload
+            if cached:
+                return cached[1]
             return payload
         except Exception as exc:  # noqa: BLE001
             logger.error("Portfolio builder hard failure for %s: %s", cache_key, exc)

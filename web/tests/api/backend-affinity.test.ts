@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { _isAmbiguousFollowup, _isReasoningQuestion, _selectBackendTarget } from "@/app/api/v1/agent/route";
+import { _isAmbiguousFollowup, _isReasoningQuestion, _isUnstakeCommand, _selectBackendTarget } from "@/app/api/v1/agent/route";
 
 describe("_isAmbiguousFollowup", () => {
   it("flags short affirmations / continuations (need prior context)", () => {
@@ -70,5 +70,46 @@ describe("_isReasoningQuestion -> reasoned by the LLM (sentinel)", () => {
     expect(_selectBackendTarget(JSON.stringify({ query: "if I stake 1 SOL how much in 2 years" }))).toBe("sentinel");
     // plain command still goes to the execution backend
     expect(_selectBackendTarget(JSON.stringify({ query: "stake 1 SOL" }))).toBe("wallet");
+  });
+});
+
+describe("unstake routing", () => {
+  it("imperative unstake commands -> wallet (execute), despite 'my position/jitoSOL'", () => {
+    for (const q of [
+      "unstake my jitoSOL",
+      "unstake all my jitoSOL",
+      "unstake 0.5 mSOL",
+      "unstake everything",
+      "unstake my position",
+      "un-stake my stETH",
+      "redeem my stETH",
+      "withdraw my jitoSOL stake",
+    ]) {
+      expect(_isUnstakeCommand(q), q).toBe(true);
+      expect(_selectBackendTarget(JSON.stringify({ query: q })), q).toBe("wallet");
+    }
+  });
+
+  it("questions ABOUT unstaking -> sentinel (reason, do not execute)", () => {
+    for (const q of [
+      "should I unstake my jitoSOL?",
+      "is it worth unstaking now?",
+      "how much will I get if I unstake my jitoSOL?",
+      "when can I unstake?",
+      "why would I unstake my stETH?",
+    ]) {
+      expect(_isUnstakeCommand(q), q).toBe(false);
+      expect(_selectBackendTarget(JSON.stringify({ query: q })), q).toBe("sentinel");
+    }
+  });
+
+  it("does not over-trigger on plain withdrawals / unrelated text", () => {
+    expect(_isUnstakeCommand("withdraw 100 USDC to my bank"), "plain withdraw").toBe(false);
+    expect(_isUnstakeCommand("swap 1 sol to usdc"), "swap").toBe(false);
+  });
+
+  it("a short 'unstake' is not treated as a context-free follow-up", () => {
+    expect(_isAmbiguousFollowup("unstake my jitoSOL")).toBe(false);
+    expect(_isAmbiguousFollowup("redeem my stETH")).toBe(false);
   });
 });

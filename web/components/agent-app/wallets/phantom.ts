@@ -4,6 +4,8 @@
  * Solana signer and Phantom's EVM signer independently.
  */
 
+import { isMobileBrowser, openInPhantomBrowser } from "./mobile";
+
 type EthProvider = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown>; isPhantom?: boolean };
 type SolanaProvider = {
   connect: (options?: { onlyIfTrusted?: boolean }) => Promise<{ publicKey: { toString: () => string } }>;
@@ -132,10 +134,17 @@ export async function connectPhantomSolana(): Promise<PhantomSession> {
   }
   const w = window as unknown as PhantomWindow;
 
-  if (!w.phantom) {
-    throw new Error("Phantom not installed. Please install it from phantom.app");
-  }
-  if (!w.phantom.solana) {
+  if (!w.phantom?.solana) {
+    // On a mobile browser the provider isn't injected — bounce the dApp into
+    // Phantom's in-app browser (where window.phantom exists) so the user can
+    // approve the connection there. This is the only way to connect on phones.
+    if (isMobileBrowser()) {
+      openInPhantomBrowser();
+      throw new Error("Opening Phantom… approve the connection in the Phantom app, then you'll be connected.");
+    }
+    if (!w.phantom) {
+      throw new Error("Phantom not installed. Please install it from phantom.app");
+    }
     throw new Error("Phantom Solana wallet not available. Please open Phantom and enable the Solana wallet.");
   }
 

@@ -258,7 +258,7 @@ class Settings(BaseSettings):
     blinks_enabled: bool = Field(True, env="BLINKS_ENABLED", description="Enable/disable Blinks feature")
     blinks_rate_limit_per_minute: int = Field(30, env="BLINKS_RATE_LIMIT_PER_MINUTE")
     blinks_rate_limit_per_hour: int = Field(200, env="BLINKS_RATE_LIMIT_PER_HOUR")
-    blink_ttl_hours: int = Field(168, env="BLINK_TTL_HOURS", description="Blink expiration time (0 = never)")
+    blink_ttl_hours: int = Field(0, env="BLINK_TTL_HOURS", description="Blink expiration time in hours (0 = never expire — Blink stays active as long as the token is live; liveness is reflected by the verify action)")
 
     # Web App URL (for redirects)
     webapp_url: str = Field(

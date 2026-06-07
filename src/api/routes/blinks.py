@@ -34,6 +34,22 @@ async def create_new_blink(request: web.Request) -> web.Response:
                 status=400,
             )
 
+        blink_service = get_blink_service()
+
+        # Fast path: a Blink already exists for this token → return it immediately.
+        # The share URL is stable and the "Verify Token" action always re-analyses
+        # for fresh data, so we skip re-running the full analysis here — that
+        # re-analysis on every share is what made the Blink button lag.
+        try:
+            existing = await blink_service.get_blink_by_token(token_address)
+        except Exception:
+            existing = None
+        if existing:
+            return web.json_response({
+                "id": existing.id,
+                "url": f"{settings.actions_base_url}/blinks/{existing.id}",
+            })
+
         # Get shared analyzer from app context (set by analysis routes on startup)
         analyzer = request.app.get('analyzer')
         if not analyzer:
@@ -43,8 +59,11 @@ async def create_new_blink(request: web.Request) -> web.Response:
                 status=503,
             )
 
-        # Use "quick" mode for blink creation
-        result = await analyzer.analyze(token_address, mode="quick")
+        # Analyze in "standard" mode — the SAME mode the token page uses — so that
+        # sharing a Blink right after viewing the token reuses the cached analysis
+        # (no cold re-run). The analyzer cache key is chain:address:mode, so a mode
+        # mismatch ("quick" here vs "standard" on the page) forced a slow re-analysis.
+        result = await analyzer.analyze(token_address, mode="standard")
 
         if not result:
             return web.json_response(
@@ -52,7 +71,6 @@ async def create_new_blink(request: web.Request) -> web.Response:
                 status=500,
             )
 
-        blink_service = get_blink_service()
         blink_data = await blink_service.create_blink(
             token_address=token_address,
             analysis_result=result

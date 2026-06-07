@@ -193,6 +193,12 @@ class BlinkService:
         db = await get_database()
         return await db.get_blink(blink_id)
 
+    async def get_blink_by_token(self, token_address: str):
+        """Return an existing Blink for this token, or None. Lets the create
+        endpoint reuse a Blink instead of re-running the full analysis each share."""
+        db = await get_database()
+        return await db.get_blink_by_token(token_address)
+
     async def get_metadata(self, blink_id: str) -> Dict[str, Any]:
         """
         Get Solana Actions metadata for Twitter unfurling.
@@ -212,9 +218,10 @@ class BlinkService:
         if not blink:
             raise ValueError("Blink not found")
 
-        # Check expiration
-        if blink.expires_at and blink.expires_at < datetime.utcnow():
-            raise ValueError("Blink has expired")
+        # A Blink stays active as long as the token is live — it is NOT expired by a
+        # clock. Time-based expiry used to 404 a perfectly valid Blink (token still
+        # trading) after BLINK_TTL_HOURS. Current liveness is reflected by the score
+        # shown here and refreshed on demand by the "Verify Token" action.
 
         # Build title
         symbol = blink.token_symbol or "Token"
