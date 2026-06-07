@@ -83,7 +83,10 @@ export default function RootLayout({
             {/* Global market ticker — visible on every page */}
             <MarketTickerBar />
 
-            <div className="flex-1 flex flex-col min-h-0 pt-8">
+            {/* pt-10 (40px) clears the fixed 32px ticker with an 8px gap — pt-8 left
+                the content flush under the ticker (looked like an overlap). Keep in
+                sync with the agent height calc (100dvh - 2.5rem) in agent-overrides.css. */}
+            <div className="flex-1 flex flex-col min-h-0 pt-10">
               <AppShell>
                 {/* Main content */}
                 <main className="flex-1 relative z-10 flex flex-col min-h-0">{children}</main>

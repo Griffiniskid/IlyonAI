@@ -11,10 +11,6 @@ export function MobileNav() {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
   const [locationHash, setLocationHash] = useState("");
-  // NOTE: must match navGroups[].label exactly. "Portfolio" was a no-op (no such
-  // group) so the AI Agent — the app's core feature — had no one-tap tab and was
-  // only reachable via the Menu drawer. Surface it directly.
-  const coreDomains = ["Discover", "AI Agent", "Smart Money", "Protect"];
 
   useEffect(() => {
     const syncHash = () => {
@@ -27,13 +23,13 @@ export function MobileNav() {
   }, [pathname]);
 
   const isItemActive = (itemHref: string, groupItems: { href: string }[]): boolean => {
-    const itemBaseHref = itemHref.split("#")[0] || "/";
+    const itemBaseHref = itemHref.split(/[?#]/)[0] || "/";
     const itemHash = itemHref.includes("#") ? `#${itemHref.split("#")[1]}` : "";
 
     const hashLinkIsActive = itemHash !== "" && pathname === itemBaseHref && locationHash === itemHash;
 
     const siblingHashIsActive = groupItems.some((candidate) => {
-      const candidateBaseHref = candidate.href.split("#")[0] || "/";
+      const candidateBaseHref = candidate.href.split(/[?#]/)[0] || "/";
       const candidateHash = candidate.href.includes("#") ? `#${candidate.href.split("#")[1]}` : "";
       return candidateHash !== "" && candidateBaseHref === itemBaseHref && locationHash === candidateHash;
     });
@@ -46,14 +42,24 @@ export function MobileNav() {
     return hashLinkIsActive || baseLinkIsActive;
   };
 
-  const coreItems = coreDomains
-    .map((label) => navGroups.find((group) => group.label === label))
-    .filter((group): group is (typeof navGroups)[number] => Boolean(group))
-    .map((group) => ({
-      label: group.label,
-      item: group.items[0],
-      isActive: group.items.some((item) => isItemActive(item.href, group.items)),
-    }));
+  // Phone tab bar — explicit items (order matters). Overview + Analyze both live in
+  // the Discover group and Portfolio in the AI Agent group, so this can't be derived
+  // one-per-group. hrefs/icons still come from nav-config so they stay in sync.
+  const allItems = navGroups.flatMap((group) => group.items);
+  const findItem = (label: string) => allItems.find((item) => item.label === label);
+  const coreSpec = [
+    { label: "Overview",  from: "Overview" },
+    { label: "AI Agent",  from: "Chat" },
+    { label: "Portfolio", from: "Portfolio" },
+    { label: "Analyze",   from: "Analyze" },
+  ];
+  const coreLinks = coreSpec
+    .map(({ label, from }) => {
+      const item = findItem(from);
+      return item ? { label, href: item.href, icon: item.icon } : null;
+    })
+    .filter((link): link is NonNullable<typeof link> => link !== null)
+    .map((link) => ({ ...link, isActive: isItemActive(link.href, [{ href: link.href }]) }));
 
   return (
     <>
@@ -61,12 +67,11 @@ export function MobileNav() {
         aria-label="Primary mobile"
         className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-1 border-t border-border/50 bg-background/95 px-2 py-3 backdrop-blur md:hidden"
       >
-        {coreItems.map(({ label, item, isActive }) => {
-          const Icon = item.icon;
+        {coreLinks.map(({ label, href, icon: Icon, isActive }) => {
           return (
             <Link
-              key={item.href}
-              href={item.href}
+              key={href}
+              href={href}
               aria-label={label}
               className={cn(
                 "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-md p-1 transition-colors",
