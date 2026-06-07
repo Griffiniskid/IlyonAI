@@ -206,3 +206,100 @@ body:has([data-agent-route]) { overflow-y: hidden !important; }
 
 /* The auth overlay must stack above MainApp's intro-screen (z-index: 200). */
 .auth-overlay { z-index: 400 !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE (≤640px) — phone-first agent layout.
+   Make the chat the focus: strip desktop chrome, reclaim vertical space, enlarge
+   touch targets, turn the quick actions into ONE horizontal-scroll row, use 16px
+   inputs (so iOS doesn't zoom on focus), and give messages the full width.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  /* Drop the big "Sentinel Agent v2 live" promo banner — pure chrome on a phone,
+     it ate a third of the first screen. */
+  .app .top-banner { display: none !important; }
+
+  /* Public-testing notice: thin single line instead of a fat pill. */
+  .app .public-testing-banner {
+    padding: 6px 10px !important;
+    font-size: 11px !important;
+    line-height: 1.3 !important;
+    margin: 0 0 8px !important;
+  }
+
+  /* Tighter shell so content uses the full screen width. */
+  .app .content-canvas { padding: 8px 10px !important; }
+  .app .page-shell { padding: 6px 8px !important; }
+
+  /* Chat header: title truncates so the New / Chats buttons stay on-screen
+     (they were overflowing off the right edge before). */
+  .app .chat-shell-head {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+    margin-bottom: 8px !important;
+  }
+  .app .chat-shell-title {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 17px !important;
+  }
+  .app .chat-shell-actions { flex: 0 0 auto !important; display: flex !important; gap: 6px !important; }
+  .app .chat-shell-btn { padding: 8px 11px !important; font-size: 12px !important; white-space: nowrap !important; }
+
+  /* Quick actions → a single horizontal-scroll row (was a tall wrapped stack). */
+  .app .quick-bar {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    gap: 8px !important;
+    padding: 4px 0 !important;
+    margin: 0 0 4px !important;
+    scrollbar-width: none !important;
+  }
+  .app .quick-bar::-webkit-scrollbar { display: none !important; }
+  .app .quick-chip {
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+    font-size: 13px !important;
+    padding: 9px 14px !important;
+  }
+
+  /* Composer: hide the desktop keyboard hint, 16px input (no iOS zoom-on-focus),
+     big tappable send button. */
+  .app .input-hint { display: none !important; }
+  .app .input-area { padding: 8px !important; gap: 8px !important; }
+  .app .msg-input { font-size: 16px !important; padding: 12px 14px !important; min-height: 46px !important; }
+  .app .send-btn {
+    min-width: 48px !important; min-height: 48px !important;
+    width: 48px !important; height: 48px !important;
+    flex: 0 0 auto !important; font-size: 20px !important;
+  }
+
+  /* Clamp the chat grid column to the viewport. Without this, one wide element
+     (a long token address, URL, or card) stretches the single auto column past
+     the screen — which is what shoved the header's New/Chats buttons off-screen. */
+  .app .chat-wrap > .page-shell { grid-template-columns: minmax(0, 1fr) !important; }
+
+  /* Messages: full-width readable bubbles that WRAP long strings, smaller avatar. */
+  .app .messages { padding: 8px 2px !important; overflow-x: hidden !important; }
+  .app .msg-bubble {
+    max-width: 88% !important;
+    font-size: 15px !important;
+    line-height: 1.45 !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+  }
+  .app .msg-avatar { width: 28px !important; height: 28px !important; font-size: 12px !important; }
+
+  /* Belt-and-suspenders: nothing in the agent panel may cause horizontal scroll. */
+  .app .content-canvas, .app .tab-panel, .app .chat-wrap { overflow-x: hidden !important; max-width: 100vw !important; }
+
+  /* Welcome capability grid → single column. */
+  .app .cap-grid { grid-template-columns: 1fr !important; gap: 8px !important; }
+}
