@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
@@ -57,13 +57,11 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  // viewport-fit=cover lets the page paint under the notch / home indicator and
-  // exposes the env(safe-area-inset-*) values the mobile nav + agent composer use.
-  viewportFit: "cover",
-};
+// NOTE: deliberately NO `viewport-fit=cover`. It exposes env(safe-area-inset-*) for
+// mobile, but on a notched Mac in fullscreen it lets the page paint UNDER the notch,
+// pushing the fixed ticker over the top banner (desktop overlap). Prod ships without
+// it; match that. The mobile composer fix relies on dvh + nav-height reservation, and
+// the env(...) usages all carry a 0px fallback, so they degrade cleanly to no-op.
 
 export default function RootLayout({
   children,
