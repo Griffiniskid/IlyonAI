@@ -602,3 +602,33 @@ input:focus, button:focus-visible {
 ::selection {
   background: rgba(16, 185, 129, 0.3);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE SAFE-AREA + BOTTOM-NAV RESERVATION
+   The fixed bottom nav (md:hidden) overlaps page content. Every scrollable page
+   must reserve its height + the home-indicator inset so the last row isn't hidden
+   behind it. --mob-nav-h is the single source of truth, shared with the agent
+   composer reservation in agent-overrides.css.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --mob-nav-h: 4.5rem; /* measured bottom-nav height (72px) */
+}
+
+/* Reserve nav height + safe-area on the main content column (scrollable pages). */
+.pb-mobile-nav {
+  padding-bottom: calc(var(--mob-nav-h) + env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 768px) {
+  .pb-mobile-nav { padding-bottom: 0; } /* desktop has the left sidebar, no bottom nav */
+}
+
+/* The bottom nav itself must lift its tap targets above the home indicator. */
+@media (max-width: 767px) {
+  nav[aria-label="Primary mobile"] {
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  /* Menu drawer: clear the (now taller) nav + indicator so the last link is tappable. */
+  nav[aria-label="Primary mobile"] ~ div[class*="z-30"] {
+    padding-bottom: calc(var(--mob-nav-h) + env(safe-area-inset-bottom, 0px) + 1rem) !important;
+  }
+}

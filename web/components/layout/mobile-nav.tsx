@@ -11,7 +11,10 @@ export function MobileNav() {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
   const [locationHash, setLocationHash] = useState("");
-  const coreDomains = ["Discover", "Smart Money", "Protect", "Portfolio"];
+  // NOTE: must match navGroups[].label exactly. "Portfolio" was a no-op (no such
+  // group) so the AI Agent — the app's core feature — had no one-tap tab and was
+  // only reachable via the Menu drawer. Surface it directly.
+  const coreDomains = ["Discover", "AI Agent", "Smart Money", "Protect"];
 
   useEffect(() => {
     const syncHash = () => {
@@ -79,13 +82,13 @@ export function MobileNav() {
         <button
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
-            "flex flex-col items-center gap-1 rounded-md p-1 transition-colors",
+            "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-md p-1 transition-colors",
             isOpen ? "text-primary" : "text-muted-foreground hover:text-foreground"
           )}
           aria-label="Menu"
         >
           {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          <span className="text-[10px] font-medium">Menu</span>
+          <span className="truncate text-[9px] font-medium leading-none">Menu</span>
         </button>
       </nav>
 

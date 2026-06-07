@@ -10,8 +10,14 @@ body:has([data-agent-route]) footer { display: none !important; }
 
 body:has([data-agent-route]) div:has(> main > [data-agent-route]) {
   align-self: stretch !important;
+  /* 100vh is the LARGE viewport on mobile — it ignores the browser's collapsible
+     chrome (Telegram/Safari URL bar), so the bottom of the agent overshoots the
+     visible area and the composer hides behind the fixed bottom nav. 100dvh tracks
+     the *visible* viewport. vh stays as a fallback for engines without dvh. */
   height: calc(100vh - 2rem) !important;
+  height: calc(100dvh - 2rem) !important;
   max-height: calc(100vh - 2rem) !important;
+  max-height: calc(100dvh - 2rem) !important;
   min-height: 0 !important;
   overflow: hidden !important;
 }
@@ -213,7 +219,16 @@ body:has([data-agent-route]) { overflow-y: hidden !important; }
    touch targets, turn the quick actions into ONE horizontal-scroll row, use 16px
    inputs (so iOS doesn't zoom on focus), and give messages the full width.
    ═══════════════════════════════════════════════════════════════════════════ */
-@media (max-width: 640px) {
+@media (max-width: 767px) {
+  /* CRITICAL: the agent fills the viewport and locks body scroll, but the fixed
+     bottom nav (shown below md = 768px) overlaps its bottom — burying the composer
+     ("words under the screen"). Reserve the nav height + home-indicator inset on
+     the agent's own column so the composer sits ABOVE the nav with a small gap.
+     --mob-nav-h is defined in globals.css (shared with .pb-mobile-nav). */
+  body:has([data-agent-route]) div:has(> main > [data-agent-route]) {
+    padding-bottom: calc(var(--mob-nav-h) + env(safe-area-inset-bottom, 0px) + 6px) !important;
+  }
+
   /* Drop the big "Sentinel Agent v2 live" promo banner — pure chrome on a phone,
      it ate a third of the first screen. */
   .app .top-banner { display: none !important; }

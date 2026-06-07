@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
@@ -55,6 +55,14 @@ export const metadata: Metadata = {
     title: "Ilyon AI | Your AI-Powered DeFi Trading Assistant",
     description: "AI-powered DeFi trading assistant across all major chains",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  // viewport-fit=cover lets the page paint under the notch / home indicator and
+  // exposes the env(safe-area-inset-*) values the mobile nav + agent composer use.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

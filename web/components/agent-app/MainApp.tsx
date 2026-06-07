@@ -4619,6 +4619,16 @@ export default function MainApp({ routeTab }: { routeTab?: string | null } = {})
   const [input, setInput]               = useState("");
   const [loading, setLoading]           = useState(false);
   const [backendOk, setBackendOk]       = useState<null | boolean>(null);
+  // Narrow viewport (phone): the verbose composer placeholder wraps to 2 lines
+  // and clips inside the short mobile textarea. Use a one-line placeholder there.
+  const [isNarrow, setIsNarrow]         = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const sync = () => setIsNarrow(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
   const [activeTab, setActiveTab]       = useState<Tab>(() => {
     if (typeof window === "undefined") return "chat";
     const t = new URLSearchParams(window.location.search).get("tab");
@@ -6516,7 +6526,7 @@ export default function MainApp({ routeTab }: { routeTab?: string | null } = {})
                             ref={textareaRef}
                             className="msg-input"
                             rows={1}
-                            placeholder="Ask anything about Solana, swaps, bridges, or portfolio…"
+                            placeholder={isNarrow ? "Ask anything…" : "Ask anything about Solana, swaps, bridges, or portfolio…"}
                             value={input}
                             onChange={handleInputChange}
                             onKeyDown={handleKey}
