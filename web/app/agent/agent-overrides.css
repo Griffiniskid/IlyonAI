@@ -14,10 +14,10 @@ body:has([data-agent-route]) div:has(> main > [data-agent-route]) {
      chrome (Telegram/Safari URL bar), so the bottom of the agent overshoots the
      visible area and the composer hides behind the fixed bottom nav. 100dvh tracks
      the *visible* viewport. vh stays as a fallback for engines without dvh. */
-  height: calc(100vh - 2.5rem) !important;
-  height: calc(100dvh - 2.5rem) !important;
-  max-height: calc(100vh - 2.5rem) !important;
-  max-height: calc(100dvh - 2.5rem) !important;
+  height: calc(100vh - 2rem) !important;
+  height: calc(100dvh - 2rem) !important;
+  max-height: calc(100vh - 2rem) !important;
+  max-height: calc(100dvh - 2rem) !important;
   min-height: 0 !important;
   overflow: hidden !important;
 }
