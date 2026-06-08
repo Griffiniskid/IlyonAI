@@ -62,7 +62,7 @@ function PositionRow({ position }: { position: AllocationPayload["positions"][0]
           </div>
         </div>
 
-        <div className="grid min-w-[260px] grid-cols-3 gap-2 text-right">
+        <div className="grid grid-cols-3 gap-2 text-right sm:min-w-[260px]">
           <div>
             <div className="text-[10px] uppercase tracking-[0.16em] text-slate-500">Size</div>
             <div className="text-sm font-black text-white">{position.usd}</div>
@@ -81,7 +81,7 @@ function PositionRow({ position }: { position: AllocationPayload["positions"][0]
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-4 gap-2">
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
           ["Safety", position.safety],
           ["Durability", position.durability],

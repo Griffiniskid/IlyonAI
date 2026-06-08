@@ -231,7 +231,8 @@ export default function AnalyzePage() {
           <form onSubmit={handleSubmit} className="relative">
             <div className="glass-card p-2 md:p-4">
               {/* Main Search Input */}
-              <div className="relative flex items-center">
+              <div className="flex flex-col gap-2 sm:relative sm:flex-row sm:items-center sm:gap-0">
+                <div className="relative w-full">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <Input
                   type="text"
@@ -240,12 +241,13 @@ export default function AnalyzePage() {
                   onChange={(e) => { setQuery(e.target.value); setError(null); }}
                   onFocus={() => setIsFocused(true)}
                   onBlur={() => window.setTimeout(() => setIsFocused(false), 120)}
-                  className="pl-12 pr-32 h-14 bg-transparent border-none text-base md:text-lg placeholder:text-muted-foreground focus-visible:ring-0"
+                  className="pl-12 pr-4 h-14 w-full bg-transparent border-none text-base md:text-lg placeholder:text-muted-foreground focus-visible:ring-0 sm:pr-32"
                 />
+                </div>
                 <Button
                   type="submit"
                   disabled={isResolving}
-                  className="absolute right-2 h-10 px-6 bg-emerald-600 hover:bg-emerald-500 text-black font-semibold rounded-xl"
+                  className="h-12 w-full shrink-0 px-6 bg-emerald-600 hover:bg-emerald-500 text-black font-semibold rounded-xl sm:absolute sm:right-2 sm:top-1/2 sm:h-10 sm:w-auto sm:-translate-y-1/2"
                 >
                   {isResolving ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
