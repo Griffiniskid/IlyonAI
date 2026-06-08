@@ -312,6 +312,13 @@ body:has([data-agent-route]) { overflow-y: hidden !important; }
   }
   .app .msg-avatar { width: 28px !important; height: 28px !important; font-size: 12px !important; }
 
+  /* Agent cards render inside .msg-body (max-width:700px). Without min-width:0 a card
+     with a long unwrapped line — e.g. a DeFi pool's "No verified execution adapter is
+     available for this opportunity" note — grows .msg-body toward 700px, past the phone
+     viewport, and the text gets clipped at the screen edge. Constrain .msg-body to the
+     chat width so every card fits and its content wraps instead of overflowing. */
+  .app .msg-body { min-width: 0 !important; max-width: 100% !important; }
+
   /* Belt-and-suspenders: nothing in the agent panel may cause horizontal scroll. */
   .app .content-canvas, .app .tab-panel, .app .chat-wrap { overflow-x: hidden !important; max-width: 100vw !important; }
 

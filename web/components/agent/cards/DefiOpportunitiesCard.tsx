@@ -181,7 +181,7 @@ function OpportunityRow({ item }: { item: DefiOpportunityItem }) {
                 <ExternalLink className="h-3 w-3" /> Open pool
               </a>
             )}
-            <span data-testid="defi-opp-not-executable" className="text-xs text-amber-100/80">
+            <span data-testid="defi-opp-not-executable" className="w-full break-words text-xs text-amber-100/80">
               {item.unsupported_reason || "Not one-click executable — open the pool on its protocol to deposit."}
             </span>
           </>
