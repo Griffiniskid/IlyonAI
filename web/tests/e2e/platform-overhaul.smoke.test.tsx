@@ -15,15 +15,15 @@ function expectLinkPath(label: string, expectedHref: string) {
 }
 
 describe("Platform overhaul smoke journey", () => {
-  it("keeps the Discover -> Smart Money -> Portfolio path navigable", () => {
+  it("keeps the Overview -> Smart Money -> Portfolio path navigable", () => {
     render(
       <AppShell>
         <div>content</div>
       </AppShell>
     );
 
-    expectLinkPath("Discover", "/");
-    expectLinkPath("Smart Money", "/smart-money");
-    expectLinkPath("Portfolio", "/portfolio");
+    expectLinkPath("Overview", "/");
+    expectLinkPath("Hub", "/smart-money");
+    expectLinkPath("Portfolio", "/agent/portfolio?tab=portfolio");
   });
 });

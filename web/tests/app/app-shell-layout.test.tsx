@@ -18,21 +18,21 @@ describe("AppShell layout", () => {
     mockPathname.mockReturnValue("/");
     render(<AppShell>{<div>content</div>}</AppShell>);
 
-    const headings = ["Discover", "Smart Money", "Protect", "Portfolio", "Settings"];
+    const headings = ["Discover", "Smart Money", "Protect", "AI Agent", "Settings"];
     for (const heading of headings) {
       expect(screen.getAllByText(heading)[0]).toBeInTheDocument();
     }
 
     const expectedRoutes = [
       "/",
+      "/analyze",
       "/dashboard",
       "/trending",
-      "/defi",
       "/smart-money",
       "/whales",
-      "/entity",
       "/shield",
-      "/portfolio",
+      "/agent/chat?tab=chat",
+      "/agent/portfolio?tab=portfolio",
       "/settings",
     ];
 
@@ -41,10 +41,8 @@ describe("AppShell layout", () => {
       expect(link, `Expected to find nav link for ${href}`).toBeTruthy();
     }
 
-    expect(screen.getAllByText("Entity")[0]).toBeInTheDocument();
-
     const mobileNav = screen.getByRole("navigation", { name: /Primary mobile/i });
-    for (const domain of ["Discover", "Smart Money", "Protect", "Portfolio"]) {
+    for (const domain of ["Overview", "AI Agent", "Portfolio", "Analyze"]) {
       expect(within(mobileNav).getByRole("link", { name: domain })).toBeInTheDocument();
     }
 

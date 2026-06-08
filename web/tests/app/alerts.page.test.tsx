@@ -2,7 +2,6 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { vi } from "vitest";
 import AlertsPage from "../../app/alerts/page";
 import { AlertsBell } from "../../components/layout/alerts-bell";
-import { AppShell } from "@/components/layout/app-shell";
 
 const useAlertSummaryMock = vi.fn();
 const useAlertsMock = vi.fn();
@@ -37,12 +36,7 @@ describe("Alerts UI", () => {
       { id: "a-low", state: "new", severity: "low", title: "Low wallet drift", subject_id: "token-low" },
     ],
   });
-
-  it("shows unread alert count in app shell bell", async () => {
-    useAlertSummaryMock.mockReturnValue({ unreadCount: 3 });
-    render(<AppShell>{<div>content</div>}</AppShell>);
-    expect(screen.getByLabelText(/alerts/i)).toHaveTextContent("3");
-  });
+  useAlertSummaryMock.mockReturnValue({ unreadCount: 3 });
 
   it("shows unread alert count in shell bell", async () => {
     render(

@@ -385,7 +385,7 @@ describe("agent chat regressions", () => {
     expect(await screen.findByTestId("execution-plan-card")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Start signing/i }));
 
-    expect(await screen.findByText(/Execution needs route-specific transaction build/i)).toBeInTheDocument();
+    expect(await screen.findByText(/route-specific unsigned transaction is built/i)).toBeInTheDocument();
     expect(screen.queryByText(/Signing queue/i)).not.toBeInTheDocument();
   });
 

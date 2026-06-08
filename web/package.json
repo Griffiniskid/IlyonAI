@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "test": "vitest"
+    "test": "vitest",
+    "test:node": "node tests/next-config-agent-backend.test.cjs",
+    "test:all": "vitest run && npm run test:node"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.0.4",
