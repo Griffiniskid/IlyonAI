@@ -6672,7 +6672,8 @@ export default function MainApp({ routeTab }: { routeTab?: string | null } = {})
                         </div>
                         {portfolioLoading && portfolioTokens.length === 0 ? (
                           <div style={{ textAlign: "center", padding: "32px 0", color: "rgba(255,255,255,0.3)", fontSize: 13 }}>
-                            ⏳ Loading balances across all chains…
+                            <span className="animate-spin" style={{ display: "inline-block", marginRight: 6 }}>🔄</span> Loading balances across all chains…
+                            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", marginTop: 6 }}>This can take up to 30 seconds — scanning every chain.</div>
                           </div>
                         ) : portfolioTokens.length === 0 ? (
                           <div style={{ textAlign: "center", padding: "32px 0", color: "rgba(255,255,255,0.3)", fontSize: 13 }}>
@@ -6720,8 +6721,9 @@ export default function MainApp({ routeTab }: { routeTab?: string | null } = {})
                         Your liquid-staking positions. <b style={{ color: "rgba(255,255,255,0.6)" }}>Earned</b> = value now vs. what you staked through Ilyon · APY is live.
                       </p>
                       {portfolioLoading && portfolioPositions.length === 0 ? (
-                        <div style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "20px 16px", textAlign: "center", color: "rgba(255,255,255,0.5)", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                          <span className="animate-spin" style={{ display: "inline-block" }}>🔄</span> Loading your positions…
+                        <div style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "20px 16px", textAlign: "center", color: "rgba(255,255,255,0.5)", fontSize: 13, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span className="animate-spin" style={{ display: "inline-block" }}>🔄</span> Loading your positions…</div>
+                          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>This can take up to 30 seconds.</div>
                         </div>
                       ) : portfolioPositions.length === 0 ? (
                         <div style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "20px 16px", textAlign: "center", color: "rgba(255,255,255,0.45)", fontSize: 13 }}>
