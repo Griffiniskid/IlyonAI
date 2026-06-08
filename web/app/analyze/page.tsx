@@ -106,7 +106,16 @@ export default function AnalyzePage() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [isResolving, setIsResolving] = useState(false);
   const [showResults, setShowResults] = useState(false);
-  
+  // Phone: shorter placeholder that fits the narrow input (the full hint truncates).
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const apply = () => setIsMobile(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
   const { data: searchData, isFetching } = useSearchCatalog(
     debouncedQuery,
     selectedChain === "all" ? undefined : selectedChain
@@ -236,7 +245,7 @@ export default function AnalyzePage() {
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <Input
                   type="text"
-                  placeholder="Search by token name, symbol, or contract address..."
+                  placeholder={isMobile ? "Token name or address…" : "Search by token name, symbol, or contract address..."}
                   value={query}
                   onChange={(e) => { setQuery(e.target.value); setError(null); }}
                   onFocus={() => setIsFocused(true)}
@@ -262,7 +271,7 @@ export default function AnalyzePage() {
 
               {/* Chain Selector */}
               <div className="mt-4 pt-4 border-t border-white/5">
-                <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                <div className="flex flex-wrap items-center gap-2 pb-1 sm:flex-nowrap sm:gap-3 sm:overflow-x-auto sm:pb-2 sm:scrollbar-hide">
                   <span className="text-xs text-muted-foreground shrink-0">Filter by chain:</span>
                   {CHAINS.map((chain) => {
                     const isSelected = selectedChain === chain.id;
