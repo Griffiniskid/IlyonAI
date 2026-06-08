@@ -65,7 +65,7 @@ function StatCard({
           {loading ? (
             <div className="h-8 w-24 bg-muted/50 animate-pulse rounded" />
           ) : (
-            <p className="text-lg sm:text-2xl font-bold truncate">{value}</p>
+            <p className="text-lg sm:text-2xl font-bold break-words">{value}</p>
           )}
           {change && !loading && (
             <div className="flex items-center gap-1 mt-1">
@@ -76,7 +76,7 @@ function StatCard({
               ) : null}
               <span
                 className={cn(
-                  "text-xs sm:text-sm truncate",
+                  "text-xs sm:text-sm min-w-0 break-words",
                   changeType === "positive"
                     ? "text-emerald-400"
                     : changeType === "negative"
@@ -141,10 +141,10 @@ function QuickTokenCard({
             {symbol[0]}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-semibold group-hover:text-emerald-400 transition-colors truncate">
+            <div className="font-semibold group-hover:text-emerald-400 transition-colors break-words">
               {symbol}
             </div>
-            <div className="text-xs text-muted-foreground truncate">{name}{chain ? ` · ${chain}` : ""}</div>
+            <div className="text-xs text-muted-foreground break-words">{name}{chain ? ` · ${chain}` : ""}</div>
           </div>
         </div>
         <div className="text-right">

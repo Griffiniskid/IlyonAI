@@ -245,12 +245,12 @@ export default function AnalyzePage() {
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <Input
                   type="text"
-                  placeholder={isMobile ? "Token name or address…" : "Search by token name, symbol, or contract address..."}
+                  placeholder={isMobile ? "Token, symbol, or address" : "Search by token name, symbol, or contract address..."}
                   value={query}
                   onChange={(e) => { setQuery(e.target.value); setError(null); }}
                   onFocus={() => setIsFocused(true)}
                   onBlur={() => window.setTimeout(() => setIsFocused(false), 120)}
-                  className="pl-12 pr-4 h-14 w-full bg-transparent border-none text-base md:text-lg placeholder:text-muted-foreground focus-visible:ring-0 sm:pr-32"
+                  className="pl-12 pr-4 h-14 w-full bg-transparent border-none text-sm sm:text-base md:text-lg placeholder:text-muted-foreground focus-visible:ring-0 sm:pr-32"
                 />
                 </div>
                 <Button

@@ -122,9 +122,9 @@ export default function TrendingPage() {
                     ) : (
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-lg font-bold">{token.symbol[0]}</div>
                     )}
-                    <div>
-                      <div className="font-semibold transition group-hover:text-emerald-400">{token.symbol}</div>
-                      <div className="max-w-[120px] truncate text-xs text-muted-foreground">{token.name}</div>
+                    <div className="min-w-0">
+                      <div className="font-semibold transition group-hover:text-emerald-400 break-words">{token.symbol}</div>
+                      <div className="break-words text-xs text-muted-foreground">{token.name}</div>
                     </div>
                   </div>
                   <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 transition group-hover:opacity-100" />
