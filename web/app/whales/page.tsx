@@ -98,7 +98,7 @@ export default function WhalesPage() {
 
       {/* Filters */}
       <GlassCard className="mb-8">
-        <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-end">
+        <div className="flex flex-col md:flex-row md:flex-wrap gap-4 items-stretch md:items-end">
           <div className="flex-1">
             <label className="text-sm text-muted-foreground mb-2 block">
               Minimum Amount (USD)
@@ -111,7 +111,7 @@ export default function WhalesPage() {
               step={1000}
             />
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant={chainFilter === "all" ? "default" : "outline"}
               onClick={() => setChainFilter("all")}
@@ -130,7 +130,7 @@ export default function WhalesPage() {
               </Button>
             ))}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant={typeFilter === undefined ? "default" : "outline"}
               onClick={() => setTypeFilter(undefined)}
