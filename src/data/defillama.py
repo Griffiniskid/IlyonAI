@@ -81,7 +81,10 @@ def _normalize_pool_record(pool: Dict[str, Any]) -> Dict[str, Any]:
         "chain": pool.get("chain", ""),
         "project": pool.get("project", ""),
         "category": pool.get("category", ""),
-        "symbol": sanitise_onchain_string(pool.get("symbol", "")),
+        # .sanitised → plain str. Storing the SanitisedString object here leaks it
+        # downstream where str ops/JSON run (farm/lending analyzers .replace/.lower,
+        # web.json_response) → 500s on /defi/pools, /yields, /lending.
+        "symbol": sanitise_onchain_string(pool.get("symbol", "")).sanitised,
         "tvl_usd": tvl_usd,
         "tvlUsd": tvl_usd,
         "apy": apy,
@@ -392,9 +395,9 @@ class DefiLlamaClient:
             if query_lower in name or query_lower in symbol or query_lower in slug:
                 from src.agent.sanitizer import sanitise_onchain_string
                 matches.append({
-                    "name": sanitise_onchain_string(p.get("name", "")),
+                    "name": sanitise_onchain_string(p.get("name", "")).sanitised,
                     "slug": p.get("slug", ""),
-                    "symbol": sanitise_onchain_string(p.get("symbol", "")),
+                    "symbol": sanitise_onchain_string(p.get("symbol", "")).sanitised,
                     "tvl": p.get("tvl", 0),
                     "chains": p.get("chains", []),
                     "category": p.get("category", ""),
