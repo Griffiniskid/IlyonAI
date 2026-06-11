@@ -40,8 +40,11 @@ class WhaleTransactionPoller:
                 rpc_url=settings.solana_rpc_url,
                 helius_api_key=settings.helius_api_key,
             ) as client:
+                # Collect everything at/above the UI's minimum floor ($1k). The
+                # whale feed's slider filters UP from here, so storing ≥$1k lets a
+                # $1k view actually show data (≥$10k whales are too rare to fill it).
                 transactions = await client.get_recent_large_transactions(
-                    min_amount_usd=10000, limit=200,
+                    min_amount_usd=1000, limit=200,
                 )
         except Exception as e:
             logger.warning(f"Whale poller: Helius fetch failed: {e}")

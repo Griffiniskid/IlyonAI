@@ -8,7 +8,7 @@ Ethereum, Solana, Base, Arbitrum, BSC, Polygon, Optimism, and Avalanche.
 
 from pydantic_settings import BaseSettings
 from pydantic import Field, validator
-from typing import Optional, Dict, Any, ClassVar
+from typing import Optional, Dict, Any, ClassVar, List
 
 
 
@@ -50,6 +50,31 @@ class Settings(BaseSettings):
         description="Solana RPC endpoint (use Helius for production)"
     )
     helius_api_key: Optional[str] = Field(None, env="HELIUS_API_KEY")
+    # Comma-separated list of Helius keys for automatic failover. When one key
+    # hits its monthly cap (HTTP 429), the shared HeliusKeyPool rotates to the
+    # next. Falls back to the single HELIUS_API_KEY above when unset. Append new
+    # keys here — do NOT replace; failover needs more than one key.
+    helius_api_keys_raw: Optional[str] = Field(None, validation_alias="HELIUS_API_KEYS")
+
+    @property
+    def helius_api_keys(self) -> List[str]:
+        """All configured Helius keys in priority order.
+
+        Parsed from ``HELIUS_API_KEYS`` (comma-separated); the single
+        ``HELIUS_API_KEY`` is appended when set and not already present, so
+        existing single-key deployments keep working unchanged.
+        """
+        raw = (self.helius_api_keys_raw or "").strip()
+        parsed: List[str] = [k.strip() for k in raw.split(",") if k.strip()] if raw else []
+        if self.helius_api_key:
+            parsed.append(self.helius_api_key)
+        seen = set()
+        keys: List[str] = []
+        for k in parsed:
+            if k not in seen:
+                seen.add(k)
+                keys.append(k)
+        return keys
 
     # EVM Chains
     ethereum_rpc_url: str = Field(

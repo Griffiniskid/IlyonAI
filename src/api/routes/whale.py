@@ -33,6 +33,10 @@ _whale_cache: Dict[str, Any] = {}
 _whale_cache_locks: Dict[str, asyncio.Lock] = {}
 _cache_ttl = 300  # 5 minutes
 _token_cache_ttl = 60  # 1 minute for token-specific feeds
+# Global whale feed does a LIVE on-chain fetch per request; this short TTL only
+# coalesces rapid repeats (React re-renders, double-clicks). The Refresh button
+# (force_refresh) bypasses it, so the user can always pull the real current data.
+_live_global_ttl = 20  # seconds
 
 # Known whale labels
 KNOWN_WHALES = {
@@ -117,13 +121,15 @@ def _collect_behavior_annotations(raw_transactions: List[Dict[str, Any]]) -> Dic
 
 
 async def get_whale_activity(request: web.Request) -> web.Response:
-    """GET /api/v1/whales — Get recent whale transactions from DB (populated by poller)."""
+    """GET /api/v1/whales — live on-chain whale transactions (Helius), backfilled
+    with recent stored history. force_refresh=1 bypasses the short live cache."""
     raw_min_amount = request.query.get('min_amount_usd', '1000')
     raw_limit = request.query.get('limit', '50')
     token_filter = request.query.get('token')
     type_filter = request.query.get('type')
     if type_filter:
         type_filter = type_filter.lower()
+    force_refresh = request.query.get('force_refresh', '').lower() in ('1', 'true', 'yes')
 
     try:
         min_amount = float(raw_min_amount)
@@ -142,48 +148,138 @@ async def get_whale_activity(request: web.Request) -> web.Response:
 
     try:
         from src.storage.database import get_database
+        from datetime import timezone
         db = await get_database()
-        overview = await db.get_whale_overview(hours=24, limit=200)
-        raw_txs = overview.get("transactions", [])
 
-        trades = []
-        for tx in raw_txs:
-            amount_usd = float(tx.get("amount_usd", 0))
+        def _passes(amount_usd: float, tx_type: str, token_addr: Optional[str]) -> bool:
             if amount_usd < min_amount:
-                continue
-
-            direction = tx.get("direction", "inflow")
-            tx_type = "buy" if direction == "inflow" else "sell"
-
-            if token_filter and tx.get("token_address") != token_filter:
-                continue
+                return False
+            if token_filter and token_addr != token_filter:
+                return False
             if type_filter and tx_type != type_filter:
-                continue
+                return False
+            return True
 
-            wallet_addr = tx.get("wallet_address", "")
-            wallet_label = tx.get("wallet_label") or KNOWN_WHALES.get(wallet_addr)
+        def _coerce_ts(ts) -> datetime:
+            """Normalise any timestamp (unix int, ISO str, datetime) to naive UTC so
+            live + stored rows sort together without tz-aware/naive comparison errors."""
+            if isinstance(ts, (int, float)):
+                try:
+                    return datetime.utcfromtimestamp(ts)
+                except Exception:
+                    return datetime.utcnow()
+            if isinstance(ts, str):
+                if not ts:
+                    return datetime.utcnow()
+                try:
+                    d = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                    return d.astimezone(timezone.utc).replace(tzinfo=None) if d.tzinfo else d
+                except Exception:
+                    return datetime.utcnow()
+            if isinstance(ts, datetime):
+                return ts.astimezone(timezone.utc).replace(tzinfo=None) if ts.tzinfo else ts
+            return datetime.utcnow()
 
-            ts_str = tx.get("timestamp", "")
+        by_sig: Dict[str, WhaleTransactionResponse] = {}
+
+        # ── 1. LIVE on-chain fetch — the real current data, queried from Helius
+        #       on demand (not the poller's stored snapshot). Cached briefly to
+        #       coalesce rapid repeats; Refresh (force_refresh) bypasses it. ──
+        live_key = f"whales:global:{min_amount}:{type_filter or 'all'}:{token_filter or 'all'}"
+
+        async def _fetch_live() -> List[Dict]:
             try:
-                timestamp = datetime.fromisoformat(ts_str) if ts_str else datetime.utcnow()
-            except Exception:
-                timestamp = datetime.utcnow()
+                solana = SolanaClient(
+                    rpc_url=settings.solana_rpc_url,
+                    helius_api_key=settings.helius_api_key,
+                )
+                try:
+                    rows = await solana.get_recent_large_transactions(
+                        min_amount_usd=min_amount, limit=200,
+                    )
+                finally:
+                    await solana.close()
+                _set_cached_data(live_key, {"raw": rows})
+                if rows:  # persist newly-seen whales so history survives across requests
+                    try:
+                        await db.insert_whale_transactions(rows)
+                    except Exception as e:
+                        logger.debug(f"whale live persist skipped: {e}")
+                return rows
+            except Exception as e:
+                logger.warning(f"Whale live fetch failed, falling back to stored: {e}")
+                return []
 
-            trades.append(WhaleTransactionResponse(
-                signature=tx.get("signature", ""),
+        if force_refresh:
+            # Refresh button: always pull fresh on-chain data, never the cache.
+            live_raw = await _fetch_live()
+        else:
+            cached = _get_cached_data(live_key, _live_global_ttl)
+            if cached is not None:
+                live_raw = cached.get("raw", [])
+            else:
+                # Coalesce concurrent misses (React re-renders, tab refocus) onto
+                # a single live fetch instead of stampeding Helius.
+                lock = _get_or_create_lock(live_key)
+                async with lock:
+                    inner = _get_cached_data(live_key, _live_global_ttl)
+                    live_raw = inner.get("raw", []) if inner is not None else await _fetch_live()
+
+        for tx in live_raw:
+            amount_usd = float(tx.get("amount_usd", 0))
+            tx_type = tx.get("type", "buy")
+            token_addr = tx.get("token_address", "")
+            if not _passes(amount_usd, tx_type, token_addr):
+                continue
+            sig = tx.get("signature", "")
+            if not sig or sig in by_sig:
+                continue
+            wallet_addr = tx.get("wallet_address", "")
+            by_sig[sig] = WhaleTransactionResponse(
+                signature=sig,
                 wallet_address=wallet_addr,
-                wallet_label=wallet_label,
-                token_address=tx.get("token_address", ""),
+                wallet_label=tx.get("wallet_label") or KNOWN_WHALES.get(wallet_addr),
+                token_address=token_addr,
                 token_symbol=tx.get("token_symbol", "???"),
                 token_name=tx.get("token_name", "Unknown"),
                 type=tx_type,
                 amount_tokens=float(tx.get("amount_tokens", 0)),
                 amount_usd=amount_usd,
                 price_usd=float(tx.get("price_usd", 0)),
-                timestamp=timestamp,
+                timestamp=_coerce_ts(tx.get("timestamp")),
                 dex_name=tx.get("dex_name", "Unknown"),
-            ))
+            )
 
+        # ── 2. Backfill from the stored 24h history (deduped) so the feed isn't
+        #       empty when the live window is quiet or a live fetch fails. ──
+        overview = await db.get_whale_overview(hours=24, limit=200)
+        for tx in overview.get("transactions", []):
+            amount_usd = float(tx.get("amount_usd", 0))
+            direction = tx.get("direction", "inflow")
+            tx_type = "buy" if direction == "inflow" else "sell"
+            token_addr = tx.get("token_address", "")
+            if not _passes(amount_usd, tx_type, token_addr):
+                continue
+            sig = tx.get("signature", "")
+            if sig and sig in by_sig:
+                continue
+            wallet_addr = tx.get("wallet_address", "")
+            by_sig[sig or f"db-{len(by_sig)}"] = WhaleTransactionResponse(
+                signature=sig,
+                wallet_address=wallet_addr,
+                wallet_label=tx.get("wallet_label") or KNOWN_WHALES.get(wallet_addr),
+                token_address=token_addr,
+                token_symbol=tx.get("token_symbol", "???"),
+                token_name=tx.get("token_name", "Unknown"),
+                type=tx_type,
+                amount_tokens=float(tx.get("amount_tokens", 0)),
+                amount_usd=amount_usd,
+                price_usd=float(tx.get("price_usd", 0)),
+                timestamp=_coerce_ts(tx.get("timestamp", "")),
+                dex_name=tx.get("dex_name", "Unknown"),
+            )
+
+        trades = list(by_sig.values())
         trades.sort(key=lambda t: t.timestamp, reverse=True)
         trades = trades[:limit]
 

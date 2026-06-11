@@ -12,6 +12,7 @@ Exclusively designed for Solana mainnet - no other chains supported.
 import logging
 import base64
 import asyncio
+import re
 from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
@@ -31,6 +32,18 @@ from src.smart_money.normalizer import normalize_event
 # Retry configuration for rate-limited RPC calls
 MAX_RETRIES = 3
 RETRY_DELAYS = [1.0, 2.0, 4.0]  # Exponential backoff delays in seconds
+
+
+def _apply_helius_key_to_url(url: Optional[str], key: Optional[str]) -> Optional[str]:
+    """Return ``url`` with its ``api-key=`` query value replaced by ``key``.
+
+    Used so a rotated Helius key propagates to RPC endpoints that embed the key
+    in the URL (e.g. ``https://mainnet.helius-rpc.com/?api-key=...``). Non-Helius
+    or keyless URLs (the public mainnet-beta RPC) are returned unchanged.
+    """
+    if not url or not key or "api-key=" not in url:
+        return url
+    return re.sub(r"api-key=[^&]*", f"api-key={key}", url)
 
 
 def to_canonical_flow_event(raw_event: Dict[str, Any]) -> CanonicalFlowEvent:
@@ -236,11 +249,77 @@ class SolanaClient:
             rpc_url: Solana RPC endpoint URL
             helius_api_key: Optional Helius API key for enhanced holder data
         """
-        self.rpc_url = rpc_url
-        self.helius_api_key = helius_api_key
+        # Resolve the live Helius key from the shared failover pool so every
+        # SolanaClient (whale poller, portfolio scan, token analysis) rotates
+        # together. The explicit ``helius_api_key`` arg is a fallback used when
+        # the pool is empty (tests / single-key setups with no env configured).
+        from src.data.helius_keys import get_active_helius_key
+
+        self.helius_api_key = get_active_helius_key() or helius_api_key
+        # If the RPC URL embeds a Helius key, swap in the live one so the RPC
+        # endpoint rotates together with the enhanced-API key.
+        self.rpc_url = _apply_helius_key_to_url(rpc_url, self.helius_api_key) or rpc_url
         self._client: Optional[AsyncClient] = None
         self._anomaly_detector = BehavioralAnomalyDetector()
-        self._wallet_forensics = WalletForensicsEngine(solana_rpc_url=rpc_url)
+        self._wallet_forensics = WalletForensicsEngine(solana_rpc_url=self.rpc_url)
+
+    def _rotate_helius_key(self, failed_key: Optional[str] = None, transient: bool = False) -> bool:
+        """Mark the failed Helius key exhausted and switch to the next one.
+
+        Updates ``self.helius_api_key`` and ``self.rpc_url`` in place and drops
+        the native RPC client so it reconnects with the new key. Returns True
+        when a *different* key is now active than the one the caller used (i.e.
+        it's worth retrying); False for single-key setups with nothing to fail
+        over to.
+
+        ``failed_key`` is the key the caller actually sent the failing request
+        with. When several concurrent requests (e.g. the whale poller's parallel
+        DEX-program fetches) all 429 on the same key, only the first should park
+        it — the rest find ``failed_key`` no longer current and simply adopt the
+        already-rotated key instead of wrongly parking the healthy one.
+
+        ``transient`` marks a per-second rate-limit 429 (key healthy, recovers in
+        seconds → short cooldown) versus a monthly-cap 429 (key dead until reset
+        → long cooldown). Misclassifying a rate limit as a cap would strand a
+        healthy key for 30 min, so callers pass the result of ``is_cap_exhaustion``.
+        """
+        from src.data.helius_keys import (
+            mark_helius_key_exhausted,
+            RATE_LIMIT_COOLDOWN_S,
+            DEFAULT_COOLDOWN_S,
+        )
+
+        current = self.helius_api_key
+        if failed_key is not None and failed_key != current:
+            # Another concurrent caller already rotated past the failed key;
+            # the current key is different, so retrying is worthwhile.
+            return True
+        cooldown = RATE_LIMIT_COOLDOWN_S if transient else DEFAULT_COOLDOWN_S
+        nxt = mark_helius_key_exhausted(current, cooldown)
+        if nxt and nxt != current:
+            self.helius_api_key = nxt
+            self.rpc_url = _apply_helius_key_to_url(self.rpc_url, nxt) or self.rpc_url
+            # Force a reconnect so native RPC calls use the rotated key/URL.
+            self._client = None
+            return True
+        return False
+
+    async def _handle_helius_429(self, resp, used_key: Optional[str]) -> bool:
+        """Read a 429 response body, classify cap-vs-rate-limit, and rotate.
+
+        Returns True when a different key is now active (worth retrying). Reading
+        the body is what lets us tell a transient per-second rate limit (empty
+        body) from a monthly-cap 429 (``max usage reached``) and pick the right
+        cooldown.
+        """
+        from src.data.helius_keys import is_cap_exhaustion
+
+        try:
+            body_text = await resp.text()
+        except Exception:
+            body_text = ""
+        transient = not is_cap_exhaustion(getattr(resp, "status", 429), body_text)
+        return self._rotate_helius_key(used_key, transient=transient)
 
     async def _ensure_connected(self):
         """Ensure RPC client is connected"""
@@ -329,6 +408,11 @@ class SolanaClient:
                             continue
                         break
                     if kind == "status" and info in (429, 503) and attempt < 2:
+                        # 429 → fail over to the next Helius key before retrying.
+                        # No body captured here, so treat as transient (short
+                        # cooldown); the whale/token paths long-park a real cap.
+                        if info == 429 and self._rotate_helius_key(transient=True):
+                            helius_url = f"https://mainnet.helius-rpc.com/?api-key={self.helius_api_key}"
                         await asyncio.sleep(0.5 * (attempt + 1))
                         continue
                     break
@@ -471,9 +555,14 @@ class SolanaClient:
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                     if resp.status != 200:
+                        # 429 → classify (cap vs rate-limit) + rotate so the shared
+                        # pool (and the next portfolio scan, which reads the active
+                        # key at construction) moves on — cross-consumer failover.
+                        if resp.status == 429:
+                            await self._handle_helius_429(resp, self.helius_api_key)
                         logger.warning(f"Helius getAssetsByOwner returned {resp.status}")
                         return []
-                    
+
                     data = await resp.json()
                     
                     if 'error' in data:
@@ -1125,45 +1214,74 @@ class SolanaClient:
         }
         
         try:
+            # Throttle the parallel DEX-program fan-out so it stays under Helius's
+            # per-second rate limit — a burst of all programs at once trips 429s
+            # even on a healthy key (with only one healthy key, rotation can't fix
+            # a rate limit; staying under it can). Retry/rotate is the backstop.
+            helius_sem = asyncio.Semaphore(4)
+
             # Helper to fetch and parse for a specific program
             async def fetch_program_txs(name: str, address: str, session: aiohttp.ClientSession) -> List[Dict]:
-                url = (
-                    f"https://api.helius.xyz/v0/addresses/{address}/transactions"
-                    f"?api-key={self.helius_api_key}&type=SWAP&limit=100"
-                )
+                from src.data.helius_keys import get_helius_pool
 
-                for attempt in range(2):
+                # One attempt per configured key (so a 429 can roll through every
+                # key) plus a spare for the transient-retry path; minimum 2.
+                max_attempts = max(2, get_helius_pool().key_count() + 1)
+
+                for attempt in range(max_attempts):
+                    # Rebuild the URL each attempt so a rotated key takes effect.
+                    # Capture the key used so concurrent program fetches that all
+                    # 429 on it don't each park a *different* key (see _rotate).
+                    used_key = self.helius_api_key
+                    url = (
+                        f"https://api.helius.xyz/v0/addresses/{address}/transactions"
+                        f"?api-key={used_key}&type=SWAP&limit=100"
+                    )
+                    status = None
+                    rotated = False
+                    data = None
                     try:
-                        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                            if resp.status != 200:
-                                should_retry = resp.status in {429, 500, 502, 503, 504} and attempt < 1
-                                if should_retry:
-                                    await asyncio.sleep(RETRY_DELAYS[attempt])
-                                    continue
-                                logger.debug(f"Helius {name} fetch returned status {resp.status}")
-                                return []
-
-                            data = await resp.json()
-                            if not data or not isinstance(data, list):
-                                return []
-
-                            parsed_txs = []
-                            for tx in data:
-                                parsed = await self._parse_helius_transaction(
-                                    tx,
-                                    min_amount_usd,
-                                    sol_price=sol_price
-                                )
-                                if parsed:
-                                    parsed['dex_name'] = name
-                                    parsed_txs.append(parsed)
-
-                            return parsed_txs
+                        # Hold the throttle only across the network call, not the
+                        # backoff sleep below (which would serialise the retries).
+                        async with helius_sem:
+                            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                                status = resp.status
+                                if status == 200:
+                                    data = await resp.json()
+                                elif status == 429:
+                                    # Classify cap vs transient rate-limit, rotate.
+                                    rotated = await self._handle_helius_429(resp, used_key)
                     except Exception as e:
-                        if attempt < 1:
-                            await asyncio.sleep(RETRY_DELAYS[attempt])
+                        if attempt < max_attempts - 1:
+                            await asyncio.sleep(RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)])
                             continue
                         logger.debug(f"Error fetching {name} txs: {e}")
+                        return []
+
+                    if status == 200:
+                        if not data or not isinstance(data, list):
+                            return []
+                        parsed_txs = []
+                        for tx in data:
+                            parsed = await self._parse_helius_transaction(
+                                tx,
+                                min_amount_usd,
+                                sol_price=sol_price
+                            )
+                            if parsed:
+                                parsed['dex_name'] = name
+                                parsed_txs.append(parsed)
+                        return parsed_txs
+
+                    # Non-200. On a 429 that rotated to a different key, retry it
+                    # immediately; otherwise back off for retryable statuses.
+                    if status == 429 and rotated and attempt < max_attempts - 1:
+                        continue
+                    if status in {429, 500, 502, 503, 504} and attempt < max_attempts - 1:
+                        await asyncio.sleep(RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)])
+                        continue
+                    logger.debug(f"Helius {name} fetch returned status {status}")
+                    return []
 
                 return []
 
@@ -1477,22 +1595,32 @@ class SolanaClient:
                 before_signature = None
                 max_pages = 3
 
+                from src.data.helius_keys import get_helius_pool
+
                 for _ in range(max_pages):
-                    url = (
-                        f"https://api.helius.xyz/v0/addresses/{token_address}/transactions"
-                        f"?api-key={self.helius_api_key}&type=SWAP&limit=100"
-                    )
-                    if before_signature:
-                        url = f"{url}&before={before_signature}"
+                    # One attempt per configured key (so a 429 rolls through all)
+                    # plus a spare for the transient-retry path; minimum 2.
+                    max_attempts = max(2, get_helius_pool().key_count() + 1)
 
                     data = None
-                    for attempt in range(2):
+                    for attempt in range(max_attempts):
+                        # Rebuild per attempt so a rotated key takes effect.
+                        used_key = self.helius_api_key
+                        url = (
+                            f"https://api.helius.xyz/v0/addresses/{token_address}/transactions"
+                            f"?api-key={used_key}&type=SWAP&limit=100"
+                        )
+                        if before_signature:
+                            url = f"{url}&before={before_signature}"
                         try:
                             async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                                 if resp.status != 200:
-                                    should_retry = resp.status in {429, 500, 502, 503, 504} and attempt < 1
+                                    # 429 → classify (cap vs rate-limit) + fail over.
+                                    if resp.status == 429 and await self._handle_helius_429(resp, used_key) and attempt < max_attempts - 1:
+                                        continue
+                                    should_retry = resp.status in {429, 500, 502, 503, 504} and attempt < max_attempts - 1
                                     if should_retry:
-                                        await asyncio.sleep(RETRY_DELAYS[attempt])
+                                        await asyncio.sleep(RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)])
                                         continue
                                     logger.warning(f"Helius token transactions returned {resp.status}")
                                     data = []
@@ -1501,8 +1629,8 @@ class SolanaClient:
                                 data = await resp.json()
                                 break
                         except Exception:
-                            if attempt < 1:
-                                await asyncio.sleep(RETRY_DELAYS[attempt])
+                            if attempt < max_attempts - 1:
+                                await asyncio.sleep(RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)])
                                 continue
                             data = []
 
