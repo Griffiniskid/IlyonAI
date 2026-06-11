@@ -4861,6 +4861,12 @@ def _is_conceptual_question(message: str) -> bool:
         return False
     if _INTENT_ACTION_RE.search(m) or _INTENT_DATA_RE.search(m) or _INTENT_SEARCH_RE.search(m):
         return False
+    # A concrete token/contract address present means the user wants THIS token
+    # analysed (e.g. "is this token safe? <mint>"), not a generic concept answer.
+    # Without this, the question opener below flags it conceptual and detect_intent
+    # returns None → the chat LLM hand-waves instead of running token analysis.
+    if _BARE_MINT_RE.search(m):
+        return False
     return m.endswith("?") or bool(_QUESTION_OPENER_RE.search(m))
 
 
