@@ -456,7 +456,7 @@ def _build_llm(openrouter_model: Optional[str] = None):
         return _OpenAINoStopChatOpenAI(
             model="gpt-5.4-mini",
             temperature=0.1,
-            timeout=90,
+            timeout=45,
             api_key=SecretStr(openai_key) if openai_key else None,
         )
 
@@ -5672,7 +5672,17 @@ def build_agent(
         memory=memory,
         verbose=True,
         handle_parsing_errors=True,
-        max_iterations=25,
+        # Latency guard. The REAL bound is max_execution_time (wall-clock); this
+        # is a secondary cap. Keep enough headroom that a legitimate multi-step
+        # build (resolve → quote → simulate → build → verify, plus the odd
+        # parse-error retry) completes, while still stopping a runaway loop.
+        # 25 let a vague prompt grind for minutes; 12 + the 35s wall-clock keeps
+        # it fast without truncating real execution flows.
+        max_iterations=12,
+        # Self-stop at 35s and emit a best-effort answer. Must stay BELOW the
+        # endpoints per-attempt wait_for (40s) so the agent wraps up gracefully
+        # instead of being cancelled and cascading onto a slow fallback model.
+        max_execution_time=35,
         early_stopping_method="generate",
         # Inject system prompt + {chat_history} into ZeroShotAgent's prefix
         agent_kwargs={

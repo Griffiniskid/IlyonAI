@@ -5346,12 +5346,14 @@ export default function MainApp({ routeTab }: { routeTab?: string | null } = {})
           : (data?.detail ? JSON.stringify(data.detail) : "");
         if (res.status === 429) throw new Error(`⏳ ${detail || "Too many requests. Please wait a few seconds and retry."}`);
         if (res.status === 402) throw new Error(`💳 ${detail || "AI provider credits are insufficient right now. Please top up credits and try again."}`);
-        if (res.status === 401 && data.detail?.includes("API key")) throw new Error("🔑 Неверный API ключ. Обнови API_KEYS в server/.env и перезапусти сервер.");
-        if (res.status === 504) throw new Error(`⏱️ ${detail || "The AI agent timed out. Please retry."}`);
-        throw new Error(detail || `Ошибка сервера ${res.status}`);
+        if (res.status === 401 && data.detail?.includes("API key")) throw new Error("🔑 My AI provider isn't responding right now — this is on our side. Please try again in a little while.");
+        if (res.status === 504) throw new Error(`⏱️ ${detail || "That took longer than I could wait on. Please try again — or give me specific tokens and amounts and I'll build it step by step."}`);
+        throw new Error(detail || "I couldn't complete that just now. Please try again in a moment, or rephrase it with specific tokens and amounts (e.g. “Swap 5 SOL to USDC”).");
       }
       setBackendOk(true);
-      let responseText = typeof data.response === "string" ? data.response : "*(модель вернула пустой ответ)*";
+      let responseText = (typeof data.response === "string" && data.response.trim())
+        ? data.response
+        : "I didn't catch anything actionable in that — could you rephrase it? I can check live prices, your balance, find the best pools, or build a swap, bridge, or stake.";
       // A tool that refused (e.g. cross-VM bridge with no destination address)
       // returns a raw {"status":"error","message":...} JSON. Show the readable
       // message, not the raw blob — and never render it as a signable card.
@@ -5407,7 +5409,9 @@ export default function MainApp({ routeTab }: { routeTab?: string | null } = {})
       const msg = err instanceof Error ? err.message : "Error";
       setMessages(p => [...p, {
         id: nextId++, role: "assistant", ts: new Date(),
-        text: backendOk === false ? "⚠️ Backend offline.\n\nRun: `./start-server.sh`" : `❌ ${msg}`,
+        text: backendOk === false
+          ? "⚠️ I can't reach the server right now. Please try again in a moment."
+          : msg,
         reasoning: fallbackSteps,
       }]);
     } finally {

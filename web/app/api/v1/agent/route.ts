@@ -5,7 +5,32 @@ export const dynamic = "force-dynamic";
 
 const ASSISTANT_API_TARGET = process.env.ASSISTANT_API_TARGET || "http://localhost:8000";
 const SENTINEL_API_TARGET = process.env.SENTINEL_API_TARGET || "http://localhost:8080";
-const REQUEST_TIMEOUT_MS = 180_000;
+// Backstop only — catches a genuinely hung request so the user gets a friendly
+// message instead of an infinite spinner. Kept generous so it never truncates a
+// legitimately slow Sentinel query (balance/analysis/allocation can stream for a
+// while). The wallet reasoning path is bounded separately by the backend agent's
+// own 35s self-stop, so this does NOT need to be aggressive.
+const REQUEST_TIMEOUT_MS = 90_000;
+
+// When the agent genuinely can't complete a request (backend error, timeout, or
+// it's unreachable) we never want the user to see a raw "Server error 500" chip.
+// Instead we return a normal, conversational assistant message (HTTP 200) that
+// explains what happened and points to things the agent can actually do.
+const FRIENDLY_TIMEOUT =
+  "That one took me longer than I could finish in time. Mind trying again? If it's a multi-step idea, tell me the exact tokens and amounts — e.g. “Swap 5 SOL to USDC” — and I'll build it one safe step at a time.";
+const FRIENDLY_GENERIC =
+  "I started working on that but couldn't finish it cleanly, so I stopped rather than guess. This usually means the request was too open-ended for me to execute safely — I can't chase speculative profit or invent a trade plan for you. Here's what I can do right now: check live token prices, show your balance, find the best pools, or build a specific swap, bridge, or stake. Try something like “Swap 5 SOL to USDC”, “Best SOL pool”, or “My balance”.";
+const FRIENDLY_UNREACHABLE =
+  "I couldn't reach my reasoning engine just now. Give me a few seconds and try again — if it keeps happening the service may be restarting.";
+
+function friendlyResponse(message: string): Response {
+  // Shaped like a normal agent JSON reply so the frontend renders it as a
+  // regular assistant message, not an error. `degraded` lets the UI tag it.
+  return new Response(JSON.stringify({ response: message, degraded: true }), {
+    status: 200,
+    headers: { "content-type": "application/json", "cache-control": "no-store" },
+  });
+}
 
 export type BackendKind = "wallet" | "sentinel";
 
@@ -165,13 +190,34 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
   }
   const target = _resolveBackendTarget(selected);
-  const upstream = await fetch(`${target}/api/v1/agent`, {
-    method: "POST",
-    headers: upstreamHeaders(request),
-    body,
-    cache: "no-store",
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${target}/api/v1/agent`, {
+      method: "POST",
+      headers: upstreamHeaders(request),
+      body,
+      cache: "no-store",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    // fetch threw: timeout/abort or the backend is unreachable. Degrade to a
+    // human message instead of letting Next return a bare 500.
+    const isTimeout = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+    console.error(`[agent-proxy] upstream ${selected} fetch failed:`, err);
+    return friendlyResponse(isTimeout ? FRIENDLY_TIMEOUT : FRIENDLY_UNREACHABLE);
+  }
+
+  // Backend returned a server-side failure (5xx). Surface a conversational
+  // message rather than passing a raw 500/502/503/504 to the chat UI. The real
+  // error is logged for operators; 4xx (rate-limit, credits, validation) pass
+  // through so the frontend's specific handling still applies.
+  if (upstream.status >= 500) {
+    let detail = "";
+    try { detail = (await upstream.clone().text()).slice(0, 500); } catch { /* ignore */ }
+    console.error(`[agent-proxy] upstream ${selected} returned ${upstream.status}: ${detail}`);
+    return friendlyResponse(FRIENDLY_GENERIC);
+  }
 
   return new Response(upstream.body, {
     status: upstream.status,

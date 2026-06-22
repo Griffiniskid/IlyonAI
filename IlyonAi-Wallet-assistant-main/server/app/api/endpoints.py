@@ -1655,7 +1655,7 @@ async def run_agent(
             )
             result = await asyncio.wait_for(
                 agent.ainvoke({"input": effective_query}),
-                timeout=90.0,
+                timeout=40.0,  # just above the agent's 35s self-stop; avoids slow-model cascade
             )
             response_text = _clean_agent_output(result.get("output", ""))
 
