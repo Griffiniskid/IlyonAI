@@ -73,6 +73,26 @@ class OpenAIClient(BaseAIClient):
             await self._session.close()
             self._session = None
 
+    def _openai_failover_client(self, status: int):
+        """Direct-OpenAI fallback for when THIS client is on OpenRouter and
+        OpenRouter is unusable — 402 (out of credits) or 401 (bad key). Returns
+        None when failover does not apply: already direct, no OpenAI key, this
+        IS a fallback, or a status that doesn't warrant switching providers.
+
+        Uses an explicit valid OpenAI model ("gpt-4o-mini") rather than
+        settings.openai_model, which is (mis)configured to an OpenRouter model
+        id and would 404 against api.openai.com.
+        """
+        if status not in (401, 402):
+            return None
+        if not self.use_openrouter or getattr(self, "_is_failover", False):
+            return None
+        if not settings.openai_api_key:
+            return None
+        fb = OpenAIClient(model="gpt-4o-mini", use_openrouter=False)
+        fb._is_failover = True
+        return fb
+
     def _get_system_prompt(self) -> str:
         """
         System prompt for the AI analyst.
@@ -431,6 +451,15 @@ CRITICAL RULES:
                         error_text = await resp.text()
                         last_error_message = f"HTTP {resp.status}"
                         logger.warning(f"AI API error ({model_name}): {resp.status} - {error_text[:200]}")
+
+                        # Failover: OpenRouter out-of-credits/bad-key → direct OpenAI.
+                        _fb = self._openai_failover_client(resp.status)
+                        if _fb is not None:
+                            logger.warning("OpenRouter %s — failing over to direct OpenAI (analyze)", resp.status)
+                            try:
+                                return await _fb.analyze(request)
+                            finally:
+                                await _fb.close()
 
                         self.ai_logger.log_error(
                             error=Exception(f"HTTP {resp.status}: {error_text[:100]}"),
@@ -807,6 +836,13 @@ If asked about a specific token, suggest sending the address for analysis."""
                 if resp.status != 200:
                     err_text = await resp.text()
                     logger.warning("Chat HTTP %s: %s", resp.status, err_text[:300])
+                    _fb = self._openai_failover_client(resp.status)
+                    if _fb is not None:
+                        logger.warning("OpenRouter %s — failing over to direct OpenAI (chat)", resp.status)
+                        try:
+                            return await _fb.chat(message, system_prompt, max_tokens, temperature)
+                        finally:
+                            await _fb.close()
                     return "Sorry, I can't respond right now. Please try again later."
 
                 data = await resp.json()
@@ -894,6 +930,13 @@ If asked about a specific token, suggest sending the address for analysis."""
                 if resp.status != 200:
                     error_text = await resp.text()
                     logger.warning("Structured chat API error: %s - %s", resp.status, error_text[:300])
+                    _fb = self._openai_failover_client(resp.status)
+                    if _fb is not None:
+                        logger.warning("OpenRouter %s — failing over to direct OpenAI (chat_json)", resp.status)
+                        try:
+                            return await _fb.chat_json(message, system_prompt, max_tokens, temperature, response_format)
+                        finally:
+                            await _fb.close()
                     return {}
 
                 data = await resp.json()

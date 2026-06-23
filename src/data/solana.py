@@ -515,7 +515,7 @@ class SolanaClient:
         except Exception:
             return False
 
-    async def get_wallet_assets(self, wallet_address: str) -> List[Dict]:
+    async def get_wallet_assets(self, wallet_address: str, _attempts_left: Optional[int] = None) -> List[Dict]:
         """
         Fetch all token balances for a wallet using Helius DAS API.
         
@@ -530,7 +530,14 @@ class SolanaClient:
         if not self.helius_api_key:
             logger.warning("Helius API key not configured - cannot fetch wallet assets")
             return []
-        
+
+        # One attempt per configured key so a 429 on the active key fails over to
+        # the next AND retries the same request (otherwise the pool only rotates
+        # for FUTURE callers and this balance call returns empty).
+        if _attempts_left is None:
+            from src.data.helius_keys import get_helius_pool
+            _attempts_left = max(1, get_helius_pool().key_count())
+
         tokens = []
         
         try:
@@ -559,7 +566,12 @@ class SolanaClient:
                         # pool (and the next portfolio scan, which reads the active
                         # key at construction) moves on — cross-consumer failover.
                         if resp.status == 429:
-                            await self._handle_helius_429(resp, self.helius_api_key)
+                            rotated = await self._handle_helius_429(resp, self.helius_api_key)
+                            # Retry the SAME request on the rotated key so this
+                            # balance call actually benefits from the failover
+                            # (not just future callers).
+                            if rotated and _attempts_left > 1:
+                                return await self.get_wallet_assets(wallet_address, _attempts_left - 1)
                         logger.warning(f"Helius getAssetsByOwner returned {resp.status}")
                         return []
 

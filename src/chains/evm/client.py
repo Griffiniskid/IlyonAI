@@ -66,7 +66,14 @@ class EVMChainClient(ChainClient):
         return self._session
 
     async def _rpc_call(self, method: str, params: Optional[list] = None) -> Any:
-        """Make a JSON-RPC call to the chain's RPC endpoint."""
+        """Make a JSON-RPC call, with failover across known public endpoints.
+
+        Public RPCs (e.g. eth.llamarpc.com) intermittently return 5xx/HTML;
+        previously a single flaky host silently degraded token analysis. Try the
+        configured URL first, then this chain's RPC_FALLBACKS, returning the
+        first good result. A real JSON-RPC error ("execution reverted") is a
+        valid answer from a healthy node — surface it (don't keep failing over).
+        """
         session = await self._get_session()
         payload = {
             "jsonrpc": "2.0",
@@ -74,16 +81,32 @@ class EVMChainClient(ChainClient):
             "params": params or [],
             "id": 1,
         }
-        try:
-            async with session.post(self.config.rpc_url, json=payload) as resp:
-                data = await resp.json()
-                if "error" in data:
-                    logger.warning(f"RPC error on {self.chain_type.value}: {data['error']}")
-                    return None
-                return data.get("result")
-        except Exception as e:
-            logger.error(f"RPC call failed on {self.chain_type.value}: {e}")
-            return None
+
+        from src.data.asset_registry import RPC_FALLBACKS
+        endpoints = [self.config.rpc_url]
+        for u in RPC_FALLBACKS.get(self.chain_type.value, []):
+            if u and u not in endpoints:
+                endpoints.append(u)
+
+        last_err: Any = None
+        for url in endpoints:
+            try:
+                async with session.post(url, json=payload) as resp:
+                    if resp.status != 200:
+                        last_err = f"HTTP {resp.status}"
+                        continue  # flaky host (e.g. Cloudflare 521/HTML) → next endpoint
+                    data = await resp.json(content_type=None)
+                    if "error" in data:
+                        logger.warning(f"RPC error on {self.chain_type.value}: {data['error']}")
+                        return None
+                    return data.get("result")
+            except Exception as e:
+                last_err = e
+                continue
+        logger.error(
+            f"RPC call failed on {self.chain_type.value} across {len(endpoints)} endpoint(s): {last_err}"
+        )
+        return None
 
     async def _eth_call(self, to: str, data: str, block: str = "latest") -> Optional[str]:
         """Execute eth_call (read-only contract interaction)."""

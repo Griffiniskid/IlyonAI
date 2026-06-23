@@ -160,9 +160,12 @@ def get_rate_limiter() -> RateLimiter:
     """Get or create global rate limiter"""
     global _rate_limiter
     if _rate_limiter is None:
+        # Use the web-API limits (60/min, 500/hr), not the much tighter blinks
+        # limits (30/min) — the blinks cap was throttling normal app traffic and
+        # surfacing user-facing 429s. (Blinks endpoints get their own app.)
         _rate_limiter = RateLimiter(
-            requests_per_minute=settings.blinks_rate_limit_per_minute,
-            requests_per_hour=settings.blinks_rate_limit_per_hour,
+            requests_per_minute=settings.web_api_rate_limit_per_minute,
+            requests_per_hour=settings.web_api_rate_limit_per_hour,
         )
     return _rate_limiter
 
@@ -191,8 +194,10 @@ async def rate_limit_middleware(request: web.Request, handler):
     if request.method == "OPTIONS":
         return await handler(request)
 
-    # Skip for health check
-    if request.path == "/health":
+    # Skip for health check (registered on BOTH /health and /api/v1/health;
+    # monitors/LB/web poll the latter far above the limiter's threshold and
+    # were getting 429s, making health flap).
+    if request.path in ("/health", "/api/v1/health"):
         return await handler(request)
 
     request["rate_limit_scope"] = rate_limit_scope_for_path(request.path, request.method)

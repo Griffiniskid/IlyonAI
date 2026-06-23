@@ -45,7 +45,12 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
 
     from src.api.middleware.rate_limit import agent_gap
 
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        # Malformed/empty JSON would otherwise raise before the stream is
+        # prepared and surface as a bare aiohttp 500. Return a clean 400.
+        return web.json_response({"error": "invalid_json"}, status=400)
     session_id = body.get("session_id", "")
 
     def _addr_from(v):
@@ -85,7 +90,12 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
     # both so downstream tools can pick the right one per intent.
     user_id = request.get("user_id", 0)
 
-    if not agent_gap.allow(user_id, session_id):
+    # Only throttle when a real session id distinguishes callers. user_id is
+    # always 0 (auth_middleware never sets request['user_id']), so without a
+    # session_id the per-session gap key (0, "") is shared by EVERY anonymous
+    # caller and the 0.5s gap becomes a global gate that 429s concurrent users.
+    # The per-IP limiter still protects the endpoint.
+    if session_id and not agent_gap.allow(user_id, session_id):
         return web.json_response({"error": "rate_limited"}, status=429)
 
     from src.agent.clean import normalize_short_swap_query
@@ -170,11 +180,19 @@ async def agent_turn(request: web.Request) -> web.StreamResponse:
         traceback_str = traceback.format_exc()
         print(f"Agent error: {error_msg}\n{traceback_str}")
 
-        await response.write(
-            f"event: error\ndata: {json.dumps({'error': error_msg})}\n\n".encode()
-        )
+        try:
+            await response.write(
+                f"event: error\ndata: {json.dumps({'error': error_msg})}\n\n".encode()
+            )
+        except (ConnectionResetError, RuntimeError):
+            # Client already disconnected — writing to a prepared StreamResponse
+            # would raise and abort the TCP conn mid-response (Cloudflare 502).
+            pass
 
-    await response.write_eof()
+    try:
+        await response.write_eof()
+    except (ConnectionResetError, RuntimeError):
+        pass
     return response
 
 

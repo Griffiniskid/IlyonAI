@@ -130,9 +130,30 @@ class TokenScorer:
         # This approach respects the AI's qualitative analysis while enforcing
         # strict mathematical standards for critical security metrics.
 
-        base_score = token.ai_score
         adjustments = 0
         adjustment_reasons = []
+
+        # When AI analysis is available its score is the baseline. When it is NOT
+        # (e.g. the LLM provider returned 402 / out of credits), token.ai_score is
+        # just the unset default (50) and the penalties below would drag an
+        # otherwise-healthy token into SCAM. Fall back to the weighted metric
+        # score so the green safety checks (LP lock, honeypot, freeze) still count.
+        if token.ai_available:
+            base_score = token.ai_score
+        else:
+            w = self._get_weights()
+            base_score = int(round(
+                safety_score * w['security']
+                + liquidity_score * w['liquidity']
+                + distribution_score * w['distribution']
+                + social_score * w['social']
+                + activity_score * w['activity']
+                + contract_score * w['contract_quality']
+                + deployer_score * w['deployer_reputation']
+                + anomaly_score * w['behavioral_anomaly']
+                + honeypot_score * w['honeypot']
+            ))
+            adjustment_reasons.append(f"AI unavailable - metric baseline {base_score}")
 
         # --- BONUSES (Reward Good Behavior) ---
 
@@ -166,10 +187,19 @@ class TokenScorer:
 
         # --- PENALTIES (Punish Critical Risks) ---
 
-        # 1. Mint Authority (Infinite inflation risk)
+        # 1. Mint Authority (Infinite inflation risk).
+        # If LP is locked, the token verifiably sells (not a honeypot) and freeze
+        # is disabled, the practical danger of an enabled mint authority is much
+        # lower — don't let this single flag auto-SCAM an otherwise-safe token.
         if token.mint_authority_enabled:
-            adjustments -= 20
-            adjustment_reasons.append("-20 Mint Authority Enabled")
+            mint_mitigated = (
+                lock_status == "locked" and lock_pct >= 50
+                and not token.freeze_authority_enabled
+                and token.honeypot_status == "safe"
+            )
+            mint_penalty = 10 if mint_mitigated else 20
+            adjustments -= mint_penalty
+            adjustment_reasons.append(f"-{mint_penalty} Mint Authority Enabled")
 
         # 2. Freeze Authority (Censorship risk)
         if token.freeze_authority_enabled:

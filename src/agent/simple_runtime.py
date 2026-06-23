@@ -69,6 +69,15 @@ INTENT_PATTERNS = {
         r"maximize\s+(?:blended\s+)?apy",
         r"skip\s+pendle",
         r"skip\s+\w+\s+positions",
+        # Growth / recommendation / strategy phrasing = a request for an
+        # allocation RECOMMENDATION, not a wallet-balance lookup. Must precede
+        # get_wallet_balance's bare r"portfolio" (which hijacked "portfolio
+        # growth recommendation" and dumped balances). A genuine balance ask
+        # ("my portfolio", "portfolio balance") lacks these follow-words and
+        # still routes to get_wallet_balance.
+        r"portfolio\s+(?:growth|recommendation|recommendations|strateg(?:y|ies)|plan|advice|idea|ideas)",
+        r"(?:grow|growth)\s+(?:my\s+)?(?:portfolio|holdings?|funds?|capital|money|savings?|stack)",
+        r"(?:investment|growth|yield|allocation)\s+recommendation",
     ],
     "get_token_price": [
         r"price of (\w+)",
