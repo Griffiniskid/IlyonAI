@@ -23,6 +23,12 @@ const nextConfig = {
   output: 'standalone',
   distDir: safeDistDir,
   images: {
+    // Disable server-side image optimization. In `output: 'standalone'` the
+    // optimizer requires the `sharp` native package, which isn't shipped in the
+    // runner image — its absence 500s every <Image> request and floods logs.
+    // We only render small third-party favicons/logos, so serving them
+    // unoptimized is the right trade-off and removes the sharp dependency.
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: "https",
