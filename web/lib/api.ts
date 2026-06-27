@@ -6,6 +6,7 @@ import type {
   AnalysisResponse,
   TrendingResponse,
   PortfolioResponse,
+  OpenPositionsResponse,
   PortfolioChainMatrixResponse,
   WhaleActivityResponse,
   TrackedWalletResponse,
@@ -1153,6 +1154,10 @@ export async function getPortfolio(): Promise<PortfolioResponse> {
 
 export async function getWalletPortfolio(wallet: string): Promise<PortfolioResponse> {
   return fetchAPI<PortfolioResponse>(`/api/v1/portfolio/${wallet}`);
+}
+
+export async function getWalletPositions(wallet: string): Promise<OpenPositionsResponse> {
+  return fetchAPI<OpenPositionsResponse>(`/api/v1/portfolio/${wallet}/positions`);
 }
 
 export async function getPortfolioChainMatrix(): Promise<PortfolioChainMatrixResponse> {

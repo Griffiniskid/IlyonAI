@@ -135,6 +135,15 @@ export function useWalletPortfolio(wallet: string | null) {
   });
 }
 
+export function useWalletPositions(wallet: string | null) {
+  return useQuery({
+    queryKey: ["portfolio", "positions", wallet],
+    queryFn: () => api.getWalletPositions(wallet!),
+    enabled: !!wallet,
+    staleTime: 60 * 1000,
+  });
+}
+
 export function usePortfolioChainMatrix() {
   return useQuery({
     queryKey: ["portfolio", "chains"],

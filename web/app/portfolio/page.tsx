@@ -17,6 +17,7 @@ import Image from "next/image";
 import {
   usePortfolio,
   useWalletPortfolio,
+  useWalletPositions,
   useTrackedWallets,
   useTrackWallet,
   useAuth,
@@ -57,6 +58,7 @@ export default function PortfolioPage() {
   const { data: portfolio, isLoading: portfolioLoading, refetch } = useWalletPortfolio(
     connectedAddress
   );
+  const { data: positions, isLoading: positionsLoading } = useWalletPositions(connectedAddress);
   const { data: chainMatrix } = usePortfolioChainMatrix();
   const { data: trackedPortfolio, isLoading: trackedLoading } = useWalletPortfolio(trackedAddress);
   const trackWallet = useTrackWallet();
@@ -312,6 +314,59 @@ export default function PortfolioPage() {
               </Link>
             ))}
           </div>
+        </GlassCard>
+      )}
+
+      {/* Open Positions (on-chain: liquid staking / LP / lending / vault) */}
+      {connected && (
+        <GlassCard>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold">Open Positions</h3>
+            {positions && positions.count > 0 && (
+              <span className="text-sm font-mono text-muted-foreground">
+                {formatUSD(positions.total_value_usd)}
+              </span>
+            )}
+          </div>
+          {positionsLoading ? (
+            <div className="flex items-center gap-2 text-muted-foreground py-4 text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading positions…
+            </div>
+          ) : positions && positions.positions.length > 0 ? (
+            <div className="divide-y divide-border">
+              {positions.positions.map((p, i) => (
+                <div
+                  key={p.address || `${p.protocol}-${i}`}
+                  className="flex items-center justify-between py-4"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center font-bold">
+                      {(p.symbol || p.protocol || "?")[0]}
+                    </div>
+                    <div>
+                      <div className="font-semibold">{p.protocol}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {p.symbol ?? p.underlying ?? p.kind}
+                        {p.amount != null ? ` · ${p.amount.toLocaleString()}` : ""}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground capitalize">
+                      {p.kind}
+                    </span>
+                    <div className="text-right font-mono font-semibold">
+                      {p.value_usd != null ? formatUSD(p.value_usd) : "—"}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground py-4">
+              No open positions yet. Stake, add liquidity, or supply to a lending market and it&apos;ll show up here.
+            </div>
+          )}
         </GlassCard>
       )}
 

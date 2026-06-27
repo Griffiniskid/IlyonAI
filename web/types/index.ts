@@ -269,6 +269,28 @@ export interface PortfolioResponse {
   last_updated: string;
 }
 
+// Open DeFi positions derived from on-chain holdings (liquid staking / LP /
+// lending / vault) — surfaced by GET /api/v1/portfolio/{wallet}/positions.
+export interface OpenPosition {
+  kind: string; // staking | lp | lending | vault
+  protocol: string;
+  underlying: string | null;
+  symbol: string | null;
+  address: string | null;
+  chain: string;
+  amount: number | null;
+  value_usd: number | null;
+  price_usd: number | null;
+  source: string;
+}
+
+export interface OpenPositionsResponse {
+  wallet: string;
+  positions: OpenPosition[];
+  count: number;
+  total_value_usd: number;
+}
+
 export type PortfolioCapabilityState = "available" | "degraded";
 
 export interface PortfolioCapabilityCell {

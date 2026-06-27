@@ -591,6 +591,35 @@ async def sync_wallet(request: web.Request) -> web.Response:
     })
 
 
+async def get_wallet_positions(request: web.Request) -> web.Response:
+    """GET /api/v1/portfolio/{wallet}/positions
+
+    Derive a wallet's OPEN DeFi positions (liquid staking, LP, lending, vault)
+    from its on-chain token holdings. Read-only / non-custodial — reuses the
+    same Helius/Moralis balance data as the portfolio endpoint and classifies
+    which holdings are positions vs plain spot tokens. Does not touch execution.
+    """
+    wallet = (request.match_info.get("wallet") or "").strip()
+    if not wallet:
+        return web.json_response({"error": "wallet address required"}, status=400)
+    try:
+        from src.defi.position_detection import derive_positions
+        tokens = await get_wallet_tokens(wallet)
+        positions = derive_positions(tokens)
+        total = round(sum((p.get("value_usd") or 0) for p in positions), 2)
+        return web.json_response({
+            "wallet": wallet,
+            "positions": positions,
+            "count": len(positions),
+            "total_value_usd": total,
+        })
+    except Exception as e:
+        logger.error(f"Error deriving positions for {wallet}: {e}")
+        return web.json_response({
+            "wallet": wallet, "positions": [], "count": 0, "total_value_usd": 0.0,
+        })
+
+
 def setup_portfolio_routes(app: web.Application):
     """Setup portfolio API routes."""
     app.router.add_get('/api/v1/portfolio', get_portfolio)
@@ -599,6 +628,8 @@ def setup_portfolio_routes(app: web.Application):
     app.router.add_delete('/api/v1/portfolio/wallets/{address}', untrack_wallet)
     app.router.add_post('/api/v1/portfolio/wallets/{address}/sync', sync_wallet)
     app.router.add_get('/api/v1/portfolio/chains', get_chain_parity_matrix)
+    # Open positions (on-chain detection) — register BEFORE the /{wallet} catch-all.
+    app.router.add_get('/api/v1/portfolio/{wallet}/positions', get_wallet_positions)
     app.router.add_get('/api/v1/portfolio/{wallet}', get_wallet_portfolio)
 
     logger.info("Portfolio routes registered with Helius integration")
