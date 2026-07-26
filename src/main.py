@@ -7,6 +7,7 @@ import src.bootstrap_assistant_import  # noqa: F401, E402
 
 import asyncio
 import logging
+import os
 import sys
 from aiohttp import web
 
@@ -41,16 +42,23 @@ async def on_startup(app: web.Application):
     except Exception as e:
         logger.warning(f"Cache initialization failed: {e}")
 
-    # Start whale transaction poller
-    try:
-        from src.storage.database import get_database
-        from src.services.whale_poller import WhaleTransactionPoller
-        from src.platform.stream_hub import get_stream_hub
-        db = await get_database()
-        poller = WhaleTransactionPoller(db=db, stream_hub=get_stream_hub())
-        app["_whale_poller_task"] = asyncio.create_task(poller.run_forever())
-    except Exception as e:
-        logger.warning(f"Whale poller startup failed: {e}")
+    # Start whale transaction poller — DISABLED by default. It polls Helius 24/7
+    # and burns the credited data budget even with zero users (the recurring
+    # "max usage reached" drain). Off unless WHALE_POLLER_ENABLED is explicitly
+    # truthy; the whale feed is out of scope for the Solana-trading-terminal v1.
+    if os.environ.get("WHALE_POLLER_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}:
+        try:
+            from src.storage.database import get_database
+            from src.services.whale_poller import WhaleTransactionPoller
+            from src.platform.stream_hub import get_stream_hub
+            db = await get_database()
+            poller = WhaleTransactionPoller(db=db, stream_hub=get_stream_hub())
+            app["_whale_poller_task"] = asyncio.create_task(poller.run_forever())
+            logger.info("Whale poller started (WHALE_POLLER_ENABLED=1)")
+        except Exception as e:
+            logger.warning(f"Whale poller startup failed: {e}")
+    else:
+        logger.info("Whale poller disabled (set WHALE_POLLER_ENABLED=1 to enable) — Helius drain stopped")
 
     # Wire ComposedPlanOrchestrator notifier + webhook handoff. The notifier
     # is invoked by the deBridge webhook handler when a pending plan resolves;
