@@ -262,9 +262,33 @@ class DexScreenerClient:
             logger.warning(f"No valid pairs after filtering for {address[:8]}")
             return None
 
+        # Pick the "main" pair carefully — two failure modes to avoid:
+        #  1) The requested mint may only be the QUOTE token of the deepest pool
+        #     (e.g. USDC sits under a huge PUMP/USDC pool). Blindly using pairs[0]
+        #     would return the WRONG token's name/symbol/price. Prefer pairs where
+        #     the requested mint is the BASE token.
+        #  2) The deepest base-matched pair may be quoted in a volatile/exotic
+        #     token (e.g. BONK/MET) with a corrupt priceUsd → the analyzer would
+        #     read a garbage price and the honeypot sell-size calc would flag a
+        #     legit token. Prefer a USD/SOL-quoted pair as the price source.
+        _USD_QUOTES = {
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
+            "So11111111111111111111111111111111111111112",   # wrapped SOL
+        }
+        def _base_addr(p):
+            return (p.get('baseToken') or {}).get('address') or ""
+        def _quote_addr(p):
+            return (p.get('quoteToken') or {}).get('address') or ""
+
+        base_pairs = [p for p in pairs if _base_addr(p) == address] if address else []
+        candidates = base_pairs or pairs  # fall back only if the mint is never a base
+        usd_quoted = [p for p in candidates if _quote_addr(p) in _USD_QUOTES]
+        main = (usd_quoted or candidates)[0]
+
         result = {
             'pairs': pairs,
-            'main': pairs[0]  # Highest liquidity pair
+            'main': main,
         }
 
         logger.info(

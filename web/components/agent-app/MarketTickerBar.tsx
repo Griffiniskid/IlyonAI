@@ -2,15 +2,16 @@
 
 import { useEffect, useState } from "react";
 
+// Solana-only product — the ticker shows SOL + Solana ecosystem tokens.
 const COINS = [
-  { id: "bitcoin", symbol: "BTC" },
-  { id: "ethereum", symbol: "ETH" },
-  { id: "binancecoin", symbol: "BNB" },
   { id: "solana", symbol: "SOL" },
-  { id: "arbitrum", symbol: "ARB" },
-  { id: "optimism", symbol: "OP" },
-  { id: "tether", symbol: "USDT" },
-  { id: "pancakeswap-token", symbol: "CAKE" },
+  { id: "jupiter-exchange-solana", symbol: "JUP" },
+  { id: "bonk", symbol: "BONK" },
+  { id: "dogwifcoin", symbol: "WIF" },
+  { id: "jito-governance-token", symbol: "JTO" },
+  { id: "pyth-network", symbol: "PYTH" },
+  { id: "raydium", symbol: "RAY" },
+  { id: "usd-coin", symbol: "USDC" },
 ];
 
 interface PriceRow {

@@ -15,8 +15,6 @@ import {
   MessageSquare,
   ChevronRight,
 } from "lucide-react";
-import { useDashboardStats } from "@/lib/hooks";
-import { formatCompact } from "@/lib/utils";
 import { ChatPreview } from "@/components/landing/chat-preview";
 import { ReasoningVisualization } from "@/components/landing/reasoning-viz";
 import { QuickSearch } from "@/components/landing/quick-search";
@@ -57,24 +55,7 @@ const INTEGRATION_ROW_TWO = [
 
 const ALL_INTEGRATIONS = [...INTEGRATION_ROW_ONE, ...INTEGRATION_ROW_TWO];
 
-// Stat card
-function StatCard({ value, label, icon: Icon, loading }: { value: string; label: string; icon: React.ElementType; loading?: boolean }) {
-  return (
-    <div className="stat-card text-center">
-      <Icon className="w-6 h-6 sm:w-8 sm:h-8 text-emerald-400 mx-auto mb-2 sm:mb-3" />
-      {loading ? (
-        <div className="h-9 w-20 bg-muted/50 animate-pulse rounded mx-auto mb-1" />
-      ) : (
-        <div className="text-2xl sm:text-3xl font-bold text-emerald-400 mb-1">{value}</div>
-      )}
-      <div className="text-xs sm:text-sm text-muted-foreground">{label}</div>
-    </div>
-  );
-}
-
 export default function HomePage() {
-  const { data: statsData, isLoading: statsLoading } = useDashboardStats();
-
   return (
     <div className="relative">
       <BackgroundEffects />
@@ -230,38 +211,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Stats Section */}
-      <section className="relative py-20 px-4 border-t border-white/5">
-        <div className="container mx-auto max-w-6xl">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            <StatCard
-              value={statsData ? (statsData.total_tokens_analyzed ?? 0).toLocaleString() : "0"}
-              label="Tokens Analyzed"
-              icon={Search}
-              loading={statsLoading}
-            />
-            <StatCard
-              value={statsData ? formatCompact(statsData.total_volume_24h ?? 0) : "$0"}
-              label="24h Trading Volume"
-              icon={BarChart3}
-              loading={statsLoading}
-            />
-            <StatCard
-              value={statsData ? formatCompact(statsData.solana_tvl ?? 0) : "$0"}
-              label="Multi-Chain TVL"
-              icon={Activity}
-              loading={statsLoading}
-            />
-            <StatCard
-              value={statsData ? `${(statsData.safe_tokens_percent ?? 0).toFixed(1)}%` : "0%"}
-              label="Safe Tokens"
-              icon={Shield}
-              loading={statsLoading}
-            />
-          </div>
-        </div>
-      </section>
-
       {/* Integrations / Partners Section */}
       <section className="relative py-24 px-4 border-t border-white/5 overflow-hidden">
         <div className="container mx-auto max-w-6xl">
@@ -381,10 +330,10 @@ export default function HomePage() {
                     Open AI Chat
                   </Button>
                 </Link>
-                <Link href="/trending">
+                <Link href="/token-safety">
                   <Button size="lg" variant="outline" className="h-14 px-8">
-                    <TrendingUp className="mr-2 w-5 h-5" />
-                    View Trending
+                    <Shield className="mr-2 w-5 h-5" />
+                    Check a Token
                   </Button>
                 </Link>
               </div>

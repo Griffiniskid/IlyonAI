@@ -19,33 +19,23 @@ from aiohttp import web
 from src.api.middleware.cors import cors_middleware
 from src.api.middleware.rate_limit import rate_limit_middleware
 from src.api.routes.auth import auth_middleware
+# Solana-only chat product (v1 pivot). The EVM + left-panel route groups were
+# cut: trending, whale, stats, contracts, shield, session_keys, eip7702_auth,
+# audit, plan_permit2, intel, opportunities, smart_money, wallet_intel, entity,
+# alerts. Kept: chat/agent, Solana portfolio+transactions, token analysis,
+# stream, prices, chains, auth, actions/blinks, defi, bridge (deBridge webhook).
 from src.api.routes.actions import setup_actions_routes
 from src.api.routes.blinks import setup_blinks_routes
 from src.api.routes.analysis import setup_analysis_routes
-from src.api.routes.trending import setup_trending_routes
 from src.api.routes.portfolio import setup_portfolio_routes
 from src.api.routes.transactions import setup_transactions_routes
-from src.api.routes.whale import setup_whale_routes
 from src.public_api.router import setup_public_api_routes
 from src.api.routes.auth import setup_auth_routes
-from src.api.routes.stats import setup_stats_routes
 from src.api.routes.chains import setup_chains_routes
-from src.api.routes.contracts import setup_contracts_routes
-from src.api.routes.shield import setup_shield_routes
 from src.api.routes.debridge_webhook import setup_debridge_routes
 from src.api.routes.defi import setup_defi_routes
-from src.api.routes.session_keys import setup_session_key_routes
-from src.api.routes.eip7702_auth import setup_eip7702_routes
-from src.api.routes.audit import setup_audit_routes
-from src.api.routes.plan_permit2 import setup_plan_permit2_routes
 from src.api.routes.bridge_confirmed import setup_bridge_confirmed_routes
-from src.api.routes.intel import setup_intel_routes
-from src.api.routes.opportunities import setup_opportunity_routes
-from src.api.routes.smart_money import setup_smart_money_routes
-from src.api.routes.wallet_intel import setup_wallet_intel_routes
-from src.api.routes.entity import setup_entity_routes
 from src.api.routes.stream import setup_stream_routes
-from src.api.routes.alerts import setup_alert_routes
 from src.api.routes.agent import setup_agent_routes
 from src.api.routes.agent_chats import setup_agent_chats_routes
 from src.api.routes.agent_preferences import setup_agent_preferences_routes
@@ -202,29 +192,14 @@ def create_api_app() -> web.Application:
     setup_actions_routes(app)
     setup_blinks_routes(app)
     setup_analysis_routes(app)
-    setup_trending_routes(app)
     setup_portfolio_routes(app)
     setup_transactions_routes(app)
-    setup_whale_routes(app)
     setup_auth_routes(app)
-    setup_stats_routes(app)
     setup_chains_routes(app)
-    setup_contracts_routes(app)
-    setup_shield_routes(app)
     setup_defi_routes(app)
     setup_debridge_routes(app)
-    setup_session_key_routes(app)
-    setup_eip7702_routes(app)
-    setup_audit_routes(app)
-    setup_plan_permit2_routes(app)
     setup_bridge_confirmed_routes(app)
-    setup_intel_routes(app)
-    setup_opportunity_routes(app)
-    setup_smart_money_routes(app)
-    setup_wallet_intel_routes(app)
-    setup_entity_routes(app)
     setup_stream_routes(app)
-    setup_alert_routes(app)
     setup_agent_routes(app)
     setup_agent_chats_routes(app)
     setup_agent_preferences_routes(app)
@@ -281,29 +256,14 @@ def setup_api_routes(app: web.Application):
     setup_actions_routes(app)
     setup_blinks_routes(app)
     setup_analysis_routes(app)
-    setup_trending_routes(app)
     setup_portfolio_routes(app)
     setup_transactions_routes(app)
-    setup_whale_routes(app)
     setup_auth_routes(app)
-    setup_stats_routes(app)
     setup_chains_routes(app)
-    setup_contracts_routes(app)
-    setup_shield_routes(app)
     setup_defi_routes(app)
     setup_debridge_routes(app)
-    setup_session_key_routes(app)
-    setup_eip7702_routes(app)
-    setup_audit_routes(app)
-    setup_plan_permit2_routes(app)
     setup_bridge_confirmed_routes(app)
-    setup_intel_routes(app)
-    setup_opportunity_routes(app)
-    setup_smart_money_routes(app)
-    setup_wallet_intel_routes(app)
-    setup_entity_routes(app)
     setup_stream_routes(app)
-    setup_alert_routes(app)
     setup_agent_routes(app)
     setup_agent_chats_routes(app)
     setup_agent_preferences_routes(app)

@@ -260,8 +260,12 @@ class TokenScorer:
                 risks.append(f"⛔ KNOWN SCAMMER DEPLOYER - Score capped at 25 (was {original})")
                 logger.warning(f"⛔ {token.symbol}: Known scammer detected, capping score from {original} to {overall}")
 
-        # Hard cap 2: Confirmed honeypot → max 15
-        if token.honeypot_is_honeypot:
+        # Hard cap 2: Confirmed honeypot → max 15. Gate on HIGH confidence so a
+        # quote-only (unfunded simulation wallet) detection — confidence ~0.81 —
+        # can't force a legit token to SCAM on its own. Only a simulation-verified
+        # honeypot (confidence ≥ 0.9) trips the hard cap.
+        _hp_conf = getattr(token, "honeypot_confidence", 1.0) or 0.0
+        if token.honeypot_is_honeypot and _hp_conf >= 0.9:
             original = overall
             overall = min(overall, 15)
             if original != overall:

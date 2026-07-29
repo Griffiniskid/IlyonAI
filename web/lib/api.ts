@@ -1153,7 +1153,8 @@ export async function getPortfolio(): Promise<PortfolioResponse> {
 }
 
 export async function getWalletPortfolio(wallet: string): Promise<PortfolioResponse> {
-  return fetchAPI<PortfolioResponse>(`/api/v1/portfolio/${wallet}`);
+  const raw = await fetchAPI<any>(`/api/v1/portfolio/${wallet}`);
+  return unwrapEnvelope<PortfolioResponse>(raw) as PortfolioResponse;
 }
 
 export async function getWalletPositions(wallet: string): Promise<OpenPositionsResponse> {

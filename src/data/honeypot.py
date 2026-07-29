@@ -452,6 +452,17 @@ class HoneypotDetector:
         else:
             tax_percent = 0 if actual_output > 0 else 100
 
+        # Quote-only analysis (simulation wallet unfunded) CANNOT trust the fixed
+        # 0.1-SOL baseline: if our token price differs even slightly from Jupiter's
+        # live routing price, actual/expected looks like a massive "sell tax" on a
+        # perfectly sellable token — this is what falsely flagged BONK/JUP as 100%
+        # honeypots. Without a real on-chain simulation, trust only Jupiter's own
+        # reported price impact as the tax signal (a real high-tax/honeypot token
+        # still shows large price impact or no route).
+        if not simulation_verified:
+            pi = quote.price_impact_pct or 0.0
+            tax_percent = pi if pi > 0 else 0.0
+
         # Classify result based on tax
         if tax_percent >= self.HONEYPOT_TAX_THRESHOLD:
             status = HoneypotStatus.HONEYPOT

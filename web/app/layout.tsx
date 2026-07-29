@@ -17,43 +17,40 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ilyon AI | Your AI-Powered DeFi Trading Assistant",
+  title: "Ilyon | The safe way to trade Solana",
   description:
-    "AI-powered DeFi trading assistant across Solana, Ethereum, Base, Arbitrum, BSC, Polygon, Optimism, and Avalanche. Ask in natural language to check balances, find swap routes, bridge assets, track portfolios, and analyze tokens — all from one chat interface.",
+    "Trade any Solana token safely — Ilyon auto-screens every token for rugs before you buy. Paste a token, get an instant safety verdict, and buy or sell in one tap.",
   keywords: [
-    "DeFi security",
-    "multi-chain",
-    "token scanner",
-    "smart contract audit",
+    "Solana trading",
+    "Solana token safety",
+    "rug checker",
     "rugpull detector",
     "honeypot detector",
-    "approval manager",
-    "yield farming",
-    "crypto security",
-    "AI analysis",
-    "AI trading assistant",
-    "DeFi assistant",
-    "natural language trading",
+    "memecoin scanner",
+    "Solana swap",
+    "Jupiter swap",
+    "token risk score",
+    "safe trading",
     "crypto AI",
-    "wallet assistant",
-    "Ethereum",
-    "Solana",
-    "Base",
+    "Solana wallet",
+    "SPL token",
   ],
   icons: {
     icon: "/shield.png",
     apple: "/shield.png",
   },
   openGraph: {
-    title: "Ilyon AI | Your AI-Powered DeFi Trading Assistant",
-    description: "AI-powered DeFi trading assistant across all major chains",
+    title: "Ilyon | The safe way to trade Solana",
+    description:
+      "Every Solana token auto-screened for rugs before you buy. Paste a token → safety verdict → one-tap trade.",
     type: "website",
-    siteName: "Ilyon AI",
+    siteName: "Ilyon",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Ilyon AI | Your AI-Powered DeFi Trading Assistant",
-    description: "AI-powered DeFi trading assistant across all major chains",
+    title: "Ilyon | The safe way to trade Solana",
+    description:
+      "Every Solana token auto-screened for rugs before you buy. Paste a token → safety verdict → one-tap trade.",
   },
 };
 

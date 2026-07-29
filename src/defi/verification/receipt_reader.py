@@ -32,10 +32,17 @@ from typing import Any
 import aiohttp
 
 from src.config import settings
-from src.data.v3_pool_resolver import _eth_call_with_fallback
 from src.defi.verification.receipt_table import ReceiptKind, verifier_for
 
 logger = logging.getLogger(__name__)
+
+
+# EVM receipt verification (V3_NFT, ATOKEN, ERC4626_SHARE, LP_ERC20, …) was
+# removed in the Solana-only cut along with v3_pool_resolver. This stub keeps
+# the module importable; it is only referenced by the EVM verifier paths, which
+# never dispatch in a Solana-only build. The SPL verifiers below use Solana RPC.
+async def _eth_call_with_fallback(*args, **kwargs):  # noqa: D401
+    raise NotImplementedError("EVM eth_call removed (Solana-only build)")
 
 # Canonical SPL Token program IDs — same values used by src/data/solana.py and
 # build_yield_execution_plan.py. We accept both legacy Token + Token-2022 so a

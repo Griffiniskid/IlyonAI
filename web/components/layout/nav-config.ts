@@ -1,16 +1,9 @@
 import {
-  Compass,
-  LineChart,
-  Scan,
-  Radar,
-  Flame,
-  Shield,
-  Settings,
-  PieChart,
-  Droplets,
-  Briefcase,
+  Home,
   MessagesSquare,
-  LucideIcon
+  ShieldCheck,
+  Settings,
+  LucideIcon,
 } from "lucide-react";
 
 export type NavItem = {
@@ -24,39 +17,16 @@ export type NavGroup = {
   items: NavItem[];
 };
 
+// Solana chat product — four surfaces only: a main page, the AI chat, the
+// Token Safety checker, and settings. Swap and the old multi-chain sprawl were
+// cut. Single source of truth for both the desktop sidebar and mobile nav.
 export const navGroups: NavGroup[] = [
   {
-    label: "Discover",
+    label: "Ilyon",
     items: [
-      { label: "Overview", href: "/", icon: Compass },
-      { label: "Analyze", href: "/analyze", icon: Scan },
-      { label: "Dashboard", href: "/dashboard", icon: LineChart },
-      { label: "Trending", href: "/trending", icon: Flame },
-    ],
-  },
-  {
-    label: "Smart Money",
-    items: [
-      { label: "Hub", href: "/smart-money", icon: Radar },
-      { label: "Whales", href: "/whales", icon: Droplets },
-    ],
-  },
-  {
-    label: "Protect",
-    items: [
-      { label: "Shield", href: "/shield", icon: Shield },
-    ],
-  },
-  {
-    label: "AI Agent",
-    items: [
-      { label: "Chat", href: "/agent/chat?tab=chat", icon: MessagesSquare },
-      { label: "Portfolio", href: "/agent/portfolio?tab=portfolio", icon: PieChart },
-    ],
-  },
-  {
-    label: "Settings",
-    items: [
+      { label: "Home", href: "/", icon: Home },
+      { label: "AI Chat", href: "/agent/chat?tab=chat", icon: MessagesSquare },
+      { label: "Token Safety", href: "/token-safety", icon: ShieldCheck },
       { label: "Settings", href: "/settings", icon: Settings },
     ],
   },

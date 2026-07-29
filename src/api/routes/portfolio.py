@@ -11,10 +11,8 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from src.data.solana import SolanaClient
-from src.data.moralis import MoralisClient
 from src.api.response_envelope import make_envelope
 from src.api.response_envelope import envelope_error_response, envelope_response
-from src.portfolio.multichain_aggregator import MultiChainPortfolioAggregator
 from src.api.schemas.responses import (
     PortfolioResponse, PortfolioTokenResponse,
     TrackedWalletsResponse, TrackedWalletResponse,
@@ -99,68 +97,18 @@ def _calculate_health_score(tokens: List, total_value: float) -> int:
 
 
 async def get_wallet_tokens(wallet_address: str) -> List[Dict]:
-    """Fetch token holdings for a wallet using Helius (Solana) and Moralis (EVM)."""
-    tokens = []
-    
-    # Check if wallet is EVM or Solana based on format
-    is_evm = wallet_address.startswith("0x") and len(wallet_address) == 42
-    
-    if not is_evm:
-        # Solana handling
-        try:
-            solana = SolanaClient(
-                settings.solana_rpc_url,
-                helius_api_key=settings.helius_api_key
-            )
-            sol_tokens = await solana.get_wallet_assets(wallet_address)
-            await solana.close()
-            tokens.extend(sol_tokens)
-        except Exception as e:
-            logger.error(f"Error fetching Solana wallet tokens: {e}")
-    else:
-        # EVM handling
-        try:
-            from src.data.moralis import MoralisClient
-            moralis = MoralisClient()
-            import asyncio
-            
-            # Fetch balances for top EVM chains
-            evm_chains = ["ethereum", "base", "arbitrum", "bsc", "polygon", "optimism", "avalanche"]
-            
-            async def fetch_chain(chain: str):
-                try:
-                    res = await moralis.get_wallet_token_balances(wallet_address, chain)
-                    # Convert Moralis format to expected format
-                    chain_tokens = []
-                    for t in res:
-                        # Moralis returns decimals, balance, usd_price, usd_value
-                        balance = float(t.get("balance_formatted") or 0)
-                        if balance <= 0:
-                            continue
-                        chain_tokens.append({
-                            "mint": t.get("token_address", ""),
-                            "name": t.get("name", ""),
-                            "symbol": t.get("symbol", ""),
-                            "logo": t.get("logo"),
-                            "amount": balance,
-                            "value_usd": float(t.get("usd_value") or 0),
-                            "price_usd": float(t.get("usd_price") or 0),
-                            "price_change_24h": float(t.get("usd_price_24hr_percent_change") or 0),
-                            "chain": chain
-                        })
-                    return chain_tokens
-                except Exception as e:
-                    logger.warning(f"Error fetching Moralis {chain} tokens: {e}")
-                    return []
-
-            results = await asyncio.gather(*(fetch_chain(c) for c in evm_chains))
-            for res in results:
-                tokens.extend(res)
-                
-            await moralis.close()
-        except Exception as e:
-            logger.error(f"Error fetching EVM wallet tokens: {e}")
-            
+    """Fetch Solana token holdings for a wallet (Helius primary, free public-RPC fallback)."""
+    tokens: List[Dict] = []
+    try:
+        solana = SolanaClient(
+            settings.solana_rpc_url,
+            helius_api_key=settings.helius_api_key,
+        )
+        sol_tokens = await solana.get_wallet_assets(wallet_address)
+        await solana.close()
+        tokens.extend(sol_tokens)
+    except Exception as e:
+        logger.error(f"Error fetching Solana wallet tokens: {e}")
     return tokens
 
 
@@ -349,30 +297,27 @@ async def get_wallet_portfolio(request: web.Request) -> web.Response:
         last_updated=datetime.utcnow()
     ).model_dump(mode='json')
 
-    return web.json_response(response)
+    # Use the standard envelope so this route matches its siblings (get_portfolio,
+    # chains, positions). The web client unwraps defensively.
+    return envelope_response(response)
 
 
 async def get_chain_parity_matrix(request: web.Request) -> web.Response:
-    """GET /api/v1/portfolio/chains - return chain capability parity matrix."""
+    """GET /api/v1/portfolio/chains - Solana capability matrix (Solana-only product)."""
     del request
 
-    class SolanaCapabilitiesProvider:
-        def capability_overrides(self):
-            return {
-                "solana": {
-                    "spot_holdings": {"supported": True, "reason": None},
-                    "lp_positions": {"supported": False, "reason": "LP position tracking requires dedicated Solana DEX integrations"},
-                    "lending_positions": {"supported": False, "reason": "Lending protocol integrations not yet available"},
-                    "vault_positions": {"supported": False, "reason": "Vault integrations not yet available"},
-                    "risk_decomposition": {"supported": False, "reason": "Requires position-level risk modeling"},
-                    "alert_coverage": {"supported": False, "reason": "Alert system integration pending"},
-                }
+    snapshot = {
+        "chains": {
+            "solana": {
+                "spot_holdings": {"supported": True, "reason": None},
+                "lp_positions": {"supported": False, "reason": "LP position tracking requires dedicated Solana DEX integrations"},
+                "lending_positions": {"supported": False, "reason": "Lending protocol integrations not yet available"},
+                "vault_positions": {"supported": False, "reason": "Vault integrations not yet available"},
+                "risk_decomposition": {"supported": False, "reason": "Requires position-level risk modeling"},
+                "alert_coverage": {"supported": False, "reason": "Alert system integration pending"},
             }
-
-    aggregator = MultiChainPortfolioAggregator(
-        position_providers=[SolanaCapabilitiesProvider(), MoralisClient()]
-    )
-    snapshot = aggregator.aggregate([])
+        }
+    }
     payload = make_envelope(snapshot, meta={"matrix": "chain_parity_v1"})
     return web.json_response(payload)
 

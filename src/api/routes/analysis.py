@@ -442,6 +442,20 @@ async def analyze_token(request: web.Request) -> web.Response:
                 status=400
             )
 
+        # Reject chain/address-format mismatch (e.g. an EVM 0x address submitted
+        # with chain=solana). Without this the Solana analyzer tries to base58-
+        # decode the 0x string, logs a Traceback, and still returns a fabricated
+        # 200 report. Solana mints are base58 and never 0x-prefixed.
+        if req.chain and req.chain.lower() == "solana" and (req.address or "").strip().lower().startswith("0x"):
+            return web.json_response(
+                ErrorResponse(
+                    error="That's an Ethereum-style (0x) address — Ilyon is Solana-only. Paste a Solana mint address.",
+                    code="CHAIN_ADDRESS_MISMATCH",
+                    details={"chain": "solana"},
+                ).model_dump(mode='json'),
+                status=400,
+            )
+
         logger.info(f"Web API: Analyzing {req.address[:8]}... (mode={mode}, chain={req.chain or 'auto'})")
         result = await _analyzer.analyze(req.address, mode=mode, chain=req.chain)
 
@@ -582,7 +596,8 @@ async def search_tokens(request: web.Request) -> web.Response:
     from src.chains.address import AddressResolver
     from src.api.schemas.responses import SearchResultItem
 
-    query = request.query.get('query', '')
+    # Accept both ?query= and ?q= (the latter is what several callers/docs use).
+    query = request.query.get('query') or request.query.get('q') or ''
     chain = request.query.get('chain')
     try:
         limit = min(int(request.query.get('limit', 10)), 50)

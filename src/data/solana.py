@@ -528,8 +528,8 @@ class SolanaClient:
             List of token dicts with balance, metadata, and price info
         """
         if not self.helius_api_key:
-            logger.warning("Helius API key not configured - cannot fetch wallet assets")
-            return []
+            logger.info("Helius key not configured — using free public-RPC balance path")
+            return await self._get_wallet_assets_public_rpc(wallet_address)
 
         # One attempt per configured key so a 429 on the active key fails over to
         # the next AND retries the same request (otherwise the pool only rotates
@@ -572,14 +572,14 @@ class SolanaClient:
                             # (not just future callers).
                             if rotated and _attempts_left > 1:
                                 return await self.get_wallet_assets(wallet_address, _attempts_left - 1)
-                        logger.warning(f"Helius getAssetsByOwner returned {resp.status}")
-                        return []
+                        logger.warning(f"Helius getAssetsByOwner returned {resp.status} — falling back to public RPC")
+                        return await self._get_wallet_assets_public_rpc(wallet_address)
 
                     data = await resp.json()
-                    
+
                     if 'error' in data:
-                        logger.warning(f"Helius API error: {data['error']}")
-                        return []
+                        logger.warning(f"Helius API error: {data['error']} — falling back to public RPC")
+                        return await self._get_wallet_assets_public_rpc(wallet_address)
                     
                     result = data.get('result', {})
                     items = result.get('items', [])
@@ -588,7 +588,11 @@ class SolanaClient:
                     # Add native SOL balance first
                     if native_balance:
                         sol_lamports = native_balance.get('lamports', 0)
-                        sol_price = native_balance.get('price_per_sol', 200)  # Fallback price
+                        # Use the live SOL price (Jupiter→CoinGecko) rather than a
+                        # stale hardcoded $200 when Helius omits price_per_sol.
+                        sol_price = native_balance.get('price_per_sol')
+                        if not sol_price:
+                            sol_price = await self._get_sol_price()
                         sol_balance = sol_lamports / 1e9
                         
                         if sol_balance > 0.001:  # Only show if > 0.001 SOL
@@ -670,15 +674,219 @@ class SolanaClient:
                             logger.debug(f"Error parsing token asset: {e}")
                             continue
                     
+                    # Enrich 24h price change from DexScreener (free) — Helius DAS
+                    # does not return a real price_change_24h, so it was always 0.
+                    try:
+                        spl_mints = [t['mint'] for t in tokens
+                                     if t.get('mint') and t['mint'] != 'So11111111111111111111111111111111111111112']
+                        if spl_mints:
+                            enrich = await self._dexscreener_batch(spl_mints)
+                            for t in tokens:
+                                meta = enrich.get(t['mint'])
+                                if meta and meta.get('price_change_24h') is not None:
+                                    t['price_change_24h'] = float(meta.get('price_change_24h') or 0)
+                    except Exception as _e:
+                        logger.debug("price_change_24h enrichment failed: %s", _e)
+
                     # Sort by value (highest first)
                     tokens.sort(key=lambda x: x.get('value_usd', 0), reverse=True)
-                    
+
+                    # A 200 with zero tokens usually means the DAS key is capped
+                    # ("max usage reached" comes back as an empty result, not a
+                    # 429). Fall back to the free public RPC so balance still works.
+                    if not tokens:
+                        logger.info("Helius returned 0 tokens — falling back to public RPC")
+                        return await self._get_wallet_assets_public_rpc(wallet_address)
+
                     logger.info(f"Fetched {len(tokens)} tokens for wallet {wallet_address[:8]}...")
                     return tokens
                     
         except Exception as e:
             logger.error(f"Error fetching wallet assets: {e}")
+            return await self._get_wallet_assets_public_rpc(wallet_address)
+
+    async def _get_wallet_assets_public_rpc(self, wallet_address: str) -> List[Dict]:
+        """
+        Fetch wallet balances WITHOUT Helius — free public Solana RPC + DexScreener.
+
+        The fallback that makes "My balance" work with zero paid infra. Used when
+        the Helius DAS path is unavailable (no key, or the key hit "max usage
+        reached"). Holdings come from the free public RPC (getBalance for native
+        SOL + getTokenAccountsByOwner for SPL and Token-2022); price/symbol/name/
+        logo are enriched best-effort from DexScreener's free token endpoint. A
+        token DexScreener doesn't know is still returned (amount + truncated-mint
+        symbol, value_usd=0) so the user always sees their holdings.
+        """
+        if not self.is_valid_address(wallet_address):
             return []
+
+        # Genuinely key-free endpoint — never a Helius URL (its key may be capped).
+        public_rpc = "https://api.mainnet-beta.solana.com"
+        tokens: List[Dict] = []
+
+        async def _rpc(session, method, params):
+            payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+            try:
+                async with session.post(public_rpc, json=payload,
+                                        timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status != 200:
+                        logger.debug("public RPC %s -> HTTP %s", method, resp.status)
+                        return None
+                    body = await resp.json()
+            except Exception as exc:
+                logger.debug("public RPC %s failed: %s", method, exc)
+                return None
+            if not isinstance(body, dict) or body.get("error"):
+                logger.debug("public RPC %s error: %s", method, (body or {}).get("error"))
+                return None
+            return body.get("result")
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                # 1) Native SOL
+                bal = await _rpc(session, "getBalance",
+                                 [wallet_address, {"commitment": "confirmed"}])
+                lamports = bal.get("value", 0) if isinstance(bal, dict) else 0
+                sol_balance = (lamports or 0) / 1e9
+                if sol_balance > 0.001:
+                    sol_price = await self._get_sol_price()
+                    tokens.append({
+                        'mint': 'So11111111111111111111111111111111111111112',
+                        'symbol': 'SOL',
+                        'name': 'Solana',
+                        'logo': 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png',
+                        'amount': sol_balance,
+                        'decimals': 9,
+                        'value_usd': sol_balance * sol_price,
+                        'price_usd': sol_price,
+                        'price_change_24h': 0,
+                    })
+
+                # 2) SPL + Token-2022 holdings (parallel fan-out)
+                async def _accounts(program_id):
+                    res = await _rpc(session, "getTokenAccountsByOwner", [
+                        wallet_address,
+                        {"programId": program_id},
+                        {"encoding": "jsonParsed", "commitment": "confirmed"},
+                    ])
+                    if isinstance(res, dict) and isinstance(res.get("value"), list):
+                        return res["value"]
+                    return []
+
+                legacy, token22 = await asyncio.gather(
+                    _accounts(self.TOKEN_PROGRAM),
+                    _accounts(self.TOKEN_2022),
+                )
+
+                holdings: Dict[str, Dict] = {}  # mint -> {amount, decimals}
+                for entry in (legacy or []) + (token22 or []):
+                    try:
+                        info = (((entry.get("account") or {}).get("data") or {})
+                                .get("parsed") or {}).get("info") or {}
+                        mint = info.get("mint")
+                        ta = info.get("tokenAmount") or {}
+                        decimals = int(ta.get("decimals", 0) or 0)
+                        ui = ta.get("uiAmount")
+                        if ui is None:
+                            raw = float(ta.get("amount", 0) or 0)
+                            ui = raw / (10 ** decimals) if decimals else raw
+                        ui = float(ui or 0)
+                        if not mint or ui < 0.000001:
+                            continue
+                        cur = holdings.get(mint)  # multiple ATAs for one mint → sum
+                        if cur:
+                            cur["amount"] += ui
+                        else:
+                            holdings[mint] = {"amount": ui, "decimals": decimals}
+                    except Exception as exc:
+                        logger.debug("parse token account failed: %s", exc)
+                        continue
+
+                # 3) Enrich price/symbol/name/logo from DexScreener (free, batched).
+                enrich = await self._dexscreener_batch(list(holdings.keys()))
+                for mint, h in holdings.items():
+                    meta = enrich.get(mint) or {}
+                    price = float(meta.get("price_usd", 0) or 0)
+                    short = f"{mint[:4]}…{mint[-4:]}"
+                    symbol = meta.get("symbol") or short
+                    name = meta.get("name") or symbol
+                    # Sanitise on-chain strings before they reach LLM/UI context.
+                    try:
+                        from src.agent.sanitizer import sanitise_onchain_string
+                        symbol = sanitise_onchain_string(symbol, max_len=24).sanitised or short
+                        name = sanitise_onchain_string(name, max_len=80).sanitised or symbol
+                    except Exception:
+                        symbol = (symbol or short)[:24]
+                        name = (name or symbol)[:80]
+                    tokens.append({
+                        'mint': mint,
+                        'symbol': symbol,
+                        'name': name,
+                        'logo': meta.get("logo"),
+                        'amount': h["amount"],
+                        'decimals': h["decimals"],
+                        'value_usd': h["amount"] * price,
+                        'price_usd': price,
+                        'price_change_24h': float(meta.get("price_change_24h", 0) or 0),
+                    })
+
+            tokens.sort(key=lambda x: x.get("value_usd", 0), reverse=True)
+            logger.info("Public-RPC balance: %d tokens for %s...",
+                        len(tokens), wallet_address[:8])
+            return tokens
+        except Exception as exc:
+            logger.error("Public-RPC balance path failed: %s", exc)
+            return tokens  # whatever we managed (usually at least native SOL)
+
+    async def _dexscreener_batch(self, mints: List[str]) -> Dict[str, Dict]:
+        """
+        Best-effort price/symbol/name/logo for SPL mints from DexScreener's free
+        token endpoint (up to 30 mints per call, chunked + parallel). Returns
+        ``{mint: {price_usd, symbol, name, logo, price_change_24h}}``. Never
+        raises — a mint DexScreener doesn't know is simply absent from the map.
+        """
+        out: Dict[str, Dict] = {}
+        if not mints:
+            return out
+
+        async def _fetch(session, chunk):
+            url = "https://api.dexscreener.com/latest/dex/tokens/" + ",".join(chunk)
+            try:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        return
+                    body = await resp.json()
+            except Exception as exc:
+                logger.debug("DexScreener batch failed: %s", exc)
+                return
+            pairs = (body or {}).get("pairs") or []
+            best: Dict[str, tuple] = {}  # mint -> (liquidity, pair, baseToken)
+            for p in pairs:
+                base = p.get("baseToken") or {}
+                addr = base.get("address")
+                if not addr:
+                    continue
+                liq = ((p.get("liquidity") or {}).get("usd") or 0) or 0
+                prev = best.get(addr)
+                if prev is None or liq > prev[0]:
+                    best[addr] = (liq, p, base)
+            for addr, (_liq, p, base) in best.items():
+                info = p.get("info") or {}
+                out[addr] = {
+                    "price_usd": p.get("priceUsd") or 0,
+                    "symbol": base.get("symbol"),
+                    "name": base.get("name"),
+                    "logo": info.get("imageUrl"),
+                    "price_change_24h": (p.get("priceChange") or {}).get("h24") or 0,
+                }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                chunks = [mints[i:i + 30] for i in range(0, len(mints), 30)]
+                await asyncio.gather(*(_fetch(session, c) for c in chunks))
+        except Exception as exc:
+            logger.debug("DexScreener batch outer failed: %s", exc)
+        return out
 
     async def get_onchain_data(self, address: str) -> Dict:
         """

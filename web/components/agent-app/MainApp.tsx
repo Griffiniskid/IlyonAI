@@ -1055,7 +1055,7 @@ const OVERVIEW_CHAINS = [
 ];
 
 const HOW_STEPS = [
-  { num: "01", icon: "🔗", title: "Connect Wallet",   desc: "Link Phantom or MetaMask. We support Solana first, plus the major EVM networks in one app." },
+  { num: "01", icon: "🔗", title: "Connect Wallet",   desc: "Link your Phantom wallet — non-custodial, no email or password needed." },
   { num: "02", icon: "💬", title: "Ask the AI",       desc: 'Type naturally: "Swap 0.5 SOL to USDC at best rate" or "What\'s my portfolio worth today?"' },
   { num: "03", icon: "⚡", title: "Execute Instantly", desc: "Confirm the AI-generated transaction with one click. Fast, transparent, non-custodial." },
 ];
@@ -1072,14 +1072,12 @@ interface Partner {
 const PARTNERS: Partner[] = [
   // DEX / Aggregators
   { name: "Jupiter", category: "DEX Aggregator", desc: "Solana", logo: "https://jup.ag/static/media/jupiter-logo.2d2d1a3f.svg", logoSize: 42 },
-  { name: "Enso", category: "EVM Bundler", desc: "Multi-chain", logo: "https://www.enso.build/assets/images/enso-logo.png", logoSize: 36 },
-  { name: "1inch", category: "DEX Aggregator", desc: "EVM", logo: "https://app.1inch.io/assets/images/1inch-logo.svg", logoSize: 40 },
   { name: "deBridge", category: "Cross-Chain", desc: "Bridge", logo: "https://debridge.finance/images/logo.svg", logoSize: 36 },
+  { name: "Raydium", category: "AMM / LP", desc: "Solana", logo: "https://raydium.io/logo/logo-only-icon.svg", logoSize: 34 },
   // Data / Analytics
   { name: "DefiLlama", category: "Analytics", desc: "DeFi Data", logo: "https://defillama.com/logo.png", logoSize: 36 },
   { name: "CoinGecko", category: "Price Data", desc: "Market Data", logo: "https://static.coingecko.com/s/coingecko-logo-8901d2d8ebf2a4bdf88379cc404d7d0e.svg", logoSize: 34 },
   { name: "Binance", category: "Price Data", desc: "Exchange", logo: "https://public.bnbstatic.com/image/pgc/202302/f5f822d3-7e2f-4d53-8c0c-fd5b5f2e0e2c.png", logoSize: 34 },
-  { name: "Moralis", category: "Web3 API", desc: "Multi-chain", logo: "https://moralis.io/wp-content/uploads/2022/12/Moralis-Logo-Light.svg", logoSize: 34 },
   { name: "Helius", category: "Solana RPC", desc: "Infrastructure", logo: "https://helius.xyz/_next/image?url=%2Fassets%2Fhelius-icon.png&w=64&q=75", logoSize: 34 },
   { name: "DexScreener", category: "Analytics", desc: "DEX Tracking", logo: "https://docs.dexscreener.com/img/logo.svg", logoSize: 32 },
   // AI
@@ -1088,7 +1086,6 @@ const PARTNERS: Partner[] = [
   { name: "Grok", category: "AI Model", desc: "xAI", logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/Grok_logo.png/640px-Grok_logo.png", logoSize: 32 },
   // Wallets
   { name: "Phantom", category: "Wallet", desc: "Solana", logo: "https://phantom.app/img/phantom-logo.svg", logoSize: 34 },
-  { name: "MetaMask", category: "Wallet", desc: "EVM", logo: "https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg", logoSize: 34 },
 ];
 
 const INTRO_STATS = [
@@ -4275,13 +4272,11 @@ function AuthScreen({ onAuth, onClose }: AuthScreenProps) {
           no password needed.
         </div>
 
-        <button className="auth-btn" onClick={handleMetaMask} disabled={!!loading} style={{ marginBottom: 10 }}>
-          {loading === "metamask" ? "Waiting for signature…" : "🦊 Connect with MetaMask"}
-        </button>
+        {/* MetaMask/EVM connect removed — Solana-only product. Phantom only. */}
 
         <button className="auth-btn" onClick={handlePhantom} disabled={!!loading} style={{
+          marginBottom: 10,
           background: "rgba(15,23,42,0.78)",
-          boxShadow: "none",
           border: "1px solid rgba(139,92,246,0.28)",
           color: "#C4B5FD",
         }}>
@@ -6286,8 +6281,7 @@ export default function MainApp({ routeTab }: { routeTab?: string | null } = {})
                       {[
                         { icon: "⌕", label: "Overview", desc: "Start from token or pool research", action: () => setActiveTab("chat") },
                         { icon: "⌁", label: "Chat", desc: "Natural language execution surface", action: () => setActiveTab("chat") },
-                        { icon: "◔", label: "Portfolio", desc: "Balances and chain-level exposure", action: () => setActiveTab("portfolio") },
-                        { icon: "⇄", label: "Swap", desc: "Compose and route live swaps", action: () => setActiveTab("swap") },
+                        { icon: "◔", label: "Portfolio", desc: "Your Solana balances", action: () => setActiveTab("portfolio") },
                       ].map(a => (
                         <div key={a.label} className="action-card" onClick={a.action}>
                           <div className="action-card-icon">{a.icon}</div>

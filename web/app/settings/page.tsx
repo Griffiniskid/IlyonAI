@@ -3,9 +3,6 @@
 import { useWallet } from "@solana/wallet-adapter-react";
 import dynamic from "next/dynamic";
 import AssistantWalletSettings from "@/components/agent-app/AssistantWalletSettings";
-import SessionKeyPanel from "@/components/settings/SessionKeyPanel";
-import AuditLogPanel from "@/components/settings/AuditLogPanel";
-import Eip7702OptInPanel from "@/components/settings/Eip7702OptInPanel";
 import SolanaSessionKeyPanel from "@/components/settings/SolanaSessionKeyPanel";
 
 // Dynamically import WalletMultiButton with SSR disabled to prevent hydration mismatch
@@ -39,10 +36,7 @@ export default function SettingsPage() {
       {/* Session-key policies (§11 D.5/D.6) */}
       {connected && publicKey ? (
         <div className="mt-6 space-y-4">
-          <SessionKeyPanel userWallet={publicKey.toBase58()} />
-          <Eip7702OptInPanel userWallet={publicKey.toBase58()} />
           <SolanaSessionKeyPanel userWallet={publicKey.toBase58()} />
-          <AuditLogPanel userWallet={publicKey.toBase58()} />
         </div>
       ) : null}
 
@@ -90,7 +84,6 @@ export default function SettingsPage() {
 
         <div className="space-y-2">
           {[
-            { label: "Documentation", href: "/docs" },
             { label: "Twitter", href: "https://x.com/ilyonProtocol" },
             { label: "Telegram", href: "https://t.me/ilyonProtocol" },
           ].map((link) => (

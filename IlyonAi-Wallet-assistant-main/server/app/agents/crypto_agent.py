@@ -1290,8 +1290,10 @@ _PLATFORM_FEE_BPS: Final = 50
 _ENSO_BASE_URL: Final = "https://api.enso.build"
 _ENSO_NATIVE_TOKEN: Final = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 
-# Enso-supported chains
-_ENSO_SUPPORTED: Final = frozenset({1, 10, 56, 100, 137, 324, 8453, 42161, 43114, 59144})
+# Enso-supported chains — emptied for the Solana-only cut. Every EVM swap /
+# EVM stake / EVM unstake path checks this set and now returns a clean
+# "chain not supported by Enso" error. Solana Jupiter paths never consult it.
+_ENSO_SUPPORTED: Final = frozenset()
 
 
 def _enso_headers() -> dict[str, str]:
@@ -2202,28 +2204,31 @@ def _build_system_prompt(chain_id: int, user_address: str = "", solana_address: 
     native = _native_symbol(chain_id)
 
     wallet_line = (
-        f"Connected EVM wallet: {user_address}"
-        if user_address
-        else "Connected EVM wallet: none"
-    )
-    solana_line = (
         f"Connected Solana wallet (Phantom): {solana_address}"
         if solana_address
-        else ""
+        else "Connected Solana wallet (Phantom): none"
     )
-    if user_address and solana_address:
-        my_balance_line = f'  - "my balance" or "all chains" → input: "{solana_address},{user_address}"'
-    elif user_address:
-        my_balance_line = f'  - "my balance" or "all chains" (EVM) → input: "{user_address}"'
+    solana_line = ""
+    if solana_address:
+        my_balance_line = f'  - "my balance" → input: "{solana_address}"'
     else:
-        my_balance_line = f'  - "my balance" → input: "{solana_address}" (Solana-only wallet, use Solana address directly)'
+        my_balance_line = '  - "my balance" → ask the user to connect their Solana (Phantom) wallet first'
 
     return f"""\
-You are a Senior DeFi Advisor — an expert in crypto, DeFi protocols, and Web3. \
-You are both a smart conversationalist and a precise technical executor. \
+You are Ilyon — a Solana trading and token-safety advisor. You are an expert in Solana, SPL \
+tokens, Solana DeFi (Jupiter, Marinade, Jito, Sanctum, Kamino, Orca, Meteora, Raydium) and \
+memecoin rug-screening. You are both a smart conversationalist and a precise technical executor. \
 You respond in English by default. Only switch to another language if the user clearly asks in that language.
 
-Active network: {chain_label} (chain ID {chain_id}). Native coin: {native}.
+━━━ SOLANA-ONLY — HARD RULE ━━━
+This product operates on SOLANA ONLY. NEVER reference, suggest, or offer actions on Ethereum,
+BSC, Polygon, Arbitrum, Base, Optimism, Avalanche, or any other EVM chain, and NEVER mention
+MetaMask or cross-chain EVM bridges. Every swap goes through Jupiter; staking uses Solana LSTs
+(mSOL, jitoSOL, bSOL, etc.); balances and tokens are Solana SPL tokens. If a user asks for an
+EVM action, briefly say Ilyon is Solana-only and offer the Solana equivalent instead. When
+executing a swap, ALWAYS use build_solana_swap (never build_swap_tx).
+
+Active network: Solana. Native coin: SOL.
 {wallet_line}
 {solana_line}
 
@@ -2256,8 +2261,11 @@ Choose tools based on intent — you are an intelligent advisor, not a router. C
   IMPORTANT: Never invent pool names, APRs, fee tiers, or addresses. Only repeat values returned by the tool.
   Prefer supported EVM/Solana chains unless the user explicitly asks for all chains or a specific unsupported chain.
 
-• search_dexscreener_pairs — Search any token or pair on DexScreener. Best for meme coins,
-  newly launched tokens, and contract address lookups. Returns price, liquidity, volume.
+• search_dexscreener_pairs — Search any Solana token or pair on DexScreener by SYMBOL or NAME.
+  To search (e.g. "search dexscreener for WIF", "find the BONK pools"), you MUST call this tool
+  with the raw symbol/name as input — a contract address is NOT required. Returns real price,
+  liquidity, and volume. NEVER fabricate a placeholder card and NEVER ask the user to "resend
+  the request cleanly" — call the tool and report the actual pairs it returns.
 
 • find_liquidity_pool — USE THIS only to find a specific pool's CONTRACT ADDRESS for trading.
   NOT for yield/APR queries. Use when user asks "what is the pool address for X/Y" or

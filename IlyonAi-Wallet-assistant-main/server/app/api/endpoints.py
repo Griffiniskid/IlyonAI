@@ -144,11 +144,10 @@ def _split_wallet_context(user_address: str, solana_address: Optional[str]) -> t
 
 
 def _infer_runtime_chain_id(chain_id: int, wallet_type: Optional[str], evm_wallet: str, solana_wallet: str) -> int:
-    if chain_id in {0, 101, 7565164}:
-        return 101
-    if wallet_type == "phantom" and not evm_wallet and solana_wallet:
-        return 101
-    return chain_id
+    # Solana-only product (v1 pivot). Every /agent request resolves to the Solana
+    # runtime chain (101) so the system prompt, direct swap/bridge handlers, and
+    # the agent all route to Solana. EVM chain_ids are ignored.
+    return 101
 
 
 _BRIDGE_CHAIN_ALIASES: list[tuple[str, int]] = [
@@ -1737,16 +1736,36 @@ async def run_agent(
                 last_exc = exc
                 continue
 
-            # LLM responded in plain text instead of ReAct format — extract and return
+            # LLM responded in plain text instead of ReAct format, OR the ReAct
+            # loop exhausted its iterations / spun on an output-parser error.
+            # Degrade gracefully to a 200 with the best available text rather than
+            # letting it fall through to a raw 500 (the intermittent bridge/analyze
+            # crash). The final HTTP status must be deterministic for the user.
+            _e = err_str.lower()
             if (
-                "could not parse llm output" in err_str.lower()
-                or "invalid format" in err_str.lower()
-                or "output parsing" in err_str.lower()
-                or "missing 'action'" in err_str.lower()
+                "could not parse llm output" in _e
+                or "invalid format" in _e
+                or "output parsing" in _e
+                or "outputparserexception" in _e
+                or "missing 'action'" in _e
+                or "agent stopped due to iteration" in _e
+                or "iteration limit" in _e
+                or "max_iterations" in _e
+                or "stopped after" in _e
+                or "time limit" in _e
             ):
                 import re as _re
                 match = _re.search(r"Could not parse LLM output:\s*`(.*)`", err_str, _re.S)
-                llm_text = _clean_agent_output(match.group(1).strip() if match else err_str)
+                if match:
+                    llm_text = _clean_agent_output(match.group(1).strip())
+                else:
+                    # Iteration/loop exhaustion with no parseable answer — return a
+                    # friendly prompt instead of the raw exception string.
+                    llm_text = (
+                        "I couldn't complete that request. Could you rephrase it or be "
+                        "more specific? For example: \"swap 0.5 SOL to USDC\", "
+                        "\"stake 1 SOL\", or \"is <token address> a rug?\""
+                    )
                 recovered_chat: Optional[Chat] = None
                 if current_user:
                     try:

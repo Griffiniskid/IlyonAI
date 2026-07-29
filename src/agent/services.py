@@ -73,14 +73,9 @@ class AgentServices:
         except Exception as e:
             logger.warning(f"Failed to initialize DexScreener: {e}")
         
-        try:
-            # Initialize Moralis (uses API key)
-            from src.data.moralis import MoralisClient
-            self.moralis = MoralisClient(api_key=settings.moralis_api_key)
-            logger.info("Moralis client initialized")
-        except Exception as e:
-            logger.warning(f"Failed to initialize Moralis: {e}")
-        
+        # Moralis (EVM portfolio indexer) removed in the Solana-only cut.
+        # self.moralis stays None; Solana balances come from SolanaClient.
+
         try:
             # Initialize Solana client
             from src.data.solana import SolanaClient

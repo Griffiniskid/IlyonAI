@@ -1412,27 +1412,8 @@ async def build_yield_execution_plan(
     adapter = registry.adapter_for(chain=chain, protocol=protocol, action=action)
     assert adapter is not None  # registry.find succeeded above
 
-    # EVM LP: prefer the Enso zap adapter over the native dual-token / stable
-    # adapters. Enso takes ONE token and bundles swap+add into a single
-    # signable tx, AND handles slippage internally — the native Curve
-    # add_liquidity ("Slippage screwed you") and V2 dual-leg adapters revert on
-    # a funded mainnet fork because their min-out amounts are miscalculated.
-    # Scoped to V2 AMMs + Curve/Balancer stable LPs. V3/CLMM is NOT here (it's
-    # a range-NFT mint, no fungible LP token → Enso 404s; keeps native NFPM).
-    _ENSO_LP_PROTOS = {
-        "pancakeswap", "pancakeswap-amm", "pancakeswap-v2", "pancake",
-        "uniswap-v2", "univ2", "sushiswap", "sushiswap-v2", "sushi",
-        "quickswap", "camelot", "baseswap", "trader-joe", "traderjoe", "spookyswap",
-        "curve", "curve-dex", "curve-finance", "convex",
-        "balancer", "balancer-v2", "aerodrome", "velodrome",
-    }
-    if (chain.lower() not in {"solana", "sol"}
-            and action in {"deposit_lp", "provide_liquidity", "add_liquidity"}
-            and (protocol or "").lower() in _ENSO_LP_PROTOS):
-        from src.defi.execution.adapters.enso_shortcut import EnsoShortcutAdapter
-        _enso = EnsoShortcutAdapter()
-        if _enso.supports(chain=chain, protocol=protocol, action=action).supported:
-            adapter = _enso
+    # (The EVM Enso-zap LP branch was removed in the Solana-only cut — enso_shortcut
+    # and the EVM adapters no longer exist. Solana LP goes through the yield builder.)
 
     try:
         steps = await adapter.build(YieldBuildRequest(

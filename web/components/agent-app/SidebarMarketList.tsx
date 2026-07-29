@@ -12,9 +12,9 @@ interface Coin {
 
 const COINS: Coin[] = [
   { id: "solana", symbol: "SOL", chain: "Solana", price: null, change: null },
-  { id: "ethereum", symbol: "ETH", chain: "Ethereum", price: null, change: null },
-  { id: "binancecoin", symbol: "BNB", chain: "BNB Chain", price: null, change: null },
-  { id: "tether", symbol: "USDT", chain: "Tether", price: null, change: null },
+  { id: "jupiter-exchange-solana", symbol: "JUP", chain: "Jupiter", price: null, change: null },
+  { id: "bonk", symbol: "BONK", chain: "Solana", price: null, change: null },
+  { id: "dogwifcoin", symbol: "WIF", chain: "Solana", price: null, change: null },
 ];
 
 function fmt(n: number | null) {

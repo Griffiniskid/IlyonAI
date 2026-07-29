@@ -69,57 +69,10 @@ class ChainRegistry:
             supports_token_approvals=False,  # Solana uses delegate model
         )
 
-        # EVM chains
-        rpc_mapping = {
-            ChainType.ETHEREUM: settings.ethereum_rpc_url,
-            ChainType.BASE: settings.base_rpc_url,
-            ChainType.ARBITRUM: settings.arbitrum_rpc_url,
-            ChainType.BSC: settings.bsc_rpc_url,
-            ChainType.POLYGON: settings.polygon_rpc_url,
-            ChainType.OPTIMISM: settings.optimism_rpc_url,
-            ChainType.AVALANCHE: settings.avalanche_rpc_url,
-            # Phase C P1-C-004: previously MISSING — these 10 chains have
-            # EVM_CHAIN_CONFIGS metadata + Settings RPC fields + RPC_FALLBACKS,
-            # but ChainRegistry.get_config(ChainType.LINEA) raised ValueError
-            # because they weren't in rpc_mapping. Fix lets adapter dispatch
-            # work for users targeting Phase-6 chains.
-            ChainType.LINEA: settings.linea_rpc_url,
-            ChainType.SCROLL: settings.scroll_rpc_url,
-            ChainType.MANTLE: settings.mantle_rpc_url,
-            ChainType.BLAST: settings.blast_rpc_url,
-            ChainType.ZKSYNC: settings.zksync_rpc_url,
-            ChainType.GNOSIS: settings.gnosis_rpc_url,
-            ChainType.CELO: settings.celo_rpc_url,
-            ChainType.SONIC: settings.sonic_rpc_url,
-            ChainType.BERACHAIN: settings.berachain_rpc_url,
-            ChainType.UNICHAIN: settings.unichain_rpc_url,
-        }
-
-        explorer_api_keys = {
-            ChainType.ETHEREUM: settings.etherscan_api_key,
-            ChainType.BSC: settings.bscscan_api_key,
-            ChainType.ARBITRUM: settings.arbiscan_api_key,
-            ChainType.POLYGON: settings.polygonscan_api_key,
-            ChainType.BASE: settings.basescan_api_key,
-            ChainType.OPTIMISM: settings.optimism_etherscan_api_key,
-            ChainType.AVALANCHE: settings.snowtrace_api_key,
-        }
-
-        for chain_type, rpc_url in rpc_mapping.items():
-            chain_defaults = EVM_CHAIN_CONFIGS.get(chain_type, {})
-            self._configs[chain_type] = ChainConfig(
-                chain_type=chain_type,
-                rpc_url=rpc_url,
-                explorer_url=chain_defaults.get("explorer_url", ""),
-                explorer_api_url=chain_defaults.get("explorer_api_url", ""),
-                explorer_api_key=explorer_api_keys.get(chain_type),
-                primary_dex=chain_defaults.get("primary_dex", ""),
-                dex_router_address=chain_defaults.get("dex_router_address"),
-                wrapped_native_address=chain_defaults.get("wrapped_native_address"),
-                usdc_address=chain_defaults.get("usdc_address"),
-                usdt_address=chain_defaults.get("usdt_address"),
-                block_time_seconds=chain_defaults.get("block_time_seconds", 12.0),
-            )
+        # EVM chains removed — Solana-only product (v1 pivot). The registry now
+        # materializes ONLY Solana, so get_config()/get_client() fail-closed with
+        # ValueError for any EVM ChainType and get_evm_chains() returns []. This
+        # is the single chokepoint that disables the entire EVM category app-wide.
 
         self._initialized = True
         logger.info(
@@ -168,8 +121,9 @@ class ChainRegistry:
             from src.chains.solana.client import SolanaChainClient
             client = SolanaChainClient(config)
         else:
-            from src.chains.evm.client import EVMChainClient
-            client = EVMChainClient(config)
+            # EVM chain clients removed (Solana-only). Unreachable in practice —
+            # get_config() above already raises for any non-Solana chain.
+            raise ValueError(f"Chain '{chain.value}' is not supported (Solana-only build)")
 
         self._clients[chain] = client
         logger.info(f"Created {chain.display_name} chain client")

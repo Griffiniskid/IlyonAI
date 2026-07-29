@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Iterable
 
-from src.data.v4_hooks_allowlist import check_v4_hook
 from src.defi.execution.models import ExecutionBlocker, ExecutionStepV3
 
 logger = logging.getLogger(__name__)
@@ -325,53 +324,9 @@ def _check_v4_hook_blockers(
     the latter because the adapter-level check is authoritative and
     fail-open here matches the shape of the other §13 detectors.
     """
-    lp_actions = {"deposit_lp", "add_liquidity", "provide_liquidity", "increase_liquidity"}
-    bad: list[tuple[str, str]] = []  # (step_id, hook_addr)
-    for step in steps:
-        if (step.protocol or "").lower() != "uniswap-v4":
-            continue
-        if (step.action or "").lower() not in lp_actions:
-            continue
-        hook_addr = _extract_v4_hook_addr(step)
-        if not hook_addr:
-            continue  # adapter-level gate is authoritative when we can't see it
-        # Chain id is best-effort — pulled from the unsigned tx when present.
-        chain_id = None
-        if step.transaction is not None and step.transaction.chain_id is not None:
-            chain_id = step.transaction.chain_id
-        code = check_v4_hook(hook_addr, chain_id)
-        if code == "DISALLOWED_V4_HOOK":
-            bad.append((step.step_id, hook_addr))
-
-    if not bad:
-        return []
-
-    # One blocker row per offending hook address; affected_step_ids
-    # carries every step that references it. Matches the dedupe shape
-    # of evaluate_kyc_pool_preflight.
-    by_hook: dict[str, list[str]] = {}
-    for sid, addr in bad:
-        by_hook.setdefault(addr, []).append(sid)
-
-    out: list[ExecutionBlocker] = []
-    for hook_addr, step_ids in by_hook.items():
-        out.append(ExecutionBlocker(
-            code="DISALLOWED_V4_HOOK",
-            severity="blocker",
-            title="Untrusted Uniswap V4 hook",
-            detail=(
-                f"V4 pool hook {hook_addr} is not in the verified-hooks "
-                f"allowlist. Refusing to route to prevent fund loss from "
-                f"untrusted hook code — a malicious hook can redirect "
-                f"funds, freeze positions, or front-run the mint. To "
-                f"opt into experimental pools, the plan must be rebuilt "
-                f"with allow_experimental_hook=True after explicit user "
-                f"confirmation."
-            ),
-            affected_step_ids=step_ids,
-            cta="Pick a different fee tier / pool with an audited hook, or rebuild with explicit experimental-hook opt-in.",
-        ))
-    return out
+    # Uniswap V4 is EVM-only and was removed in the Solana-only cut, so no
+    # Solana step can carry a V4 hook. The gate is now a no-op.
+    return []
 
 
 def _check_hardware_wallet_alt_blockers(

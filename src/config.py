@@ -181,17 +181,8 @@ class Settings(BaseSettings):
     # Portfolio / Wallet Indexer
     moralis_api_key: Optional[str] = Field(None, env="MORALIS_API_KEY", description="Moralis API key for EVM portfolio tracking")
     portfolio_required_chains: list[str] = Field(
-        default_factory=lambda: [
-            "solana",
-            "ethereum",
-            "base",
-            "arbitrum",
-            "bsc",
-            "polygon",
-            "optimism",
-            "avalanche",
-        ],
-        description="Required chain matrix for portfolio parity responses",
+        default_factory=lambda: ["solana"],
+        description="Required chain matrix for portfolio parity responses (Solana-only)",
     )
 
     # Default chain for analysis

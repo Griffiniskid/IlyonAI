@@ -10,6 +10,7 @@ coverage/
 # Next.js
 .next/
 .next-local/
+.next-verify/
 .next.root_bak/
 out/
 

@@ -22,7 +22,6 @@ from typing import Any, Callable, Dict, List, Optional
 
 from src.alerts.orchestrator import AlertOrchestrator
 from src.alerts.store import InMemoryAlertStore
-from src.api.routes.alerts import ALERT_STORE_KEY
 from src.config import settings
 
 logger = logging.getLogger(__name__)
@@ -311,14 +310,9 @@ async def start_sentinel(app):
     global _alert_bridge_registered
     sentinel = get_sentinel()
 
-    if app is not None and ALERT_STORE_KEY in app and not _alert_bridge_registered:
-        orchestrator = create_alert_orchestrator(store=app[ALERT_STORE_KEY])
-
-        def _bridge_handler(alert: SentinelAlert) -> None:
-            orchestrator.ingest(_to_orchestrator_event(alert))
-
-        sentinel.add_alert_handler(_bridge_handler)
-        _alert_bridge_registered = True
+    # Alerts route removed in the Solana-only cut — the alert-store bridge
+    # (create_alert_orchestrator over the /alerts route store) no longer exists.
+    # Sentinel still runs its background scans; it just has no alerts-panel sink.
 
     await sentinel.start()
     logger.info("Sentinel agent registered")

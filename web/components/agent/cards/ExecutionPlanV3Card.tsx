@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import type { ExecutionPlanV3Payload, ExecutionPlanV3Step, ExecutionPlanV3Blocker } from "@/types/agent";
 import { AlertTriangle, ArrowRight, CheckCircle2, Clock, LockKeyhole, Play, Power, Route, ShieldAlert, Wallet, Zap } from "lucide-react";
 import { V3RangeBlock } from "./V3RangeBlock";
-import Permit2SigButton from "./Permit2SigButton";
 import { usePlanStream } from "@/hooks/usePlanStream";
 import {
   useWalletSigning,
@@ -177,16 +176,7 @@ function StepRow({
           </span>
           {step.status === "ready" && isFirstReady && onSignStep && !planBlocked && (
             <>
-              {step.transaction?.permit_payload && step.transaction?.chain_id ? (
-                <Permit2SigButton
-                  planId={planId}
-                  stepId={step.step_id}
-                  chainId={step.transaction.chain_id}
-                  permitMessage={step.transaction.permit_payload as unknown as Parameters<typeof Permit2SigButton>[0]["permitMessage"]}
-                  simulatedCalldataHash={simHash}
-                  simulatedAt={simAt}
-                />
-              ) : null}
+              {/* Permit2 sig step removed — EVM-only, unused in the Solana build. */}
               <button
                 type="button"
                 data-testid={`sign-step-${step.step_id}`}

@@ -9,12 +9,9 @@ export function Footer() {
             <img src="/logo.png" alt="Ilyon AI" className="h-14 sm:h-[72px] w-auto" />
           </div>
           <div className="text-sm text-muted-foreground">
-            Multi-chain token and pool intelligence
+            The safe way to trade Solana
           </div>
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <a href="/docs" className="hover:text-foreground transition">
-              Documentation
-            </a>
             <a
               href="https://x.com/ilyonProtocol"
               target="_blank"
